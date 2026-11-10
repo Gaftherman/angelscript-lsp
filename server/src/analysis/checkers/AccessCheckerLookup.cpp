@@ -229,15 +229,20 @@ MemberLookupResult FindMember(std::string_view typeName, std::string_view member
 
     const auto ruleIndex = table.GetRuleIndex();
     const MemberLookupContext ctx{std::string(typeName), table, accessorKeywordRequired};
+    std::string getAcc;
+    std::string setAcc;
+    if (ruleIndex)
+    {
+        getAcc = "get_";
+        getAcc.append(memberName);
+        setAcc = "set_";
+        setAcc.append(memberName);
+    }
     for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
     {
         if (ruleIndex)
         {
             const auto& members = ruleIndex->Members(owner);
-            std::string getAcc("get_");
-            getAcc.append(memberName);
-            std::string setAcc("set_");
-            setAcc.append(memberName);
             const bool hasPotential = members.allMemberNames.contains(memberName) ||
                                       members.allMemberNames.contains(getAcc) ||
                                       members.allMemberNames.contains(setAcc);
@@ -274,7 +279,7 @@ MemberLookupResult FindMemberWithProxies(std::string_view objectType, std::strin
     auto hier = GetInheritedTypeHierarchy(objectType, table);
     for (const auto& owner : hier)
     {
-        auto it = proxyMap.find(std::string(owner));
+        auto it = proxyMap.find(owner);
         if (it != proxyMap.end())
         {
             for (const auto& proxy : it->second)

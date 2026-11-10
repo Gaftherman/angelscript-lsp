@@ -1,45 +1,20 @@
 #include "analysis/checkers/NamespaceCheckerCommon.h"
+#include "analysis/index/CallSiteFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
-#include "utils/Utils.h"
 
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
-
-/**
- * @brief Whether a node sits inside a `mixin class` body.
- *        A mixin is compiled into the class that includes it, so an unqualified name in its body
- */
-static bool IsInsideMixinBody(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode mixinNode = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symMixinDeclaration);
-    return !ts_node_is_null(mixinNode);
-}
-
-/**
- * @brief Extracts and trims the callee name from a call expression node.
- */
-static std::string_view ExtractCalleeName(TSNode node, std::string_view sourceCode)
-{
-    TSNode funcNode = parser::GetCallCallee(node);
-    if (ts_node_is_null(funcNode))
-    {
-        return {};
-    }
-    return utils::TrimView(parser::NodeText(funcNode, sourceCode));
-}
 
 static bool CheckNamespaceOrClassMembers(std::string_view name, const rules::ContainerMembers& members, bool reqKeyword)
 {
@@ -47,22 +22,22 @@ static bool CheckNamespaceOrClassMembers(std::string_view name, const rules::Con
     return accSet.contains(name) || members.allMemberNames.contains(name);
 }
 
-static bool IsEnclosingContainerCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
-                                       const DiagnosticContext& ctx)
+static bool IsEnclosingContainerCallee(std::string_view name, uint32_t byteOffset,
+                                       const NamespaceCallCheckContext& cctx, const DiagnosticContext& ctx)
 {
-    if (!request.nodeIndex)
+    if (!cctx.nodeIndex)
     {
         return false;
     }
     const auto& ruleIndex = ctx.request.GetRuleIndex();
-    const uint32_t byteOffset = ts_node_start_byte(node);
     const bool reqKeyword = ctx.request.RequiresAccessorKeyword();
-    const auto containers = request.nodeIndex->CollectEnclosingContainers(byteOffset, request.sourceCode);
+    const auto containers = cctx.nodeIndex->CollectEnclosingContainers(byteOffset, cctx.sourceCode);
     for (const auto& container : containers)
     {
         if (container.kind == ContainerKind::Namespace)
         {
-            const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            const std::string_view nsName = container.qualifiedName.empty() ? std::string_view(container.name)
+                                                                            : std::string_view(container.qualifiedName);
             if (CheckNamespaceOrClassMembers(name, ruleIndex.NamespaceMembers(nsName), reqKeyword))
             {
                 return true;
@@ -86,13 +61,13 @@ static bool IsEnclosingContainerCallee(std::string_view name, TSNode node, const
     return false;
 }
 
-static bool IsCalleeAccessorProperty(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
+static bool IsCalleeAccessorProperty(std::string_view name, uint32_t byteOffset, const NamespaceCallCheckContext& cctx,
                                      const DiagnosticContext& ctx)
 {
     const auto& ruleIndex = ctx.request.GetRuleIndex();
     const auto& globalAccessors = ctx.request.RequiresAccessorKeyword() ? ruleIndex.keywordGlobalAccessorPropertyNames
                                                                         : ruleIndex.globalAccessorPropertyNames;
-    if (globalAccessors.contains(name) || IsEnclosingContainerCallee(name, node, request, ctx))
+    if (globalAccessors.contains(name) || IsEnclosingContainerCallee(name, byteOffset, cctx, ctx))
     {
         return true;
     }
@@ -102,22 +77,23 @@ static bool IsCalleeAccessorProperty(std::string_view name, TSNode node, const N
                 .empty();
 }
 
-static bool IsSpecialContextCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request)
+static bool IsSpecialContextCallee(std::string_view name, const CallSiteFact& call,
+                                   const NamespaceCallCheckContext& cctx)
 {
-    if (IsReservedKeyword(std::string(name)))
+    if (IsReservedKeyword(name))
     {
         return true;
     }
 
-    if (request.nodeIndex && request.nodeIndex->IsInsideError(ts_node_start_byte(node)))
+    if (cctx.nodeIndex && cctx.nodeIndex->IsInsideError(call.bytes.startByte))
     {
         return true;
     }
 
     if (name == "super")
     {
-        TSNode funcNode = parser::GetCallCallee(node);
-        return IsBaseConstructorCall(funcNode, request.sourceCode);
+        return call.insideClass && !call.enclosingClassName.empty() &&
+               call.enclosingClassName == call.enclosingFunctionName;
     }
 
     return false;
@@ -129,34 +105,35 @@ static bool IsKnownCalleeSymbol(std::string_view name, std::string_view getterNa
            ctx.request.IsRegisteredSymbol(getterName) || ctx.request.symbolTable.HasSymbol(getterName);
 }
 
-/**
- * @brief Checks if a callee name is known in scope, registered, or excused by context.
- */
-static bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
+static bool IsKnownCallee(std::string_view name, const CallSiteFact& call, const NamespaceCallCheckContext& cctx,
                           const DiagnosticContext& ctx)
 {
-    if (IsSpecialContextCallee(name, node, request))
+    if (IsSpecialContextCallee(name, call, cctx))
     {
         return true;
     }
 
-    const Scope* scope = ctx.request.scopeRoot
-                             ? FindEnclosingScope(ctx.request.scopeRoot.get(), ts_node_start_point(node).row,
-                                                  ts_node_start_point(node).column)
-                             : nullptr;
+    const Scope* scope = ctx.request.scopeRoot ? FindEnclosingScope(ctx.request.scopeRoot.get(), call.range.startLine,
+                                                                    call.range.startCharacter)
+                                               : nullptr;
     if (scope && ResolveInScope(scope, name))
     {
         return true;
     }
 
-    if (!FindSymbolsInScope(std::string(name), node, request.sourceCode, ctx.request.symbolTable, request.nodeIndex)
-             .empty())
+    const auto containers = cctx.nodeIndex
+                                ? cctx.nodeIndex->CollectEnclosingContainers(call.bytes.startByte, cctx.sourceCode)
+                                : std::vector<ContainerInfo>{};
+    const auto usings = cctx.nodeIndex ? cctx.nodeIndex->CollectUsingNamespaces(cctx.sourceCode, call.bytes.startByte)
+                                       : GetUsingNamespaces(ctx.request);
+
+    if (!FindSymbolsInScope(ctx.request.symbolTable, containers, std::string(name), usings).empty())
     {
         return true;
     }
 
-    std::string getterName = "get_" + std::string(name);
-    if (!FindSymbolsInScope(getterName, node, request.sourceCode, ctx.request.symbolTable, request.nodeIndex).empty())
+    const std::string getterName = "get_" + std::string(name);
+    if (!FindSymbolsInScope(ctx.request.symbolTable, containers, getterName, usings).empty())
     {
         return true;
     }
@@ -166,12 +143,12 @@ static bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceChe
         return true;
     }
 
-    if (IsCalleeAccessorProperty(name, node, request, ctx))
+    if (IsCalleeAccessorProperty(name, call.bytes.startByte, cctx, ctx))
     {
         return true;
     }
 
-    return IsInsideMixinBody(node);
+    return call.insideMixin;
 }
 
 static bool IsKnownDirectGlobalCallee(std::string_view identView, const DiagnosticContext& ctx)
@@ -200,16 +177,10 @@ static bool IsKnownDirectGlobalCallee(std::string_view identView, const Diagnost
     return false;
 }
 
-/**
- * @brief Checks if an unqualified function call resolves to an in-scope symbol.
- * @param[in] node AST node representing the call expression.
- * @param[in] request Contextual request bundle containing AST root, source text, and node index.
- * @param[in,out] ctx Diagnostic collection and analysis context.
- */
-void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+void CheckCallExpression(const CallSiteFact& call, const NamespaceCallCheckContext& cctx, DiagnosticContext& ctx)
 {
-    std::string_view calleeName = ExtractCalleeName(node, request.sourceCode);
-    if (calleeName.empty() || calleeName.find('.') != std::string_view::npos)
+    std::string_view calleeName = call.calleeText;
+    if (call.isMemberCall || calleeName.empty() || calleeName.find('.') != std::string_view::npos)
     {
         return;
     }
@@ -221,11 +192,7 @@ void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, Diag
         {
             if (!identView.empty() && !IsKnownDirectGlobalCallee(identView, ctx))
             {
-                TSNode funcNode = parser::GetCallCallee(node);
-                const TSPoint startPt = ts_node_start_point(funcNode);
-                const TSPoint endPt = ts_node_end_point(funcNode);
-                ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-undefined-identifier",
-                                calleeName, DiagnosticSeverity::Error);
+                ctx.EmitAtRange(call.calleeRange, "as-err-undefined-identifier", calleeName, DiagnosticSeverity::Error);
             }
             return;
         }
@@ -237,16 +204,12 @@ void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, Diag
         return;
     }
 
-    if (IsKnownCallee(calleeName, node, request, ctx))
+    if (IsKnownCallee(calleeName, call, cctx, ctx))
     {
         return;
     }
 
-    TSNode funcNode = parser::GetCallCallee(node);
-    const TSPoint startPt = ts_node_start_point(funcNode);
-    const TSPoint endPt = ts_node_end_point(funcNode);
-    ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-undefined-identifier", calleeName,
-                    DiagnosticSeverity::Error);
+    ctx.EmitAtRange(call.calleeRange, "as-err-undefined-identifier", calleeName, DiagnosticSeverity::Error);
 }
 
 } // namespace angel_lsp::analysis

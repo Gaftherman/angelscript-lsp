@@ -5,7 +5,6 @@
 
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -124,23 +123,6 @@ void CheckInitializerListAgainstType(const InitializerListFact& list, const Init
     CheckInitializerListAgainstType(InitializerListTargetRequest{list, facts, targetType, elements}, ctx);
 }
 
-void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetType, const ElementContext& elements,
-                                     DiagnosticContext& ctx)
-{
-    if (ts_node_is_null(listNode) || !ctx.request.nodeIndex)
-    {
-        return;
-    }
-    const InitializerListFacts facts = BuildInitializerListFacts(*ctx.request.nodeIndex, elements.sourceCode);
-    const IndexedByteRange span{ts_node_start_byte(listNode), ts_node_end_byte(listNode)};
-    const auto* fact = facts.Find(span);
-    if (!fact)
-    {
-        return;
-    }
-    CheckInitializerListAgainstType(InitializerListTargetRequest{*fact, facts, targetType, elements}, ctx);
-}
-
 void ValidateInitializerList(const InitializerListFact& list, const InitializerListFacts& facts,
                              std::string_view expectedType, DiagnosticContext& ctx)
 {
@@ -149,8 +131,6 @@ void ValidateInitializerList(const InitializerListFact& list, const InitializerL
     const ListValidationContext valCtx{ctx, elements, cache, facts, 0};
     InitializerListValidator::ValidateList(list, expectedType, valCtx);
 }
-
-
 
 void CheckInitializerLists(const InitializerListFacts& facts, std::string_view sourceCode, const Scope* scopeRoot,
                            DiagnosticContext& ctx)

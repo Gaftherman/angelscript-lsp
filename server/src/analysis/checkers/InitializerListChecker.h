@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -92,16 +91,6 @@ void CheckInitializerListAgainstType(const InitializerListFact& list, const Init
                                      std::string_view targetType, DiagnosticContext& ctx);
 
 /**
- * @brief Checks one list against a target type the caller already knows (legacy TSNode overload).
- * @param[in] listNode   The `initializer_list` node.
- * @param[in] targetType The type it initializes, as written; decorations are stripped here.
- * @param[in] elements   Element source and scope context.
- * @param[in,out] ctx    Diagnostic sink.
- */
-void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetType, const ElementContext& elements,
-                                     DiagnosticContext& ctx);
-
-/**
  * @brief Validates an initializer list fact recursively against an expected target type.
  * @param[in] list Initializer list fact.
  * @param[in] facts Enclosing document facts.
@@ -110,8 +99,6 @@ void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetT
  */
 void ValidateInitializerList(const InitializerListFact& list, const InitializerListFacts& facts,
                              std::string_view expectedType, DiagnosticContext& ctx);
-
-
 
 /**
  * @brief Canonical and instantiated type name spellings for template type arguments.

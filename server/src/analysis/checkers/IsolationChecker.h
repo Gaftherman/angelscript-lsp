@@ -2,21 +2,27 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
-#include "analysis/index/ScopeTree.h"
-#include "analysis/index/SymbolTable.h"
+#include "analysis/index/IsolationSiteFacts.h"
 
-#include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
 
 /**
  * @brief Validates strict isolation boundaries: shared entities cannot access non-shared entities.
- * @param request Immutable context with AST, source code, and scopes.
- * @param ctx Diagnostic context to emit findings.
+ * @param[in] request Immutable context with AST, source code, and scopes.
+ * @param[in,out] ctx Diagnostic context to emit findings.
  */
 void CheckSharedIsolation(const AstCheckContext& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Validates strict isolation boundaries against precalculated pass-1 isolation facts.
+ * @param[in] facts Precalculated pass-1 isolation site facts.
+ * @param[in] request Immutable context with source code and scope tree.
+ * @param[in,out] ctx Diagnostic context to emit findings.
+ */
+void CheckSharedIsolation(const IsolationSiteFacts& facts, const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for strict shared isolation boundaries.
@@ -34,14 +40,4 @@ struct IsolationChecker
     }
 };
 
-/**
- * @brief Expression node and evaluation barrier state during variable isolation analysis.
- */
-struct IsoItem
-{
-    TSNode node;
-    std::string className;
-    bool isClassShared = false;
-    bool inSharedContext = false;
-};
 } // namespace angel_lsp::analysis

@@ -6,6 +6,7 @@
 #include "analysis/index/SymbolTable.h"
 
 #include <ankerl/unordered_dense.h>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -23,7 +24,7 @@ struct UndefinedIdentifierContext
 {
     const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames;
     const MixinRanges& mixinRanges;
-    const std::vector<std::string>& usingNamespaces;
+    std::span<const std::string> usingNamespaces;
     DiagnosticContext& ctx;
 };
 

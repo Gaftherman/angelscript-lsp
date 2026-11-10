@@ -3,38 +3,23 @@
 #include "analysis/checkers/HandleComparisonChecker.h"
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ExpressionSiteFacts.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
-#include <string>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
 
-/**
- * @brief Inspects the accessor metadata of an expression node that may name a virtual property.
- * @param[in] exprNode Expression node accessing a property.
- * @param[in] scope Enclosing lexical scope.
- * @param[in] ctx Diagnostic context.
- * @return PropertyAccessInfo structure; no flag is set for an expression that names no property.
- */
-static PropertyAccessInfo InspectNodePropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
+void ProcessBinarySite(const BinarySiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    return InspectPropertyAccess(ReadPropertyAccess(exprNode, ctx.request.nodeIndex, ctx.request.sourceCode), scope,
-                                 ctx);
-}
-
-void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
-{
-    const BinaryExpressionFact* fact =
-        request.binaryFacts->Find(IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)});
+    const BinaryExpressionFact* fact = request.binaryFacts->Find(site.bytes);
     if (!fact)
     {
         return;
     }
-    const Scope* scope = ResolveNodeScope(node, request);
+    const Scope* scope = ResolveNodeScope(site.range, request);
 
     if (fact->opClass == BinaryOperatorClass::Identity)
     {
@@ -53,148 +38,88 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
     CheckBinaryOperatorCompatibility(*fact, scope, ctx);
 }
 
-static TSNode FindUnaryOperand(TSNode node, const NodeIndex* index)
+static bool CheckUnaryInvalidOperand(const UnaryPostfixSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(node, index);
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode operand = syntax.Field(gs.fieldOperand);
-    if (!ts_node_is_null(operand))
-    {
-        return operand;
-    }
-    const TSNode opNode = syntax.Field(gs.fieldOperator);
-    TSNode found{};
-    syntax.ForEachNamed(
-        [&](TSNode child)
-        {
-            if (!ts_node_is_null(opNode) && ts_node_eq(child, opNode))
-            {
-                return true;
-            }
-            const TSSymbol sym = ts_node_symbol(child);
-            if (sym == gs.tokPlusPlus || sym == gs.tokDashDash || sym == gs.tokBang || sym == gs.tokNot ||
-                sym == gs.tokDash || sym == gs.tokPlus || sym == gs.tokTilde)
-            {
-                return true;
-            }
-            found = child;
-            return false;
-        });
-    return found;
-}
-
-static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* scope, DiagnosticContext& ctx)
-{
-    if (ts_node_is_null(operand))
+    if (!site.hasOperand)
     {
         return false;
     }
-    if (const auto dt = IsBareDataType(operand, ExpressionTypeContext(scope, ctx)))
+    const ExpressionTypeContext exprCtx(scope, ctx);
+    if (const auto dt = IsBareDataType(site.operandBytes, exprCtx))
     {
-        EmitExpressionIsDataType(operand, ctx, *dt);
+        EmitExpressionIsDataType(ConversionExpressionFact{site.operandBytes, site.operandRange, site.operandText}, ctx,
+                                 *dt);
         return true;
     }
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = SyntaxOperands(node, ctx.request.nodeIndex).Field(gs.fieldOperator);
-    if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokAt)
+    if (site.isAddressOfHandle)
     {
         return false;
     }
-    if (IsFunctionReference(operand, ExpressionTypeContext(scope, ctx)))
+    if (IsFunctionReference(site.operandBytes, exprCtx))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(node), diagnostics::codes::IllegalOperation);
+        ctx.EmitAtRange(site.range, diagnostics::codes::IllegalOperation);
         return true;
     }
     return false;
 }
 
-void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConversionCheckRequest& request,
+                               DiagnosticContext& ctx)
 {
-    const Scope* scope = ResolveNodeScope(node, request);
-    TSNode operand = FindUnaryOperand(node, ctx.request.nodeIndex);
-    if (CheckUnaryInvalidOperand(node, operand, scope, ctx))
+    const Scope* scope = ResolveNodeScope(site.range, request);
+    if (CheckUnaryInvalidOperand(site, scope, ctx))
     {
         return;
     }
 
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = SyntaxOperands(node, ctx.request.nodeIndex).Field(gs.fieldOperator);
-    const TSSymbol opSym = ts_node_symbol(opNode);
-    if (opSym != gs.tokPlusPlus && opSym != gs.tokDashDash)
+    if (!site.isIncrementOrDecrement || !site.hasOperand)
     {
         return;
     }
 
-    if (!ts_node_is_null(operand))
+    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.operandProperty, scope, ctx);
+    if (site.operandIsIndexed)
     {
-        TSNode unwrapped = UnwrapIndexedParentheses(operand, ctx.request.nodeIndex);
-        if (ts_node_symbol(unwrapped) == gs.symIndexExpression)
+        if (pInfo.isProperty && pInfo.isIndexed)
         {
-            TSNode arrayNode = SyntaxOperands(unwrapped, ctx.request.nodeIndex).FieldOrNamed(gs.fieldObject);
-            PropertyAccessInfo pInfo = InspectNodePropertyAccess(arrayNode, scope, ctx);
-            if (pInfo.isProperty && pInfo.isIndexed)
-            {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-inc-dec-on-virtual-prop", pInfo.propName);
-                return;
-            }
+            ctx.EmitAtRange(site.range, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
         }
-        else
-        {
-            PropertyAccessInfo pInfo = InspectNodePropertyAccess(unwrapped, scope, ctx);
-            if (pInfo.isProperty)
-            {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-inc-dec-on-virtual-prop", pInfo.propName);
-                return;
-            }
-        }
+    }
+    else if (pInfo.isProperty)
+    {
+        ctx.EmitAtRange(site.range, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
     }
 }
 
-/**
- * @brief Checks whether an operand is written or mutated by its parent expression.
- * @param[in] fact Indexed operand syntax record.
- * @return True for the left side of an assignment and the operand of a unary or postfix expression.
- */
-static bool IsWriteOrMutationOperand(const IndexedSyntaxNode& fact)
+void ProcessMemberExpressionSite(const MemberExpressionSiteFact& site, const TypeConversionCheckRequest& request,
+                                 DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    return (fact.parentSymbol == gs.symAssignmentExpression && fact.field == gs.fieldLeft) ||
-           fact.parentSymbol == gs.symUnaryExpression || fact.parentSymbol == gs.symPostfixExpression;
-}
-
-void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const auto* fact = request.nodeIndex.FindOperandSyntax(node);
-    if (fact && fact->parentSymbol == gs.symCallExpression && fact->field == gs.fieldFunction)
+    if (site.isCallCallee || site.isWriteOrMutation)
     {
         return;
     }
 
-    if (!fact || !IsWriteOrMutationOperand(*fact))
+    const Scope* scope = ResolveNodeScope(site.range, request);
+    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.propertyAccess, scope, ctx);
+    if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
     {
-        const Scope* scope = ResolveNodeScope(node, request);
-        PropertyAccessInfo pInfo = InspectNodePropertyAccess(node, scope, ctx);
-        if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
-        {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-write-only-property", pInfo.propName);
-        }
+        ctx.EmitAtRange(site.range, "as-err-write-only-property", pInfo.propName);
     }
 }
 
-void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessIndexExpressionSite(const IndexExpressionSiteFact& site, const TypeConversionCheckRequest& request,
+                                DiagnosticContext& ctx)
 {
-    const auto* fact = request.nodeIndex.FindOperandSyntax(node);
-    if (!fact || !IsWriteOrMutationOperand(*fact))
+    if (site.isWriteOrMutation)
     {
-        const Scope* scope = ResolveNodeScope(node, request);
-        TSNode arrayNode =
-            SyntaxOperands(node, ctx.request.nodeIndex).FieldOrNamed(parser::GetGrammarSymbols().fieldObject);
-        PropertyAccessInfo pInfo = InspectNodePropertyAccess(arrayNode, scope, ctx);
-        if (pInfo.isProperty && pInfo.isIndexed && !pInfo.hasGet && pInfo.hasSet)
-        {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-write-only-property", pInfo.propName);
-        }
+        return;
+    }
+
+    const Scope* scope = ResolveNodeScope(site.range, request);
+    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.objectProperty, scope, ctx);
+    if (pInfo.isProperty && pInfo.isIndexed && !pInfo.hasGet && pInfo.hasSet)
+    {
+        ctx.EmitAtRange(site.range, "as-err-write-only-property", pInfo.propName);
     }
 }
 
@@ -217,22 +142,20 @@ static bool CheckCastVisibilityGuards(const ConversionTypePair& types, bool sour
     return true;
 }
 
-static void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx)
+void ProcessCastSite(const CastExpressionSiteFact& site, const TypeConversionCheckRequest& request,
+                     DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(castNode, ctx.request.nodeIndex);
-    const std::string targetName =
-        CleanBaseType(parser::NodeText(syntax.Field(parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode));
-
-    TSNode valueNode = syntax.Field(parser::GetGrammarSymbols().fieldValue);
-    if (ts_node_is_null(valueNode) || targetName.empty())
+    const auto targetName = CleanBaseType(site.targetType);
+    if (!site.hasValue || targetName.empty())
     {
         return;
     }
 
+    const Scope* scope = ResolveNodeScope(site.range, request);
     const SymbolTable& table = ctx.request.symbolTable;
     const bool targetIsScalar = IsScalarCastTarget(targetName, table);
 
-    const ExpressionType source = ResolveValueType(valueNode, scope, ctx);
+    const ExpressionType source = ResolveValueType(site.value, scope, ctx);
     if (!source.known || source.baseName.empty() || IsSameType(source.baseName, targetName))
     {
         return;
@@ -259,25 +182,7 @@ static void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ct
         return;
     }
 
-    ctx.EmitAtNodeRange(ToOptionalSourceRange(castNode), "as-err-invalid-cast", {source.baseName, targetName});
-}
-
-void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
-{
-    const Scope* scope = ResolveNodeScope(node, request);
-    CheckCast(node, scope, ctx);
-}
-
-/**
- * @brief Resolves the value type of an expression given as a syntax node by reading it into a fact first.
- * @param[in] node Expression node to resolve; a null node yields an unknown type.
- * @param[in] scope Lexical scope at the expression position.
- * @param[in] ctx Diagnostic context.
- * @return Resolved ExpressionType.
- */
-ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
-{
-    return ResolveValueType(ReadValueExpression(node, ctx.request.nodeIndex, ctx.request.sourceCode), scope, ctx);
+    ctx.EmitAtRange(site.range, "as-err-invalid-cast", {source.baseName, targetName});
 }
 
 } // namespace angel_lsp::analysis

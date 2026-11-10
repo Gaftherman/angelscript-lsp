@@ -1,112 +1,73 @@
 #include "analysis/checkers/IsolationChecker.h"
 
 #include "analysis/checkers/IsolationCheckerCommon.h"
+#include "analysis/index/IsolationSiteFacts.h"
 #include "analysis/index/NodeIndex.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "analysis/index/ScopeTree.h"
+#include "utils/StopFlag.h"
 
-#include <string>
-#include <tree_sitter/api.h>
-#include <utility>
-#include <vector>
+#include <cstddef>
+#include <cstdint>
 
 namespace angel_lsp::analysis
 {
 
-IsolationVisitor::IsolationVisitor(const AstCheckContext& req, DiagnosticContext& dctx) : request(req), ctx(dctx)
+void CheckSharedIsolation(const IsolationSiteFacts& facts, const AstCheckContext& request, DiagnosticContext& ctx)
 {
-}
-
-void IsolationVisitor::PushChildren(TSNode node, const std::string& className, bool isClassShared, bool inSharedContext,
-                                    std::vector<IsoItem>& worklist)
-{
-    uint32_t count = ts_node_child_count(node);
-    for (uint32_t i = count; i > 0; --i)
-    {
-        TSNode child = ts_node_child(node, i - 1);
-        if (!ts_node_is_null(child))
-        {
-            worklist.push_back({child, className, isClassShared, inSharedContext});
-        }
-    }
-}
-
-void IsolationVisitor::Visit(TSNode rootNode)
-{
-    if (ts_node_is_null(rootNode))
+    if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
         return;
     }
 
-    std::vector<IsoItem> worklist;
-    worklist.push_back({rootNode, "", false, false});
-
-    const auto& gs = parser::GetGrammarSymbols();
-
-    while (!worklist.empty())
+    if (facts.sharedModifiers.empty())
     {
-        IsoItem item = std::move(worklist.back());
-        worklist.pop_back();
+        return;
+    }
 
-        TSNode node = item.node;
-        const TSSymbol nodeSym = ts_node_symbol(node);
+    CheckSharedEntityEligibility(facts, ctx);
 
-        currentClassName = item.className;
-        isCurrentClassShared = item.isClassShared;
+    size_t typeIdx = 0;
+    size_t callIdx = 0;
+    size_t idIdx = 0;
+    const size_t typeCount = facts.types.size();
+    const size_t callCount = facts.calls.size();
+    const size_t idCount = facts.identifiers.size();
 
-        if (nodeSym == gs.symClassDeclaration)
+    while (typeIdx < typeCount || callIdx < callCount || idIdx < idCount)
+    {
+        if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
         {
-            TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
-            std::string className(parser::NodeText(nameNode, request.sourceCode));
-            bool classShared = IsClassShared(node, className);
-            PushChildren(node, className, classShared, classShared, worklist);
-            continue;
+            return;
         }
 
-        if (nodeSym == gs.symFuncDeclaration)
-        {
-            bool funcShared = IsFunctionShared(node, item.inSharedContext);
-            PushChildren(node, item.className, item.isClassShared, funcShared, worklist);
-            continue;
-        }
+        const uint32_t typeByte = (typeIdx < typeCount) ? facts.types[typeIdx].bytes.startByte : UINT32_MAX;
+        const uint32_t callByte = (callIdx < callCount) ? facts.calls[callIdx].bytes.startByte : UINT32_MAX;
+        const uint32_t idByte = (idIdx < idCount) ? facts.identifiers[idIdx].bytes.startByte : UINT32_MAX;
 
-        if (item.inSharedContext)
+        if (typeByte <= callByte && typeByte <= idByte)
         {
-            if (nodeSym == gs.symDatatype)
-            {
-                CheckSharedDatatype(node);
-            }
-            else if (nodeSym == gs.symCallExpression)
-            {
-                CheckSharedCallExpression(node);
-            }
-            else if (nodeSym == gs.symIdentifier)
-            {
-                CheckSharedIdentifier(node);
-            }
+            CheckSharedDatatype(facts.types[typeIdx++], ctx);
         }
-
-        PushChildren(node, item.className, item.isClassShared, item.inSharedContext, worklist);
+        else if (callByte <= idByte)
+        {
+            CheckSharedCallExpression(facts.calls[callIdx++], ctx);
+        }
+        else
+        {
+            CheckSharedIdentifier(facts.identifiers[idIdx++], request.scopeRoot, ctx);
+        }
     }
 }
 
 void CheckSharedIsolation(const AstCheckContext& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
+    if (request.sourceCode.empty() || !request.nodeIndex)
     {
         return;
     }
 
-    const auto& gs = parser::GetGrammarSymbols();
-    if (request.nodeIndex && request.nodeIndex->Nodes(gs.tokShared).empty())
-    {
-        return;
-    }
-
-    CheckSharedEntityEligibility(request, ctx);
-
-    IsolationVisitor visitor(request, ctx);
-    visitor.Visit(request.rootNode);
+    const IsolationSiteFacts facts = BuildIsolationSiteFacts(*request.nodeIndex, request.sourceCode);
+    CheckSharedIsolation(facts, request, ctx);
 }
 
 } // namespace angel_lsp::analysis

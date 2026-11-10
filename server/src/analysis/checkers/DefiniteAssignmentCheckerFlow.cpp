@@ -1,11 +1,10 @@
 #include "analysis/checkers/DefiniteAssignmentCheckerCommon.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "utils/Utils.h"
+#include "analysis/index/DefiniteAssignmentFacts.h"
 
 #include <ankerl/unordered_dense.h>
+#include <cstdint>
+#include <span>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <utility>
 
 namespace angel_lsp::analysis
@@ -23,19 +22,28 @@ MergeBranchStates(const ankerl::unordered_dense::set<std::string_view>& a,
     return result;
 }
 
-void DefiniteAssignmentVisitor::Schedule(const IndexedSyntaxNode* operand, DefiniteAssignmentState& state)
+void DefiniteAssignmentVisitor::Schedule(uint32_t recordIndex, DefiniteAssignmentState& state)
 {
-    if (!operand || state.isTerminated || state.hasReturned)
+    if (recordIndex >= m_facts.records.size() || state.isTerminated || state.hasReturned)
     {
         return;
     }
-    if (operand->statement)
+
+    const auto& rec = m_facts.records[recordIndex];
+    switch (rec.kind)
     {
-        m_work.push_back({operand, state, {}, {}, First(operand)});
-    }
-    else
-    {
-        CheckExpressionReads(operand, state);
+    case DefiniteAssignmentStmtKind::Block:
+    case DefiniteAssignmentStmtKind::If:
+    case DefiniteAssignmentStmtKind::While:
+    case DefiniteAssignmentStmtKind::For:
+    case DefiniteAssignmentStmtKind::DoWhile:
+    case DefiniteAssignmentStmtKind::Switch:
+    case DefiniteAssignmentStmtKind::Case:
+        m_work.push_back({recordIndex, state, {}, {}, 0, 0});
+        break;
+    default:
+        StepLeaf(rec, state);
+        break;
     }
 }
 
@@ -63,17 +71,24 @@ void DefiniteAssignmentVisitor::MergeIfBranches(AssignmentWorkFrame& frame)
 
 bool DefiniteAssignmentVisitor::StepIf(AssignmentWorkFrame& frame)
 {
-    const auto& gs = parser::GetGrammarSymbols();
+    const auto& rec = m_facts.records[frame.recordIndex];
+    const auto children = m_facts.ChildrenOf(rec);
     switch (frame.phase++)
     {
     case 0:
-        CheckExpressionReads(FindFieldOrNamed(frame.node, gs.fieldCondition), frame.state);
+        EvaluateStatementExpressions(rec, frame.state);
         frame.branch = frame.state;
-        Schedule(FindField(frame.node, gs.fieldConsequence), frame.branch);
+        if (!children.empty())
+        {
+            Schedule(children[0], frame.branch);
+        }
         return false;
     case 1:
         frame.alternate = frame.state;
-        Schedule(FindField(frame.node, gs.fieldAlternative), frame.alternate);
+        if (children.size() > 1)
+        {
+            Schedule(children[1], frame.alternate);
+        }
         return false;
     default:
         MergeIfBranches(frame);
@@ -83,81 +98,81 @@ bool DefiniteAssignmentVisitor::StepIf(AssignmentWorkFrame& frame)
 
 bool DefiniteAssignmentVisitor::StepBlock(AssignmentWorkFrame& frame, bool clause)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    if (frame.phase == 0 && clause && !frame.node->defaultClause)
-    {
-        frame.next = Next(NthNamed(frame.next, 0));
-    }
-    frame.phase = 1;
-    const IndexedSyntaxNode* operand = NthNamed(frame.next, 0);
-    if (!operand || frame.state.hasReturned || frame.state.isTerminated ||
-        (clause && operand->symbol == gs.symBreakStatement))
+    const auto& rec = m_facts.records[frame.recordIndex];
+    const auto children = m_facts.ChildrenOf(rec);
+    if (frame.nextChild >= children.size() || frame.state.hasReturned || frame.state.isTerminated)
     {
         return true;
     }
-    frame.next = Next(operand);
-    Schedule(operand, frame.state);
+
+    const uint32_t childIndex = children[frame.nextChild++];
+    if (clause && m_facts.records[childIndex].kind == DefiniteAssignmentStmtKind::Break)
+    {
+        return true;
+    }
+
+    Schedule(childIndex, frame.state);
     return false;
 }
 
-void DefiniteAssignmentVisitor::MergeLoopBody(AssignmentWorkFrame& frame, TSNode condition, bool isFor)
+void DefiniteAssignmentVisitor::MergeLoopBody(AssignmentWorkFrame& frame, bool conditionAlwaysTrue)
 {
     frame.state.assignedVars = MergeBranchStates(frame.state.assignedVars, frame.branch.assignedVars);
-    const std::string_view raw = parser::NodeText(condition, m_request.sourceCode);
-    const std::string_view value = isFor ? utils::TrimView(raw) : raw;
-    if ((value == "true" || (isFor && (value.empty() || value == ";"))) && !frame.branch.hasReturned &&
-        !frame.branch.isTerminated)
+    if (conditionAlwaysTrue && !frame.branch.hasReturned && !frame.branch.isTerminated)
     {
         frame.state = std::move(frame.branch);
     }
 }
 
-bool DefiniteAssignmentVisitor::StepLoop(AssignmentWorkFrame& frame, TSSymbol symbol)
+bool DefiniteAssignmentVisitor::StepLoop(AssignmentWorkFrame& frame, bool isFor)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const bool isFor = symbol == gs.symForStatement;
+    const auto& rec = m_facts.records[frame.recordIndex];
+    const auto children = m_facts.ChildrenOf(rec);
     switch (frame.phase++)
     {
     case 0:
-        if (isFor)
+        if (isFor && children.size() >= 2)
         {
-            Schedule(FindField(frame.node, gs.fieldInit), frame.state);
+            Schedule(children[0], frame.state);
         }
         return false;
     case 1:
-        frame.next = isFor ? FindField(frame.node, gs.fieldCondition) : FindFieldOrNamed(frame.node, gs.fieldCondition);
-        CheckExpressionReads(frame.next, frame.state);
+        EvaluateStatementExpressions(rec, frame.state);
         frame.branch = frame.state;
-        Schedule(FindField(frame.node, gs.fieldBody), frame.branch);
+        if (!children.empty())
+        {
+            Schedule(children.back(), frame.branch);
+        }
         return false;
     default:
-        if (isFor)
-        {
-            CheckExpressionReads(FindField(frame.node, gs.fieldUpdate), frame.branch);
-        }
-        MergeLoopBody(frame, Syntax(frame.next), isFor);
+        MergeLoopBody(frame, rec.conditionAlwaysTrue);
         return true;
     }
 }
 
 bool DefiniteAssignmentVisitor::StepDoWhile(AssignmentWorkFrame& frame)
 {
-    const auto& gs = parser::GetGrammarSymbols();
+    const auto& rec = m_facts.records[frame.recordIndex];
+    const auto children = m_facts.ChildrenOf(rec);
     if (frame.phase++ == 0)
     {
-        Schedule(FindField(frame.node, gs.fieldBody), frame.state);
+        if (!children.empty())
+        {
+            Schedule(children[0], frame.state);
+        }
         return false;
     }
-    CheckExpressionReads(FindFieldOrNamed(frame.node, gs.fieldCondition, 1), frame.state);
+    EvaluateStatementExpressions(rec, frame.state);
     return true;
 }
 
 bool DefiniteAssignmentVisitor::StepSwitch(AssignmentWorkFrame& frame)
 {
-    const auto& gs = parser::GetGrammarSymbols();
+    const auto& rec = m_facts.records[frame.recordIndex];
+    const auto children = m_facts.ChildrenOf(rec);
     if (frame.phase == 0)
     {
-        CheckExpressionReads(FindFieldOrNamed(frame.node, gs.fieldCondition), frame.state);
+        EvaluateStatementExpressions(rec, frame.state);
         frame.alternate.hasReturned = true;
     }
     else if (!frame.branch.hasReturned)
@@ -169,18 +184,15 @@ bool DefiniteAssignmentVisitor::StepSwitch(AssignmentWorkFrame& frame)
         }
     }
 
-    while (frame.next && frame.next->symbol != gs.symCaseClause)
-    {
-        frame.next = Next(frame.next);
-    }
-    if (const IndexedSyntaxNode* clause = frame.next)
+    if (frame.nextChild < children.size())
     {
         frame.phase = 1;
-        frame.next = Next(clause);
+        const uint32_t clauseIndex = children[frame.nextChild++];
         frame.branch = frame.state;
-        Schedule(clause, frame.branch);
+        Schedule(clauseIndex, frame.branch);
         return false;
     }
+
     if (frame.phase != 0)
     {
         if (frame.alternate.hasReturned)
@@ -197,52 +209,84 @@ bool DefiniteAssignmentVisitor::StepSwitch(AssignmentWorkFrame& frame)
 
 bool DefiniteAssignmentVisitor::Step(AssignmentWorkFrame& frame)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol symbol = frame.node->symbol;
-    if (symbol == gs.symStatementBlock || symbol == gs.symCaseClause)
+    const auto& rec = m_facts.records[frame.recordIndex];
+    switch (rec.kind)
     {
-        return StepBlock(frame, symbol == gs.symCaseClause);
-    }
-    if (symbol == gs.symIfStatement)
-    {
+    case DefiniteAssignmentStmtKind::Block:
+        return StepBlock(frame, false);
+    case DefiniteAssignmentStmtKind::Case:
+        return StepBlock(frame, true);
+    case DefiniteAssignmentStmtKind::If:
         return StepIf(frame);
-    }
-    if (symbol == gs.symWhileStatement || symbol == gs.symForStatement)
-    {
-        return StepLoop(frame, symbol);
-    }
-    if (symbol == gs.symDoWhileStatement)
-    {
+    case DefiniteAssignmentStmtKind::While:
+        return StepLoop(frame, false);
+    case DefiniteAssignmentStmtKind::For:
+        return StepLoop(frame, true);
+    case DefiniteAssignmentStmtKind::DoWhile:
         return StepDoWhile(frame);
-    }
-    if (symbol == gs.symSwitchStatement)
-    {
+    case DefiniteAssignmentStmtKind::Switch:
         return StepSwitch(frame);
+    default:
+        StepLeaf(rec, frame.state);
+        return true;
     }
-    StepLeaf(frame, symbol);
-    return true;
 }
 
-void DefiniteAssignmentVisitor::StepLeaf(AssignmentWorkFrame& frame, TSSymbol symbol)
+void DefiniteAssignmentVisitor::StepLeaf(const DefiniteAssignmentStmtRecord& rec, DefiniteAssignmentState& state)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    if (symbol == gs.symExpressionStatement)
+    switch (rec.kind)
     {
-        CheckExpressionReads(NthNamed(frame.next, 0), frame.state);
+    case DefiniteAssignmentStmtKind::Expression:
+        EvaluateStatementExpressions(rec, state);
+        break;
+    case DefiniteAssignmentStmtKind::VariableDeclaration:
+    {
+        const auto declarators = m_facts.DeclaratorsOf(rec);
+        const auto reads = m_facts.ReadsOf(rec);
+        for (const auto& decl : declarators)
+        {
+            if (decl.hasInitializer)
+            {
+                for (const auto& read : reads)
+                {
+                    if (read.bytes.startByte >= decl.bytes.startByte && read.bytes.endByte <= decl.bytes.endByte)
+                    {
+                        if (m_trackedLocals.contains(read.name) && !state.assignedVars.contains(read.name))
+                        {
+                            const uint64_t locationKey = (static_cast<uint64_t>(read.range.startLine) << 32) |
+                                                         static_cast<uint64_t>(read.range.startCharacter);
+                            if (m_reportedReads.insert(locationKey).second)
+                            {
+                                m_ctx.EmitAtRange(read.range, "as-warn-uninitialized-variable-read", read.name,
+                                                  DiagnosticSeverity::Warning);
+                            }
+                        }
+                    }
+                }
+                state.assignedVars.insert(decl.name);
+            }
+            else if (decl.isPrimitive)
+            {
+                m_trackedLocals.insert(decl.name);
+            }
+            else
+            {
+                state.assignedVars.insert(decl.name);
+            }
+        }
+        break;
     }
-    else if (symbol == gs.symVariableDeclaration)
-    {
-        AnalyzeVariableDeclaration(frame.node, frame.state);
-    }
-    else if (symbol == gs.symReturnStatement)
-    {
-        CheckExpressionReads(FindFieldOrNamed(frame.node, gs.fieldValue), frame.state);
-        frame.state.hasReturned = true;
-        frame.state.isTerminated = true;
-    }
-    else if (symbol == gs.symBreakStatement || symbol == gs.symContinueStatement)
-    {
-        frame.state.isTerminated = true;
+    case DefiniteAssignmentStmtKind::Return:
+        EvaluateStatementExpressions(rec, state);
+        state.hasReturned = true;
+        state.isTerminated = true;
+        break;
+    case DefiniteAssignmentStmtKind::Break:
+    case DefiniteAssignmentStmtKind::Continue:
+        state.isTerminated = true;
+        break;
+    default:
+        break;
     }
 }
 

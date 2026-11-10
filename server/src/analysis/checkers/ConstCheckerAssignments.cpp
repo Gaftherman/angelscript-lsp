@@ -1,72 +1,38 @@
 #include "analysis/checkers/ConstCheckerCommon.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
-#include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
 
-/**
- * @brief Checks assignment expressions for mutations of const variables or read-only references.
- * @param[in] node AST node of the assignment expression.
- * @param[in] request Contextual request bundle containing AST root and source text.
- * @param[in] scope Lexical scope active at assignment location.
- * @param[in,out] ctx Diagnostic collection and analysis context.
- */
-void CheckAssignment(TSNode node, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx)
+void CheckAssignment(const ConstAssignmentFact& assignment, const ConstSiteFacts& facts, const Scope* scope,
+                     DiagnosticContext& ctx)
 {
-    TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
-    if (ts_node_is_null(target))
-    {
-        return;
-    }
-
-    bool isHandleAssignment = false;
-    TSNode actualTarget = target;
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(target) == gs.symUnaryExpression)
-    {
-        TSNode opNode = parser::GetChildByField(target, gs.fieldOperator);
-        if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokAt)
-        {
-            isHandleAssignment = true;
-            TSNode operand = parser::GetChildByField(target, gs.fieldOperand);
-            if (!ts_node_is_null(operand))
-            {
-                actualTarget = operand;
-            }
-        }
-    }
-
     const ExpressionTypeContext constCtx(scope, ctx);
-    const auto encInfo = FindEnclosingMethod(node, request.sourceCode);
 
-    std::string memberName;
-    if (IsMemberOfThis(actualTarget, encInfo, constCtx, memberName))
+    std::string_view memberName;
+    if (IsMemberOfThis(assignment.target, facts, constCtx, memberName))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-readonly-reference", memberName);
+        ctx.EmitAtRange(assignment.target.range, "as-err-readonly-reference", memberName);
         return;
     }
 
-    if (isHandleAssignment)
+    if (assignment.target.isHandle)
     {
-        if (ResolveHandleConstness(actualTarget, constCtx) == Constness::Const)
+        if (ResolveHandleConstness(assignment.target.actualTargetText, assignment.target.actualTargetBytes.startByte,
+                                   facts, constCtx) == Constness::Const)
         {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-const-assignment",
-                                std::string(parser::NodeText(target, request.sourceCode)));
+            ctx.EmitAtRange(assignment.target.range, "as-err-const-assignment", assignment.target.text);
         }
         return;
     }
 
-    if (ResolveConstness(target, constCtx) != Constness::Const)
+    if (ResolveConstness(assignment.target, facts, constCtx) != Constness::Const)
     {
         return;
     }
 
-    ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-const-assignment",
-                        std::string(parser::NodeText(target, request.sourceCode)));
+    ctx.EmitAtRange(assignment.target.range, "as-err-const-assignment", assignment.target.text);
 }
 
 } // namespace angel_lsp::analysis

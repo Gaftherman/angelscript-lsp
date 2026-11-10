@@ -2,25 +2,23 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/ConstSiteFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 
-#include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
 
 /**
-
  * @brief Identifies the enclosing method symbol, declaring class, and const-qualifier status during const checks.
  */
 struct EnclosingMethodInfo
 {
     bool inClass = false;
     bool isConstMethod = false;
-    std::string className;
+    std::string_view className;
 };
 
 /**
@@ -48,14 +46,14 @@ struct ConstChecker
 
 /**
  * @brief Determines if an assignment target refers to a member of 'this' in a const method.
- * @param[in] target Target AST node of the assignment.
- * @param[in] encInfo Enclosing method information.
+ * @param[in] target Pre-extracted assignment target fact.
+ * @param[in] facts Document-wide const site facts.
  * @param[in] ctx Expression type context containing symbols and source.
  * @param[out] outMemberName Name of the modified member.
  * @return True if target modifies 'this' or a member of 'this' in a const context.
  */
-bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ExpressionTypeContext& ctx,
-                    std::string& outMemberName);
+bool IsMemberOfThis(const ConstAssignmentTargetFact& target, const ConstSiteFacts& facts,
+                    const ExpressionTypeContext& ctx, std::string_view& outMemberName);
 
 /**
  * @brief Const qualification classification of an expression, member, or return type.

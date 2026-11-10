@@ -203,7 +203,7 @@ std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& rawConstru
     return candidates;
 }
 
-void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& candidates,
+void CheckConstructorOverload(SourceRange argumentListRange, const std::vector<Symbol>& candidates,
                               const std::vector<std::string>& argTypes, const VarInitContext& vctx)
 {
     const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
@@ -211,9 +211,7 @@ void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& can
 
     if (matchingArity.empty())
     {
-        const TSPoint aStart = ts_node_start_point(argListNode);
-        const TSPoint aEnd = ts_node_end_point(argListNode);
-        vctx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-matching-constructor",
+        vctx.ctx.EmitAtRange(argumentListRange, "as-err-no-matching-constructor",
                              FormatSignatureAttempt(vctx.declaredType, argTypes));
         return;
     }
@@ -221,9 +219,7 @@ void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& can
     auto match = ResolveBestOverload(matchingArity, argTypes, vctx.ctx.request.symbolTable);
     if (match.bestCandidate == nullptr)
     {
-        const TSPoint aStart = ts_node_start_point(argListNode);
-        const TSPoint aEnd = ts_node_end_point(argListNode);
-        vctx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-matching-constructor",
+        vctx.ctx.EmitAtRange(argumentListRange, "as-err-no-matching-constructor",
                              FormatSignatureAttempt(vctx.declaredType, argTypes));
     }
 }

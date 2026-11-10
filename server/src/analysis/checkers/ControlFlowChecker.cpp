@@ -2,13 +2,11 @@
 
 #include "analysis/checkers/ControlFlowCheckerCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/ControlFlowFacts.h"
 #include "analysis/index/NodeIndex.h"
-#include "parser/GrammarNames.h"
 
-#include <array>
 #include <span>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <utility>
 #include <vector>
 
@@ -34,26 +32,42 @@ static void ReportFlowFindings(std::span<const IndexedFlowFinding> findings, Dia
     }
 }
 
-ControlFlowVisitor::ControlFlowVisitor(std::string_view sourceCode, DiagnosticContext& ctx, const NodeIndex& index)
-    : m_sourceCode(sourceCode), m_ctx(ctx), m_index(index)
+ControlFlowVisitor::ControlFlowVisitor(std::string_view sourceCode, DiagnosticContext& ctx,
+                                       const ControlFlowFacts& facts)
+    : m_sourceCode(sourceCode), m_ctx(ctx), m_facts(facts)
 {
 }
 
 void ControlFlowVisitor::Run()
 {
-    const auto& grammar = parser::GetGrammarSymbols();
-    ReportFlowFindings(m_index.FlowFindings(), m_ctx);
-    const std::array nodes{grammar.symFuncDeclaration, grammar.symLambdaExpression, grammar.symIfStatement,
-                           grammar.symSwitchStatement, grammar.symWhileStatement,   grammar.symDoWhileStatement,
-                           grammar.symForStatement,    grammar.symForeachStatement, grammar.symReturnStatement,
-                           grammar.symBreakStatement,  grammar.symContinueStatement};
     std::vector<std::pair<uint32_t, ControlFlowState>> frames;
-    m_index.ForEachNodeOrdered(nodes, [&](TSNode node) { Visit(node, frames); });
+    for (const auto& record : m_facts.records)
+    {
+        switch (record.kind)
+        {
+        case ControlFlowRecordKind::Function:
+        case ControlFlowRecordKind::Lambda:
+        case ControlFlowRecordKind::If:
+        case ControlFlowRecordKind::Switch:
+        case ControlFlowRecordKind::While:
+        case ControlFlowRecordKind::DoWhile:
+        case ControlFlowRecordKind::For:
+        case ControlFlowRecordKind::Foreach:
+        case ControlFlowRecordKind::Return:
+        case ControlFlowRecordKind::Break:
+        case ControlFlowRecordKind::Continue:
+            Visit(record, frames);
+            break;
+        default:
+            break;
+        }
+    }
 }
 
-void ControlFlowVisitor::Visit(TSNode node, std::vector<std::pair<uint32_t, ControlFlowState>>& frames)
+void ControlFlowVisitor::Visit(const ControlFlowRecord& record,
+                               std::vector<std::pair<uint32_t, ControlFlowState>>& frames)
 {
-    const uint32_t start = ts_node_start_byte(node);
+    const uint32_t start = record.bytes.startByte;
     while (!frames.empty() && frames.back().first <= start)
     {
         frames.pop_back();
@@ -61,48 +75,75 @@ void ControlFlowVisitor::Visit(TSNode node, std::vector<std::pair<uint32_t, Cont
 
     const ControlFlowState empty;
     const auto& enclosing = frames.empty() ? empty : frames.back().second;
-    const auto& grammar = parser::GetGrammarSymbols();
-    const TSSymbol symbol = ts_node_symbol(node);
-    if (CheckLoopControl(node, symbol, enclosing))
+    if (CheckLoopControl(record, enclosing))
     {
         return;
     }
 
-    if (symbol == grammar.symReturnStatement)
+    if (record.kind == ControlFlowRecordKind::Return)
     {
-        CheckReturnStatement(node, enclosing);
+        CheckReturnStatement(record, enclosing);
     }
-    else if (symbol == grammar.symFuncDeclaration || symbol == grammar.symLambdaExpression)
+    else if (record.kind == ControlFlowRecordKind::Function || record.kind == ControlFlowRecordKind::Lambda)
     {
         ControlFlowState state;
-        CheckFunctionDeclaration(node, state);
-        frames.emplace_back(ts_node_end_byte(node), std::move(state));
+        CheckFunctionDeclaration(record, state);
+        frames.emplace_back(record.bytes.endByte, std::move(state));
     }
     else
     {
         auto state = enclosing;
-        UpdateBranchState(node, symbol, state);
-        if (symbol != grammar.symIfStatement)
+        UpdateBranchState(record, state);
+        if (record.kind != ControlFlowRecordKind::If)
         {
-            frames.emplace_back(ts_node_end_byte(node), std::move(state));
+            frames.emplace_back(record.bytes.endByte, std::move(state));
         }
     }
 }
 
+void CheckControlFlow(const ControlFlowFacts& facts, std::string_view sourceCode, DiagnosticContext& ctx)
+{
+    if (ctx.request.nodeIndex)
+    {
+        ReportFlowFindings(ctx.request.nodeIndex->FlowFindings(), ctx);
+    }
+    ControlFlowVisitor visitor(sourceCode, ctx, facts);
+    visitor.Run();
+}
+
+void CheckControlFlow(const ControlFlowFacts& facts, DiagnosticContext& ctx)
+{
+    CheckControlFlow(facts, ctx.request.sourceCode, ctx);
+}
+
 void CheckControlFlow(const ControlFlowCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.root) || request.sourceCode.empty())
+    if (request.sourceCode.empty())
     {
         return;
     }
 
-    if (ctx.request.nodeIndex)
+    if (request.facts)
     {
-        ControlFlowVisitor(request.sourceCode, ctx, *ctx.request.nodeIndex).Run();
+        CheckControlFlow(*request.facts, request.sourceCode, ctx);
+        return;
     }
-    else
+
+    const NodeIndex* index = request.nodeIndex ? request.nodeIndex : ctx.request.nodeIndex;
+    if (index)
     {
-        ControlFlowVisitor(request.sourceCode, ctx, NodeIndex(request.root)).Run();
+        const ControlFlowFacts facts = BuildControlFlowFacts(*index, request.sourceCode);
+        CheckControlFlow(facts, request.sourceCode, ctx);
+        return;
+    }
+
+    if (request.root.id != nullptr)
+    {
+        const NodeIndex localIndex(request.root);
+        const ControlFlowFacts facts = BuildControlFlowFacts(localIndex, request.sourceCode);
+        ReportFlowFindings(localIndex.FlowFindings(), ctx);
+        ControlFlowVisitor visitor(request.sourceCode, ctx, facts);
+        visitor.Run();
     }
 }
 

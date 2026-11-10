@@ -1,77 +1,104 @@
 #include "analysis/checkers/NamespaceCheckerCommon.h"
-#include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/RuleIndex.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
+#include "utils/ScopedNameUtils.h"
 
-#include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
 
 /**
- * @brief Checks if a scoped identifier refers to a known namespace or type prefix.
- * @param[in] node AST node representing the scoped identifier.
- * @param[in] sourceCode Document source text.
- * @param[in] table Workspace symbol table used to resolve prefix candidates.
- * @param[in,out] ctx Diagnostic collection and analysis context.
+ * @brief Checks if any symbol or container in the symbol table matches the scope prefix.
  */
-void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const SymbolTable& table, DiagnosticContext& ctx)
+static bool HasContainerMatchingPrefix(const SymbolTable& table, std::string_view prefix)
 {
-    const uint32_t childCount = ts_node_child_count(node);
-    if (childCount < 3)
+    if (const auto ruleIndex = table.GetRuleIndex())
     {
-        return;
+        if (ruleIndex->byContainer.contains(prefix))
+        {
+            return true;
+        }
+        for (const auto& [container, _] : ruleIndex->byContainer)
+        {
+            if (utils::HasScopePrefix(container, prefix))
+            {
+                return true;
+            }
+        }
+        return false;
     }
-    TSNode firstChild = ts_node_named_child(node, 0);
-    if (ts_node_is_null(firstChild) || ts_node_symbol(firstChild) != parser::GetGrammarSymbols().symIdentifier)
-    {
-        return;
-    }
-    std::string prefix(parser::NodeText(firstChild, sourceCode));
-    while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.front())))
-    {
-        prefix.erase(prefix.begin());
-    }
-    while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.back())))
-    {
-        prefix.pop_back();
-    }
-    const auto& usings = GetUsingNamespaces(ctx.request);
-    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table, usings, ctx.request.nodeIndex))
-    {
-        TSPoint startPt = ts_node_start_point(firstChild);
-        TSPoint endPt = ts_node_end_point(firstChild);
-        ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-undefined-namespace", prefix,
-                        DiagnosticSeverity::Error);
-    }
+    return table.HasSymbol(prefix) || table.HasSymbolAnywhere(prefix);
 }
 
 /**
- * @brief Checks if an import declaration mistakenly specifies a body block.
- * @param[in] node AST node representing the import declaration or error node.
- * @param[in] sourceCode Document source text.
- * @param[in,out] ctx Diagnostic collection and analysis context.
+ * @brief Resolves whether a scope qualifier prefix refers to a known namespace, class, or imported scope.
  */
-void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
+static bool IsKnownScopePrefix(std::string_view prefix, uint32_t byteOffset, const ScopedIdentifierCheckContext& sctx,
+                               std::span<const std::string> usings)
 {
-    std::string nodeText(parser::NodeText(node, sourceCode));
-    size_t importPos = nodeText.find("import ");
-    if (importPos == std::string::npos)
+    if (prefix.empty() || sctx.table.HasSymbol(prefix) || sctx.table.HasSymbolAnywhere(prefix))
+    {
+        return true;
+    }
+
+    if (HasContainerMatchingPrefix(sctx.table, prefix))
+    {
+        return true;
+    }
+
+    if (sctx.nodeIndex)
+    {
+        const auto containers = sctx.nodeIndex->CollectEnclosingContainers(byteOffset, sctx.sourceCode);
+        for (const auto& c : containers)
+        {
+            const std::string q = utils::JoinScopedName(c.qualifiedName, prefix);
+            if (sctx.table.HasSymbol(q) || sctx.table.HasSymbolAnywhere(q))
+            {
+                return true;
+            }
+        }
+    }
+
+    for (const auto& ns : usings)
+    {
+        const std::string q = utils::JoinScopedName(ns, prefix);
+        if (sctx.table.HasSymbol(q) || sctx.table.HasSymbolAnywhere(q))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void CheckScopedIdentifier(const ScopedIdentifierFact& fact, const ScopedIdentifierCheckContext& sctx,
+                           DiagnosticContext& ctx)
+{
+    if (fact.prefix.empty())
     {
         return;
     }
-    size_t fromPos = nodeText.find("from", importPos);
-    if (fromPos != std::string::npos && nodeText.find('{', fromPos) != std::string::npos)
+
+    const auto usings = sctx.nodeIndex ? sctx.nodeIndex->CollectUsingNamespaces(sctx.sourceCode, fact.bytes.startByte)
+                                       : GetUsingNamespaces(ctx.request);
+    if (!IsKnownScopePrefix(fact.prefix, fact.bytes.startByte, sctx, usings))
     {
-        TSPoint startPt = ts_node_start_point(node);
-        TSPoint endPt = ts_node_end_point(node);
-        ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-import-has-body", "import",
-                        DiagnosticSeverity::Error);
+        ctx.EmitAtRange(fact.prefixRange, "as-err-undefined-namespace", fact.prefix, DiagnosticSeverity::Error);
+    }
+}
+
+void CheckImportBody(const ImportDeclarationFact& fact, DiagnosticContext& ctx)
+{
+    if (fact.hasBodyBlock)
+    {
+        ctx.EmitAtRange(fact.range, "as-err-import-has-body", "import", DiagnosticSeverity::Error);
     }
 }
 

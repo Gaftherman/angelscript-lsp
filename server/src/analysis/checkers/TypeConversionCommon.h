@@ -5,22 +5,56 @@
 #include "analysis/index/AssignmentSiteFacts.h"
 #include "analysis/index/DeclarationSiteFacts.h"
 #include "analysis/index/ExpressionSiteFacts.h"
-#include "analysis/index/SyntaxOperands.h"
 #include "analysis/index/ValueExpressionFacts.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/GrammarNames.h"
 
 #include <ankerl/unordered_dense.h>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
-#include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
+
+/**
+ * @brief Cursor tracking progress through a sequence of indexed type conversion fact sites.
+ */
+struct TypeConversionSiteCursor
+{
+    /**
+     * @brief Accessor retrieving the start byte of the indexed site at the given index.
+     */
+    uint32_t (*getByte)(size_t index, const TypeConversionCheckRequest& request) = nullptr;
+
+    /**
+     * @brief Dispatch callback evaluating the indexed site at the given index.
+     */
+    void (*dispatch)(size_t index, const TypeConversionCheckRequest& request, DiagnosticContext& ctx) = nullptr;
+
+    /**
+     * @brief Total number of indexed sites in this cursor's sequence.
+     */
+    size_t size = 0;
+
+    /**
+     * @brief Current site index within the sequence.
+     */
+    size_t index = 0;
+
+    /**
+     * @brief Returns the start byte offset of the current site, or UINT32_MAX when exhausted.
+     * @param[in] request Type conversion request containing the indexed fact vectors.
+     * @return Start byte offset or UINT32_MAX.
+     */
+    [[nodiscard]] uint32_t currentByte(const TypeConversionCheckRequest& request) const noexcept
+    {
+        return (index < size) ? getByte(index, request) : UINT32_MAX;
+    }
+};
 
 /**
  * @brief Visits every symbol registered under a qualified name without copying the bucket.
@@ -150,15 +184,6 @@ bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, co
                           bool implicitOnly);
 
 /**
- * @brief True when derived is derived from base (valid implicit upcast).
- * @param[in] derived Derived type name.
- * @param[in] base Base type name.
- * @param[in] table Symbol table to query.
- * @return True if derived inherits base; false otherwise.
- */
-bool IsDerivedFrom(const std::string& derived, const std::string& base, const SymbolTable& table);
-
-/**
  * @brief True when one type appears in the other's inheritance chain, either direction.
  * @param[in] a First type name.
  * @param[in] b Second type name.
@@ -202,15 +227,6 @@ bool IsPoisonOrEmptyType(std::string_view from, std::string_view to);
 bool IsConvertible(std::string_view from, std::string_view to, const DiagnosticContext& ctx, size_t depth = 0);
 
 /**
- * @brief Resolves the ExpressionType resulting from an explicit cast AST node.
- * @param[in] node AST expression node to resolve.
- * @param[in] scope Lexical scope at node position.
- * @param[in] ctx Diagnostic context.
- * @return Resolved ExpressionType.
- */
-ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
-
-/**
  * @brief Resolves the ExpressionType of a value expression captured in pass 1.
  * @param[in] value Leaf kind, spelling and unary operators of the expression.
  * @param[in] scope Lexical scope at the expression position.
@@ -238,14 +254,6 @@ PropertyAccessInfo InspectPropertyAccess(const PropertyAccessFact& access, const
 void CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* scope, DiagnosticContext& ctx);
 
 /**
- * @brief Emits an ExpressionIsDataType diagnostic unless suppressed due to syntax errors.
- * @param[in] node AST expression node.
- * @param[in] ctx Diagnostic context.
- * @param[in] dataTypeName Name of the data type used as an expression.
- */
-void EmitExpressionIsDataType(TSNode node, const DiagnosticContext& ctx, std::string_view dataTypeName);
-
-/**
  * @brief Emits an ExpressionIsDataType diagnostic for an indexed expression unless suppressed due to syntax errors.
  * @param[in] expression Indexed expression fact.
  * @param[in] ctx Diagnostic context.
@@ -261,16 +269,6 @@ void EmitExpressionIsDataType(const ConversionExpressionFact& expression, const 
  * @param[in,out] ctx Diagnostic context.
  */
 void CheckSignedUnsignedComparison(const BinaryExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx);
-
-/**
- * @brief Emits a warning when a float value implicitly converts to an integer.
- * @param[in] valueNode Expression node being converted.
- * @param[in] types Source and destination types.
- * @param[in] scope Enclosing lexical scope.
- * @param[in,out] ctx Diagnostic context.
- */
-void CheckFloatTruncation(TSNode valueNode, const ConversionTypePair& types, const Scope* scope,
-                          DiagnosticContext& ctx);
 
 /**
  * @brief Emits a warning when an indexed float operand implicitly converts to an integer.
@@ -336,14 +334,6 @@ void CheckConstructorDelegation(const ConstructorDelegationSiteFact& site, const
  */
 void CheckFuncdefAssignment(SourceRange target, const FuncdefSignature& funcdefSig, const FuncdefValueFact& value,
                             DiagnosticContext& ctx);
-
-/**
- * @brief Resolves the lexical scope enclosing a syntax tree node.
- * @param[in] node AST node to resolve scope for.
- * @param[in] request Analysis request carrying scope root.
- * @return Enclosing scope pointer, or nullptr if none found.
- */
-const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& request);
 
 /**
  * @brief Resolves the lexical scope enclosing an indexed source position.
@@ -423,28 +413,12 @@ void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionC
                            DiagnosticContext& ctx);
 
 /**
- * @brief Validates binary expression operators and operand type compatibility.
- * @param[in] node Binary expression syntax node.
- * @param[in] request Analysis request details.
- * @param[in,out] ctx Diagnostic context.
- */
-void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
-
-/**
  * @brief Validates binary expression operators and operand type compatibility for an indexed site.
  * @param[in] site Binary expression site fact.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
 void ProcessBinarySite(const BinarySiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
-
-/**
- * @brief Validates unary and postfix increment/decrement operations.
- * @param[in] node Unary or postfix expression syntax node.
- * @param[in] request Analysis request details.
- * @param[in,out] ctx Diagnostic context.
- */
-void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
  * @brief Validates unary and postfix increment/decrement operations for an indexed site.
@@ -456,14 +430,6 @@ void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConve
                                DiagnosticContext& ctx);
 
 /**
- * @brief Validates member expressions against write-only properties.
- * @param[in] node Member expression syntax node.
- * @param[in] request Analysis request details.
- * @param[in,out] ctx Diagnostic context.
- */
-void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
-
-/**
  * @brief Validates member expressions against write-only properties for an indexed site.
  * @param[in] site Member expression site fact.
  * @param[in] request Analysis request details.
@@ -473,14 +439,6 @@ void ProcessMemberExpressionSite(const MemberExpressionSiteFact& site, const Typ
                                  DiagnosticContext& ctx);
 
 /**
- * @brief Validates index expressions against write-only indexed properties.
- * @param[in] node Index expression syntax node.
- * @param[in] request Analysis request details.
- * @param[in,out] ctx Diagnostic context.
- */
-void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
-
-/**
  * @brief Validates index expressions against write-only indexed properties for an indexed site.
  * @param[in] site Index expression site fact.
  * @param[in] request Analysis request details.
@@ -488,14 +446,6 @@ void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& r
  */
 void ProcessIndexExpressionSite(const IndexExpressionSiteFact& site, const TypeConversionCheckRequest& request,
                                 DiagnosticContext& ctx);
-
-/**
- * @brief Validates explicit cast expression safety.
- * @param[in] node Cast expression syntax node.
- * @param[in] request Analysis request details.
- * @param[in,out] ctx Diagnostic context.
- */
-void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
  * @brief Validates explicit cast expression safety for an indexed site.

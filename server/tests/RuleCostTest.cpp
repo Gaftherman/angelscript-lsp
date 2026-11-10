@@ -258,7 +258,8 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
             std::vector<Diagnostic> diagnostics;
             SemanticAnalysisRequest request = makeRequest(i);
             DiagnosticContext ctx{request, diagnostics, nullptr};
-            CheckControlFlow({ts_tree_root_node(trees[i]), samples[i].sourceCode}, ctx);
+            const ControlFlowFacts facts = BuildControlFlowFacts(indexes[i], samples[i].sourceCode);
+            CheckControlFlow(facts, samples[i].sourceCode, ctx);
         }
         controlFlowMs = Milliseconds(start);
     }
@@ -285,7 +286,7 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
             std::vector<Diagnostic> diagnostics;
             SemanticAnalysisRequest request = makeRequest(i);
             DiagnosticContext ctx{request, diagnostics, nullptr};
-            CheckMemberAccess({ts_tree_root_node(trees[i]), samples[i].sourceCode, scopes[i].get()}, ctx);
+            CheckMemberAccess({ts_tree_root_node(trees[i]), samples[i].sourceCode, scopes[i].get(), &indexes[i]}, ctx);
         }
         accessMs = Milliseconds(start);
     }
@@ -298,7 +299,8 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
             std::vector<Diagnostic> diagnostics;
             SemanticAnalysisRequest request = makeRequest(i);
             DiagnosticContext ctx{request, diagnostics, nullptr};
-            CheckConstCorrectness({ts_tree_root_node(trees[i]), samples[i].sourceCode, scopes[i].get()}, ctx);
+            CheckConstCorrectness({ts_tree_root_node(trees[i]), samples[i].sourceCode, scopes[i].get(), &indexes[i]},
+                                  ctx);
         }
         constMs = Milliseconds(start);
     }
@@ -311,7 +313,7 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
             std::vector<Diagnostic> diagnostics;
             SemanticAnalysisRequest request = makeRequest(i);
             DiagnosticContext ctx{request, diagnostics, nullptr};
-            CheckCallArguments({ts_tree_root_node(trees[i]), samples[i].sourceCode, scopes[i].get()}, ctx);
+            CheckCallArguments({ts_tree_root_node(trees[i]), samples[i].sourceCode, scopes[i].get(), &indexes[i]}, ctx);
         }
         callArgumentsMs = Milliseconds(start);
     }

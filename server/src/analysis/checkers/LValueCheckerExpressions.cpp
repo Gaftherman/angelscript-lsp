@@ -1,16 +1,15 @@
 #include "analysis/checkers/LValueChecker.h"
 #include "analysis/checkers/LValueCheckerCommon.h"
+#include "analysis/index/LValueSiteFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -57,33 +56,26 @@ static bool IsIdentifierAssignable(std::string_view name, const Scope* scope, co
 
 /**
  * @brief Checks if a member expression denotes an assignable property, variable, or setter method.
- * @param[in] node Member expression AST node.
+ * @param[in] candidate Member candidate fact.
  * @param[in] scope Current lexical scope.
  * @param[in] ctx Diagnostic context containing symbol table and expression cache.
  * @return True if member expression can be assigned to; false otherwise.
  */
-static bool IsAssignableMember(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsAssignableMember(const LValueCandidateFact& candidate, const Scope* scope, const DiagnosticContext& ctx)
 {
-    TSNode objNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
-    TSNode memNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
-    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    if (candidate.memberName.empty() || candidate.objectBytes.endByte == 0)
     {
         return true;
     }
-    std::string memName(parser::NodeText(memNode, ctx.request.sourceCode));
-    if (memName.empty())
-    {
-        return true;
-    }
-    std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, ctx));
-    std::string cleanObj = CleanBaseType(objType);
+    const std::string objType = ResolveExpressionType(candidate.objectBytes, ExpressionTypeContext(scope, ctx));
+    const auto cleanObj = CleanBaseType(objType);
     if (cleanObj.empty())
     {
         return true;
     }
     for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable, ctx.request.exprCache))
     {
-        if (auto found = ctx.request.symbolTable.FindMemberSymbolPtr(typeName, memName))
+        if (auto found = ctx.request.symbolTable.FindMemberSymbolPtr(typeName, candidate.memberName))
         {
             bool hasAssignable = false;
             for (const auto& sym : *found)
@@ -100,7 +92,9 @@ static bool IsAssignableMember(TSNode node, const Scope* scope, const Diagnostic
                 for (const auto& ancestor :
                      GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable, ctx.request.exprCache))
                 {
-                    auto setters = ctx.request.symbolTable.FindMemberSymbolPtr(ancestor, "set_" + memName);
+                    std::string setterName = "set_";
+                    setterName.append(candidate.memberName);
+                    auto setters = ctx.request.symbolTable.FindMemberSymbolPtr(ancestor, setterName);
                     if (setters && !setters->empty())
                     {
                         hasSetter = true;
@@ -119,30 +113,28 @@ static bool IsAssignableMember(TSNode node, const Scope* scope, const Diagnostic
 
 /**
  * @brief Checks if both branches of a ternary expression are assignable l-values of matching type.
- * @param[in] node Ternary expression AST node.
+ * @param[in] candidate Ternary candidate fact.
+ * @param[in] facts Document-wide l-value facts for branch candidate lookup.
  * @param[in] scope Current lexical scope.
  * @param[in] ctx Diagnostic context containing symbol table and expression cache.
  * @return True if ternary expression can be assigned to; false otherwise.
  */
-static bool IsTernaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsTernaryAssignable(const LValueCandidateFact& candidate, const LValueSiteFacts& facts, const Scope* scope,
+                                const DiagnosticContext& ctx)
 {
-    TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
-    TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
-    if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
-    {
-        if (ts_node_named_child_count(node) >= 3)
-        {
-            consequence = ts_node_named_child(node, 1);
-            alternative = ts_node_named_child(node, 2);
-        }
-    }
-    if (!LValueNodeValidator::IsAssignableLValueNode(consequence, scope, ctx) ||
-        !LValueNodeValidator::IsAssignableLValueNode(alternative, scope, ctx))
+    const auto* consCand = facts.FindCandidate(candidate.consequenceBytes);
+    const auto* altCand = facts.FindCandidate(candidate.alternativeBytes);
+    if (!consCand || !altCand)
     {
         return false;
     }
-    const std::string type1 = ResolveExpressionType(consequence, ExpressionTypeContext(scope, ctx));
-    const std::string type2 = ResolveExpressionType(alternative, ExpressionTypeContext(scope, ctx));
+    if (!LValueNodeValidator::IsAssignableLValueNode(*consCand, facts, scope, ctx) ||
+        !LValueNodeValidator::IsAssignableLValueNode(*altCand, facts, scope, ctx))
+    {
+        return false;
+    }
+    const std::string type1 = ResolveExpressionType(candidate.consequenceBytes, ExpressionTypeContext(scope, ctx));
+    const std::string type2 = ResolveExpressionType(candidate.alternativeBytes, ExpressionTypeContext(scope, ctx));
     if (!type1.empty() && !type2.empty() && CleanBaseType(type1) != CleanBaseType(type2))
     {
         return false;
@@ -152,60 +144,45 @@ static bool IsTernaryAssignable(TSNode node, const Scope* scope, const Diagnosti
 
 /**
  * @brief Checks if a unary expression is an assignable handle dereference expression.
- * @param[in] node Unary expression AST node.
+ * @param[in] candidate Unary candidate fact.
+ * @param[in] facts Document-wide l-value facts.
  * @param[in] scope Current lexical scope.
  * @param[in] ctx Diagnostic context containing symbol table and expression cache.
  * @return True if unary operand is an assignable l-value; false otherwise.
  */
-static bool IsUnaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsUnaryAssignable(const LValueCandidateFact& candidate, const LValueSiteFacts& facts, const Scope* scope,
+                              const DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
-    if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokAt)
+    if (candidate.kind != LValueCandidateKind::UnaryDereference)
     {
-        TSNode operand = parser::GetChildByField(node, gs.fieldOperand);
-        return LValueNodeValidator::IsAssignableLValueNode(operand, scope, ctx);
+        return false;
     }
-    return false;
+    const auto* operand = facts.FindCandidate(candidate.operandBytes);
+    if (!operand)
+    {
+        return false;
+    }
+    return LValueNodeValidator::IsAssignableLValueNode(*operand, facts, scope, ctx);
 }
 
-bool LValueNodeValidator::IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx)
+bool LValueNodeValidator::IsAssignableLValueNode(const LValueCandidateFact& candidate, const LValueSiteFacts& facts,
+                                                 const Scope* scope, const DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(rawNode))
+    switch (candidate.kind)
     {
-        return false;
-    }
-
-    TSNode node = parser::UnwrapParentheses(rawNode);
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symTernaryExpression)
-    {
-        return IsTernaryAssignable(node, scope, ctx);
-    }
-    if (sym == gs.symUnaryExpression)
-    {
-        return IsUnaryAssignable(node, scope, ctx);
-    }
-    if (sym == gs.symMemberExpression)
-    {
-        return IsAssignableMember(node, scope, ctx);
-    }
-    if (sym == gs.symIndexExpression)
-    {
+    case LValueCandidateKind::Ternary:
+        return IsTernaryAssignable(candidate, facts, scope, ctx);
+    case LValueCandidateKind::UnaryDereference:
+        return IsUnaryAssignable(candidate, facts, scope, ctx);
+    case LValueCandidateKind::Member:
+        return IsAssignableMember(candidate, scope, ctx);
+    case LValueCandidateKind::Index:
         return true;
+    case LValueCandidateKind::Identifier:
+        return IsIdentifierAssignable(candidate.name, scope, ctx.request.symbolTable, candidate.refByte);
+    default:
+        return false;
     }
-    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier || sym == gs.tokFunction)
-    {
-        return IsIdentifierAssignable(parser::NodeText(node, ctx.request.sourceCode), scope, ctx.request.symbolTable,
-                                      ts_node_start_byte(node));
-    }
-    return false;
 }
 
 } // namespace angel_lsp::analysis

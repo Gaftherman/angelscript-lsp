@@ -6,7 +6,6 @@
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/OperandTypePair.h"
-#include "parser/Primitives.h"
 
 #include <string_view>
 
@@ -36,7 +35,7 @@ static bool AreCustomTypesCompatible(std::string_view op, std::string_view left,
 static bool CheckBoolCompatibility(bool isRelational, std::string_view other, const SymbolTable& table,
                                    std::string_view stringTypeName)
 {
-    if (parser::primitives::IsNumeric(other) || other == stringTypeName || ResolvesToEnum(other, table))
+    if (IsNumericPrimitive(other) || other == stringTypeName || ResolvesToEnum(other, table))
     {
         return false;
     }
@@ -50,7 +49,7 @@ static bool CheckBoolCompatibility(bool isRelational, std::string_view other, co
 static bool CheckStringCompatibility(bool isRelational, std::string_view other, const SymbolTable& table,
                                      std::string_view stringTypeName)
 {
-    if (parser::primitives::IsNumeric(other) || other == "bool" || ResolvesToEnum(other, table))
+    if (IsNumericPrimitive(other) || other == "bool" || ResolvesToEnum(other, table))
     {
         return false;
     }
@@ -77,8 +76,7 @@ static bool IsEnumComparisonCompatible(std::string_view left, std::string_view r
     {
         return true;
     }
-    return (leftEnum && parser::primitives::IsNumeric(unwrappedRight)) ||
-           (rightEnum && parser::primitives::IsNumeric(unwrappedLeft));
+    return (leftEnum && IsNumericPrimitive(unwrappedRight)) || (rightEnum && IsNumericPrimitive(unwrappedLeft));
 }
 
 static bool CheckIdenticalTypes(std::string_view op, std::string_view type, const SymbolTable& table,
@@ -134,7 +132,7 @@ static bool AreComparisonTypesCompatible(std::string_view op, const OperandTypeP
     }
     const auto unwrappedLeft = UnwrapTypedef(types.left, table);
     const auto unwrappedRight = UnwrapTypedef(types.right, table);
-    if (parser::primitives::IsNumeric(unwrappedLeft) && parser::primitives::IsNumeric(unwrappedRight))
+    if (IsNumericPrimitive(unwrappedLeft) && IsNumericPrimitive(unwrappedRight))
     {
         return true;
     }

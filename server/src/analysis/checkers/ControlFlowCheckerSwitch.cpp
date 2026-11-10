@@ -1,13 +1,10 @@
 #include "analysis/checkers/ControlFlowCheckerCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ControlFlowFacts.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/ScopeTree.h"
-#include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "utils/ScopedNameUtils.h"
-#include "utils/Utils.h"
 
 #include <ankerl/unordered_dense.h>
 #include <charconv>
@@ -15,36 +12,11 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <utility>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
-
-/**
- * @brief True for a case value shape AngelScript cannot use as a label.
- */
-static bool IsUnusableCaseValue(TSNode expression, std::string_view sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(expression);
-
-    if (sym == gs.symStringLiteral)
-    {
-        return true;
-    }
-
-    if (sym == gs.symNumberLiteral)
-    {
-        // A case label has to be an integral constant, so a fractional literal is out.
-        // Identifiers are left alone: an enum member and a `const int` both arrive as one
-        // and both are legal.
-        const std::string_view text = parser::NodeText(expression, sourceCode);
-        return text.find('.') != std::string_view::npos;
-    }
-
-    return false;
-}
 
 static std::optional<long long> ParseDecimalInteger(std::string_view text)
 {
@@ -78,10 +50,6 @@ static std::optional<long long> ExtractMemberValue(const EnumSignature& enumSig,
         if (member.name == label)
         {
             matched = true;
-            // No value written means the compiler counts it up from the previous one.
-            // Following that count is possible and is not done here: the value then
-            // depends on every member before it, and a wrong number would mean claiming
-            // a duplicate that is not one.
             if (!member.value.empty())
             {
                 return ParseDecimalInteger(member.value);
@@ -99,12 +67,6 @@ static std::pair<std::string_view, std::string_view> SplitEnumeratorQualifier(st
     return {enumName, leaf};
 }
 
-/**
- * @brief The number a case label stands for, when that can be known for certain.
- *        `enum E { A = 1, B = 1 }` gives two names to one number, and a switch dispatches on the
- * @brief Resolve an enumerator's integer value from the cached RuleIndex.
- *        Switch-case duplicate detection needs this so that two cases written with different
- */
 static std::optional<long long> EnumeratorValue(std::string_view label, const rules::RuleIndex& ruleIndex)
 {
     auto [enumName, memberLabel] = SplitEnumeratorQualifier(label);
@@ -129,7 +91,6 @@ static std::optional<long long> EnumeratorValue(std::string_view label, const ru
             continue;
         }
 
-        // Written with a qualifier: only the enum it names may answer.
         if (!enumName.empty() && sym.name != enumName)
         {
             continue;
@@ -147,8 +108,6 @@ static std::optional<long long> EnumeratorValue(std::string_view label, const ru
         }
     }
 
-    // Written without a qualifier and declared by more than one enum: which one this label
-    // means is the compiler's business and not knowable from here.
     if (declaringEnums != 1)
     {
         return std::nullopt;
@@ -157,22 +116,23 @@ static std::optional<long long> EnumeratorValue(std::string_view label, const ru
     return found;
 }
 
-static bool CheckLocalCaseConstantness(TSNode value, std::string_view idText, DiagnosticContext& ctx)
+static bool CheckLocalCaseConstantness(const ControlFlowCaseLabelFact& label, std::string_view idText,
+                                       DiagnosticContext& ctx)
 {
     if (!ctx.request.scopeRoot)
     {
         return false;
     }
 
-    const TSPoint at = ts_node_start_point(value);
-    const Scope* scope = FindInnermostScope(ctx.request.scopeRoot.get(), at.row, at.column);
+    const Scope* scope =
+        FindInnermostScope(ctx.request.scopeRoot.get(), label.range.startLine, label.range.startCharacter);
     if (!scope)
     {
         return false;
     }
 
     const Scope* owner = nullptr;
-    const LocalDefinition* def = ResolveInScopeAt(scope, idText, ts_node_start_byte(value), &owner);
+    const LocalDefinition* def = ResolveInScopeAt(scope, idText, label.bytes.startByte, &owner);
 
     bool insideFunction = false;
     for (const Scope* current = owner; current != nullptr; current = current->parent)
@@ -186,29 +146,34 @@ static bool CheckLocalCaseConstantness(TSNode value, std::string_view idText, Di
 
     if (def && insideFunction && def->kind == LocalDefinitionKind::Variable)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-case-not-constant");
+        ctx.EmitAtRange(label.range, "as-err-case-not-constant");
         return true;
     }
 
     return false;
 }
 
-static void CheckCaseConstantness(TSNode value, std::string_view sourceCode, DiagnosticContext& ctx)
+static void CheckCaseConstantness(const ControlFlowCaseLabelFact& label, std::string_view sourceCode,
+                                  DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(value);
-    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
+    if (label.isIdentifier)
     {
-        const std::string_view idText = utils::TrimView(parser::NodeText(value, sourceCode));
+        const std::string_view idText = label.text;
 
         bool reported = false;
-        auto syms =
-            FindSymbolsInScope(std::string(idText), value, sourceCode, ctx.request.symbolTable, ctx.request.nodeIndex);
+        std::vector<ContainerInfo> containers;
+        if (ctx.request.nodeIndex)
+        {
+            containers = ctx.request.nodeIndex->CollectLookupContainers(label.bytes.startByte, label.bytes.endByte, 0,
+                                                                        sourceCode);
+        }
+        const auto& usings = GetUsingNamespaces(ctx.request);
+        const auto syms = FindSymbolsInScope(ctx.request.symbolTable, containers, std::string(idText), usings);
         for (const auto& s : syms)
         {
             if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
             {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-case-not-constant");
+                ctx.EmitAtRange(label.range, "as-err-case-not-constant");
                 reported = true;
                 break;
             }
@@ -216,12 +181,12 @@ static void CheckCaseConstantness(TSNode value, std::string_view sourceCode, Dia
 
         if (!reported)
         {
-            CheckLocalCaseConstantness(value, idText, ctx);
+            CheckLocalCaseConstantness(label, idText, ctx);
         }
     }
-    else if (sym == gs.symCallExpression)
+    else if (label.isCall)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-case-not-constant");
+        ctx.EmitAtRange(label.range, "as-err-case-not-constant");
     }
 }
 
@@ -238,23 +203,61 @@ static std::string ComputeCaseKey(std::string_view text, const rules::RuleIndex&
     return std::string(text);
 }
 
-void CheckSwitchLabels(std::span<const TSNode> labels, std::string_view sourceCode, DiagnosticContext& ctx)
+void CheckSwitchLabels(std::span<const ControlFlowCaseLabelFact> labels, std::string_view sourceCode,
+                       DiagnosticContext& ctx)
 {
     ankerl::unordered_dense::set<std::string> seenValues;
-    for (const TSNode value : labels)
+    for (const auto& label : labels)
     {
-        if (IsUnusableCaseValue(value, sourceCode))
+        if (label.isUnusable)
         {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-invalid-case-type");
+            ctx.EmitAtRange(label.range, "as-err-invalid-case-type");
         }
 
-        CheckCaseConstantness(value, sourceCode, ctx);
-        const auto text = utils::TrimView(parser::NodeText(value, sourceCode));
+        CheckCaseConstantness(label, sourceCode, ctx);
+        const auto text = label.text;
         if (!text.empty() && !seenValues.insert(ComputeCaseKey(text, ctx.request.GetRuleIndex())).second)
         {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-duplicate-case-value", text);
+            ctx.EmitAtRange(label.range, "as-err-duplicate-case-value", text);
         }
     }
+}
+
+void CheckSwitchLabels(const ControlFlowRecord& record, const ControlFlowFacts& facts, std::string_view sourceCode,
+                       DiagnosticContext& ctx)
+{
+    std::vector<IndexedByteRange> innerSwitches;
+    for (const auto& r : facts.records)
+    {
+        if (r.kind == ControlFlowRecordKind::Switch && record.bytes.startByte < r.bytes.startByte &&
+            r.bytes.endByte <= record.bytes.endByte)
+        {
+            innerSwitches.push_back(r.bytes);
+        }
+    }
+
+    std::vector<ControlFlowCaseLabelFact> switchLabels;
+    for (const auto& label : facts.labels)
+    {
+        if (label.bytes.startByte >= record.bytes.startByte && label.bytes.endByte <= record.bytes.endByte)
+        {
+            bool inInner = false;
+            for (const auto& inner : innerSwitches)
+            {
+                if (label.bytes.startByte >= inner.startByte && label.bytes.endByte <= inner.endByte)
+                {
+                    inInner = true;
+                    break;
+                }
+            }
+            if (!inInner)
+            {
+                switchLabels.push_back(label);
+            }
+        }
+    }
+
+    CheckSwitchLabels(switchLabels, sourceCode, ctx);
 }
 
 } // namespace angel_lsp::analysis

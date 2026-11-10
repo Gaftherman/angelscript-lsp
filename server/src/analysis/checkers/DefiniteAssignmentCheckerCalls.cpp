@@ -1,46 +1,42 @@
 #include "analysis/checkers/DefiniteAssignmentCheckerCommon.h"
+#include "analysis/index/DefiniteAssignmentFacts.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/OverloadResolver.h"
-#include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/types/TypeSanitization.h"
 
 #include <algorithm>
 #include <cstddef>
+#include <span>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <variant>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
 
-void DefiniteAssignmentVisitor::CollectCallCandidates(const IndexedSyntaxNode* callee, const IndexedSyntaxNode* call,
+void DefiniteAssignmentVisitor::CollectCallCandidates(const DefiniteAssignmentCallFact& call,
                                                       std::vector<Symbol>& candidates) const
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    if (!callee)
+    if (call.isMemberCall)
     {
-        return;
-    }
-    if (callee->symbol == gs.symMemberExpression)
-    {
-        const TSNode objNode = Syntax(FindField(callee, gs.fieldObject));
-        const TSNode memNode = Syntax(FindField(callee, gs.fieldMember));
-        if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
+        if (!call.objectBytes.Empty())
         {
-            const TSPoint objStart = ts_node_start_point(objNode);
-            const Scope* callScope =
-                m_request.scopeRoot ? FindEnclosingScope(m_request.scopeRoot, objStart.row, objStart.column) : nullptr;
-            std::string objType = ResolveExpressionType(
-                objNode, ExpressionTypeContext(callScope ? callScope : m_request.scopeRoot, m_ctx));
-            std::string cleanObj = CleanBaseType(objType);
-            std::string_view memName = parser::NodeText(memNode, m_request.sourceCode);
-            auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
+            const Scope* callScope = m_request.scopeRoot
+                                         ? FindEnclosingScope(m_request.scopeRoot, call.objectRange.startLine,
+                                                              call.objectRange.startCharacter)
+                                         : nullptr;
+            const std::string objType = ResolveExpressionType(
+                call.objectBytes, ExpressionTypeContext(callScope ? callScope : m_request.scopeRoot, m_ctx));
+            const std::string_view cleanObj = CleanBaseTypeView(objType);
+            const auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
             for (const auto& typeName : hierarchy)
             {
-                auto found = m_ctx.request.symbolTable.FindMemberSymbolPtr(typeName, memName);
-                if (found)
+                if (const auto found = m_ctx.request.symbolTable.FindMemberSymbolPtr(typeName, call.memberName))
                 {
                     for (const auto& sym : *found)
                     {
@@ -55,9 +51,15 @@ void DefiniteAssignmentVisitor::CollectCallCandidates(const IndexedSyntaxNode* c
     }
     else
     {
-        std::string funcName(parser::NodeText(Syntax(callee), m_request.sourceCode));
-        auto inScope =
-            FindSymbolsInScope(funcName, Syntax(call), m_request.sourceCode, m_ctx.request.symbolTable, &m_index);
+        std::vector<ContainerInfo> containers;
+        if (m_request.nodeIndex)
+        {
+            containers = m_request.nodeIndex->CollectLookupContainers(call.bytes.startByte, call.bytes.endByte, 0,
+                                                                      m_request.sourceCode);
+        }
+        const auto& usings = GetUsingNamespaces(m_ctx.request);
+        const auto inScope =
+            FindSymbolsInScope(m_ctx.request.symbolTable, containers, std::string(call.calleeText), usings);
         for (const auto& sym : inScope)
         {
             if (sym.type == SymbolType::Function)
@@ -68,30 +70,14 @@ void DefiniteAssignmentVisitor::CollectCallCandidates(const IndexedSyntaxNode* c
     }
 }
 
-std::vector<const IndexedSyntaxNode*>
-DefiniteAssignmentVisitor::CollectReadArguments(const IndexedSyntaxNode* call) const
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const IndexedSyntaxNode* list = FindField(call, gs.fieldArguments);
-    std::vector<const IndexedSyntaxNode*> arguments;
-    for (auto* child = NthNamed(First(list), 0); child; child = NthNamed(Next(child), 0))
-    {
-        if (child->symbol != gs.symComment)
-        {
-            arguments.push_back(child);
-        }
-    }
-    return arguments;
-}
-
-bool DefiniteAssignmentVisitor::HasAnyUnassignedTrackedLocal(const std::vector<const IndexedSyntaxNode*>& arguments,
+bool DefiniteAssignmentVisitor::HasAnyUnassignedTrackedLocal(std::span<const DefiniteAssignmentArgumentFact> arguments,
                                                              const DefiniteAssignmentState& state) const
 {
     return std::any_of(arguments.begin(), arguments.end(),
-                       [&](const IndexedSyntaxNode* argument)
+                       [&](const DefiniteAssignmentArgumentFact& arg)
                        {
-                           const std::string_view name = SimpleIdentifierName(argument);
-                           return !name.empty() && m_trackedLocals.contains(name) && !state.assignedVars.contains(name);
+                           return arg.isSimpleIdentifier && m_trackedLocals.contains(arg.name) &&
+                                  !state.assignedVars.contains(arg.name);
                        });
 }
 
@@ -122,18 +108,22 @@ bool DefiniteAssignmentVisitor::IsOutParameter(size_t i, const CallCandidateInfo
     return false;
 }
 
-void DefiniteAssignmentVisitor::QueueResolvedArgumentReads(const IndexedSyntaxNode* call,
-                                                           const std::vector<const IndexedSyntaxNode*>& arguments)
+void DefiniteAssignmentVisitor::ProcessCall(const DefiniteAssignmentCallFact& call, DefiniteAssignmentState& state)
 {
-    const auto& gs = parser::GetGrammarSymbols();
+    const auto arguments = m_facts.ArgumentsOf(call);
+    if (!HasAnyUnassignedTrackedLocal(arguments, state))
+    {
+        return;
+    }
+
     std::vector<Symbol> candidates;
-    CollectCallCandidates(FindField(call, gs.fieldFunction), call, candidates);
+    CollectCallCandidates(call, candidates);
 
     std::vector<std::string> argTypes;
     argTypes.reserve(arguments.size());
-    for (const IndexedSyntaxNode* arg : arguments)
+    for (const auto& arg : arguments)
     {
-        argTypes.push_back(ResolveExpressionType(Syntax(arg), ExpressionTypeContext(m_request.scopeRoot, m_ctx)));
+        argTypes.push_back(ResolveExpressionType(arg.bytes, ExpressionTypeContext(m_request.scopeRoot, m_ctx)));
     }
 
     const auto best = ResolveBestOverload(candidates, argTypes, m_ctx.request.symbolTable);
@@ -145,26 +135,29 @@ void DefiniteAssignmentVisitor::QueueResolvedArgumentReads(const IndexedSyntaxNo
                    : nullptr);
 
     const CallCandidateInfo info{candidates, sig};
-    for (size_t i = arguments.size(); i > 0; --i)
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-        const auto kind =
-            !sig || IsOutParameter(i - 1, info) ? AssignmentReadKind::WriteOrRead : AssignmentReadKind::Read;
-        QueueRead(arguments[i - 1], kind);
-    }
-}
-
-void DefiniteAssignmentVisitor::QueueCallArgumentReads(const IndexedSyntaxNode* call,
-                                                       const DefiniteAssignmentState& state)
-{
-    const auto arguments = CollectReadArguments(call);
-    if (HasAnyUnassignedTrackedLocal(arguments, state))
-    {
-        QueueResolvedArgumentReads(call, arguments);
-        return;
-    }
-    for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
-    {
-        QueueRead(*it);
+        const auto& arg = arguments[i];
+        if (!sig || IsOutParameter(i, info))
+        {
+            if (arg.isSimpleIdentifier && m_trackedLocals.contains(arg.name))
+            {
+                state.assignedVars.insert(arg.name);
+            }
+        }
+        else
+        {
+            if (arg.isSimpleIdentifier && m_trackedLocals.contains(arg.name) && !state.assignedVars.contains(arg.name))
+            {
+                const uint64_t locationKey = (static_cast<uint64_t>(arg.range.startLine) << 32) |
+                                             static_cast<uint64_t>(arg.range.startCharacter);
+                if (m_reportedReads.insert(locationKey).second)
+                {
+                    m_ctx.EmitAtRange(arg.range, "as-warn-uninitialized-variable-read", arg.name,
+                                      DiagnosticSeverity::Warning);
+                }
+            }
+        }
     }
 }
 

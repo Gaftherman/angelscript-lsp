@@ -1,12 +1,10 @@
 #include "analysis/checkers/CallCheckerCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 
-#include <cctype>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -17,31 +15,16 @@
 namespace angel_lsp::analysis
 {
 
-void TrimString(std::string& s)
+bool IsObjectOperandConst(const BinaryOperandFact& objectOperand, const Scope* scope, const SymbolTable& symbolTable)
 {
-    while (!s.empty() && isspace(static_cast<unsigned char>(s.front())))
-    {
-        s.erase(s.begin());
-    }
-    while (!s.empty() && isspace(static_cast<unsigned char>(s.back())))
-    {
-        s.pop_back();
-    }
-}
-
-bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(objectNode);
-    if (sym != gs.symIdentifier && sym != gs.symScopedIdentifier)
+    if (objectOperand.text.empty())
     {
         return false;
     }
 
-    const std::string name(parser::NodeText(objectNode, valCtx.request.sourceCode));
-    if (valCtx.scope)
+    if (scope)
     {
-        if (const auto* def = ResolveInScopeAt(valCtx.scope, name, ts_node_start_byte(objectNode)))
+        if (const auto* def = ResolveInScopeAt(scope, objectOperand.text, objectOperand.bytes.startByte))
         {
             if (!def->typeName.empty() && HasConstModifier(def->typeName))
             {
@@ -50,7 +33,7 @@ bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
         }
     }
 
-    if (const auto syms = valCtx.ctx.request.symbolTable.FindSymbolsPtr(name))
+    if (const auto syms = symbolTable.FindSymbolsPtr(objectOperand.text))
     {
         for (const auto& symbol : *syms)
         {
@@ -64,79 +47,80 @@ bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
     return false;
 }
 
-static ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationContext& valCtx)
+static ObjectTypeInfo ResolveMemberObjectType(const CallSiteFact& site, const Scope* scope,
+                                              const DiagnosticContext& ctx)
 {
     ObjectTypeInfo info;
     const std::string rawObjType =
-        CanonicalizeArrayType(ResolveExpressionType(objectNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx)),
-                              valCtx.ctx.request.GetEffectiveArrayTypeName());
+        CanonicalizeArrayType(ResolveExpressionType(site.objectOperand.bytes, ExpressionTypeContext(scope, ctx)),
+                              ctx.request.GetEffectiveArrayTypeName());
     if (ExpressionTypeCache::IsPoisonType(rawObjType))
     {
         info.objectType = std::string(ExpressionTypeCache::k_poisonType);
         return info;
     }
     info.objectType = CleanBaseType(rawObjType);
-    info.qualifiers.isConst = IsConstTypeView(rawObjType) || IsObjectNodeConst(objectNode, valCtx);
+    const bool isObjConst = site.isThisCall ? site.isEnclosingMethodConst
+                                            : IsObjectOperandConst(site.objectOperand, scope, ctx.request.symbolTable);
+    info.qualifiers.isConst = IsConstTypeView(rawObjType) || isObjConst;
 
     if (rawObjType.find('<') != std::string::npos && rawObjType.ends_with('>'))
     {
         const size_t openBracket = rawObjType.find('<');
-        std::string tmplName = rawObjType.substr(0, openBracket);
-        TrimString(tmplName);
-        if (valCtx.ctx.request.symbolTable.FindSymbolsPtr(tmplName))
+        std::string_view tmplView(rawObjType.data(), openBracket);
+        TrimTypeWhitespace(tmplView);
+        if (ctx.request.symbolTable.FindSymbolsPtr(tmplView))
         {
-            info.objectType = tmplName;
-            std::string argStr = rawObjType.substr(openBracket + 1, rawObjType.size() - openBracket - 2);
-            info.templateArgs.push_back(std::move(argStr));
+            info.objectType = std::string(tmplView);
+            info.templateArgs.push_back(rawObjType.substr(openBracket + 1, rawObjType.size() - openBracket - 2));
         }
     }
     return info;
 }
 
-static bool CheckNonCallableVariable(const std::string& name, const std::string& typeName,
-                                     const CallValidationContext& valCtx, CalleeResolution& res)
+static bool CheckNonCallableVariable(const NonCallableCheckRequest& req, DiagnosticContext& ctx, CalleeResolution& res)
 {
-    std::string cleanType = CleanBaseType(typeName);
+    std::string cleanType = CleanBaseType(req.typeName);
     if (!cleanType.empty())
     {
-        if (auto funcdefSym = FindFuncdefSymbol(cleanType, valCtx.ctx.request.symbolTable))
+        if (auto funcdefSym = FindFuncdefSymbol(cleanType, ctx.request.symbolTable))
         {
-            res.reportedName = name;
-            res.candidates = {FuncdefToFunctionSymbol(*funcdefSym, name)};
+            res.reportedName = std::string(req.name);
+            res.candidates = {FuncdefToFunctionSymbol(*funcdefSym, req.name)};
             res.candidatesAreFreeFunctions = true;
             res.shouldCheck = true;
             return true;
         }
     }
-    auto opCallSyms =
-        FindMethodCandidates(cleanType, "opCall", valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache);
+    auto opCallSyms = FindMethodCandidates(cleanType, "opCall", ctx.request.symbolTable, ctx.request.exprCache);
     if (!opCallSyms.empty())
     {
-        res.reportedName = name;
+        res.reportedName = std::string(req.name);
         res.candidates = std::move(opCallSyms);
         res.candidatesAreFreeFunctions = false;
         res.shouldCheck = true;
         return true;
     }
-    valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), diagnostics::codes::CallNoMatchingSignature, name);
+    ctx.EmitAtRange(req.calleeRange, diagnostics::codes::CallNoMatchingSignature, req.name);
     res.shouldCheck = false;
     return true;
 }
 
-bool CheckMemberNonCallableVariable(const std::string& objType, const std::string& memberName,
-                                    const CallValidationContext& valCtx, CalleeResolution& res)
+bool CheckMemberNonCallableVariable(const CallSiteFact& site, std::string_view objType, DiagnosticContext& ctx,
+                                    CalleeResolution& res)
 {
-    for (const auto& cls :
-         GetInheritedTypeHierarchy(objType, valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache))
+    for (const auto& cls : GetInheritedTypeHierarchy(objType, ctx.request.symbolTable, ctx.request.exprCache))
     {
-        if (auto found = valCtx.ctx.request.symbolTable.FindMemberSymbolPtr(cls, memberName))
+        if (auto found = ctx.request.symbolTable.FindMemberSymbolPtr(cls, site.calleeName))
         {
             for (const auto& sym : *found)
             {
                 if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
                     std::holds_alternative<VariableSignature>(sym.signature))
                 {
-                    return CheckNonCallableVariable(memberName, sym.GetVariable().typeName, valCtx, res);
+                    return CheckNonCallableVariable(
+                        NonCallableCheckRequest{site.calleeName, sym.GetVariable().typeName, site.calleeRange}, ctx,
+                        res);
                 }
             }
         }
@@ -144,50 +128,44 @@ bool CheckMemberNonCallableVariable(const std::string& objType, const std::strin
     return false;
 }
 
-CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
+CalleeResolution ResolveMemberCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
     CalleeResolution res;
-    TSNode objectNode = parser::GetChildByField(valCtx.callee, parser::GetGrammarSymbols().fieldObject);
-    TSNode memberNode = parser::GetChildByField(valCtx.callee, parser::GetGrammarSymbols().fieldMember);
-    if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
+    if (site.objectOperand.bytes.Empty() || site.calleeName.empty())
     {
         res.shouldCheck = false;
         return res;
     }
 
-    const auto objInfo = ResolveMemberObjectType(objectNode, valCtx);
+    const auto objInfo = ResolveMemberObjectType(site, scope, ctx);
     if (objInfo.objectType.empty() || ExpressionTypeCache::IsPoisonType(objInfo.objectType) ||
-        !HierarchyIsFullyVisible(objInfo.objectType, valCtx.ctx.request.symbolTable))
+        !HierarchyIsFullyVisible(objInfo.objectType, ctx.request.symbolTable))
     {
         res.shouldCheck = false;
         return res;
     }
 
-    res.reportedName = parser::NodeText(memberNode, valCtx.request.sourceCode);
+    res.reportedName = std::string(site.calleeName);
     if (IsConstructorOrDestructorName(res.reportedName, objInfo.objectType))
     {
-        const TSPoint ctorStart = ts_node_start_point(memberNode);
-        const TSPoint ctorEnd = ts_node_end_point(memberNode);
-        valCtx.ctx.EmitAtRange({ctorStart.row, ctorStart.column, ctorEnd.row, ctorEnd.column},
-                               "as-err-constructor-not-callable", res.reportedName, objInfo.objectType);
+        ctx.EmitAtRange(site.calleeNameRange, "as-err-constructor-not-callable", res.reportedName, objInfo.objectType);
         res.shouldCheck = false;
         return res;
     }
 
     res.isReceiverConst = objInfo.qualifiers.isConst;
-    res.candidates = FindMethodCandidates(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable,
-                                          valCtx.ctx.request.exprCache);
+    res.candidates =
+        FindMethodCandidates(objInfo.objectType, res.reportedName, ctx.request.symbolTable, ctx.request.exprCache);
     FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
-    ApplyTemplateSubstitutions(res.candidates, objInfo.objectType, objInfo.templateArgs,
-                               valCtx.ctx.request.symbolTable);
+    ApplyTemplateSubstitutions(res.candidates, objInfo.objectType, objInfo.templateArgs, ctx.request.symbolTable);
     if (res.candidates.empty())
     {
-        if (auto callableSym = TryResolveMemberCallableFuncdef(
-                objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache))
+        if (auto callableSym = TryResolveMemberCallableFuncdef(objInfo.objectType, res.reportedName,
+                                                               ctx.request.symbolTable, ctx.request.exprCache))
         {
             res.candidates.push_back(std::move(*callableSym));
         }
-        else if (CheckMemberNonCallableVariable(objInfo.objectType, res.reportedName, valCtx, res))
+        else if (CheckMemberNonCallableVariable(site, objInfo.objectType, ctx, res))
         {
             return res;
         }
@@ -195,47 +173,47 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
     return res;
 }
 
-bool CheckLocalNonCallable(const std::string& shortName, const CallValidationContext& valCtx, CalleeResolution& res)
+bool CheckLocalNonCallable(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx, CalleeResolution& res)
 {
-    if (valCtx.scope)
+    if (scope)
     {
-        if (const LocalDefinition* shadow =
-                ResolveInScopeAt(valCtx.scope, shortName, ts_node_start_byte(valCtx.callee)))
+        if (const LocalDefinition* shadow = ResolveInScopeAt(scope, site.calleeName, site.calleeNameBytes.startByte))
         {
             if (shadow->kind == LocalDefinitionKind::Variable || shadow->kind == LocalDefinitionKind::Parameter)
             {
-                return CheckNonCallableVariable(shortName, shadow->typeName, valCtx, res);
+                return CheckNonCallableVariable(
+                    NonCallableCheckRequest{site.calleeName, shadow->typeName, site.calleeRange}, ctx, res);
             }
         }
     }
     return false;
 }
 
-bool CheckScopedNonCallableVariable(std::string_view written, const std::string& shortName,
-                                    const CallValidationContext& valCtx, CalleeResolution& res)
+bool CheckScopedNonCallableVariable(const CallSiteFact& site, DiagnosticContext& ctx, CalleeResolution& res)
 {
-    if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
+    if (const auto found = ctx.request.symbolTable.FindSymbolsPtr(site.calleeText))
     {
         for (const auto& sym : *found)
         {
             if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
                 std::holds_alternative<VariableSignature>(sym.signature))
             {
-                return CheckNonCallableVariable(shortName, sym.GetVariable().typeName, valCtx, res);
+                return CheckNonCallableVariable(
+                    NonCallableCheckRequest{site.calleeName, sym.GetVariable().typeName, site.calleeRange}, ctx, res);
             }
         }
     }
     return false;
 }
 
-bool CheckGlobalNonCallableVariable(std::string_view written, const std::string& shortName,
-                                    const CallValidationContext& valCtx, CalleeResolution& res)
+bool CheckGlobalNonCallableVariable(const CallSiteFact& site, DiagnosticContext& ctx, CalleeResolution& res)
 {
-    const auto reachableScopes = CollectReachableScopes(valCtx.callNode, valCtx.request.sourceCode);
+    const auto reachableScopes =
+        CollectReachableScopes(site.bytes.startByte, ctx.request.sourceCode, ctx.request.nodeIndex);
     for (const auto& scopeName : reachableScopes)
     {
-        const auto found = scopeName.empty() ? valCtx.ctx.request.symbolTable.FindSymbolsPtr(written)
-                                             : valCtx.ctx.request.symbolTable.FindMemberSymbolPtr(scopeName, shortName);
+        const auto found = scopeName.empty() ? ctx.request.symbolTable.FindSymbolsPtr(site.calleeText)
+                                             : ctx.request.symbolTable.FindMemberSymbolPtr(scopeName, site.calleeName);
         if (!found)
         {
             continue;
@@ -258,7 +236,8 @@ bool CheckGlobalNonCallableVariable(std::string_view written, const std::string&
         }
         if (hasVar && !hasFunc)
         {
-            return CheckNonCallableVariable(shortName, varType, valCtx, res);
+            return CheckNonCallableVariable(NonCallableCheckRequest{site.calleeName, varType, site.calleeRange}, ctx,
+                                            res);
         }
     }
     return false;

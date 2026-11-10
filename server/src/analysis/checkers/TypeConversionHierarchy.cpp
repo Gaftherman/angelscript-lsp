@@ -1,7 +1,6 @@
 #include "analysis/checkers/TypeConversionCommon.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
-#include "parser/Keywords.h"
-#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -94,31 +93,31 @@ bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters)
 
 std::string_view AssignmentOverloadName(std::string_view op)
 {
-    if (op == parser::keywords::operators::Assign)
+    if (op == "=")
         return "opAssign";
-    if (op == parser::keywords::operators::PlusAssign)
+    if (op == "+=")
         return "opAddAssign";
-    if (op == parser::keywords::operators::MinusAssign)
+    if (op == "-=")
         return "opSubAssign";
-    if (op == parser::keywords::operators::StarAssign)
+    if (op == "*=")
         return "opMulAssign";
-    if (op == parser::keywords::operators::SlashAssign)
+    if (op == "/=")
         return "opDivAssign";
-    if (op == parser::keywords::operators::PercentAssign)
+    if (op == "%=")
         return "opModAssign";
-    if (op == parser::keywords::operators::StarStarAssign)
+    if (op == "**=")
         return "opPowAssign";
-    if (op == parser::keywords::operators::AmpAssign)
+    if (op == "&=")
         return "opAndAssign";
-    if (op == parser::keywords::operators::PipeAssign)
+    if (op == "|=")
         return "opOrAssign";
-    if (op == parser::keywords::operators::CaretAssign)
+    if (op == "^=")
         return "opXorAssign";
-    if (op == parser::keywords::operators::LtLtAssign)
+    if (op == "<<=")
         return "opShlAssign";
-    if (op == parser::keywords::operators::GtGtAssign)
+    if (op == ">>=")
         return "opShrAssign";
-    if (op == parser::keywords::operators::GtGtGtAssign)
+    if (op == ">>>=")
         return "opUShrAssign";
     return {};
 }
@@ -134,7 +133,7 @@ bool DeclaresOperatorMethod(std::string_view typeName, std::string_view methodNa
 
 bool IsScalarCastTarget(std::string_view typeName, const SymbolTable& table)
 {
-    if (parser::primitives::IsPrimitive(typeName))
+    if (IsPrimitiveTypeName(typeName))
     {
         return true;
     }
@@ -205,20 +204,6 @@ bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, co
     {
         ForEachMethod(fromType, opName, table, matches);
         if (found)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool IsDerivedFrom(const std::string& derived, const std::string& base, const SymbolTable& table)
-{
-    const auto cleanDerived = CleanBaseType(derived);
-    const auto cleanBase = CleanBaseType(base);
-    for (const auto& ancestor : GetInheritedTypeHierarchy(cleanDerived, table))
-    {
-        if (IsSameType(ancestor, cleanBase))
         {
             return true;
         }

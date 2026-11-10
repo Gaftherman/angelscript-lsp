@@ -1,12 +1,9 @@
 #include "analysis/checkers/IsolationCheckerCommon.h"
+#include "analysis/index/IsolationSiteFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
-#include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -72,93 +69,36 @@ static bool IsLocalVariableOrParameter(const Scope* startScope, std::string_view
     return false;
 }
 
-static bool IsCallFunctionNode(TSNode p, TSNode node)
+static bool IsAllowedVariable(std::string_view varName, const IsolationIdentifierSiteFact& fact, const Scope* scopeRoot,
+                              const DiagnosticContext& ctx)
 {
-    TSNode fn = parser::GetCallCallee(p);
-    return !ts_node_is_null(fn) && (fn.id == node.id || parser::GetParent(node).id == fn.id);
-}
-
-static bool IsDeclarationNameNode(TSNode p, TSNode node, TSSymbol pSym)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    if (pSym == gs.symVariableDeclarator)
-    {
-        TSNode val = parser::GetChildByField(p, gs.fieldValue);
-        return ts_node_is_null(val) || ts_node_start_byte(node) < ts_node_start_byte(val);
-    }
-    if (pSym == gs.symFuncDeclaration || pSym == gs.symClassDeclaration || pSym == gs.symParameter ||
-        pSym == gs.symEnumMember)
-    {
-        TSNode nameNode = parser::GetChildByField(p, gs.fieldName);
-        return !ts_node_is_null(nameNode) &&
-               (nameNode.id == node.id || ts_node_start_byte(node) == ts_node_start_byte(nameNode));
-    }
-    if (pSym == gs.symMemberExpression)
-    {
-        TSNode propNode = parser::GetChildByField(p, gs.fieldMember);
-        return !ts_node_is_null(propNode) && propNode.id == node.id;
-    }
-    return false;
-}
-
-bool IsolationVisitor::IsIdentifierInSpecialContext(TSNode node) const
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    bool result = false;
-    parser::ForEachAncestor(parser::GetParent(node),
-                            [&](TSNode p) -> bool
-                            {
-                                const TSSymbol pSym = ts_node_symbol(p);
-                                if (pSym == gs.symCallExpression && IsCallFunctionNode(p, node))
-                                {
-                                    result = true;
-                                    return false;
-                                }
-                                if (pSym == gs.symDatatype || pSym == gs.symType || pSym == gs.symBaseClassList)
-                                {
-                                    result = true;
-                                    return false;
-                                }
-                                if (IsDeclarationNameNode(p, node, pSym))
-                                {
-                                    result = true;
-                                    return false;
-                                }
-                                return pSym != gs.symStatementBlock && pSym != gs.symFuncDeclaration &&
-                                       pSym != gs.symClassDeclaration;
-                            });
-    return result;
-}
-
-bool IsolationVisitor::IsAllowedVariable(std::string_view varName, TSNode node) const
-{
-    TSPoint pt = ts_node_start_point(node);
-    const Scope* scope = request.scopeRoot ? FindEnclosingScopeOrRoot(request.scopeRoot, pt.row, pt.column) : nullptr;
+    const Scope* scope =
+        scopeRoot ? FindEnclosingScopeOrRoot(scopeRoot, fact.range.startLine, fact.range.startCharacter) : nullptr;
     if (scope && IsLocalVariableOrParameter(scope, varName))
     {
         return true;
     }
 
-    if (!currentClassName.empty())
+    if (!fact.enclosingClass.empty())
     {
-        if (ctx.request.symbolTable.FindMemberSymbolPtr(currentClassName, varName) != nullptr)
+        if (ctx.request.symbolTable.FindMemberSymbolPtr(fact.enclosingClass, varName) != nullptr)
         {
             return true;
         }
     }
 
-    return ctx.request.IsRegisteredSymbol(std::string(varName));
+    return ctx.request.IsRegisteredSymbol(varName);
 }
 
-void IsolationVisitor::CheckSharedIdentifier(TSNode node)
+void CheckSharedIdentifier(const IsolationIdentifierSiteFact& fact, const Scope* scopeRoot, DiagnosticContext& ctx)
 {
-    if (IsIdentifierInSpecialContext(node))
+    if (!fact.inSharedContext || fact.isSpecialContext)
     {
         return;
     }
 
-    std::string varName = TrimWhitespace(std::string(parser::NodeText(node, request.sourceCode)));
-    if (varName.empty() || IsAllowedVariable(varName, node))
+    const std::string_view varName = fact.name;
+    if (varName.empty() || IsAllowedVariable(varName, fact, scopeRoot, ctx))
     {
         return;
     }
@@ -172,7 +112,7 @@ void IsolationVisitor::CheckSharedIdentifier(TSNode node)
                 if (!s.GetVariable().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
                 {
                     ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
-                    ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-shared-cannot-access-non-shared", varName);
+                    ctx.EmitAtRange(fact.range, "as-err-shared-cannot-access-non-shared", varName);
                     break;
                 }
             }

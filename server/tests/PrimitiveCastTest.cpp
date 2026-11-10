@@ -4,11 +4,12 @@
  */
 
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/checkers/CallChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
@@ -68,8 +69,10 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
         const TSPoint pt = ts_node_start_point(callNode);
         const Scope* scope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
 
-        ExpressionTypeContext ctx{scope, table, code, fileUri};
-        std::string exprType = ResolveExpressionType(callNode, ctx);
+        NodeIndex index(root);
+        ExpressionTypeContext ctx{scope, table, code, fileUri, &index};
+        const IndexedByteRange callBytes{ts_node_start_byte(callNode), ts_node_end_byte(callNode)};
+        std::string exprType = ResolveExpressionType(callBytes, ctx);
 
         CHECK(exprType == "int");
 

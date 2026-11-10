@@ -1,7 +1,10 @@
 #include "analysis/checkers/UndefinedIdentifierCheckerCommon.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -9,12 +12,12 @@
 namespace angel_lsp::analysis
 {
 
-MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string& fileUri)
+MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, std::string_view fileUri)
 {
     MixinRanges mixinRanges;
     symbolTable.ForEachSymbolInFile(
         fileUri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        [&]([[maybe_unused]] std::string_view qualifiedName, const std::vector<Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -38,7 +41,8 @@ static bool IsContainerAccessorProperty(uint32_t byteOffset, std::string_view re
     {
         if (container.kind == ContainerKind::Namespace)
         {
-            const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            const std::string_view nsName = container.qualifiedName.empty() ? std::string_view(container.name)
+                                                                            : std::string_view(container.qualifiedName);
             const auto& members = index.NamespaceMembers(nsName);
             const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
             if (accSet.contains(refName))
@@ -66,8 +70,8 @@ static bool IsContainerAccessorProperty(uint32_t byteOffset, std::string_view re
     return false;
 }
 
-bool IsEnclosingScopeMember(uint32_t byteOffset, const std::string& refName,
-                            const std::vector<std::string>& usingNamespaces, const DiagnosticContext& ctx)
+bool IsEnclosingScopeMember(uint32_t byteOffset, std::string_view refName, std::span<const std::string> usingNamespaces,
+                            const DiagnosticContext& ctx)
 {
     const auto& index = ctx.request.GetRuleIndex();
     const auto containers = ctx.request.nodeIndex
@@ -77,7 +81,8 @@ bool IsEnclosingScopeMember(uint32_t byteOffset, const std::string& refName,
     {
         if (container.kind == ContainerKind::Namespace)
         {
-            const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            const std::string_view nsName = container.qualifiedName.empty() ? std::string_view(container.name)
+                                                                            : std::string_view(container.qualifiedName);
             if (index.NamespaceMembers(nsName).allMemberNames.contains(refName))
             {
                 return true;
@@ -99,7 +104,10 @@ bool IsEnclosingScopeMember(uint32_t byteOffset, const std::string& refName,
         }
     }
 
-    for (const auto& uNs : usingNamespaces)
+    const auto localUsings = ctx.request.nodeIndex
+                                 ? ctx.request.nodeIndex->CollectUsingNamespaces(ctx.request.sourceCode, byteOffset)
+                                 : std::vector<std::string>(usingNamespaces.begin(), usingNamespaces.end());
+    for (const auto& uNs : localUsings)
     {
         if (index.NamespaceMembers(uNs).allMemberNames.contains(refName))
         {
@@ -125,7 +133,7 @@ bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticCont
         return true;
     }
 
-    if (ctx.request.tree)
+    if (ctx.request.nodeIndex != nullptr || ctx.request.tree != nullptr)
     {
         if (IsContainerAccessorProperty(ref.startByte, ref.name, ctx))
         {

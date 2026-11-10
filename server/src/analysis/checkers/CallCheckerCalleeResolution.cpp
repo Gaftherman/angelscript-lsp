@@ -1,9 +1,8 @@
 #include "analysis/checkers/CallCheckerCommon.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
-#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -14,25 +13,28 @@
 namespace angel_lsp::analysis
 {
 
-static std::string FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCode,
-                                                 const Scope* scopeRoot = nullptr, const NodeIndex* nodeIndex = nullptr)
+static std::string FindEnclosingClassOrInterface(const CallSiteFact& site, const Scope* scope,
+                                                 const NodeIndex* nodeIndex = nullptr, std::string_view sourceCode = {})
 {
-    if (scopeRoot)
+    if (scope)
     {
-        TSPoint pt = ts_node_start_point(node);
-        if (const Scope* sc = FindInnermostScope(scopeRoot, pt.row, pt.column))
+        if (auto enc = scope->GetEnclosingClass(); !enc.empty())
         {
-            if (auto enc = sc->GetEnclosingClass(); !enc.empty())
-            {
-                return std::string(enc);
-            }
+            return std::string(enc);
         }
     }
-    for (const auto& container : GetEnclosingContainers(node, sourceCode, nodeIndex))
+    if (!site.enclosingClassName.empty())
     {
-        if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+        return std::string(site.enclosingClassName);
+    }
+    if (nodeIndex && !sourceCode.empty())
+    {
+        for (const auto& container : nodeIndex->CollectEnclosingContainers(site.bytes.startByte, sourceCode))
         {
-            return container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+            {
+                return container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            }
         }
     }
     return "";
@@ -43,15 +45,15 @@ static std::string_view GetScopeQualifierPrefix(std::string_view name) noexcept
     return utils::ParentScopeView(name);
 }
 
-static bool IsInsideTargetClassOrSubclass(TSNode callNode, std::string_view targetClass, std::string_view sourceCode,
-                                          const SymbolTable& table, const Scope* scopeRoot = nullptr,
-                                          const NodeIndex* nodeIndex = nullptr)
+static bool IsInsideTargetClassOrSubclass(const CallSiteFact& site, std::string_view targetClass, const Scope* scope,
+                                          const DiagnosticContext& ctx)
 {
     if (targetClass.empty())
     {
         return false;
     }
-    const std::string enclosing = FindEnclosingClassOrInterface(callNode, sourceCode, scopeRoot, nodeIndex);
+    const std::string enclosing =
+        FindEnclosingClassOrInterface(site, scope, ctx.request.nodeIndex, ctx.request.sourceCode);
     if (enclosing.empty())
     {
         return false;
@@ -60,7 +62,7 @@ static bool IsInsideTargetClassOrSubclass(TSNode callNode, std::string_view targ
     {
         return true;
     }
-    const auto hierarchy = GetInheritedTypeHierarchy(enclosing, table);
+    const auto hierarchy = GetInheritedTypeHierarchy(enclosing, ctx.request.symbolTable);
     return std::any_of(hierarchy.begin(), hierarchy.end(), [targetClass](const std::string& ancestor)
                        { return ancestor == targetClass || LastScopeSegment(ancestor) == targetClass; });
 }
@@ -85,71 +87,63 @@ static void FilterScopedCandidatesByCallerContext(std::vector<Symbol>& candidate
     }
 }
 
-static bool ResolveScopedCallee(std::string_view written, const std::string& shortName,
-                                const CallValidationContext& valCtx, CalleeResolution& res)
+static bool ResolveScopedCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx,
+                                CalleeResolution& res)
 {
-    if (NamesAType(std::string(written), valCtx.ctx.request.symbolTable))
+    if (NamesAType(site.calleeText, ctx.request.symbolTable))
     {
         res.shouldCheck = false;
         return true;
     }
-    res.candidates = CollectScopedFunctionCandidates(written, valCtx.ctx.request.symbolTable);
+    res.candidates = CollectScopedFunctionCandidates(site.calleeText, ctx.request.symbolTable);
 
-    const std::string_view qualifier = GetScopeQualifierPrefix(written);
-    const bool insideTarget = IsInsideTargetClassOrSubclass(
-        valCtx.callNode, qualifier, valCtx.request.sourceCode, valCtx.ctx.request.symbolTable,
-        valCtx.ctx.request.scopeRoot.get(), valCtx.ctx.request.nodeIndex);
+    const std::string_view qualifier = GetScopeQualifierPrefix(site.calleeText);
+    const bool insideTarget = IsInsideTargetClassOrSubclass(site, qualifier, scope, ctx);
     FilterScopedCandidatesByCallerContext(res.candidates, insideTarget);
 
     res.candidatesAreFreeFunctions = true;
-    if (!res.candidates.empty() || CheckScopedNonCallableVariable(written, shortName, valCtx, res))
+    if (!res.candidates.empty() || CheckScopedNonCallableVariable(site, ctx, res))
     {
         return true;
     }
     return true;
 }
 
-static bool ResolveEnclosingClassCallee(std::string_view written, const CallValidationContext& valCtx,
+static bool ResolveEnclosingClassCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx,
                                         CalleeResolution& res)
 {
     std::string enclosingClass;
     bool isConst = false;
-    if (valCtx.ctx.request.scopeRoot)
+    if (scope)
     {
-        TSPoint pt = ts_node_start_point(valCtx.callNode);
-        if (const Scope* sc = FindInnermostScope(valCtx.ctx.request.scopeRoot.get(), pt.row, pt.column))
+        if (auto enc = scope->GetEnclosingClass(); !enc.empty())
         {
-            if (auto enc = sc->GetEnclosingClass(); !enc.empty())
-            {
-                enclosingClass = std::string(enc);
-                isConst = sc->isConstMethod;
-            }
+            enclosingClass = std::string(enc);
+            isConst = scope->isConstMethod;
         }
     }
     if (enclosingClass.empty())
     {
-        enclosingClass =
-            FindEnclosingClassOrInterface(valCtx.callNode, valCtx.request.sourceCode,
-                                          valCtx.ctx.request.scopeRoot.get(), valCtx.ctx.request.nodeIndex);
-        isConst = IsEnclosingMethodConst(valCtx.callNode);
+        enclosingClass = FindEnclosingClassOrInterface(site, scope, ctx.request.nodeIndex, ctx.request.sourceCode);
+        isConst = site.isEnclosingMethodConst;
     }
     if (enclosingClass.empty())
     {
         return false;
     }
-    res.candidates = FindMethodCandidates(enclosingClass, std::string(written), valCtx.ctx.request.symbolTable,
-                                          valCtx.ctx.request.exprCache);
+    res.candidates =
+        FindMethodCandidates(enclosingClass, site.calleeName, ctx.request.symbolTable, ctx.request.exprCache);
     if (!res.candidates.empty())
     {
         res.candidatesAreFreeFunctions = false;
         res.isUnqualifiedClassCall = true;
         res.isReceiverConst = isConst;
         FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
-        ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, valCtx.ctx.request.symbolTable);
+        ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, ctx.request.symbolTable);
         return true;
     }
-    if (auto callableSym = TryResolveMemberCallableFuncdef(
-            enclosingClass, std::string(written), valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache))
+    if (auto callableSym = TryResolveMemberCallableFuncdef(enclosingClass, site.calleeName, ctx.request.symbolTable,
+                                                           ctx.request.exprCache))
     {
         res.candidates = {std::move(*callableSym)};
         res.candidatesAreFreeFunctions = true;
@@ -157,30 +151,28 @@ static bool ResolveEnclosingClassCallee(std::string_view written, const CallVali
         res.shouldCheck = true;
         return true;
     }
-    return CheckMemberNonCallableVariable(enclosingClass, std::string(written), valCtx, res);
+    return CheckMemberNonCallableVariable(site, enclosingClass, ctx, res);
 }
 
-static CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
+static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
     CalleeResolution res;
-    const std::string written(parser::NodeText(valCtx.callee, valCtx.request.sourceCode));
-    if (written.empty())
+    if (site.calleeText.empty())
     {
         res.shouldCheck = false;
         return res;
     }
 
-    const std::string shortName = std::string(LastScopeSegment(written));
-    res.reportedName = shortName;
+    res.reportedName = std::string(site.calleeName);
 
-    if (HasScopeQualifier(written))
+    if (site.calleeKind == CalleeKind::Scoped)
     {
-        ResolveScopedCallee(written, shortName, valCtx, res);
+        ResolveScopedCallee(site, scope, ctx, res);
         return res;
     }
 
-    if (auto callableSym = TryResolveCallableFuncdef(shortName, valCtx.scope, valCtx.ctx.request.symbolTable,
-                                                     ts_node_start_byte(valCtx.callee)))
+    if (auto callableSym =
+            TryResolveCallableFuncdef(site.calleeName, scope, ctx.request.symbolTable, site.calleeNameBytes.startByte))
     {
         res.candidates = {std::move(*callableSym)};
         res.candidatesAreFreeFunctions = true;
@@ -188,28 +180,24 @@ static CalleeResolution ResolveIdentifierCallee(const CallValidationContext& val
         return res;
     }
 
-    if (CheckLocalNonCallable(shortName, valCtx, res) || ResolveEnclosingClassCallee(written, valCtx, res))
+    if (CheckLocalNonCallable(site, scope, ctx, res) || ResolveEnclosingClassCallee(site, scope, ctx, res))
     {
         return res;
     }
 
-    if (NamesAType(shortName, valCtx.ctx.request.symbolTable))
+    if (NamesAType(site.calleeName, ctx.request.symbolTable))
     {
         res.shouldCheck = false;
         return res;
     }
 
     res.candidatesAreFreeFunctions = true;
-    const FreeLookupContext freeCtx{valCtx.callNode,
-                                    valCtx.request.sourceCode,
-                                    valCtx.ctx.request.fileUri,
-                                    valCtx.ctx.request.predefinedFileExtension,
-                                    valCtx.ctx.request.symbolTable,
-                                    valCtx.ctx.request.GetRuleIndex(),
-                                    valCtx.ctx.request.moduleFileUris,
-                                    valCtx.request.nodeIndex};
-    res.candidates = FindFreeCandidates(written, freeCtx);
-    if (!res.candidates.empty() || CheckGlobalNonCallableVariable(written, shortName, valCtx, res))
+    const FreeLookupContext freeCtx{site.bytes.startByte,       ctx.request.sourceCode,
+                                    ctx.request.fileUri,        ctx.request.predefinedFileExtension,
+                                    ctx.request.symbolTable,    ctx.request.GetRuleIndex(),
+                                    ctx.request.moduleFileUris, ctx.request.nodeIndex};
+    res.candidates = FindFreeCandidates(site.calleeText, freeCtx);
+    if (!res.candidates.empty() || CheckGlobalNonCallableVariable(site, ctx, res))
     {
         return res;
     }
@@ -217,19 +205,15 @@ static CalleeResolution ResolveIdentifierCallee(const CallValidationContext& val
     return res;
 }
 
-CalleeResolution ResolveCalleeCandidates(const CallValidationContext& valCtx)
+CalleeResolution ResolveCalleeCandidates(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol calleeSym = ts_node_symbol(valCtx.callee);
-    if (calleeSym == gs.symMemberExpression)
+    if (site.isMemberCall || site.calleeKind == CalleeKind::Member)
     {
-        return ResolveMemberCallee(valCtx);
+        return ResolveMemberCallee(site, scope, ctx);
     }
-    const std::string_view calleeType = parser::GetNodeType(valCtx.callee);
-    if (calleeSym == gs.symScopedIdentifier || calleeSym == gs.symIdentifier || calleeSym == gs.tokFunction ||
-        parser::keywords::IsKeyword(calleeType))
+    if (site.calleeKind == CalleeKind::Scoped || site.calleeKind == CalleeKind::Identifier)
     {
-        return ResolveIdentifierCallee(valCtx);
+        return ResolveIdentifierCallee(site, scope, ctx);
     }
     CalleeResolution res;
     res.shouldCheck = false;

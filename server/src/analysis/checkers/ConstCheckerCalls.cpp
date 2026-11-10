@@ -1,15 +1,13 @@
 #include "analysis/checkers/ConstCheckerCommon.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <variant>
 
 namespace angel_lsp::analysis
@@ -22,7 +20,7 @@ namespace angel_lsp::analysis
  * @param[in] owner Name of the owning class.
  * @return True if the method returns a reference to the owning class.
  */
-static bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner)
+static bool IsSelfReferenceReturn(const FunctionSignature& fn, std::string_view owner)
 {
     const bool isRef = fn.modifiers.isReturnReference || IsReferenceTypeView(fn.returnType);
     return isRef && (CleanBaseType(fn.returnType) == owner || CleanBaseType(fn.returnBaseTypeName) == owner);
@@ -36,8 +34,8 @@ static bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string
  * @param[in,out] cache Optional expression type cache.
  * @return MemberLookupResult describing whether a const overload exists.
  */
-static MemberLookupResult FindMethod(const std::string& typeName, const std::string& methodName,
-                                     const SymbolTable& table, ExpressionTypeCache* cache = nullptr)
+static MemberLookupResult FindMethod(std::string_view typeName, std::string_view methodName, const SymbolTable& table,
+                                     ExpressionTypeCache* cache = nullptr)
 {
     MemberLookupResult result;
     if (typeName.empty() || methodName.empty())
@@ -73,51 +71,31 @@ static MemberLookupResult FindMethod(const std::string& typeName, const std::str
     return result;
 }
 
-/**
- * @brief Validates method calls on const receivers to ensure a const overload is available.
- * @param[in] node AST node of the call expression.
- * @param[in] request Contextual request bundle containing AST root and source text.
- * @param[in] scope Lexical scope active at the call site.
- * @param[in,out] ctx Diagnostic collection and analysis context.
- */
-void CheckMethodCall(TSNode node, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx)
+void CheckMethodCall(const ConstMethodCallFact& call, const ConstSiteFacts& facts, const Scope* scope,
+                     DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode callee = parser::GetChildByField(node, gs.fieldFunction);
-    if (ts_node_is_null(callee) || ts_node_symbol(callee) != gs.symMemberExpression)
-    {
-        return;
-    }
-
-    TSNode objectNode = parser::GetChildByField(callee, gs.fieldObject);
-    TSNode memberNode = parser::GetChildByField(callee, gs.fieldMember);
-    if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
-    {
-        return;
-    }
-
     const SymbolTable& table = ctx.request.symbolTable;
     const ExpressionTypeContext constCtx(scope, ctx);
-    if (ResolveConstness(objectNode, constCtx) != Constness::Const)
+    if (ResolveConstness(call, facts, constCtx) != Constness::Const)
     {
         return;
     }
 
-    const std::string objectType = CleanBaseType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)));
+    const std::string objectType =
+        CleanBaseType(ResolveExpressionType(call.object.bytes, ExpressionTypeContext(scope, ctx)));
     if (objectType.empty() || !HierarchyIsFullyVisible(objectType, table))
     {
         return;
     }
 
-    const std::string methodName(parser::NodeText(memberNode, request.sourceCode));
-    const MemberLookupResult method = FindMethod(objectType, methodName, table, ctx.request.exprCache);
+    const MemberLookupResult method = FindMethod(objectType, call.methodName, table, ctx.request.exprCache);
     if (!method.found || method.hasConstOverload || method.returnsSelfReference)
     {
         return;
     }
 
-    ctx.EmitAtNodeRange(ToOptionalSourceRange(memberNode), "as-err-const-method-required",
-                        std::string(LastScopeSegment(method.declaringClass)), methodName);
+    ctx.EmitAtRange(call.methodRange, "as-err-const-method-required", LastScopeSegment(method.declaringClass),
+                    call.methodName);
 }
 
 } // namespace angel_lsp::analysis

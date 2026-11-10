@@ -4,8 +4,6 @@
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
@@ -83,62 +81,34 @@ static bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vec
     return CheckUnmatchedDefaultParameters(sig, matchedParams);
 }
 
-static TSNode GetBoundCallName(TSNode callee)
+static void RecordBoundCall(const Symbol& declaration, const CallSiteFact& site, DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const auto symbol = ts_node_symbol(callee);
-    if (symbol == gs.symMemberExpression)
-    {
-        return parser::GetChildByField(callee, gs.fieldMember);
-    }
-    if (symbol == gs.symScopedIdentifier)
-    {
-        TSNode name{};
-        parser::ForEachNamedChildNode(callee,
-                                      [&](TSNode child)
-                                      {
-                                          if (ts_node_symbol(child) == gs.symIdentifier)
-                                          {
-                                              name = child;
-                                          }
-                                      });
-        return name;
-    }
-    return symbol == gs.symIdentifier ? callee : TSNode{};
-}
-
-static void RecordBoundCall(const Symbol& declaration, const CallValidationContext& valCtx)
-{
-    if (!valCtx.ctx.request.mutableScopeRoot || declaration.type != SymbolType::Function || declaration.isSynthesized ||
+    if (!ctx.request.mutableScopeRoot || declaration.type != SymbolType::Function || declaration.isSynthesized ||
         declaration.fileUri.empty() || declaration.selectionRange == SourceRange{})
     {
         return;
     }
-    const TSNode name = GetBoundCallName(valCtx.callee);
-    if (ts_node_is_null(name) || parser::NodeText(name, valCtx.request.sourceCode) != declaration.name)
+    if (site.calleeName.empty() || site.calleeName != declaration.name)
     {
         return;
     }
-    auto& bindings = valCtx.ctx.callBindings;
+    auto& bindings = ctx.callBindings;
     if (!bindings)
     {
-        const auto& request = valCtx.ctx.request;
+        const auto& request = ctx.request;
         bindings = std::make_shared<CallBindings>(request.callBindingRevision,
                                                   request.moduleContext ? request.moduleContext->name : std::string{});
     }
-    const TSPoint start = ts_node_start_point(name);
-    const TSPoint end = ts_node_end_point(name);
-    bindings->Add(ts_node_start_byte(name), {start.row, start.column, end.row, end.column}, declaration);
+    bindings->Add(site.calleeNameBytes.startByte, site.calleeNameRange, declaration);
 }
 
-static void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArity, const CallResolutionContext& args,
-                                     const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
+static void HandleNamedCallOverloads(const CallOverloadCheckRequest& req, DiagnosticContext& ctx)
 {
     const Symbol* matched = nullptr;
-    for (const Symbol* cand : matchingArity)
+    for (const Symbol* cand : req.matchingArity)
     {
         if (cand && std::holds_alternative<FunctionSignature>(cand->signature) &&
-            CheckCandidateNamedArgs(cand->GetFunction(), args.argNames, args.argTypes, valCtx.ctx.request.symbolTable))
+            CheckCandidateNamedArgs(cand->GetFunction(), req.args.argNames, req.args.argTypes, ctx.request.symbolTable))
         {
             if (matched)
             {
@@ -147,87 +117,86 @@ static void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArit
             matched = cand;
         }
     }
-    if (!args.allArgsResolved)
+    if (!req.args.allArgsResolved)
     {
         return;
     }
     if (matched)
     {
-        RecordBoundCall(*matched, valCtx);
+        RecordBoundCall(*matched, req.site, ctx);
     }
     else
     {
-        valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-no-matching-signature",
-                               calleeRes.reportedName);
+        ctx.EmitAtRange(req.site.calleeRange, "as-err-call-no-matching-signature", req.calleeRes.reportedName);
     }
 }
 
-static void ValidateResolvedCall(const OverloadMatchResult& match, size_t candidateCount,
-                                 const CallResolutionContext& args, const CallValidationContext& valCtx)
+static void ValidateResolvedCall(const OverloadMatchResult& match, const CallOverloadCheckRequest& req,
+                                 DiagnosticContext& ctx)
 {
     const auto& selected = *match.bestCandidate;
-    if (!match.isAmbiguous && args.allArgsResolved)
+    if (!match.isAmbiguous && req.args.allArgsResolved)
     {
-        RecordBoundCall(selected, valCtx);
+        RecordBoundCall(selected, req.site, ctx);
     }
-    ValidateOutArguments(selected, args.argNodes, valCtx);
-    if (candidateCount > 1)
+    ValidateOutArguments(selected, req.arguments, req.scope, ctx);
+    if (req.matchingArity.size() > 1 && req.initFacts)
     {
-        CheckInitializerListArgs(args, selected.GetFunction(), valCtx);
+        CheckInitializerListArgs(req.arguments, req.args, selected.GetFunction(), *req.initFacts, req.scope, ctx);
     }
 }
 
-void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const CallResolutionContext& args,
-                        const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
+void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (matchingArity.empty())
+    if (request.matchingArity.empty())
     {
         return;
     }
-    if (args.argTypes.empty() && !calleeRes.candidatesAreFreeFunctions)
+    if (request.args.argTypes.empty() && !request.calleeRes.candidatesAreFreeFunctions)
     {
-        if (matchingArity.size() == 1)
+        if (request.matchingArity.size() == 1)
         {
-            RecordBoundCall(*matchingArity.front(), valCtx);
+            RecordBoundCall(*request.matchingArity.front(), request.site, ctx);
         }
         return;
     }
 
-    const bool hasNamedArgs =
-        std::any_of(args.argNames.begin(), args.argNames.end(), [](const std::string& n) { return !n.empty(); });
+    const bool hasNamedArgs = std::any_of(request.args.argNames.begin(), request.args.argNames.end(),
+                                          [](const std::string& n) { return !n.empty(); });
     if (hasNamedArgs)
     {
-        HandleNamedCallOverloads(matchingArity, args, calleeRes, valCtx);
+        HandleNamedCallOverloads(request, ctx);
         return;
     }
 
-    OverloadMatchResult match =
-        ResolveBestOverload(matchingArity, args.argTypes, valCtx.ctx.request.symbolTable, args.argIsLValue);
-    if (match.isAmbiguous && args.allArgsResolved)
+    OverloadMatchResult match = ResolveBestOverload(request.matchingArity, request.args.argTypes,
+                                                    ctx.request.symbolTable, request.args.argIsLValue);
+    if (match.isAmbiguous && request.args.allArgsResolved)
     {
         const std::string_view prioritySig =
             match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
-        const bool hasInitList =
-            std::any_of(args.argTypes.begin(), args.argTypes.end(),
-                        [](const std::string& t) { return t == constants::k_initializerListTypeSentinel; }) ||
-            std::any_of(args.argNodes.begin(), args.argNodes.end(),
-                        [](TSNode n)
-                        {
-                            TSNode unwrapped = UnwrapParenNode(n);
-                            return !ts_node_is_null(unwrapped) &&
-                                   ts_node_symbol(unwrapped) == parser::GetGrammarSymbols().symInitializerList;
-                        });
-        valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-ambiguous",
-                               {std::string_view(calleeRes.reportedName), prioritySig},
-                               hasInitList ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning);
+        bool hasInitList =
+            std::any_of(request.args.argTypes.begin(), request.args.argTypes.end(),
+                        [](const std::string& t) { return t == constants::k_initializerListTypeSentinel; });
+        if (!hasInitList)
+        {
+            hasInitList = std::any_of(request.arguments.begin(), request.arguments.end(), [](const CallArgumentFact& a)
+                                      { return a.kind == CallArgumentKind::InitializerList; });
+        }
+        const SourceRange emitRange =
+            request.site.calleeNameRange != SourceRange{} ? request.site.calleeNameRange : request.site.calleeRange;
+        ctx.EmitAtRange(emitRange, "as-err-call-ambiguous",
+                        {std::string_view(request.calleeRes.reportedName), prioritySig},
+                        hasInitList ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning);
     }
     else if (match.viableCandidates.empty() || match.bestCandidate == nullptr)
     {
-        ReportOverloadResolutionFailure(matchingArity, args, calleeRes.reportedName, valCtx);
+        ReportOverloadResolutionFailure(
+            OverloadFailureReportRequest{request.matchingArity, request.arguments, request.args, request.site}, ctx);
     }
     else
     {
-        ValidateResolvedCall(match, matchingArity.size(), args, valCtx);
+        ValidateResolvedCall(match, request, ctx);
     }
 }
 

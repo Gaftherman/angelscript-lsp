@@ -6,8 +6,6 @@
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/OperandTypePair.h"
-#include "parser/Keywords.h"
-#include "parser/Primitives.h"
 
 #include <string_view>
 #include <utility>
@@ -21,29 +19,29 @@ namespace angel_lsp::analysis
  */
 static std::pair<std::string_view, std::string_view> GetOpMethods(std::string_view op)
 {
-    if (op == parser::keywords::operators::Pipe)
+    if (op == "|")
         return {"opOr", "opOr_r"};
-    if (op == parser::keywords::operators::Amp)
+    if (op == "&")
         return {"opAnd", "opAnd_r"};
-    if (op == parser::keywords::operators::Caret)
+    if (op == "^")
         return {"opXor", "opXor_r"};
-    if (op == parser::keywords::operators::LtLt)
+    if (op == "<<")
         return {"opShl", "opShl_r"};
-    if (op == parser::keywords::operators::GtGt)
+    if (op == ">>")
         return {"opShr", "opShr_r"};
-    if (op == parser::keywords::operators::GtGtGt)
+    if (op == ">>>")
         return {"opUShr", "opUShr_r"};
-    if (op == parser::keywords::operators::Plus)
+    if (op == "+")
         return {"opAdd", "opAdd_r"};
-    if (op == parser::keywords::operators::Minus)
+    if (op == "-")
         return {"opSub", "opSub_r"};
-    if (op == parser::keywords::operators::Star)
+    if (op == "*")
         return {"opMul", "opMul_r"};
-    if (op == parser::keywords::operators::Slash)
+    if (op == "/")
         return {"opDiv", "opDiv_r"};
-    if (op == parser::keywords::operators::Percent)
+    if (op == "%")
         return {"opMod", "opMod_r"};
-    if (op == parser::keywords::operators::StarStar)
+    if (op == "**")
         return {"opPow", "opPow_r"};
     return {"", ""};
 }
@@ -57,7 +55,7 @@ static std::pair<std::string_view, std::string_view> GetOpMethods(std::string_vi
 static bool IsIntegerOrEnum(std::string_view type, const SymbolTable& table)
 {
     const auto unwrapped = UnwrapTypedef(type, table);
-    return parser::primitives::IsInteger(unwrapped) || ResolvesToEnum(unwrapped, table);
+    return IsIntegerPrimitive(unwrapped) || ResolvesToEnum(unwrapped, table);
 }
 
 /**
@@ -69,7 +67,7 @@ static bool IsIntegerOrEnum(std::string_view type, const SymbolTable& table)
 static bool IsNumericOrEnum(std::string_view type, const SymbolTable& table)
 {
     const auto unwrapped = UnwrapTypedef(type, table);
-    return parser::primitives::IsNumeric(unwrapped) || ResolvesToEnum(unwrapped, table);
+    return IsNumericPrimitive(unwrapped) || ResolvesToEnum(unwrapped, table);
 }
 
 static bool AreBitwiseOperandsCompatible(std::string_view op, const OperandTypePair& types, const SymbolTable& table)
@@ -122,7 +120,7 @@ static bool IsStringConcatenationCompatible(const OperandTypePair& types, const 
         return false;
     }
     const std::string_view other = leftStr ? std::string_view(types.right) : std::string_view(types.left);
-    return other == stringTypeName || parser::primitives::IsPrimitive(other) || ResolvesToEnum(other, table);
+    return other == stringTypeName || IsPrimitiveTypeName(other) || ResolvesToEnum(other, table);
 }
 
 static bool HasClassNumericOpImplConv(std::string_view classType, std::string_view otherType, const SymbolTable& table)
@@ -131,7 +129,7 @@ static bool HasClassNumericOpImplConv(std::string_view classType, std::string_vi
     {
         return true;
     }
-    if (!parser::primitives::IsNumeric(otherType))
+    if (!IsNumericPrimitive(otherType))
     {
         return false;
     }
@@ -150,8 +148,8 @@ static bool HasOverloadedArithmeticOperator(std::string_view op, const OperandTy
     {
         return true;
     }
-    const bool leftIsClass = !parser::primitives::IsPrimitive(types.left) && !ResolvesToEnum(types.left, table);
-    const bool rightIsClass = !parser::primitives::IsPrimitive(types.right) && !ResolvesToEnum(types.right, table);
+    const bool leftIsClass = !IsPrimitiveTypeName(types.left) && !ResolvesToEnum(types.left, table);
+    const bool rightIsClass = !IsPrimitiveTypeName(types.right) && !ResolvesToEnum(types.right, table);
     if (leftIsClass && !rightIsClass)
     {
         return HasClassNumericOpImplConv(types.left, types.right, table);

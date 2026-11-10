@@ -1,16 +1,15 @@
 #include "analysis/checkers/CallCheckerCommon.h"
 #include "analysis/checkers/InitializerListChecker.h"
+#include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/SemanticNodes.h"
 #include "analysis/resolution/AmbiguityDetector.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
-#include "parser/Keywords.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -20,44 +19,18 @@
 namespace angel_lsp::analysis
 {
 
-uint32_t CountArguments(TSNode argumentList)
-{
-    const ast::CallExpressionView callView(argumentList, "");
-    return callView.ArgumentCount();
-}
-
-std::vector<TSNode> GetArgumentNodes(TSNode argumentList)
-{
-    const ast::CallExpressionView callView(argumentList, "");
-    return callView.ArgumentNodes();
-}
-
-static std::vector<std::string> GetArgumentNames(TSNode argumentList, std::string_view sourceCode)
-{
-    const ast::CallExpressionView callView(argumentList, sourceCode);
-    return callView.ArgumentNames();
-}
-
-bool ValidateArgumentOrdering(TSNode arguments, bool& sawNamedArg, DiagnosticContext& ctx)
+bool ValidateArgumentOrdering(std::span<const CallArgumentFact> arguments, bool& sawNamedArg, DiagnosticContext& ctx)
 {
     sawNamedArg = false;
-    auto callArgs = ExtractCallArguments(arguments, "");
-    for (const auto& arg : callArgs)
+    for (const auto& arg : arguments)
     {
-        bool isNamed = !ts_node_is_null(arg.nameNode);
-        if (isNamed)
+        if (arg.isNamed)
         {
             sawNamedArg = true;
         }
         else if (sawNamedArg)
         {
-            if (!ts_node_is_null(arg.exprNode))
-            {
-                const TSPoint aStart = ts_node_start_point(arg.exprNode);
-                const TSPoint aEnd = ts_node_end_point(arg.exprNode);
-                ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column},
-                                "as-err-positional-after-named-arg");
-            }
+            ctx.EmitAtRange(arg.range, "as-err-positional-after-named-arg");
             return false;
         }
     }
@@ -90,92 +63,102 @@ static bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, 
     return false;
 }
 
-static bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* scope, const SymbolTable& table)
+static bool CheckArgIsLValue(const CallArgumentFact& arg, const Scope* scope, const SymbolTable& table)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSSymbol aSym = ts_node_symbol(argNode);
-    std::string aText(parser::NodeText(argNode, sourceCode));
-    TrimString(aText);
-
-    if (aSym == gs.symUnaryExpression && aText.starts_with("@"))
-    {
-        TSNode operand = parser::GetChildByField(argNode, gs.fieldOperand);
-        if (!ts_node_is_null(operand))
-        {
-            argNode = operand;
-            aSym = ts_node_symbol(argNode);
-            aText = parser::NodeText(argNode, sourceCode);
-            TrimString(aText);
-        }
-    }
-
-    if (aSym == gs.symThisExpression || aText == parser::keywords::This)
+    if (arg.operand.isThis || arg.operand.text == "this")
     {
         return true;
     }
-
-    if (aSym == gs.symIdentifier || aSym == gs.symScopedIdentifier)
+    std::string_view text = arg.text;
+    TrimTypeWhitespace(text);
+    if (text.starts_with('@'))
     {
-        return IsAssignableLValueSymbol(aText, scope, table, ts_node_start_byte(argNode));
-    }
-    return (aSym == gs.symMemberExpression || aSym == gs.symIndexExpression);
-}
-
-TSNode UnwrapParenNode(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
-    {
-        TSNode child = ts_node_named_child(node, 0);
-        if (ts_node_is_null(child))
+        text.remove_prefix(1);
+        TrimTypeWhitespace(text);
+        if (text == "this")
         {
-            break;
+            return true;
         }
-        node = child;
+        if (text.ends_with(']'))
+        {
+            return true;
+        }
+        if (text.find('.') != std::string_view::npos)
+        {
+            return true;
+        }
+        return IsAssignableLValueSymbol(text, scope, table, arg.bytes.startByte);
     }
-    return node;
+    if (!arg.operand.foldedName.empty())
+    {
+        return IsAssignableLValueSymbol(arg.operand.foldedName, scope, table, arg.operand.foldedByte);
+    }
+    if (arg.kind == CallArgumentKind::Member)
+    {
+        return true;
+    }
+    if (text.ends_with(']'))
+    {
+        return true;
+    }
+    return false;
 }
 
-CallResolutionContext ResolveCallArguments(const CallValidationContext& valCtx)
+CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arguments, const Scope* scope,
+                                           DiagnosticContext& ctx, const NodeIndex* nodeIndex)
 {
     CallResolutionContext result;
-    result.argNodes = GetArgumentNodes(valCtx.arguments);
-    const size_t argCount = result.argNodes.size();
+    const size_t argCount = arguments.size();
     result.argTypes.reserve(argCount);
     result.argIsLValue.reserve(argCount);
-    result.argNames = GetArgumentNames(valCtx.arguments, valCtx.request.sourceCode);
+    result.argNames.reserve(argCount);
 
-    for (const auto& argNode : result.argNodes)
+    const ExpressionTypeContext exprCtx =
+        (ctx.request.nodeIndex || !nodeIndex)
+            ? ExpressionTypeContext(scope, ctx)
+            : ExpressionTypeContext(scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri,
+                                    nodeIndex);
+
+    for (const auto& arg : arguments)
     {
-        result.argIsLValue.push_back(
-            CheckArgIsLValue(argNode, valCtx.request.sourceCode, valCtx.scope, valCtx.ctx.request.symbolTable));
+        result.argNames.emplace_back(arg.name);
+        result.argIsLValue.push_back(CheckArgIsLValue(arg, scope, ctx.request.symbolTable));
 
-        if (auto dataTypeName = IsBareDataType(argNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx)))
+        std::string_view trimmedArg = arg.text;
+        TrimTypeWhitespace(trimmedArg);
+        if (trimmedArg == "void" || arg.operand.text == "void")
+        {
+            result.argTypes.push_back("void");
+            continue;
+        }
+
+        std::optional<std::string> dataTypeName = IsBareDataType(arg.bytes, exprCtx);
+        if (!dataTypeName && IsPrimitiveTypeName(trimmedArg))
+        {
+            dataTypeName = std::string(trimmedArg);
+        }
+
+        if (dataTypeName)
         {
             if (*dataTypeName == "void")
             {
                 result.argTypes.push_back("void");
                 continue;
             }
-            const TSPoint aStart = ts_node_start_point(argNode);
-            const TSPoint aEnd = ts_node_end_point(argNode);
-            valCtx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column},
-                                   diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+            ctx.EmitAtRange(arg.range, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
             result.allArgsResolved = false;
             result.argTypes.push_back("");
             continue;
         }
 
-        std::string argType = ResolveExpressionType(argNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
+        std::string argType = ResolveExpressionType(arg.bytes, exprCtx);
         if (argType.empty() || ExpressionTypeCache::IsPoisonType(argType))
         {
-            const auto& gs = parser::GetGrammarSymbols();
-            TSNode unwrapped = UnwrapParenNode(argNode);
-            if (ts_node_symbol(unwrapped) == gs.symNullLiteral)
+            if (arg.operand.isNullLiteral)
             {
                 argType = "null";
             }
-            else if (ts_node_symbol(unwrapped) == gs.symInitializerList)
+            else if (arg.kind == CallArgumentKind::InitializerList)
             {
                 argType = constants::k_initializerListTypeSentinel;
             }
@@ -184,7 +167,7 @@ CallResolutionContext ResolveCallArguments(const CallValidationContext& valCtx)
                 result.allArgsResolved = false;
             }
         }
-        else if (!HasConstModifier(argType) && IsObjectNodeConst(argNode, valCtx))
+        else if (!HasConstModifier(argType) && IsObjectOperandConst(arg.operand, scope, ctx.request.symbolTable))
         {
             argType.insert(0, "const ");
         }
@@ -211,13 +194,13 @@ std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbo
     return matching;
 }
 
-void CheckInitializerListArgs(const CallResolutionContext& args, const FunctionSignature& fn,
-                              const CallValidationContext& valCtx)
+void CheckInitializerListArgs(std::span<const CallArgumentFact> arguments, const CallResolutionContext& args,
+                              const FunctionSignature& fn, const InitializerListFacts& initFacts, const Scope* scope,
+                              DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    for (size_t i = 0; i < args.argNodes.size(); ++i)
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-        if (ts_node_symbol(args.argNodes[i]) != gs.symInitializerList)
+        if (arguments[i].kind != CallArgumentKind::InitializerList)
         {
             continue;
         }
@@ -243,17 +226,22 @@ void CheckInitializerListArgs(const CallResolutionContext& args, const FunctionS
 
         if (paramIdx < fn.parameters.size())
         {
-            CheckInitializerListAgainstType(args.argNodes[i], fn.parameters[paramIdx].typeName,
-                                            {valCtx.request.sourceCode, valCtx.scope}, valCtx.ctx);
+            if (const auto* listFact = initFacts.FindList(arguments[i].bytes))
+            {
+                CheckInitializerListAgainstType(
+                    InitializerListTargetRequest{
+                        *listFact, initFacts, fn.parameters[paramIdx].typeName, {ctx.request.sourceCode, scope}},
+                    ctx);
+            }
         }
     }
 }
 
-void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& argNodes,
-                          const CallValidationContext& valCtx)
+void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentFact> arguments, const Scope* scope,
+                          DiagnosticContext& ctx)
 {
     const auto& fn = candidate.GetFunction();
-    for (size_t i = 0; i < argNodes.size() && i < fn.parameters.size(); ++i)
+    for (size_t i = 0; i < arguments.size() && i < fn.parameters.size(); ++i)
     {
         const auto& param = fn.parameters[i];
         const bool isMutableRef = !param.isConst && (param.isOutRef || param.isInOutRef || param.isStandaloneRef);
@@ -262,19 +250,16 @@ void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& ar
             continue;
         }
 
-        std::string_view aText = parser::NodeText(argNodes[i], valCtx.request.sourceCode);
+        std::string_view aText = arguments[i].text;
         TrimTypeWhitespace(aText);
-        if (aText == "void" && param.isOutRef)
+        if (aText == "void" && (param.isOutRef || param.modifier == ParameterModifier::Out))
         {
             continue;
         }
 
-        if (!CheckArgIsLValue(argNodes[i], valCtx.request.sourceCode, valCtx.scope, valCtx.ctx.request.symbolTable))
+        if (!CheckArgIsLValue(arguments[i], scope, ctx.request.symbolTable))
         {
-            const TSPoint aStart = ts_node_start_point(argNodes[i]);
-            const TSPoint aEnd = ts_node_end_point(argNodes[i]);
-            valCtx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column},
-                                   "as-err-lvalue-required-for-out-param");
+            ctx.EmitAtRange(arguments[i].range, "as-err-lvalue-required-for-out-param");
         }
     }
 }

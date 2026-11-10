@@ -2,9 +2,9 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/LValueSiteFacts.h"
 
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -48,12 +48,14 @@ struct CallCandidateContext
 struct LValueNodeValidator
 {
     /**
-     * @brief Determines whether an expression AST node denotes an assignable modifiable L-value.
-     * @param[in] rawNode AST expression node to validate.
+     * @brief Determines whether an expression fact denotes an assignable modifiable L-value.
+     * @param[in] candidate Pre-extracted l-value candidate fact.
+     * @param[in] facts Document-wide l-value site facts for branch candidate resolution.
      * @param[in] scope Lexical scope.
      * @param[in] ctx Diagnostic context.
-     * @return True if node is an assignable L-value; false otherwise.
+     * @return True if candidate is an assignable L-value; false otherwise.
      */
-    static bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx);
+    static bool IsAssignableLValueNode(const LValueCandidateFact& candidate, const LValueSiteFacts& facts,
+                                       const Scope* scope, const DiagnosticContext& ctx);
 };
 } // namespace angel_lsp::analysis

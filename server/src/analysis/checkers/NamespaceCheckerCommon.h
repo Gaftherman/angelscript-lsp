@@ -2,37 +2,59 @@
 
 #include "analysis/checkers/NamespaceChecker.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/CallSiteFacts.h"
+#include "analysis/index/NamespaceUsageFacts.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
 
+#include <span>
+#include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
 
 /**
- * @brief Checks if a scoped identifier refers to a known namespace or type prefix.
- * @param[in] node AST node representing the scoped identifier.
- * @param[in] sourceCode Document source text.
- * @param[in] table Workspace symbol table used to resolve prefix candidates.
- * @param[in,out] ctx Diagnostic collection and analysis context.
+ * @brief Context bundle for validating scoped identifier prefixes.
  */
-void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const SymbolTable& table, DiagnosticContext& ctx);
+struct ScopedIdentifierCheckContext
+{
+    std::string_view sourceCode;
+    const NodeIndex* nodeIndex = nullptr;
+    const SymbolTable& table;
+};
+
+/**
+ * @brief Context bundle for validating unqualified call expressions.
+ */
+struct NamespaceCallCheckContext
+{
+    std::string_view sourceCode;
+    const NodeIndex* nodeIndex = nullptr;
+};
+
+/**
+ * @brief Checks if a scoped identifier refers to a known namespace or type prefix.
+ * @param[in] fact Scoped identifier fact to validate.
+ * @param[in] sctx Context carrying source code, node index, and symbol table.
+ * @param[in,out] ctx Diagnostic sink accumulating emitted findings.
+ */
+void CheckScopedIdentifier(const ScopedIdentifierFact& fact, const ScopedIdentifierCheckContext& sctx,
+                           DiagnosticContext& ctx);
 
 /**
  * @brief Checks if an unqualified function call resolves to an in-scope symbol.
- * @param[in] node AST node representing the call expression.
- * @param[in] request Contextual request bundle containing AST root, source text, and node index.
- * @param[in,out] ctx Diagnostic collection and analysis context.
+ * @param[in] call Call site fact to validate.
+ * @param[in] cctx Context carrying source code and node index.
+ * @param[in,out] ctx Diagnostic sink accumulating emitted findings.
  */
-void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx);
+void CheckCallExpression(const CallSiteFact& call, const NamespaceCallCheckContext& cctx, DiagnosticContext& ctx);
 
 /**
  * @brief Checks if an import declaration mistakenly specifies a body block.
- * @param[in] node AST node representing the import declaration or error node.
- * @param[in] sourceCode Document source text.
- * @param[in,out] ctx Diagnostic collection and analysis context.
+ * @param[in] fact Import declaration fact to validate.
+ * @param[in,out] ctx Diagnostic sink accumulating emitted findings.
  */
-void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx);
+void CheckImportBody(const ImportDeclarationFact& fact, DiagnosticContext& ctx);
 
 } // namespace angel_lsp::analysis

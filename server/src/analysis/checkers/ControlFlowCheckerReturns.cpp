@@ -1,118 +1,203 @@
 #include "analysis/checkers/ControlFlowCheckerCommon.h"
-#include "analysis/index/NodeIndex.h"
+#include "analysis/index/AssignmentSiteFacts.h"
+#include "analysis/index/CallSiteFacts.h"
+#include "analysis/index/ControlFlowFacts.h"
+#include "analysis/index/DeclarationSiteFacts.h"
+#include "analysis/index/LambdaTargetFacts.h"
+#include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "parser/Primitives.h"
-#include "utils/Utils.h"
 
-#include <string>
+#include <optional>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
 
-static TSSymbol NodeSymbol(TSNode node)
-{
-    return ts_node_is_null(node) ? 0 : ts_node_symbol(node);
-}
-
 /**
  * @brief True for a return type that null cannot convert to.
- *        The primitives, by name. Deliberately not "anything that is not a handle": a value type
  */
 static bool IsNonNullablePrimitiveName(std::string_view typeName)
 {
-    return parser::primitives::IsNonNullable(typeName);
+    return IsPrimitiveTypeName(typeName) && typeName != "void";
 }
 
-void ControlFlowVisitor::CheckReturnStatement(TSNode node, const ControlFlowState& state)
+/**
+ * @brief Resolves the syntactic target context of a lambda expression from AST-free declaration and call facts.
+ * @param[in] lambdaBytes Byte span of the lambda expression.
+ * @param[in] index Precomputed node index for querying declaration and call sites.
+ * @param[in] source Document text.
+ * @return Populated lambda target fact if an enclosing declarator, assignment, or call argument is found.
+ */
+static std::optional<LambdaTargetFact> FindLambdaTargetFact(IndexedByteRange lambdaBytes, const NodeIndex& index,
+                                                            std::string_view source)
 {
-    // A bare `return;` in a function that owes a value. Measured: the compiler answers
-    // "Must return a value" and rejects the file, and nothing here saw it -
-    // as-err-not-all-paths-return asks only whether a return is *reached*, so
-    // `float FS(float f) { return; }` passed every check this analyzer had.
-    if (!state.requiredReturn.empty() && state.requiredReturn != "void" && ts_node_named_child_count(node) == 0)
+    std::optional<LambdaTargetFact> bestTarget;
+    uint32_t bestSpanSize = UINT32_MAX;
+
+    const auto declFacts = BuildDeclarationSiteFacts(index, source);
+    for (const auto& decl : declFacts.variableDeclarations)
     {
-        m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-return-value-required", state.functionName);
+        for (uint32_t i = 0; i < decl.declaratorCount; ++i)
+        {
+            const auto& d = declFacts.declarators[decl.declaratorBegin + i];
+            if (d.hasValue && d.valueOperand.bytes.startByte <= lambdaBytes.startByte &&
+                lambdaBytes.endByte <= d.valueOperand.bytes.endByte)
+            {
+                const uint32_t span = d.valueOperand.bytes.endByte - d.valueOperand.bytes.startByte;
+                if (span < bestSpanSize)
+                {
+                    bestSpanSize = span;
+                    bestTarget = LambdaTargetFact{.kind = LambdaTargetKind::DeclaratorType, .text = decl.typeText};
+                }
+            }
+        }
     }
 
-    // The constructor half of the same rule. Reported here rather than in
-    // TypeConversionChecker because that one asks the return type node what is required,
-    // and a constructor has none - so the one function in the language that can only
-    // return void was the one nothing checked.
-    if (state.implicitVoid && ts_node_named_child_count(node) > 0)
+    const auto assignFacts = BuildAssignmentSiteFacts(index, source);
+    for (const auto& a : assignFacts.assignments)
     {
-        m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-void-return-value");
+        if (a.right.bytes.startByte <= lambdaBytes.startByte && lambdaBytes.endByte <= a.right.bytes.endByte)
+        {
+            const uint32_t span = a.right.bytes.endByte - a.right.bytes.startByte;
+            if (span < bestSpanSize)
+            {
+                bestSpanSize = span;
+                bestTarget = LambdaTargetFact{.kind = LambdaTargetKind::AssignmentLeft, .text = a.left.text};
+            }
+        }
+    }
+
+    const auto callFacts = BuildCallSiteFacts(index, source);
+    for (const auto& call : callFacts.callSites)
+    {
+        for (uint32_t i = 0; i < call.argumentCount; ++i)
+        {
+            const auto& arg = callFacts.arguments[call.argumentBegin + i];
+            if (arg.bytes.startByte <= lambdaBytes.startByte && lambdaBytes.endByte <= arg.bytes.endByte)
+            {
+                const uint32_t span = arg.bytes.endByte - arg.bytes.startByte;
+                if (span < bestSpanSize)
+                {
+                    bestSpanSize = span;
+                    bestTarget = LambdaTargetFact{.kind = LambdaTargetKind::CallArgument,
+                                                  .text = call.calleeText,
+                                                  .position = i,
+                                                  .soleArgument = (call.argumentCount == 1)};
+                }
+            }
+        }
+    }
+
+    return bestTarget;
+}
+
+void ControlFlowVisitor::CheckReturnStatement(const ControlFlowRecord& record, const ControlFlowState& state)
+{
+    // A bare `return;` in a function that owes a value.
+    if (!state.requiredReturn.empty() && state.requiredReturn != "void" && record.returnFact.isBare)
+    {
+        m_ctx.EmitAtRange(record.range, "as-err-return-value-required", state.functionName);
+    }
+
+    // The constructor half of the same rule.
+    if (state.implicitVoid && record.returnFact.hasValue)
+    {
+        m_ctx.EmitAtRange(record.range, "as-err-void-return-value");
     }
 
     // `int f() { return null; }` - "No conversion from '<null handle>' to 'int' available."
-    // as-err-null-non-handle says exactly this about a variable and had nothing to say
-    // about a return. Restricted to the primitives, and to a return type carrying no `@`,
-    // so a class or a handle - where null may well be legal, and where the host may have
-    // registered a conversion this analyzer cannot see - is left alone.
     if (!state.requiredReturn.empty() && !IsHandleTypeView(state.requiredReturn) &&
-        IsNonNullablePrimitiveName(state.requiredReturn) && ts_node_named_child_count(node) == 1 &&
-        NodeSymbol(ts_node_named_child(node, 0)) == parser::GetGrammarSymbols().symNullLiteral)
+        IsNonNullablePrimitiveName(state.requiredReturn) && record.returnFact.returnsNullLiteral)
     {
-        m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-null-non-handle", state.requiredReturn);
+        m_ctx.EmitAtRange(record.range, "as-err-null-non-handle", state.requiredReturn);
     }
 }
 
-void ControlFlowVisitor::CheckFunctionDeclaration(TSNode node, ControlFlowState& state)
+void ControlFlowVisitor::CheckFunctionDeclaration(const ControlFlowRecord& record, ControlFlowState& state)
 {
     // A nested function opens its own flow: a loop enclosing the declaration does not
     // make a `break` inside the nested body legal.
     state = ControlFlowState{};
 
-    TSNode body = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
-    TSNode returnType = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldReturnType);
-    TSNode name = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
-
-    // What this body is required to return, and under whose name to say so.
-    //
-    // A lambda has neither: the grammar gives `lambda_expression` a parameter list and
-    // a body and nothing else, so `return_type` is null and this check simply never
-    // ran for one. The requirement comes from the funcdef it is being handed to -
-    // `funcdef int CB(); CB@ cb = function() { };` is "Not all paths return a value"
-    // to the real compiler - and that funcdef is also the only name there is to
-    // report, so the message names it and the diagnostic is anchored on the lambda.
-    std::string requiredReturn;
-    std::string reportedName;
-    if (!ts_node_is_null(returnType))
+    const ControlFlowFunctionFact* fnFact = m_facts.FindFunction(record.bytes);
+    if (!fnFact)
     {
-        requiredReturn = utils::TrimView(parser::NodeText(returnType, m_sourceCode));
-        reportedName = std::string(parser::NodeText(name, m_sourceCode));
+        return;
     }
-    else if (NodeSymbol(node) == parser::GetGrammarSymbols().symLambdaExpression)
+
+    std::string_view requiredReturn;
+    std::string_view reportedName;
+    if (!fnFact->isLambda)
     {
-        if (const auto target = FuncdefTargetOfLambda(node, m_ctx.request.symbolTable, m_sourceCode))
+        requiredReturn = fnFact->returnType;
+        reportedName = fnFact->name;
+    }
+    else
+    {
+        if (m_ctx.request.nodeIndex != nullptr)
         {
-            requiredReturn = CleanBaseType(target->GetFuncdef().returnType);
-            reportedName = target->name;
+            if (const auto ltf = FindLambdaTargetFact(fnFact->bytes, *m_ctx.request.nodeIndex, m_sourceCode))
+            {
+                if (const auto target = FuncdefTargetOfLambda(*ltf, m_ctx.request.symbolTable))
+                {
+                    const std::string_view retType = CleanBaseTypeView(target->GetFuncdef().returnType);
+                    if (retType == "void")
+                    {
+                        requiredReturn = "void";
+                    }
+                    else
+                    {
+                        m_lambdaStrings.emplace_back(retType);
+                        requiredReturn = m_lambdaStrings.back();
+                    }
+                    m_lambdaStrings.emplace_back(target->name);
+                    reportedName = m_lambdaStrings.back();
+                }
+            }
+        }
+
+        if (requiredReturn.empty())
+        {
+            // For lambdas, search return sites belonging to this lambda to find the funcdef target
+            for (const auto& ret : m_facts.returnSites.returns)
+            {
+                if (ret.owner == ReturnOwnerKind::Lambda && ret.bytes.startByte >= fnFact->bytes.startByte &&
+                    ret.bytes.endByte <= fnFact->bytes.endByte)
+                {
+                    if (const auto target = FuncdefTargetOfLambda(ret.lambdaTarget, m_ctx.request.symbolTable))
+                    {
+                        const std::string_view retType = CleanBaseTypeView(target->GetFuncdef().returnType);
+                        if (retType == "void")
+                        {
+                            requiredReturn = "void";
+                        }
+                        else
+                        {
+                            m_lambdaStrings.emplace_back(retType);
+                            requiredReturn = m_lambdaStrings.back();
+                        }
+                        m_lambdaStrings.emplace_back(target->name);
+                        reportedName = m_lambdaStrings.back();
+                        break;
+                    }
+                }
+            }
         }
     }
 
-    if (!ts_node_is_null(body) && !requiredReturn.empty() && requiredReturn != "void")
+    if (fnFact->bodyBytes.startByte != fnFact->bodyBytes.endByte && !requiredReturn.empty() && requiredReturn != "void")
     {
-        const bool hasSyntaxError =
-            ts_node_has_error(body) || (m_ctx.request.nodeIndex && m_ctx.request.nodeIndex->NodeHasSyntaxError(body));
-        if (!hasSyntaxError && !m_index.CallableBodyDefinitelyReturns(ts_node_start_byte(body)))
+        if (!fnFact->hasSyntaxError && !fnFact->definitelyReturns)
         {
-            m_ctx.EmitAtNodeRange(ToOptionalSourceRange(ts_node_is_null(name) ? node : name),
-                                  "as-err-not-all-paths-return", reportedName);
+            const SourceRange anchor = fnFact->isLambda || fnFact->name.empty() ? fnFact->range : fnFact->nameRange;
+            m_ctx.EmitAtRange(anchor, "as-err-not-all-paths-return", reportedName);
         }
     }
 
-    // Carried into the body, so every `return` inside it knows what it owes. A lambda
-    // whose funcdef target could not be resolved leaves this empty and the check below
-    // does nothing, which is the same silence the rule above keeps.
     state.requiredReturn = requiredReturn;
     state.functionName = reportedName;
-    state.implicitVoid =
-        ts_node_is_null(returnType) && NodeSymbol(node) != parser::GetGrammarSymbols().symLambdaExpression;
+    state.implicitVoid = fnFact->implicitVoid;
 }
 
 } // namespace angel_lsp::analysis

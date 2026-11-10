@@ -1,16 +1,16 @@
 #include "analysis/checkers/LValueChecker.h"
 #include "analysis/checkers/LValueCheckerCommon.h"
+#include "analysis/index/LValueSiteFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/OperandRangeResolution.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <variant>
 #include <vector>
 
@@ -19,28 +19,27 @@ namespace angel_lsp::analysis
 
 /**
  * @brief Collects candidate method symbols for a member expression callee.
- * @param[in] funcNode Member expression AST node representing the callee.
+ * @param[in] callSite Pre-extracted call site fact.
  * @param[in] cctx Call candidate context holding request, scope, and diagnostic context.
  * @param[out] candidates Vector of candidate symbols to append to.
  */
-static void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
+static void CollectMemberCandidates(const LValueCallSiteFact& callSite, const CallCandidateContext& cctx,
+                                    std::vector<Symbol>& candidates)
 {
-    TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
-    TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
-    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    if (callSite.memberName.empty() || callSite.objectBytes.endByte == 0)
     {
         return;
     }
-    std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(cctx.scope, cctx.ctx));
-    std::string cleanObj = CleanBaseType(objType);
-    std::string memName(parser::NodeText(memNode, cctx.request.sourceCode));
-    if (cleanObj.empty() || memName.empty())
+    const std::string objType =
+        ResolveExpressionType(callSite.objectBytes, ExpressionTypeContext(cctx.scope, cctx.ctx));
+    const auto cleanObj = CleanBaseType(objType);
+    if (cleanObj.empty())
     {
         return;
     }
     for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, cctx.ctx.request.symbolTable))
     {
-        if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(typeName, memName))
+        if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(typeName, callSite.memberName))
         {
             for (const auto& sym : *found)
             {
@@ -55,14 +54,14 @@ static void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext&
 
 /**
  * @brief Collects candidate symbols for a scoped identifier callee.
- * @param[in] funcNode Scoped identifier AST node representing the callee.
+ * @param[in] callSite Pre-extracted call site fact.
  * @param[in] cctx Call candidate context holding request, scope, and diagnostic context.
  * @param[out] candidates Vector of candidate symbols to append to.
  */
-static void CollectScopedCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
+static void CollectScopedCandidates(const LValueCallSiteFact& callSite, const CallCandidateContext& cctx,
+                                    std::vector<Symbol>& candidates)
 {
-    std::string qName(parser::NodeText(funcNode, cctx.request.sourceCode));
-    if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(qName))
+    if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(callSite.calleeText))
     {
         for (const auto& sym : *found)
         {
@@ -76,16 +75,21 @@ static void CollectScopedCandidates(TSNode funcNode, const CallCandidateContext&
 
 /**
  * @brief Collects candidate symbols for an unqualified identifier callee.
- * @param[in] funcNode Identifier AST node representing the callee.
+ * @param[in] callSite Pre-extracted call site fact.
  * @param[in] cctx Call candidate context holding request, scope, and diagnostic context.
  * @param[out] candidates Vector of candidate symbols to append to.
  */
-static void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cctx,
+static void CollectIdentifierCandidates(const LValueCallSiteFact& callSite, const CallCandidateContext& cctx,
                                         std::vector<Symbol>& candidates)
 {
-    std::string name(parser::NodeText(funcNode, cctx.request.sourceCode));
-    for (const auto& sym : FindSymbolsInScope(name, funcNode, cctx.request.sourceCode, cctx.ctx.request.symbolTable,
-                                              cctx.request.nodeIndex))
+    std::vector<ContainerInfo> containers;
+    if (cctx.request.nodeIndex)
+    {
+        containers = cctx.request.nodeIndex->CollectLookupContainers(
+            callSite.calleeBytes.startByte, callSite.calleeBytes.endByte, 0, cctx.request.sourceCode);
+    }
+    for (const auto& sym :
+         FindSymbolsInScope(cctx.ctx.request.symbolTable, containers, std::string(callSite.calleeText)))
     {
         if (sym.type == SymbolType::Function)
         {
@@ -96,15 +100,15 @@ static void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateCont
     {
         return;
     }
-    for (const auto& c : GetEnclosingContainers(funcNode, cctx.request.sourceCode, cctx.request.nodeIndex))
+    for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
         {
-            auto hierarchy = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName,
-                                                       cctx.ctx.request.symbolTable);
+            const auto hierarchy = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName,
+                                                             cctx.ctx.request.symbolTable);
             for (const auto& cls : hierarchy)
             {
-                if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(cls, name))
+                if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(cls, callSite.calleeText))
                 {
                     for (const auto& sym : *found)
                     {
@@ -122,15 +126,16 @@ static void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateCont
 
 /**
  * @brief Validate candidate return types.
- * @param[in] callNode Call expression AST node.
+ * @param[in] range Diagnostic target range of the call expression.
  * @param[in] candidates Candidate symbols or overloads.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-static void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& candidates, DiagnosticContext& ctx)
+static void ValidateCandidateReturnTypes(const SourceRange& range, const std::vector<Symbol>& candidates,
+                                         DiagnosticContext& ctx)
 {
     if (candidates.empty())
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(callNode), "as-err-assign-non-ref-call");
+        ctx.EmitAtRange(range, "as-err-assign-non-ref-call");
         return;
     }
 
@@ -145,7 +150,7 @@ static void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symb
         }
 
         const auto& fn = sym.GetFunction();
-        std::string retClean = CleanBaseType(fn.returnType);
+        const auto retClean = CleanBaseType(fn.returnType);
         if (fn.returnTypeKind != TypeKind::Void && retClean != "void")
         {
             allVoid = false;
@@ -159,48 +164,41 @@ static void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symb
 
     if (allVoid)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(callNode), "as-err-assign-void");
+        ctx.EmitAtRange(range, "as-err-assign-void");
     }
     else if (!anyReference)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(callNode), "as-err-assign-non-ref-call");
+        ctx.EmitAtRange(range, "as-err-assign-non-ref-call");
     }
 }
 
 /**
  * @brief Validates whether a call expression target is a modifiable reference l-value.
- * @param[in] callNode Call expression AST node.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in] callSite Pre-extracted call site fact.
+ * @param[in] request Contextual request bundle containing source text and parameters.
  * @param[in] scope Lexical scope active at the call site.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckCallLValue(TSNode callNode, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx)
+void CheckCallLValue(const LValueCallSiteFact& callSite, const AstCheckContext& request, const Scope* scope,
+                     DiagnosticContext& ctx)
 {
-    TSNode funcNode = parser::GetCallCallee(callNode);
-    if (ts_node_is_null(funcNode))
-    {
-        return;
-    }
-
     const CallCandidateContext cctx{request, scope, ctx};
     std::vector<Symbol> candidates;
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol funcSym = ts_node_symbol(funcNode);
 
-    if (funcSym == gs.symMemberExpression)
+    if (callSite.calleeKind == LValueCalleeKind::Member)
     {
-        CollectMemberCandidates(funcNode, cctx, candidates);
+        CollectMemberCandidates(callSite, cctx, candidates);
     }
-    else if (funcSym == gs.symScopedIdentifier)
+    else if (callSite.calleeKind == LValueCalleeKind::Scoped)
     {
-        CollectScopedCandidates(funcNode, cctx, candidates);
+        CollectScopedCandidates(callSite, cctx, candidates);
     }
-    else if (funcSym == gs.symIdentifier || funcSym == gs.tokFunction)
+    else if (callSite.calleeKind == LValueCalleeKind::Identifier)
     {
-        CollectIdentifierCandidates(funcNode, cctx, candidates);
+        CollectIdentifierCandidates(callSite, cctx, candidates);
     }
 
-    ValidateCandidateReturnTypes(callNode, candidates, ctx);
+    ValidateCandidateReturnTypes(callSite.range, candidates, ctx);
 }
 
 } // namespace angel_lsp::analysis

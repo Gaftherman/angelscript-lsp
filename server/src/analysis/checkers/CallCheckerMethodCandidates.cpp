@@ -1,8 +1,6 @@
 #include "analysis/checkers/CallCheckerCommon.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -15,7 +13,7 @@
 namespace angel_lsp::analysis
 {
 
-bool IsConstructorOrDestructorName(const std::string& memberName, const std::string& typeName)
+bool IsConstructorOrDestructorName(std::string_view memberName, std::string_view typeName)
 {
     if (memberName.empty() || typeName.empty())
     {
@@ -29,10 +27,10 @@ bool IsConstructorOrDestructorName(const std::string& memberName, const std::str
         return true;
     }
 
-    return memberName.front() == '~' && std::string_view(memberName).substr(1) == shortName;
+    return memberName.front() == '~' && memberName.substr(1) == shortName;
 }
 
-std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std::string& methodName,
+std::vector<Symbol> FindMethodCandidates(std::string_view typeName, std::string_view methodName,
                                          const SymbolTable& table, ExpressionTypeCache* cache)
 {
     std::vector<Symbol> candidates;
@@ -81,7 +79,7 @@ static void SubstituteFunctionTemplateParams(FunctionSignature& fn, const std::s
     }
 }
 
-void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, const std::string& typeName,
+void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, std::string_view typeName,
                                 const std::vector<std::string>& fallbackArgs, const SymbolTable& table)
 {
     const auto binding = BindTemplateArguments(typeName, table);
@@ -167,36 +165,11 @@ void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, bool isRec
     }
 }
 
-bool IsEnclosingMethodConst(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode curr = parser::FindAncestorWithSymbol(node, gs.symFuncDeclaration);
-    if (!ts_node_is_null(curr))
-    {
-        TSTreeCursor cursor = ts_tree_cursor_new(curr);
-        bool isConstMethod = false;
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            do
-            {
-                TSNode child = ts_tree_cursor_current_node(&cursor);
-                if (ts_node_symbol(child) == gs.symFuncAttributes)
-                {
-                    isConstMethod = !ts_node_is_null(parser::FindChildWithSymbol(child, gs.tokConst));
-                    break;
-                }
-            } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        }
-        ts_tree_cursor_delete(&cursor);
-        return isConstMethod;
-    }
-    return false;
-}
-
-static std::optional<Symbol> TryResolveGetterCallableFuncdef(const std::string& typeName, const std::string& memberName,
+static std::optional<Symbol> TryResolveGetterCallableFuncdef(std::string_view typeName, std::string_view memberName,
                                                              const SymbolTable& table)
 {
-    const std::string getterName = "get_" + memberName;
+    std::string getterName = "get_";
+    getterName.append(memberName);
     if (const auto getterFound = table.FindMemberSymbolPtr(typeName, getterName))
     {
         for (const auto& sym : *getterFound)
@@ -221,7 +194,7 @@ static std::optional<Symbol> TryResolveGetterCallableFuncdef(const std::string& 
     return std::nullopt;
 }
 
-std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectType, const std::string& memberName,
+std::optional<Symbol> TryResolveMemberCallableFuncdef(std::string_view objectType, std::string_view memberName,
                                                       const SymbolTable& table, ExpressionTypeCache* cache)
 {
     const auto hierarchy = GetInheritedTypeHierarchy(objectType, table, cache);

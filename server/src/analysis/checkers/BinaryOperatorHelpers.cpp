@@ -3,11 +3,10 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/OperandTypePair.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/Keywords.h"
-#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <optional>
@@ -34,7 +33,7 @@ bool IsParameterCompatible(const ParameterInformation& param, std::string_view a
     {
         return true;
     }
-    if (parser::primitives::IsNumeric(cleanParam) && parser::primitives::IsNumeric(argType))
+    if (IsNumericPrimitive(cleanParam) && IsNumericPrimitive(argType))
     {
         return true;
     }
@@ -53,7 +52,7 @@ bool IsParameterCompatible(const ParameterInformation& param, std::string_view a
 bool TypeHasOperator(std::string_view typeName, std::string_view opName, std::string_view argType,
                      const SymbolTable& table)
 {
-    if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
+    if (typeName.empty() || IsPrimitiveTypeName(typeName))
     {
         return false;
     }
@@ -85,7 +84,7 @@ bool TypeHasOperator(std::string_view typeName, std::string_view opName, std::st
  */
 bool TypeHasOpImplConvTo(std::string_view typeName, std::string_view targetType, const SymbolTable& table)
 {
-    if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
+    if (typeName.empty() || IsPrimitiveTypeName(typeName))
     {
         return false;
     }
@@ -116,8 +115,7 @@ bool TypeHasOpImplConvTo(std::string_view typeName, std::string_view targetType,
  */
 bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_view stringTypeName)
 {
-    if (type == parser::keywords::Null || parser::primitives::IsPrimitive(type) || type == stringTypeName ||
-        ResolvesToEnum(type, table))
+    if (type == "null" || IsPrimitiveTypeName(type) || type == stringTypeName || ResolvesToEnum(type, table))
     {
         return true;
     }
@@ -147,7 +145,7 @@ bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_vi
  */
 bool IsNullOperand(const BinaryOperandFact& operand, std::string_view type)
 {
-    return type == parser::keywords::Null || operand.isNullLiteral;
+    return type == "null" || operand.isNullLiteral;
 }
 
 /**
@@ -184,8 +182,8 @@ std::optional<OperandTypePair> ResolveCleanBinaryOperandTypes(const BinaryExpres
     {
         return std::nullopt;
     }
-    const auto cleanLeft = IsNullOperand(fact.left, rawLeft) ? parser::keywords::Null : StripModifiers(rawLeft);
-    const auto cleanRight = IsNullOperand(fact.right, rawRight) ? parser::keywords::Null : StripModifiers(rawRight);
+    const auto cleanLeft = IsNullOperand(fact.left, rawLeft) ? "null" : StripModifiers(rawLeft);
+    const auto cleanRight = IsNullOperand(fact.right, rawRight) ? "null" : StripModifiers(rawRight);
     if (cleanLeft.empty() || cleanRight.empty())
     {
         return std::nullopt;

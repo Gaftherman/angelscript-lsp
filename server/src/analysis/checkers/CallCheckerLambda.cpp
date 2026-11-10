@@ -1,4 +1,5 @@
 #include "analysis/checkers/CallCheckerCommon.h"
+#include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 
@@ -12,12 +13,12 @@
 namespace angel_lsp::analysis
 {
 
-std::vector<size_t> FindLambdaPositions(const std::vector<TSNode>& argNodes)
+std::vector<size_t> FindLambdaPositions(std::span<const CallArgumentFact> arguments)
 {
     std::vector<size_t> positions;
-    for (size_t i = 0; i < argNodes.size(); ++i)
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-        if (IsLambdaExpression(argNodes[i]))
+        if (arguments[i].kind == CallArgumentKind::Lambda)
         {
             positions.push_back(i);
         }
@@ -25,13 +26,13 @@ std::vector<size_t> FindLambdaPositions(const std::vector<TSNode>& argNodes)
     return positions;
 }
 
-static LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidate, const LambdaCheckContext& lctx,
+static LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidate, const LambdaCheckFactsContext& lctx,
                                                           std::vector<std::string>& shape)
 {
     const auto& fn = candidate.GetFunction();
     for (const size_t position : lctx.lambdaPositions)
     {
-        if (position >= fn.parameters.size())
+        if (position >= fn.parameters.size() || position >= lctx.arguments.size())
         {
             return LambdaCandidateStatus::Rejected;
         }
@@ -42,7 +43,9 @@ static LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidat
         {
             return LambdaCandidateStatus::UnresolvableFuncdef;
         }
-        if (LambdaContradictsFuncdef(lctx.argNodes[position], funcdef->GetFuncdef(), lctx.table, lctx.sourceCode))
+        const auto& arg = lctx.arguments[position];
+        if (arg.funcdefValue.hasParameterList &&
+            LambdaContradictsFuncdef(arg.funcdefValue.lambdaParameters, funcdef->GetFuncdef(), lctx.table))
         {
             return LambdaCandidateStatus::Rejected;
         }
@@ -52,14 +55,12 @@ static LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidat
 }
 
 static void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& acceptedShapes,
-                                    const Symbol* priorityCandidate, const LambdaCheckContext& lctx,
+                                    const Symbol* priorityCandidate, const LambdaCheckFactsContext& lctx,
                                     DiagnosticContext& ctx)
 {
-    const SourceRange range = GetCalleeDiagnosticRange(lctx.callee);
-
     if (acceptedShapes.empty())
     {
-        ctx.EmitAtRange(range, "as-err-call-no-matching-signature", lctx.reportedName);
+        ctx.EmitAtRange(lctx.calleeRange, "as-err-call-no-matching-signature", lctx.reportedName);
         return;
     }
 
@@ -70,11 +71,11 @@ static void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>&
     {
         const std::string_view prioritySig =
             priorityCandidate != nullptr ? priorityCandidate->GetDisplaySignature() : std::string_view{};
-        ctx.EmitAtRange(range, "as-err-call-ambiguous", {std::string_view(lctx.reportedName), prioritySig});
+        ctx.EmitAtRange(lctx.calleeRange, "as-err-call-ambiguous", {lctx.reportedName, prioritySig});
     }
 }
 
-void CheckLambdaArguments(std::span<const Symbol* const> candidates, const LambdaCheckContext& lctx,
+void CheckLambdaArguments(std::span<const Symbol* const> candidates, const LambdaCheckFactsContext& lctx,
                           DiagnosticContext& ctx)
 {
     if (lctx.lambdaPositions.empty() || candidates.empty())

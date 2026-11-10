@@ -6,6 +6,7 @@
 #include "analysis/index/SymbolTable.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,7 +20,7 @@ namespace angel_lsp::analysis
  * @param[in] fileUri URI of the file whose mixin declarations should be found.
  * @return Vector of pairs containing start and end line numbers for each mixin class.
  */
-MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string& fileUri);
+MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, std::string_view fileUri);
 
 /**
  * @brief Checks whether an identifier is declared as a member in any enclosing container or imported namespace.
@@ -29,8 +30,8 @@ MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string
  * @param[in] ctx Diagnostic context containing request metadata, node index, and symbol table.
  * @return True if the identifier is a member of an enclosing container or imported namespace; false otherwise.
  */
-bool IsEnclosingScopeMember(uint32_t byteOffset, const std::string& refName,
-                            const std::vector<std::string>& usingNamespaces, const DiagnosticContext& ctx);
+bool IsEnclosingScopeMember(uint32_t byteOffset, std::string_view refName, std::span<const std::string> usingNamespaces,
+                            const DiagnosticContext& ctx);
 
 /**
  * @brief Checks whether a reference matches a reserved keyword, global accessor property, or container accessor.

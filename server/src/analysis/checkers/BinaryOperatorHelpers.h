@@ -5,7 +5,6 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/OperandTypePair.h"
-#include "parser/Keywords.h"
 
 #include <optional>
 #include <string_view>
@@ -20,9 +19,7 @@ namespace angel_lsp::analysis
  */
 [[nodiscard]] constexpr bool IsComparisonOp(std::string_view op) noexcept
 {
-    return op == parser::keywords::operators::EqEq || op == parser::keywords::operators::BangEq ||
-           op == parser::keywords::operators::Lt || op == parser::keywords::operators::LtEq ||
-           op == parser::keywords::operators::Gt || op == parser::keywords::operators::GtEq;
+    return op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=";
 }
 
 /**
@@ -32,8 +29,7 @@ namespace angel_lsp::analysis
  */
 [[nodiscard]] constexpr bool IsRelationalOp(std::string_view op) noexcept
 {
-    return op == parser::keywords::operators::Lt || op == parser::keywords::operators::LtEq ||
-           op == parser::keywords::operators::Gt || op == parser::keywords::operators::GtEq;
+    return op == "<" || op == "<=" || op == ">" || op == ">=";
 }
 
 /**
@@ -43,9 +39,7 @@ namespace angel_lsp::analysis
  */
 [[nodiscard]] constexpr bool IsBitwiseOp(std::string_view op) noexcept
 {
-    return op == parser::keywords::operators::Pipe || op == parser::keywords::operators::Amp ||
-           op == parser::keywords::operators::Caret || op == parser::keywords::operators::LtLt ||
-           op == parser::keywords::operators::GtGt || op == parser::keywords::operators::GtGtGt;
+    return op == "|" || op == "&" || op == "^" || op == "<<" || op == ">>" || op == ">>>";
 }
 
 /**
@@ -55,9 +49,7 @@ namespace angel_lsp::analysis
  */
 [[nodiscard]] constexpr bool IsArithmeticOp(std::string_view op) noexcept
 {
-    return op == parser::keywords::operators::Plus || op == parser::keywords::operators::Minus ||
-           op == parser::keywords::operators::Star || op == parser::keywords::operators::Slash ||
-           op == parser::keywords::operators::Percent || op == parser::keywords::operators::StarStar;
+    return op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**";
 }
 
 /**

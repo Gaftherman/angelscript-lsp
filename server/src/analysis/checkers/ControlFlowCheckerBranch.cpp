@@ -1,81 +1,64 @@
 #include "analysis/checkers/ControlFlowCheckerCommon.h"
-#include "analysis/index/NodeIndex.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "utils/Utils.h"
+#include "analysis/index/ControlFlowFacts.h"
 
-#include <tree_sitter/api.h>
+#include <span>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
 
 /**
  * @brief `if (c);` and `else;` - a bare semicolon where the branch body belongs.
- *        AngelScript is stricter here than C++ and stricter than its own loops, which is the whole
+ *        AngelScript is stricter here than C++ and stricter than its own loops.
  */
-static void CheckEmptyBranch(TSNode node, DiagnosticContext& ctx)
+static void CheckEmptyBranch(const ControlFlowRecord& record, DiagnosticContext& ctx)
 {
-    if (ts_node_has_error(node))
+    if (record.branch.hasEmptyConsequence)
     {
-        return;
+        ctx.EmitAtRange(record.branch.consequenceRange, "as-err-if-empty-statement");
     }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSNode consequence = parser::GetChildByField(node, gs.fieldConsequence);
-    if (!ts_node_is_null(consequence) && ts_node_symbol(consequence) == gs.tokSemicolon)
+    if (record.branch.hasEmptyAlternative)
     {
-        const TSPoint start = ts_node_start_point(consequence);
-        const TSPoint end = ts_node_end_point(consequence);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-if-empty-statement");
-    }
-
-    const TSNode alternative = parser::GetChildByField(node, gs.fieldAlternative);
-    if (!ts_node_is_null(alternative) && ts_node_symbol(alternative) == gs.tokSemicolon)
-    {
-        const TSPoint start = ts_node_start_point(alternative);
-        const TSPoint end = ts_node_end_point(alternative);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-else-empty-statement");
+        ctx.EmitAtRange(record.branch.alternativeRange, "as-err-else-empty-statement");
     }
 }
 
-bool ControlFlowVisitor::CheckLoopControl(TSNode node, TSSymbol sym, const ControlFlowState& state)
+bool ControlFlowVisitor::CheckLoopControl(const ControlFlowRecord& record, const ControlFlowState& state)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    if (sym == gs.symBreakStatement)
+    if (record.kind == ControlFlowRecordKind::Break)
     {
         if (state.loopDepth == 0 && state.switchDepth == 0)
         {
-            m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-break-outside-loop");
+            m_ctx.EmitAtRange(record.range, "as-err-break-outside-loop");
         }
         return true;
     }
-    if (sym == gs.symContinueStatement)
+    if (record.kind == ControlFlowRecordKind::Continue)
     {
         if (state.loopDepth == 0)
         {
-            m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-continue-outside-loop");
+            m_ctx.EmitAtRange(record.range, "as-err-continue-outside-loop");
         }
         return true;
     }
     return false;
 }
 
-void ControlFlowVisitor::UpdateBranchState(TSNode node, TSSymbol sym, ControlFlowState& state)
+void ControlFlowVisitor::UpdateBranchState(const ControlFlowRecord& record, ControlFlowState& state)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    if (sym == gs.symWhileStatement || sym == gs.symForStatement || sym == gs.symForeachStatement ||
-        sym == gs.symDoWhileStatement)
+    if (record.kind == ControlFlowRecordKind::While || record.kind == ControlFlowRecordKind::For ||
+        record.kind == ControlFlowRecordKind::Foreach || record.kind == ControlFlowRecordKind::DoWhile)
     {
         ++state.loopDepth;
     }
-    else if (sym == gs.symSwitchStatement)
+    else if (record.kind == ControlFlowRecordKind::Switch)
     {
-        CheckSwitchLabels(m_index.SwitchLabels(ts_node_start_byte(node)), m_sourceCode, m_ctx);
+        CheckSwitchLabels(record, m_facts, m_sourceCode, m_ctx);
         ++state.switchDepth;
     }
-    else if (sym == gs.symIfStatement)
+    else if (record.kind == ControlFlowRecordKind::If)
     {
-        CheckEmptyBranch(node, m_ctx);
+        CheckEmptyBranch(record, m_ctx);
     }
 }
 

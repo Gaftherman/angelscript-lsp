@@ -1,10 +1,9 @@
 #include "analysis/checkers/UndefinedIdentifierChecker.h"
 
 #include "analysis/checkers/UndefinedIdentifierCheckerCommon.h"
-#include "analysis/index/NodeIndex.h"
-#include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 
+#include <span>
 #include <string>
 #include <vector>
 
@@ -30,11 +29,7 @@ void UndefinedIdentifierChecker::CheckUndefinedIdentifiers(
     }
 
     const MixinRanges mixinRanges = CollectMixinRanges(ctx.request.symbolTable, ctx.request.fileUri);
-    const std::vector<std::string> usingNamespaces =
-        ctx.request.nodeIndex
-            ? CollectUsingNamespaces(*ctx.request.nodeIndex, ctx.request.sourceCode)
-            : (ctx.request.tree ? CollectUsingNamespaces(ts_tree_root_node(ctx.request.tree), ctx.request.sourceCode)
-                                : std::vector<std::string>{});
+    const auto& usingNamespaces = GetUsingNamespaces(ctx.request);
     const UndefinedIdentifierContext uCtx{knownGlobalNames, mixinRanges, usingNamespaces, ctx};
     CheckUndefinedIdentifiersIterative(scope, uCtx);
 }

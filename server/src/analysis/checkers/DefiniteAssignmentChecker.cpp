@@ -1,35 +1,31 @@
 #include "analysis/checkers/DefiniteAssignmentChecker.h"
 
 #include "analysis/checkers/DefiniteAssignmentCheckerCommon.h"
+#include "analysis/index/DefiniteAssignmentFacts.h"
 #include "analysis/index/NodeIndex.h"
-#include "parser/GrammarNames.h"
 #include "utils/Utils.h"
-
-#include <initializer_list>
 
 namespace angel_lsp::analysis
 {
 
-DefiniteAssignmentVisitor::DefiniteAssignmentVisitor(const AstCheckContext& request, DiagnosticContext& ctx)
-    : m_request(request), m_ctx(ctx), m_index(*request.nodeIndex)
+DefiniteAssignmentVisitor::DefiniteAssignmentVisitor(const AstCheckContext& request, DiagnosticContext& ctx,
+                                                     const DefiniteAssignmentFacts& facts)
+    : m_request(request), m_ctx(ctx), m_facts(facts)
 {
 }
 
-void DefiniteAssignmentVisitor::AnalyzeFunction(SyntaxNodeId callable)
+void DefiniteAssignmentVisitor::AnalyzeFunction(const DefiniteAssignmentFunctionFact& fn)
 {
     m_trackedLocals.clear();
     m_reportedReads.clear();
 
-    const auto& gs = parser::GetGrammarSymbols();
-    const IndexedSyntaxNode* entry = m_index.SyntaxNode(callable);
-    const IndexedSyntaxNode* body = FindField(entry, gs.fieldBody);
-    if (!body)
+    if (fn.rootRecordIndex >= m_facts.records.size())
     {
-        body = FindOperand(entry, [&](const IndexedSyntaxNode& item) { return item.symbol == gs.symStatementBlock; });
+        return;
     }
 
     DefiniteAssignmentState state;
-    Schedule(body, state);
+    Schedule(fn.rootRecordIndex, state);
     while (!m_work.empty())
     {
         if (Step(m_work.back()))
@@ -39,21 +35,39 @@ void DefiniteAssignmentVisitor::AnalyzeFunction(SyntaxNodeId callable)
     }
 }
 
-void CheckDefiniteAssignment(const AstCheckContext& request, DiagnosticContext& ctx)
+void CheckDefiniteAssignment(const DefiniteAssignmentFacts& facts, const AstCheckContext& request,
+                             DiagnosticContext& ctx)
 {
-    if (!request.nodeIndex || request.sourceCode.empty() ||
+    if (facts.functions.empty() || request.sourceCode.empty() ||
         utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
     {
         return;
     }
 
-    DefiniteAssignmentVisitor visitor(request, ctx);
-    for (const bool lambdas : {false, true})
+    DefiniteAssignmentVisitor visitor(request, ctx, facts);
+    for (const auto& fn : facts.functions)
     {
-        for (const auto callable : request.nodeIndex->AssignmentCallables(lambdas))
-        {
-            visitor.AnalyzeFunction(callable);
-        }
+        visitor.AnalyzeFunction(fn);
+    }
+}
+
+void CheckDefiniteAssignment(const AstCheckContext& request, DiagnosticContext& ctx)
+{
+    if (request.sourceCode.empty() || utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+    {
+        return;
+    }
+
+    if (request.nodeIndex)
+    {
+        const DefiniteAssignmentFacts facts = BuildDefiniteAssignmentFacts(*request.nodeIndex, request.sourceCode);
+        CheckDefiniteAssignment(facts, request, ctx);
+    }
+    else if (request.rootNode.id != nullptr)
+    {
+        const NodeIndex localIndex(request.rootNode);
+        const DefiniteAssignmentFacts facts = BuildDefiniteAssignmentFacts(localIndex, request.sourceCode);
+        CheckDefiniteAssignment(facts, request, ctx);
     }
 }
 

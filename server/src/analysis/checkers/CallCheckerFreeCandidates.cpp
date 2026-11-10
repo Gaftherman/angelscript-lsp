@@ -1,7 +1,7 @@
 #include "analysis/checkers/CallCheckerCommon.h"
 #include "analysis/resolution/AmbiguityDetector.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
@@ -13,7 +13,7 @@
 namespace angel_lsp::analysis
 {
 
-bool NamesAType(const std::string& name, const SymbolTable& table)
+bool NamesAType(std::string_view name, const SymbolTable& table)
 {
     if (IsCorePrimitive(name))
     {
@@ -63,26 +63,29 @@ CandidateSet JudgeAgainst(const std::vector<Symbol>& candidates, uint32_t argume
     return result;
 }
 
-std::vector<std::string> CollectReachableScopes(TSNode callNode, std::string_view sourceCode,
+std::vector<std::string> CollectReachableScopes(uint32_t byteOffset, std::string_view sourceCode,
                                                 const NodeIndex* nodeIndex)
 {
     std::vector<std::string> reachableScopes;
-    for (const auto& container : GetEnclosingContainers(callNode, sourceCode, nodeIndex))
+    if (nodeIndex)
     {
-        if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+        for (const auto& container : nodeIndex->CollectEnclosingContainers(byteOffset, sourceCode))
         {
-            continue;
-        }
-        if (container.kind == ContainerKind::Namespace)
-        {
-            reachableScopes.push_back(container.qualifiedName);
+            if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+            {
+                continue;
+            }
+            if (container.kind == ContainerKind::Namespace)
+            {
+                reachableScopes.push_back(container.qualifiedName);
+            }
         }
     }
     reachableScopes.emplace_back();
     return reachableScopes;
 }
 
-static void CollectScopeCandidates(const std::string& scopeName, const std::string& name, const FreeLookupContext& ctx,
+static void CollectScopeCandidates(std::string_view scopeName, std::string_view name, const FreeLookupContext& ctx,
                                    std::vector<Symbol>& candidates)
 {
     const auto found =
@@ -104,10 +107,14 @@ static void CollectScopeCandidates(const std::string& scopeName, const std::stri
     }
 }
 
-static void CollectUsingNamespaceCandidates(const std::string& name, const std::vector<std::string>& reachableScopes,
+static void CollectUsingNamespaceCandidates(std::string_view name, const std::vector<std::string>& reachableScopes,
                                             const FreeLookupContext& ctx, std::vector<Symbol>& candidates)
 {
-    const auto usings = CollectVisibleUsingNamespaces(ctx.callNode, ctx.sourceCode, ctx.nodeIndex);
+    std::vector<std::string> usings;
+    if (ctx.nodeIndex)
+    {
+        usings = ctx.nodeIndex->CollectUsingNamespaces(ctx.sourceCode, ctx.byteOffset);
+    }
 
     for (const auto& imported : usings)
     {
@@ -119,7 +126,7 @@ static void CollectUsingNamespaceCandidates(const std::string& name, const std::
     }
 }
 
-std::vector<Symbol> FindFreeCandidates(const std::string& name, const FreeLookupContext& ctx)
+std::vector<Symbol> FindFreeCandidates(std::string_view name, const FreeLookupContext& ctx)
 {
     std::vector<Symbol> candidates;
     if (!ctx.index.allNames.contains(name))
@@ -128,7 +135,7 @@ std::vector<Symbol> FindFreeCandidates(const std::string& name, const FreeLookup
     }
 
     const std::vector<std::string> reachableScopes =
-        CollectReachableScopes(ctx.callNode, ctx.sourceCode, ctx.nodeIndex);
+        CollectReachableScopes(ctx.byteOffset, ctx.sourceCode, ctx.nodeIndex);
     for (const auto& scopeName : reachableScopes)
     {
         CollectScopeCandidates(scopeName, name, ctx, candidates);

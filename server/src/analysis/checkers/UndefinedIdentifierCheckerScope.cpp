@@ -29,7 +29,7 @@ static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticCon
 
     if (ref.name == "super")
     {
-        return ref.isSuperBaseCall || !ctx.request.tree;
+        return ref.isSuperBaseCall || (!ctx.request.nodeIndex && !ctx.request.tree);
     }
 
     if (ref.name == "function" && ref.isLambdaFunctionKeyword)
@@ -37,7 +37,7 @@ static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticCon
         return true;
     }
 
-    if (ref.isCall && ref.name != "super" && ctx.request.tree != nullptr)
+    if (ref.isCall && ref.name != "super" && (ctx.request.nodeIndex != nullptr || ctx.request.tree != nullptr))
     {
         return true;
     }
@@ -135,7 +135,7 @@ static void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierCo
             continue;
         }
 
-        if (uCtx.ctx.request.tree)
+        if (uCtx.ctx.request.nodeIndex != nullptr || uCtx.ctx.request.tree != nullptr)
         {
             if (IsReferenceInSyntaxErrorOrMetadata(ref, uCtx.ctx.request.nodeIndex))
             {

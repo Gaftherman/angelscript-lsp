@@ -226,32 +226,40 @@ static void CollectAllContainers(const NodeIndex& index, std::string_view source
 }
 
 static void CollectIdentifierUseSites(const NodeIndex& index, std::string_view source,
-                                      const std::vector<EnclosingContainerFact>& allContainers,
-                                      NamespaceUsageFacts& facts)
+                                      std::vector<EnclosingContainerFact>& allContainers, NamespaceUsageFacts& facts)
 {
     const auto& gs = parser::GetGrammarSymbols();
+    std::ranges::sort(allContainers,
+                      [](const EnclosingContainerFact& a, const EnclosingContainerFact& b)
+                      {
+                          return a.bytes.startByte != b.bytes.startByte ? a.bytes.startByte < b.bytes.startByte
+                                                                        : a.bytes.endByte > b.bytes.endByte;
+                      });
+    // Containers are properly nested, so a stack of the currently open ones, outermost first, is
+    // enough: each identifier sees its enclosing containers without scanning all of them.
+    std::vector<const EnclosingContainerFact*> open;
+    size_t next = 0;
     for (TSNode node : index.Nodes(gs.symIdentifier))
     {
         const uint32_t startByte = ts_node_start_byte(node);
         const uint32_t endByte = ts_node_end_byte(node);
-        const uint32_t containerBegin = static_cast<uint32_t>(facts.enclosingContainers.size());
-
-        bool inMixin = false;
-        std::vector<EnclosingContainerFact> matched;
-        for (const auto& c : allContainers)
+        while (next < allContainers.size() && allContainers[next].bytes.startByte <= startByte)
         {
-            if (c.bytes.startByte <= startByte && endByte <= c.bytes.endByte)
-            {
-                matched.push_back(c);
-                if (c.isMixin)
-                    inMixin = true;
-            }
+            const EnclosingContainerFact& c = allContainers[next++];
+            while (!open.empty() && open.back()->bytes.endByte <= c.bytes.startByte)
+                open.pop_back();
+            open.push_back(&c);
         }
-        std::ranges::sort(matched, [](const EnclosingContainerFact& a, const EnclosingContainerFact& b)
-                          { return (a.bytes.endByte - a.bytes.startByte) < (b.bytes.endByte - b.bytes.startByte); });
+        while (!open.empty() && open.back()->bytes.endByte < endByte)
+            open.pop_back();
 
-        for (const auto& c : matched)
-            facts.enclosingContainers.push_back(c);
+        const uint32_t containerBegin = static_cast<uint32_t>(facts.enclosingContainers.size());
+        bool inMixin = false;
+        for (auto it = open.rbegin(); it != open.rend(); ++it)
+        {
+            facts.enclosingContainers.push_back(**it);
+            inMixin = inMixin || (*it)->isMixin;
+        }
 
         facts.identifierUseSites.push_back(IdentifierUseSiteFact{
             .bytes = BytesOf(node),

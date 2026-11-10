@@ -2,23 +2,44 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/CallSiteFacts.h"
+#include "analysis/index/InitializerListFacts.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 
+#include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
-/**
 
+/**
  * @brief Runs the call-argument pass over one document.
- * @param request Tree, source text and scope tree for the document.
- * @param ctx Diagnostic sink and the analysis request behind it.
+ * @param[in] request Tree, source text and scope tree for the document.
+ * @param[in,out] ctx Diagnostic sink and the analysis request behind it.
  */
 void CheckCallArguments(const AstCheckContext& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Runs the call-argument pass over precomputed call site facts.
+ * @param[in] facts Precomputed call site facts for the document.
+ * @param[in] request Tree, source text and scope tree for the document.
+ * @param[in,out] ctx Diagnostic sink and the analysis request behind it.
+ */
+void CheckCallArguments(const CallSiteFacts& facts, const AstCheckContext& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Runs the call-argument pass over precomputed call site and initializer list facts.
+ * @param[in] facts Precomputed call site facts for the document.
+ * @param[in] initFacts Precomputed initializer list facts for the document.
+ * @param[in] request Tree, source text and scope tree for the document.
+ * @param[in,out] ctx Diagnostic sink and the analysis request behind it.
+ */
+void CheckCallArguments(const CallSiteFacts& facts, const InitializerListFacts& initFacts,
+                        const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for function and method call argument count and type matching.
@@ -58,28 +79,14 @@ struct CandidateSet
  */
 struct FreeLookupContext
 {
-    TSNode callNode;
+    uint32_t byteOffset = 0;
     std::string_view sourceCode;
-    std::string fileUri;
-    std::string predefinedExtension;
+    std::string_view fileUri;
+    std::string_view predefinedExtension;
     const SymbolTable& table;
     const rules::RuleIndex& index;
     const ankerl::unordered_dense::set<std::string>& moduleFileUris;
     const NodeIndex* nodeIndex = nullptr;
-};
-
-/**
- * @brief Parameters for validating lambda and functor arguments against target callable signatures.
- */
-struct LambdaCheckContext
-{
-    TSNode callee;
-    TSNode arguments;
-    std::string reportedName;
-    const SymbolTable& table;
-    std::string_view sourceCode;
-    const std::vector<TSNode>& argNodes;
-    std::vector<size_t> lambdaPositions;
 };
 
 /**
@@ -90,19 +97,6 @@ enum class LambdaCandidateStatus
     Accepted,
     Rejected,
     UnresolvableFuncdef
-};
-
-/**
- * @brief Encapsulates call expression node, resolved callee symbol, and argument list during call checking.
- */
-struct CallValidationContext
-{
-    TSNode callNode;
-    TSNode callee;
-    TSNode arguments;
-    const AstCheckContext& request;
-    const Scope* scope;
-    DiagnosticContext& ctx;
 };
 
 /**
@@ -139,4 +133,5 @@ struct VarInitContext
     const AstCheckContext& request;
     DiagnosticContext& ctx;
 };
+
 } // namespace angel_lsp::analysis

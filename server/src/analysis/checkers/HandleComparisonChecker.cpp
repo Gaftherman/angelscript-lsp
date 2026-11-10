@@ -5,7 +5,6 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/Keywords.h"
 
 #include <string_view>
 
@@ -16,13 +15,13 @@ namespace angel_lsp::analysis
 {
     if (fact.opClass == BinaryOperatorClass::Equality)
     {
-        if (fact.op == parser::keywords::operators::EqEq)
+        if (fact.op == "==")
         {
-            return {ComparisonCategory::ValueEquality, parser::keywords::operators::Is};
+            return {ComparisonCategory::ValueEquality, "is"};
         }
-        if (fact.op == parser::keywords::operators::BangEq)
+        if (fact.op == "!=")
         {
-            return {ComparisonCategory::ValueEquality, parser::keywords::operators::BangIs};
+            return {ComparisonCategory::ValueEquality, "!is"};
         }
     }
     if (fact.opClass == BinaryOperatorClass::Relational)

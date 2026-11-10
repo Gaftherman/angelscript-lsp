@@ -1,55 +1,30 @@
 #pragma once
 
 #include "analysis/checkers/CallChecker.h"
+#include "analysis/index/CallSiteFacts.h"
+#include "analysis/index/InitializerListFacts.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 
+#include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
 
 /**
- * @brief Trims leading and trailing whitespace in place.
- * @param[in,out] s String to trim.
- */
-void TrimString(std::string& s);
-
-/**
- * @brief Counts the arguments written between one call's parentheses.
- * @param[in] argumentList AST node representing the argument list.
- * @return Count of written arguments.
- */
-uint32_t CountArguments(TSNode argumentList);
-
-/**
- * @brief Extracts argument expression nodes from an argument list AST node.
- * @param[in] argumentList AST node representing the argument list.
- * @return Vector of AST nodes for each argument expression.
- */
-std::vector<TSNode> GetArgumentNodes(TSNode argumentList);
-
-/**
- * @brief Computes the diagnostic source range for a function or method call.
- * @param[in] callee AST node of the callee expression.
- * @return Precise source range of the callee.
- */
-SourceRange GetCalleeDiagnosticRange(TSNode callee);
-
-/**
  * @brief True when a name also denotes a type, which makes `Name(...)` a construction.
- * @param[in] name Identifier name.
+ * @param[in] name Identifier name string view.
  * @param[in] table Symbol table.
  * @return True if the name denotes a type.
  */
-bool NamesAType(const std::string& name, const SymbolTable& table);
+bool NamesAType(std::string_view name, const SymbolTable& table);
 
 /**
  * @brief True when a symbol represents a function with a valid signature.
@@ -72,27 +47,27 @@ CandidateSet JudgeAgainst(const std::vector<Symbol>& candidates, uint32_t argume
  * @param[in] typeName Owner type name.
  * @return True if name denotes constructor or destructor.
  */
-bool IsConstructorOrDestructorName(const std::string& memberName, const std::string& typeName);
+bool IsConstructorOrDestructorName(std::string_view memberName, std::string_view typeName);
 
 /**
  * @brief Declarations of a method, across a type's whole visible hierarchy.
  * @param[in] typeName Name of the class type.
  * @param[in] methodName Name of the method.
  * @param[in] table Symbol table.
- * @param[in] cache Optional expression type cache for memoizing type hierarchies.
+ * @param[in,out] cache Optional expression type cache for memoizing type hierarchies.
  * @return Candidate symbols matching the method name.
  */
-std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std::string& methodName,
+std::vector<Symbol> FindMethodCandidates(std::string_view typeName, std::string_view methodName,
                                          const SymbolTable& table, ExpressionTypeCache* cache = nullptr);
 
 /**
- * @brief Collects enclosing namespace scopes up to global scope.
- * @param[in] callNode AST node of call expression.
+ * @brief Collects enclosing namespace scopes up to global scope starting at byteOffset.
+ * @param[in] byteOffset Document byte position of the call.
  * @param[in] sourceCode Document source text.
  * @param[in] nodeIndex Optional precomputed node index.
  * @return Ordered list of reachable namespace scopes.
  */
-std::vector<std::string> CollectReachableScopes(TSNode callNode, std::string_view sourceCode,
+std::vector<std::string> CollectReachableScopes(uint32_t byteOffset, std::string_view sourceCode,
                                                 const NodeIndex* nodeIndex = nullptr);
 
 /**
@@ -101,31 +76,44 @@ std::vector<std::string> CollectReachableScopes(TSNode callNode, std::string_vie
  * @param[in] ctx Free candidate lookup context.
  * @return Reachable function candidate symbols.
  */
-std::vector<Symbol> FindFreeCandidates(const std::string& name, const FreeLookupContext& ctx);
+std::vector<Symbol> FindFreeCandidates(std::string_view name, const FreeLookupContext& ctx);
+
+/**
+ * @brief Parameters for validating lambda arguments against candidate callable signatures.
+ */
+struct LambdaCheckFactsContext
+{
+    SourceRange calleeRange;                     ///< Callee diagnostic source range.
+    std::string_view reportedName;               ///< Callee name for error messages.
+    const SymbolTable& table;                    ///< Symbol table for funcdef lookup.
+    std::span<const CallArgumentFact> arguments; ///< Call argument facts.
+    std::vector<size_t> lambdaPositions;         ///< Sliced argument indices of lambdas.
+};
 
 /**
  * @brief Finds indices of arguments that are lambda expressions.
- * @param[in] argNodes List of argument AST nodes.
+ * @param[in] arguments List of argument facts.
  * @return 0-based indices where arguments are lambdas.
  */
-std::vector<size_t> FindLambdaPositions(const std::vector<TSNode>& argNodes);
+std::vector<size_t> FindLambdaPositions(std::span<const CallArgumentFact> arguments);
 
 /**
- * @brief Judges a lambda argument against the funcdef parameter it lands on.
+ * @brief Judges lambda arguments against the funcdef parameters they land on.
  * @param[in] candidates Candidate function overloads.
  * @param[in] lctx Lambda verification context.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckLambdaArguments(std::span<const Symbol* const> candidates, const LambdaCheckContext& lctx,
+void CheckLambdaArguments(std::span<const Symbol* const> candidates, const LambdaCheckFactsContext& lctx,
                           DiagnosticContext& ctx);
 
 /**
- * @brief Checks whether an object expression node resolves to a const variable or property.
- * @param[in] objectNode AST node of object expression.
- * @param[in] valCtx Call validation context.
- * @return True if the object node is const.
+ * @brief Checks whether an object operand fact resolves to a const variable or property.
+ * @param[in] objectOperand Binary operand fact for the object receiver.
+ * @param[in] scope Lexical scope at call site.
+ * @param[in] symbolTable Symbol table.
+ * @return True if the object is const.
  */
-bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx);
+bool IsObjectOperandConst(const BinaryOperandFact& objectOperand, const Scope* scope, const SymbolTable& symbolTable);
 
 /**
  * @brief Applies template argument substitutions across candidate methods.
@@ -134,7 +122,7 @@ bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx);
  * @param[in] fallbackArgs Fallback template arguments when generic binding is absent.
  * @param[in] table Symbol table.
  */
-void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, const std::string& typeName,
+void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, std::string_view typeName,
                                 const std::vector<std::string>& fallbackArgs, const SymbolTable& table);
 
 /**
@@ -145,11 +133,14 @@ void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, const std::stri
 void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, bool isReceiverConst);
 
 /**
- * @brief Checks if a node is enclosed within a const method declaration.
- * @param[in] node AST node.
+ * @brief Checks if a call site fact is enclosed within a const method declaration.
+ * @param[in] site Call site fact.
  * @return True if enclosed within a const method.
  */
-bool IsEnclosingMethodConst(TSNode node);
+inline bool IsEnclosingMethodConst(const CallSiteFact& site) noexcept
+{
+    return site.isEnclosingMethodConst;
+}
 
 /**
  * @brief Attempts to resolve a member variable or property returning a funcdef handle.
@@ -159,61 +150,70 @@ bool IsEnclosingMethodConst(TSNode node);
  * @param[in,out] cache Optional type cache.
  * @return Optional synthesized function symbol.
  */
-std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectType, const std::string& memberName,
+std::optional<Symbol> TryResolveMemberCallableFuncdef(std::string_view objectType, std::string_view memberName,
                                                       const SymbolTable& table, ExpressionTypeCache* cache = nullptr);
 
 /**
+ * @brief Input parameters for verifying whether a variable symbol is non-callable or a callable funcdef.
+ */
+struct NonCallableCheckRequest
+{
+    std::string_view name;     ///< Identifier name of the variable or member.
+    std::string_view typeName; ///< Declared type name of the variable.
+    SourceRange calleeRange;   ///< Source range where the call or identifier occurred.
+};
+
+/**
  * @brief Checks whether a member variable in a type hierarchy is non-callable or a callable funcdef.
- * @param[in] objType Enclosing object type name.
- * @param[in] memberName Member identifier.
- * @param[in] valCtx Call validation context.
+ * @param[in] site Call site fact.
+ * @param[in] objType Enclosing object type name view.
+ * @param[in,out] ctx Diagnostic context.
  * @param[in,out] res Callee resolution details to update.
  * @return True if variable was handled.
  */
-bool CheckMemberNonCallableVariable(const std::string& objType, const std::string& memberName,
-                                    const CallValidationContext& valCtx, CalleeResolution& res);
+bool CheckMemberNonCallableVariable(const CallSiteFact& site, std::string_view objType, DiagnosticContext& ctx,
+                                    CalleeResolution& res);
 
 /**
- * @brief Resolves candidates and reports invalid constructors for member calls.
- * @param[in] valCtx Call validation context.
+ * @brief Resolves candidates and reports invalid constructors for member calls from fact.
+ * @param[in] site Call site fact.
+ * @param[in] scope Lexical scope at call site.
+ * @param[in,out] ctx Diagnostic context.
  * @return Resolved CalleeResolution.
  */
-CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx);
+CalleeResolution ResolveMemberCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx);
 
 /**
  * @brief Checks if a local symbol shadows a callable or is a non-callable variable.
- * @param[in] shortName Unqualified identifier.
- * @param[in] valCtx Call validation context.
+ * @param[in] site Call site fact.
+ * @param[in] scope Lexical scope at call site.
+ * @param[in,out] ctx Diagnostic context.
  * @param[in,out] res Callee resolution details to update.
  * @return True if handled as local non-callable.
  */
-bool CheckLocalNonCallable(const std::string& shortName, const CallValidationContext& valCtx, CalleeResolution& res);
+bool CheckLocalNonCallable(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx, CalleeResolution& res);
 
 /**
  * @brief Checks if a scoped symbol refers to a non-callable variable.
- * @param[in] written Full scoped identifier text.
- * @param[in] shortName Unqualified identifier.
- * @param[in] valCtx Call validation context.
+ * @param[in] site Call site fact.
+ * @param[in,out] ctx Diagnostic context.
  * @param[in,out] res Callee resolution details to update.
  * @return True if handled as scoped non-callable variable.
  */
-bool CheckScopedNonCallableVariable(std::string_view written, const std::string& shortName,
-                                    const CallValidationContext& valCtx, CalleeResolution& res);
+bool CheckScopedNonCallableVariable(const CallSiteFact& site, DiagnosticContext& ctx, CalleeResolution& res);
 
 /**
  * @brief Checks if a global or reachable namespace symbol refers to a non-callable variable.
- * @param[in] written Full identifier text.
- * @param[in] shortName Unqualified identifier.
- * @param[in] valCtx Call validation context.
+ * @param[in] site Call site fact.
+ * @param[in,out] ctx Diagnostic context.
  * @param[in,out] res Callee resolution details to update.
  * @return True if handled as global non-callable variable.
  */
-bool CheckGlobalNonCallableVariable(std::string_view written, const std::string& shortName,
-                                    const CallValidationContext& valCtx, CalleeResolution& res);
+bool CheckGlobalNonCallableVariable(const CallSiteFact& site, DiagnosticContext& ctx, CalleeResolution& res);
 
 /**
  * @brief Collects function candidates matching a scoped written name.
- * @param[in] written Scoped function name.
+ * @param[in] written Scoped function name view.
  * @param[in] table Symbol table.
  * @return Vector of matching function symbols.
  */
@@ -221,81 +221,143 @@ std::vector<Symbol> CollectScopedFunctionCandidates(std::string_view written, co
 
 /**
  * @brief Validates argument ordering to prevent positional arguments after named ones.
- * @param[in] arguments AST arguments node.
+ * @param[in] arguments Slice of argument facts.
  * @param[out] sawNamedArg True if at least one named argument was found.
  * @param[in,out] ctx Diagnostic context.
  * @return True if argument ordering is valid.
  */
-bool ValidateArgumentOrdering(TSNode arguments, bool& sawNamedArg, DiagnosticContext& ctx);
+bool ValidateArgumentOrdering(std::span<const CallArgumentFact> arguments, bool& sawNamedArg, DiagnosticContext& ctx);
 
 /**
- * @brief Unwraps a parenthesized expression AST node to its inner child.
- * @param[in] node Input AST node.
- * @return Inner node if parenthesized, otherwise the node itself.
- */
-TSNode UnwrapParenNode(TSNode node);
-
-/**
- * @brief Resolves expression types for each call argument and flags bare types.
- * @param[in] valCtx Call validation context.
+ * @brief Resolves expression types for each call argument fact and flags bare types.
+ * @param[in] arguments Sliced call argument facts.
+ * @param[in] scope Lexical scope at call site.
+ * @param[in,out] ctx Diagnostic context.
+ * @param[in] nodeIndex Optional document node index supplying the tree root.
  * @return Resolved CallResolutionContext structure.
  */
-CallResolutionContext ResolveCallArguments(const CallValidationContext& valCtx);
+CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arguments, const Scope* scope,
+                                           DiagnosticContext& ctx, const NodeIndex* nodeIndex = nullptr);
 
 /**
- * @brief Checks initializer list arguments against parameter target types.
+ * @brief Checks initializer list arguments against parameter target types using facts.
+ * @param[in] arguments Sliced call argument facts.
  * @param[in] args Resolved call arguments.
  * @param[in] fn Target function signature.
- * @param[in] valCtx Call validation context.
+ * @param[in] initFacts Enclosing initializer list facts.
+ * @param[in] scope Lexical scope at call site.
+ * @param[in,out] ctx Diagnostic context.
  */
-void CheckInitializerListArgs(const CallResolutionContext& args, const FunctionSignature& fn,
-                              const CallValidationContext& valCtx);
+void CheckInitializerListArgs(std::span<const CallArgumentFact> arguments, const CallResolutionContext& args,
+                              const FunctionSignature& fn, const InitializerListFacts& initFacts, const Scope* scope,
+                              DiagnosticContext& ctx);
+
+/**
+ * @brief Parameters for checking malformed ternary expressions in call arguments.
+ */
+struct MalformedTernaryCheckRequest
+{
+    std::span<const CallArgumentFact> arguments; ///< Call argument facts.
+    const std::vector<std::string>& argTypes;    ///< Resolved argument types.
+    std::span<const Symbol* const> candidates;   ///< Available matching candidates.
+    const Scope* scope = nullptr;                ///< Lexical scope at call site.
+};
 
 /**
  * @brief Checks malformed ternary expressions used as call arguments.
- * @param[in] argNodes Argument AST nodes.
- * @param[in] argTypes Resolved argument types.
- * @param[in] candidates Available matching candidates.
- * @param[in] valCtx Call validation context.
+ * @param[in] req Ternary check request parameters.
+ * @param[in,out] ctx Diagnostic context.
  */
-void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::vector<std::string>& argTypes,
-                               std::span<const Symbol* const> candidates, const CallValidationContext& valCtx);
+void CheckMalformedTernaryArgs(const MalformedTernaryCheckRequest& req, DiagnosticContext& ctx);
+
+/**
+ * @brief Input parameters for reporting overload resolution failure diagnostics.
+ */
+struct OverloadFailureReportRequest
+{
+    std::span<const Symbol* const> candidates;   ///< Candidate function overloads.
+    std::span<const CallArgumentFact> arguments; ///< Sliced argument facts.
+    const CallResolutionContext& args;           ///< Resolved argument details.
+    const CallSiteFact& site;                    ///< Call site fact.
+};
 
 /**
  * @brief Emits diagnostics when overload resolution finds no viable candidates.
- * @param[in] candidates Candidate functions.
- * @param[in] args Call arguments info.
- * @param[in] reportedName Reported callee name.
- * @param[in] valCtx Call validation context.
+ * @param[in] req Overload failure report request parameters.
+ * @param[in,out] ctx Diagnostic context.
  */
-void ReportOverloadResolutionFailure(std::span<const Symbol* const> candidates, const CallResolutionContext& args,
-                                     const std::string& reportedName, const CallValidationContext& valCtx);
+void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, DiagnosticContext& ctx);
 
 /**
  * @brief Validates that arguments passed to &out parameters are assignable L-values.
  * @param[in] candidate Chosen function overload.
- * @param[in] argNodes Call argument AST nodes.
- * @param[in] valCtx Call validation context.
+ * @param[in] arguments Sliced argument facts.
+ * @param[in] scope Lexical scope at call site.
+ * @param[in,out] ctx Diagnostic context.
  */
-void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& argNodes,
-                          const CallValidationContext& valCtx);
+void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentFact> arguments, const Scope* scope,
+                          DiagnosticContext& ctx);
 
 /**
- * @brief Dispatches overload resolution and checks ambiguity, conversions, and out parameters.
- * @param[in] matchingArity Candidates of matching arity.
- * @param[in] args Resolved argument types.
- * @param[in] calleeRes Callee resolution details.
- * @param[in] valCtx Call validation context.
+ * @brief Input parameters for evaluating candidate function overloads against arguments.
  */
-void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const CallResolutionContext& args,
-                        const CalleeResolution& calleeRes, const CallValidationContext& valCtx);
+struct CallOverloadCheckRequest
+{
+    std::span<const Symbol* const> matchingArity;    ///< Candidates of matching arity.
+    const CallResolutionContext& args;               ///< Resolved argument types.
+    const CalleeResolution& calleeRes;               ///< Callee resolution details.
+    const CallSiteFact& site;                        ///< Precomputed call site fact.
+    std::span<const CallArgumentFact> arguments;     ///< Sliced call argument facts.
+    const InitializerListFacts* initFacts = nullptr; ///< Precomputed initializer list facts.
+    const Scope* scope = nullptr;                    ///< Lexical scope at call site.
+};
 
 /**
- * @brief Resolves callee candidates based on node type.
- * @param[in] valCtx Call validation context.
+ * @brief Dispatches overload resolution using precomputed call site facts.
+ * @param[in] request Overload checking request parameters.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Input parameters for checking a single call site fact against language and engine rules.
+ */
+struct CallCheckFactRequest
+{
+    const CallSiteFact& site;                        ///< Precomputed call site fact.
+    std::span<const CallArgumentFact> arguments;     ///< Precomputed argument facts for this call site.
+    const InitializerListFacts* initFacts = nullptr; ///< Precomputed initializer list facts for the document.
+    const AstCheckContext& request;                  ///< Analysis check context and document metadata.
+    const Scope* scope = nullptr;                    ///< Lexical scope at call site position.
+};
+
+/**
+ * @brief Checks if a byte span overlaps any syntax error range in the document.
+ * @param[in] startByte Start of byte span.
+ * @param[in] endByte End of byte span.
+ * @param[in] nodeIndex Precomputed node index of the document.
+ * @return True if [startByte, endByte) overlaps an error range.
+ */
+inline bool HasOverlappingError(uint32_t startByte, uint32_t endByte, const NodeIndex* nodeIndex) noexcept
+{
+    if (!nodeIndex || !nodeIndex->HasSyntaxErrors())
+    {
+        return false;
+    }
+    const auto errors = nodeIndex->ErrorRanges();
+    auto it = std::lower_bound(errors.begin(), errors.end(), startByte,
+                               [](const NodeIndex::ErrorRange& err, uint32_t val) { return err.endByte <= val; });
+    return it != errors.end() && it->startByte < endByte;
+}
+
+/**
+ * @brief Resolves callee candidates based on pre-extracted call site fact.
+ * @param[in] site Call site fact.
+ * @param[in] scope Lexical scope at call site.
+ * @param[in,out] ctx Diagnostic context.
  * @return Resolved CalleeResolution.
  */
-CalleeResolution ResolveCalleeCandidates(const CallValidationContext& valCtx);
+CalleeResolution ResolveCalleeCandidates(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx);
 
 /**
  * @brief Formats an attempted constructor call signature for error reporting.
@@ -335,20 +397,22 @@ std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& rawConstru
 
 /**
  * @brief Verifies constructor candidate overloads against provided arguments.
- * @param[in] argListNode Argument list AST node.
+ * @param[in] argumentListRange Diagnostic source range of argument list.
  * @param[in] candidates Candidate constructor symbols.
  * @param[in] argTypes Resolved argument types.
  * @param[in] vctx Variable initialization context.
  */
-void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& candidates,
+void CheckConstructorOverload(SourceRange argumentListRange, const std::vector<Symbol>& candidates,
                               const std::vector<std::string>& argTypes, const VarInitContext& vctx);
 
 /**
  * @brief Checks direct variable initialization syntax against accessible constructors.
- * @param[in] varDeclNode AST variable declaration node.
+ * @param[in] init Direct initialization site fact.
  * @param[in] request Analysis call request.
+ * @param[in] facts Enclosing call site facts containing arguments.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckVariableDirectInitialization(TSNode varDeclNode, const AstCheckContext& request, DiagnosticContext& ctx);
+void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const AstCheckContext& request,
+                                       const CallSiteFacts& facts, DiagnosticContext& ctx);
 
 } // namespace angel_lsp::analysis
