@@ -13,7 +13,6 @@
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
-#include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
@@ -22,7 +21,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -80,8 +78,6 @@ enum class InitializerItemKind
     return container && std::any_of(container->begin(), container->end(),
                                     [type](const Symbol& owner) { return owner.type == type; });
 }
-
-[[nodiscard]] std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode);
 
 /**
  * @brief Normalizes a type name by stripping const, references, and whitespace.
@@ -404,14 +400,6 @@ struct ConversionTypePair
  * @return True if expression is a number, boolean, or string literal.
  */
 bool IsSimpleLiteralExpression(std::string_view expr);
-
-/**
- * @brief Extracts the preceding scope qualifier for a datatype node, if any.
- * @param[in] datatypeNode AST datatype node.
- * @param[in] sourceCode Document source text.
- * @return Scope prefix string ending in "::", or empty if unqualified.
- */
-std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode);
 
 /**
  * @brief Result of binary operator overload resolution containing candidate symbol and parameter conversions.

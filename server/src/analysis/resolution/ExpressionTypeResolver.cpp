@@ -4,6 +4,7 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
@@ -17,6 +18,7 @@
 #include "parser/Keywords.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -26,6 +28,12 @@
 
 namespace angel_lsp::analysis
 {
+
+static std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
+{
+    return std::string(utils::TrimView(parser::NodeText(node, sourceCode)));
+}
+
 static std::string ResolveFloatingPointLiteral(std::string_view text)
 {
     if (text.find('f') != std::string_view::npos || text.find('F') != std::string_view::npos)

@@ -3,6 +3,7 @@
 #include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SyntaxOperands.h"
+#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
@@ -13,6 +14,7 @@
 #include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -34,7 +36,7 @@ static bool IsConstArgumentNode(TSNode exprNode, const ExpressionTypeContext& ct
     {
         return false;
     }
-    const std::string name = GetTrimmedNodeText(exprNode, ctx.sourceCode);
+    const std::string name(utils::TrimView(parser::NodeText(exprNode, ctx.sourceCode)));
     if (ctx.scope)
     {
         if (const auto* def = ResolveInScopeAt(ctx.scope, name, ts_node_start_byte(exprNode)))

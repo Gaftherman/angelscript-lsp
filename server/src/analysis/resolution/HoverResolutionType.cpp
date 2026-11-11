@@ -1,6 +1,7 @@
 #include "analysis/index/HoverFacts.h"
 #include "analysis/index/HoverFactsInternal.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/HoverResolution.h"
 #include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"

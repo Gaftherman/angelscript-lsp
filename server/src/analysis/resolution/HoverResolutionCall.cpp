@@ -3,6 +3,7 @@
 #include "analysis/index/HoverFacts.h"
 #include "analysis/index/HoverFactsInternal.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ConversionRankingEngine.h"
 #include "analysis/resolution/HoverResolution.h"

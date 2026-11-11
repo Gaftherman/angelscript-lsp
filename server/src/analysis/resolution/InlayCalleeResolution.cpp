@@ -3,6 +3,7 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/InlayCalleeResolutionInternal.h"
 #include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/resolution/OverloadResolver.h"

@@ -1,6 +1,7 @@
 #include "analysis/resolution/OperandRangeResolution.h"
 
 #include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"

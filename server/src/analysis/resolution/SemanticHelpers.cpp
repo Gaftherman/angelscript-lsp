@@ -9,7 +9,6 @@
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
-#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
 #include "parser/QueryRegistry.h"
@@ -38,20 +37,6 @@ std::string CleanExpressionType(std::string_view typeName)
     }
     TrimTypeWhitespace(typeName);
     return std::string(typeName);
-}
-
-std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
-{
-    std::string text(parser::NodeText(node, sourceCode));
-    while (!text.empty() && isspace(static_cast<unsigned char>(text.front())))
-    {
-        text.erase(text.begin());
-    }
-    while (!text.empty() && isspace(static_cast<unsigned char>(text.back())))
-    {
-        text.pop_back();
-    }
-    return text;
 }
 
 bool IsReservedKeyword(std::string_view name)
@@ -143,11 +128,6 @@ std::string_view LastScopeSegment(std::string_view name) noexcept
 std::string_view ParentScope(std::string_view name) noexcept
 {
     return utils::ParentScopeView(name);
-}
-
-TSNode FindEnclosingAncestorNode(TSNode node, TSSymbol targetSym)
-{
-    return parser::FindAncestorWithSymbol(parser::GetParent(node), targetSym);
 }
 
 bool IsValidNumberLiteral(std::string_view s) noexcept

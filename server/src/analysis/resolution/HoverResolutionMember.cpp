@@ -2,6 +2,7 @@
 #include "analysis/documentation/HoverMarkdown.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/HoverResolution.h"
