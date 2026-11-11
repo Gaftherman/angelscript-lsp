@@ -13,6 +13,7 @@
 #include "analysis/resolution/ExpressionTypeLiterals.h"
 #include "analysis/resolution/ExpressionTypeMember.h"
 #include "analysis/resolution/ExpressionTypeTernary.h"
+#include "analysis/resolution/ExpressionTypeUnary.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
@@ -783,89 +784,6 @@ static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext&
 }
 
 /**
- * @brief Checks if an expression is a function handle target for unary '@'.
- */
-static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const ExpressionTypeContext& ctx)
-{
-    if (ts_node_is_null(target))
-    {
-        return false;
-    }
-    std::string targetName = GetTrimmedNodeText(target, ctx.sourceCode);
-    if (targetName.empty() || targetName.find('(') != std::string::npos)
-    {
-        return false;
-    }
-    if (const auto bucket = ctx.symbolTable.FindSymbolsPtr(targetName))
-    {
-        for (const auto& candidate : *bucket)
-        {
-            if (candidate.type == SymbolType::Function)
-                return true;
-        }
-    }
-    auto syms = ResolveScopeSymbols(targetName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
-    if (syms.empty())
-    {
-        syms = ctx.symbolTable.FindSymbols(targetName);
-    }
-    for (const auto& candidate : syms)
-    {
-        if (candidate.type == SymbolType::Function)
-            return true;
-    }
-    return false;
-}
-
-/**
- * @brief Resolves the resulting type of a unary handle take expression ('@expr').
- * @param[in] operandNode AST node representing the inner operand expression.
- * @param[in] exprNode AST node representing the unary '@' expression.
- * @param[in] ctx Diagnostic collection and expression evaluation context.
- * @return Resolved handle type name ending with '@', or empty string if unresolved.
- */
-static std::string ResolveUnaryHandle(TSNode operandNode, TSNode exprNode, const ExpressionTypeContext& ctx)
-{
-    if (IsFunctionHandleTarget(operandNode, exprNode, ctx))
-    {
-        return {};
-    }
-    std::string operandType = ResolveExpressionType(operandNode, ctx);
-    if (ExpressionTypeCache::IsPoisonType(operandType))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
-    if (operandType.empty())
-    {
-        return {};
-    }
-    std::string clean = CleanExpressionType(operandType);
-    return IsHandleTypeView(clean) ? clean : clean + "@";
-}
-
-static std::string ResolveUnaryMinus(const std::string& operandType)
-{
-    std::string clean = CleanExpressionType(operandType);
-    if (clean == "uint" || clean == "uint32")
-    {
-        return "int";
-    }
-    if (clean == "uint8")
-    {
-        return "int8";
-    }
-    if (clean == "uint16")
-    {
-        return "int16";
-    }
-    if (clean == "uint64")
-    {
-        return "int64";
-    }
-    return operandType;
-}
-
-/**
  * @brief Resolves unary expression type.
  */
 static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
@@ -885,7 +803,12 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
     }
     if (opSym == gs.tokAt)
     {
-        return ResolveUnaryHandle(operandNode, exprNode, ctx);
+        std::string targetName = GetTrimmedNodeText(operandNode, ctx.sourceCode);
+        std::vector<Symbol> inScope =
+            ResolveScopeSymbols(targetName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+        bool isFuncTarget = IsFunctionHandleTargetName(targetName, inScope, ctx.symbolTable);
+        std::string operandType = ResolveExpressionType(operandNode, ctx);
+        return ResolveUnaryHandle(isFuncTarget, operandType);
     }
     std::string operandType = ResolveExpressionType(operandNode, ctx);
     if (ExpressionTypeCache::IsPoisonType(operandType))
