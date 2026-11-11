@@ -38,9 +38,10 @@
     "server/src/lsp/state",
     "server/src/lsp/services",
     "server/src/lsp/pipeline",
-    "server/src/lsp/handlers"
+    "server/src/lsp/handlers",
+    "server/src/lsp"
   ],
-  "active_folder": "server/src/lsp",
+  "active_folder": null,
   "cross_module_impacts": [
     {
       "source_folder": "server/src/analysis/diagnostics",
@@ -53,12 +54,5 @@
       "impact": "TypeExtraction moved to analysis/index; DefiniteAssignmentChecker still passes TSNode to ExtractTypeInfoFromAST/IsNullInitializer. Once they read indexed type facts, drop those calls from the checkers."
     }
   ],
-  "pending_folders": [
-    {
-      "folder_path": "server/src/lsp",
-      "complexity_rank": 43,
-      "selection_rationale": "Server entry and lifecycle coordinator (2 files, 623 lines) Server core.",
-      "files_to_refactor": []
-    }
-  ]
+  "pending_folders": []
 }
