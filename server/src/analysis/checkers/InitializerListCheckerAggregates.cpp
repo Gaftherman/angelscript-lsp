@@ -140,9 +140,8 @@ AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelling, con
         }
     }
 
-    const std::string cacheKey =
-        classSym ? (classSym->qualifiedName.empty() ? classSym->name : classSym->qualifiedName)
-                 : std::string(spelling.name);
+    const std::string cacheKey = classSym ? (classSym->qualifiedName.empty() ? classSym->name : classSym->qualifiedName)
+                                          : std::string(spelling.name);
 
     const auto it = cache.find(cacheKey);
     if (it != cache.end())

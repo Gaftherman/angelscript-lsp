@@ -7,7 +7,6 @@
 
 #include <concepts>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -17,7 +16,6 @@ namespace angel_lsp::analysis
  */
 struct AstCheckContext
 {
-    TSNode rootNode{};
     std::string_view sourceCode{};
     const Scope* scopeRoot = nullptr;
     const NodeIndex* nodeIndex = nullptr;

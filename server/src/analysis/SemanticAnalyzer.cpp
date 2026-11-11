@@ -73,8 +73,7 @@ double SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, D
     }
     const SemanticMediator mediator(request.symbolTable, request.scopeRoot.get(), request.nodeIndex, request.sourceCode,
                                     request.fileUri, request.exprCache);
-    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), request.nodeIndex,
-                              &mediator};
+    const AstCheckContext ast{request.sourceCode, request.scopeRoot.get(), request.nodeIndex, &mediator};
     RunChecker<UndefinedIdentifierChecker>(ast, ctx);
 
     utils::HighResTimer unusedTimer;
@@ -102,8 +101,7 @@ void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request
 {
     const SemanticMediator mediator(request.symbolTable, request.scopeRoot.get(), indexPtr, request.sourceCode,
                                     request.fileUri, request.exprCache);
-    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), indexPtr,
-                              &mediator};
+    const AstCheckContext ast{request.sourceCode, request.scopeRoot.get(), indexPtr, &mediator};
     RunCheckers<AccessChecker, ConstChecker, LValueChecker, CallChecker, DefiniteAssignmentChecker, NullSafetyChecker>(
         ast, ctx);
     if (indexPtr)
@@ -117,8 +115,7 @@ void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& r
 {
     const SemanticMediator mediator(request.symbolTable, request.scopeRoot.get(), indexPtr, request.sourceCode,
                                     request.fileUri, request.exprCache);
-    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), indexPtr,
-                              &mediator};
+    const AstCheckContext ast{request.sourceCode, request.scopeRoot.get(), indexPtr, &mediator};
     RunCheckers<IsolationChecker, InitializerListChecker>(ast, ctx);
     CheckNamespacesAndScopes(NamespaceCheckRequest{request.sourceCode, indexPtr ? indexPtr : request.nodeIndex}, ctx);
 }

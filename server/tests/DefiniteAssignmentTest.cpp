@@ -90,7 +90,7 @@ TEST_SUITE("DefiniteAssignment")
         const SemanticAnalysisRequest request{table, "file:///deep_assignment.as", ".as.predefined", &i18n};
         std::vector<Diagnostic> diagnostics;
         DiagnosticContext ctx(request, diagnostics);
-        CheckDefiniteAssignment({root, code, nullptr, &index}, ctx);
+        CheckDefiniteAssignment({code, nullptr, &index}, ctx);
         REQUIRE(diagnostics.size() == 1);
         CHECK(HasUninitializedRead(diagnostics));
     }
@@ -114,7 +114,7 @@ TEST_SUITE("DefiniteAssignment")
         const SemanticAnalysisRequest request{table, "file:///deep_expression.as", ".as.predefined", &i18n};
         std::vector<Diagnostic> diagnostics;
         DiagnosticContext ctx(request, diagnostics);
-        CheckDefiniteAssignment({root, code, nullptr, &index}, ctx);
+        CheckDefiniteAssignment({code, nullptr, &index}, ctx);
         REQUIRE(diagnostics.size() == 1);
         CHECK(HasUninitializedRead(diagnostics));
     }
