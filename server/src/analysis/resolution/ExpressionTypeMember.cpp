@@ -2,8 +2,10 @@
 
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 
 #include <algorithm>
@@ -216,6 +218,50 @@ std::vector<Symbol> CollectMemberMethodCandidates(const std::string& ownerType, 
         }
     }
     return candidates;
+}
+
+std::string ResolveMemberPropertyType(std::string_view objType,
+                                      std::string_view fallbackObjName,
+                                      std::string_view memName,
+                                      const SymbolTable& symbolTable)
+{
+    if (ExpressionTypeCache::IsPoisonType(objType))
+    {
+        return std::string(ExpressionTypeCache::k_poisonType);
+    }
+    std::string cleanObj = CleanBaseType(objType);
+    if (cleanObj.empty())
+    {
+        cleanObj = std::string(fallbackObjName);
+    }
+    if (cleanObj.empty())
+    {
+        return "";
+    }
+
+    std::string member(memName);
+    auto propSearchOrder = OrderMemberPropertySearchHierarchy(cleanObj, symbolTable);
+    for (const auto& typeName : propSearchOrder)
+    {
+        auto found = FindMemberSymbolsInType(typeName, member, symbolTable);
+        for (const auto& sym : found)
+        {
+            if (auto resolved = ExtractMemberSymbolType(sym, symbolTable); !resolved.empty())
+            {
+                return resolved;
+            }
+        }
+    }
+    auto accessors = FindPropertyAccessors(cleanObj, member, symbolTable, false);
+    if (!accessors.empty())
+    {
+        std::string pType = PropertyTypeFromAccessors(accessors);
+        if (!pType.empty())
+        {
+            return pType;
+        }
+    }
+    return "";
 }
 
 } // namespace angel_lsp::analysis

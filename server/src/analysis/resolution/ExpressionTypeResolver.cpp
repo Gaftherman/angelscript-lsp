@@ -367,43 +367,10 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
     }
 
     std::string objType = ResolveExpressionType(objNode, ctx);
-    if (ExpressionTypeCache::IsPoisonType(objType))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
-    std::string cleanObj = CleanBaseType(objType);
-    if (cleanObj.empty())
-    {
-        cleanObj = GetTrimmedNodeText(objNode, ctx.sourceCode);
-    }
-    if (cleanObj.empty())
-    {
-        return "";
-    }
-
+    std::string fallbackObj = GetTrimmedNodeText(objNode, ctx.sourceCode);
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
-    auto propSearchOrder = OrderMemberPropertySearchHierarchy(cleanObj, ctx.symbolTable);
-    for (const auto& typeName : propSearchOrder)
-    {
-        auto found = FindMemberSymbolsInType(typeName, memName, ctx.symbolTable);
-        for (const auto& sym : found)
-        {
-            if (auto resolved = ExtractMemberSymbolType(sym, ctx.symbolTable); !resolved.empty())
-            {
-                return resolved;
-            }
-        }
-    }
-    auto accessors = FindPropertyAccessors(cleanObj, memName, ctx.symbolTable, false);
-    if (!accessors.empty())
-    {
-        std::string pType = PropertyTypeFromAccessors(accessors);
-        if (!pType.empty())
-        {
-            return pType;
-        }
-    }
-    return "";
+
+    return ResolveMemberPropertyType(objType, fallbackObj, memName, ctx.symbolTable);
 }
 
 

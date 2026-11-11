@@ -57,4 +57,17 @@ void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
                                                                 const std::string& memName,
                                                                 const SymbolTable& symbolTable);
 
+/**
+ * @brief Resolves member property type from object type and member name.
+ * @param[in] objType Inferred object receiver type.
+ * @param[in] fallbackObjName Fallback object node text.
+ * @param[in] memName Member property name.
+ * @param[in] symbolTable Symbol table to query.
+ * @return Resolved member type, or empty string.
+ */
+[[nodiscard]] std::string ResolveMemberPropertyType(std::string_view objType,
+                                                    std::string_view fallbackObjName,
+                                                    std::string_view memName,
+                                                    const SymbolTable& symbolTable);
+
 } // namespace angel_lsp::analysis
