@@ -9,6 +9,7 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeBinary.h"
+#include "analysis/resolution/ExpressionTypeTernary.h"
 #include "analysis/resolution/ExpressionTypeLiterals.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
@@ -590,124 +591,6 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
         }
     }
     return currentType;
-}
-
-/**
- * @brief Resolves ternary branches using inheritance hierarchies.
- */
-static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, const SymbolTable& symbolTable)
-{
-    auto h1 = GetInheritedTypeHierarchy(types.c1, symbolTable);
-    for (const auto& b : h1)
-    {
-        if (CanonicalizeType(CleanBaseType(b)) == types.c2)
-        {
-            return types.t2;
-        }
-    }
-    auto h2 = GetInheritedTypeHierarchy(types.c2, symbolTable);
-    for (const auto& b : h2)
-    {
-        if (CanonicalizeType(CleanBaseType(b)) == types.c1)
-        {
-            return types.t1;
-        }
-    }
-    if (HasConversionMethod(types.c1, types.c2, symbolTable))
-    {
-        return types.t2;
-    }
-    if (HasConversionMethod(types.c2, types.c1, symbolTable))
-    {
-        return types.t1;
-    }
-    return "";
-}
-
-/**
- * @brief Determines the common promoted numeric type between two numeric operand types in a ternary expression.
- * @param[in] c1 Cleaned type name of the true-branch expression.
- * @param[in] c2 Cleaned type name of the false-branch expression.
- * @return Promoted common numeric type name (e.g. \"double\", \"float\", \"int\").
- */
-static std::string ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)
-{
-    if (c1 == "double" || c2 == "double")
-        return "double";
-    if (c1 == "float" || c2 == "float")
-        return "float";
-    if (c1 == "int64" || c2 == "int64")
-        return "int64";
-    if (c1 == "uint64" || c2 == "uint64")
-        return "uint64";
-    if (c1 == "uint" || c2 == "uint")
-        return "uint";
-    return "int";
-}
-
-static std::string ResolveTernaryEnumPromotion(const std::string& c1, const std::string& c2,
-                                               const SymbolTable& symbolTable)
-{
-    if (ResolvesToEnum(c1, symbolTable) && IsIntegerPrimitive(c2))
-        return c2;
-    if (ResolvesToEnum(c2, symbolTable) && IsIntegerPrimitive(c1))
-        return c1;
-    return "";
-}
-
-/**
- * @brief Resolves ternary expression type when one or both branches are null.
- * @param[in] t1 Consequence type.
- * @param[in] t2 Alternative type.
- * @param[in] c1 Cleaned consequence base type.
- * @param[in] c2 Cleaned alternative base type.
- * @return Resolved handle type or "null", or empty string if not applicable.
- */
-static std::string ResolveTernaryNullBranch(const std::string& t1, const std::string& t2, const std::string& c1,
-                                            const std::string& c2)
-{
-    if (c1 == "null" && IsHandleTypeView(t2))
-    {
-        return t2;
-    }
-    if (c2 == "null" && IsHandleTypeView(t1))
-    {
-        return t1;
-    }
-    return (c1 == "null" && c2 == "null") ? "null" : "";
-}
-
-/**
- * @brief Resolves result type between ternary consequence and alternative branch types.
- */
-static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_view t2, const SymbolTable& symbolTable)
-{
-    std::string clean1 = CleanExpressionType(t1);
-    std::string clean2 = CleanExpressionType(t2);
-    if (!clean1.empty() && clean1 == clean2)
-    {
-        return clean1;
-    }
-
-    std::string c1 = CanonicalizeType(CleanBaseType(t1));
-    std::string c2 = CanonicalizeType(CleanBaseType(t2));
-    if (!c1.empty() && c1 == c2)
-    {
-        return (IsHandleTypeView(t1) && IsHandleTypeView(t2)) ? c1 + "@" : c1;
-    }
-    if (auto nullRes = ResolveTernaryNullBranch(clean1, clean2, c1, c2); !nullRes.empty())
-    {
-        return nullRes;
-    }
-    if (IsNumericPrimitive(c1) && IsNumericPrimitive(c2))
-    {
-        return ResolveTernaryNumericPromotion(c1, c2);
-    }
-    if (auto enumRes = ResolveTernaryEnumPromotion(c1, c2, symbolTable); !enumRes.empty())
-    {
-        return enumRes;
-    }
-    return ResolveTernaryHierarchy(TernaryBranchTypes{std::string(t1), std::string(t2), c1, c2}, symbolTable);
 }
 
 /**
