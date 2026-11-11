@@ -8,6 +8,7 @@
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ExpressionTypeLiterals.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
@@ -128,57 +129,6 @@ static std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view pa
 static std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
 {
     return std::string(utils::TrimView(parser::NodeText(node, sourceCode)));
-}
-
-static std::string ResolveFloatingPointLiteral(std::string_view text)
-{
-    if (text.find('f') != std::string_view::npos || text.find('F') != std::string_view::npos)
-    {
-        return "float";
-    }
-    if (text.find('.') != std::string_view::npos || text.find('e') != std::string_view::npos ||
-        text.find('E') != std::string_view::npos)
-    {
-        return "double";
-    }
-    return "";
-}
-
-static std::string ResolveIntegerLiteralSuffix(std::string_view text)
-{
-    const bool hasU = text.find('u') != std::string_view::npos || text.find('U') != std::string_view::npos;
-    const bool hasL = text.find('l') != std::string_view::npos || text.find('L') != std::string_view::npos;
-    if (hasU && hasL)
-    {
-        return "uint64";
-    }
-    if (hasL || text.ends_with("i64"))
-    {
-        return "int64";
-    }
-    if (hasU)
-    {
-        return "uint";
-    }
-    return "int";
-}
-
-/**
- * @brief Parses numeric literal text to determine primitive type.
- */
-static std::string ResolveNumberLiteral(std::string_view text)
-{
-    const bool isRadixPrefixed =
-        text.size() > 1 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X' || text[1] == 'b' || text[1] == 'B');
-
-    if (!isRadixPrefixed)
-    {
-        if (auto fp = ResolveFloatingPointLiteral(text); !fp.empty())
-        {
-            return fp;
-        }
-    }
-    return ResolveIntegerLiteralSuffix(text);
 }
 
 /**
