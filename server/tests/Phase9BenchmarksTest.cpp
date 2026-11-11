@@ -293,7 +293,6 @@ TEST_CASE("Benchmark - Scenario B: Massive Ordinary Script (10k-14k lines)" * do
     const std::string docUri = "file:///massive_benchmark.as";
     analysis::SemanticAnalysisRequest semReq(symbolTable, docUri, "", &i18n);
     semReq.sourceCode = massiveCode;
-    semReq.tree = tree;
     semReq.scopeRoot = sharedScope;
     semReq.nodeIndex = &nodeIndex;
 

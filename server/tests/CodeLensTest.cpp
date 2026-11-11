@@ -75,7 +75,6 @@ struct CodeLensFixture
         REQUIRE(static_cast<bool>(syntax));
         const NodeIndex index(ts_tree_root_node(syntax.get()));
         SemanticAnalysisRequest analysis(symbolTable, fileUri);
-        analysis.tree = syntax.get();
         analysis.sourceCode = code;
         analysis.scopeRoot = scope;
         analysis.mutableScopeRoot = scope.get();

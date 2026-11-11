@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/EngineProfiles.h"
@@ -406,7 +407,9 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
         auto scan = angel_lsp::utils::ScanPreprocessor(source, {}, {}, /*reportPragma=*/false);
         request.excludedLineRanges = std::move(scan.excluded);
         request.unsupportedDirectives = std::move(scan.unsupported);
-        request.tree = parser.Parse(source);
+        TSTree* tree = parser.Parse(source);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         auto ours = collectorDiagnostics;
@@ -443,8 +446,8 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
                 current.ourWarnings.push_back(diagnostic);
         }
 
-        if (request.tree)
-            ts_tree_delete(const_cast<TSTree*>(request.tree));
+        if (tree)
+        ts_tree_delete(tree);
 
         if (current.realAccepts)
         {

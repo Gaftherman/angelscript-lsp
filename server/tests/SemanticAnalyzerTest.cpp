@@ -2,6 +2,7 @@
 
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
@@ -59,15 +60,17 @@ std::vector<Diagnostic> AnalyzeSource(const std::string& sourceCode, SymbolTable
     // the test passed without exercising the rule.
     AngelScriptParser treeParser;
     req.sourceCode = effectiveCode;
-    req.tree = treeParser.Parse(effectiveCode);
+    TSTree* tree = treeParser.Parse(effectiveCode);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    req.nodeIndex = &nodeIndex;
     req.excludedLineRanges = std::move(scan.excluded);
     req.unsupportedDirectives = std::move(scan.unsupported);
 
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(req);
 
-    if (req.tree)
-        ts_tree_delete(const_cast<TSTree*>(req.tree));
+    if (tree)
+        ts_tree_delete(tree);
 
     return diagnostics;
 }
@@ -93,15 +96,17 @@ std::vector<Diagnostic> AnalyzeSourceWithMetadata(const std::string& sourceCode,
 
     AngelScriptParser treeParser;
     req.sourceCode = effectiveCode;
-    req.tree = treeParser.Parse(effectiveCode);
+    TSTree* tree = treeParser.Parse(effectiveCode);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    req.nodeIndex = &nodeIndex;
     req.excludedLineRanges = std::move(scan.excluded);
     req.unsupportedDirectives = std::move(scan.unsupported);
 
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(req);
 
-    if (req.tree)
-        ts_tree_delete(const_cast<TSTree*>(req.tree));
+    if (tree)
+        ts_tree_delete(tree);
 
     return diagnostics;
 }

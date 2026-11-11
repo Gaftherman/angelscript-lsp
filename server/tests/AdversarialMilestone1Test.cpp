@@ -2,8 +2,10 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/checkers/DefiniteAssignmentChecker.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "i18n/i18n.h"
@@ -64,7 +66,8 @@ std::string DeduceTypeAtLastExpression(const std::string& code)
         {
             TSPoint pt = ts_node_start_point(lastExpr);
             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
-            result = ResolveExpressionType(lastExpr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+            IndexedByteRange exprRange{ts_node_start_byte(lastExpr), ts_node_end_byte(lastExpr)};
+            result = ResolveExpressionType(exprRange, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
         }
         ts_tree_delete(tree);
     }
@@ -85,14 +88,16 @@ std::vector<Diagnostic> AnalyzeCodeForDiagnostics(const std::string& code,
     SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
-    request.tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(request);
 
-    if (request.tree)
+    if (tree)
     {
-        ts_tree_delete(const_cast<TSTree*>(request.tree));
+        ts_tree_delete(tree);
     }
     return diagnostics;
 }
@@ -122,8 +127,8 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
     {
         SymbolTable table;
         TSNode nullNode{};
-        CHECK(ResolveExpressionType(nullNode, nullptr, table, "") == "");
-        CHECK(ResolveExpressionType(nullNode, nullptr, table, "int x = 5;") == "");
+        CHECK(ResolveExpressionType(IndexedByteRange{0, 0}, {nullptr, table, ""}) == "");
+        CHECK(ResolveExpressionType(IndexedByteRange{0, 0}, {nullptr, table, "int x = 5;"}) == "");
     }
 
     TEST_CASE("Malformed Incomplete Syntax Does Not Crash")

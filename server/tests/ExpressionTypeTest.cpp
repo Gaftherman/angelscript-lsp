@@ -107,7 +107,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         REQUIRE(index.FindOperandSyntax(binaries.back()) != nullptr);
 
         const SymbolTable table;
-        CHECK(CheckIndexedType(binaries.front(), {nullptr, table, code, uri, root}, index) == "double");
+        CHECK(CheckIndexedType(binaries.front(), {nullptr, table, code, uri}, index) == "double");
     }
 
     TEST_CASE("Primitive Arithmetic Promotion")

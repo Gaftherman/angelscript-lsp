@@ -3,6 +3,7 @@
 #include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "helpers/CorpusDirectory.h"
@@ -65,7 +66,8 @@ struct ConversionEnvironment
         SemanticAnalysisRequest request{symbolTable, uri, "", &i18n};
         request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
         request.sourceCode = sourceCode;
-        request.tree = tree;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
         request.enableTypeConversionChecks = enabled;
 
         SemanticAnalyzer analyzer(nullptr);
@@ -464,7 +466,7 @@ TEST_CASE("TypeConversion - Without a tree the pass stays silent instead of gues
     SemanticAnalysisRequest request{env.symbolTable, env.uri, "", &env.i18n};
     request.scopeRoot = env.scopeCollector.CollectScopes(env.sourceCode, env.parser);
     request.sourceCode = env.sourceCode;
-    request.tree = nullptr;
+    request.nodeIndex = nullptr;
 
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(request);
@@ -647,7 +649,8 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
             SemanticAnalysisRequest request{sharedTable, fileUri, "", &i18n};
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
-            request.tree = tree;
+            NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
             SemanticAnalyzer analyzer(nullptr);
             std::vector<Diagnostic> diagnostics;
@@ -1675,7 +1678,8 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
             SemanticAnalysisRequest request{sharedTable, fileUri, "", &i18n};
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
-            request.tree = tree;
+            NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
             SemanticAnalyzer analyzer(nullptr);
             std::vector<Diagnostic> diagnostics;
@@ -1821,7 +1825,8 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
             SemanticAnalysisRequest request{sharedTable, fileUri, "", &i18n};
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
-            request.tree = tree;
+            NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
             SemanticAnalyzer analyzer(nullptr);
             std::vector<Diagnostic> diagnostics;
@@ -1948,7 +1953,8 @@ std::vector<Diagnostic> AnalyzeForBoolConversion(const std::string& code, bool e
     SemanticAnalysisRequest request{env.symbolTable, env.uri, "", &env.i18n};
     request.scopeRoot = env.scopeCollector.CollectScopes(env.sourceCode, env.parser);
     request.sourceCode = env.sourceCode;
-    request.tree = env.tree;
+    NodeIndex nodeIndex(ts_tree_root_node(env.tree));
+    request.nodeIndex = &nodeIndex;
     request.enableTypeConversionChecks = true;
     request.diagnostics = &diagnosticsConfig;
     request.engineProperties = &engineProperties;

@@ -408,7 +408,6 @@ void LspSemanticHarnessFixture::ReanalyzeDocument(const std::string& uri)
     analysis::NodeIndex nodeIndex(root);
     analysis::SemanticAnalysisRequest req{*m_symbolTable, uri, ".as.predefined", &m_i18n};
     req.sourceCode = text;
-    req.tree = tree;
     req.scopeRoot = sharedScope;
     req.mutableScopeRoot = sharedScope.get();
     req.nodeIndex = &nodeIndex;

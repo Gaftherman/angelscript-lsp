@@ -1,5 +1,6 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "i18n/i18n.h"
@@ -108,7 +109,8 @@ TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
         request.scopeRoot = scopes.CollectScopes(source, parser);
 
         TSTree* tree = parser.Parse(source);
-        request.tree = tree;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         for (auto& diagnostic : analyzer.Analyze(request))

@@ -478,7 +478,7 @@ TEST_CASE("Conditional includes are filtered on rebuild and update")
 
     fixture.Build();
     CHECK(fixture.graph.GetForwardClosure(fixture.Path("main.as")).size() == 1);
-    auto words = std::make_shared<ankerl::unordered_dense::set<std::string>>();
+    auto words = std::make_shared<angel_lsp::TransparentStringSet>();
     words->insert(define);
     fixture.graph.UpdateFile({.filePath = fixture.Path("main.as"),
                               .sourceCode = source,

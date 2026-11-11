@@ -2,6 +2,7 @@
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/CallGraph.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/OverloadResolver.h"
@@ -51,7 +52,8 @@ std::vector<analysis::Diagnostic> AnalyzeSnippet(const std::string& code)
     analysis::SemanticAnalyzer analyzer(nullptr);
     analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
     request.sourceCode = code;
-    request.tree = tree;
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     if (scopes)
     {
         request.mutableScopeRoot = scopes.get();

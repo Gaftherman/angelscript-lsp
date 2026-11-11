@@ -3,6 +3,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/EngineProfiles.h"
@@ -161,7 +162,8 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
             request.scopeRoot = scopeRoot;
             request.mutableScopeRoot = scopeRoot.get();
             request.sourceCode = sourceCode;
-            request.tree = tree;
+            angel_lsp::analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+            request.nodeIndex = &nodeIndex;
 
             angel_lsp::analysis::SemanticAnalyzer analyzer(nullptr);
             const auto diagnostics = analyzer.Analyze(request);

@@ -1,5 +1,6 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
@@ -27,7 +28,8 @@ std::vector<Diagnostic> RunAnalysis(const std::string& code)
 
     SemanticAnalysisRequest req{symbolTable, uri};
     req.sourceCode = code;
-    req.tree = tree;
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    req.nodeIndex = &nodeIndex;
     req.scopeRoot = std::move(scopeRoot);
 
     SemanticAnalyzer analyzer(nullptr);

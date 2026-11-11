@@ -2,6 +2,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/EngineRuleParser.h"
@@ -35,15 +36,17 @@ std::vector<Diagnostic> AnalyzeWithRules(const std::string& code,
     SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
-    request.tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     request.engineRules = rules;
 
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(request);
 
-    if (request.tree)
+    if (tree)
     {
-        ts_tree_delete(const_cast<TSTree*>(request.tree));
+        ts_tree_delete(tree);
     }
     return diagnostics;
 }
@@ -364,15 +367,17 @@ TEST_CASE("EngineRuleChecker - Custom array-like template and Spanish i18n fallb
     SemanticAnalysisRequest request{table, "file:///custom_vec.as", ".as.predefined", &esI18n};
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
-    request.tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     request.engineRules = &ruleCfg;
     request.typeConfig = &typeCfg;
 
     SemanticAnalyzer analyzer(nullptr);
     auto diags = analyzer.Analyze(request);
-    if (request.tree)
+    if (tree)
     {
-        ts_tree_delete(const_cast<TSTree*>(request.tree));
+        ts_tree_delete(tree);
     }
 
     CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));

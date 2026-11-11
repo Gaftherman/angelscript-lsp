@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
@@ -45,14 +46,16 @@ std::vector<Diagnostic> AnalyzeCallSnippet(const std::string& code, const std::s
     request.engineProperties = engineProps;
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
-    request.tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(request);
 
-    if (request.tree)
+    if (tree)
     {
-        ts_tree_delete(const_cast<TSTree*>(request.tree));
+        ts_tree_delete(tree);
     }
     return diagnostics;
 }
@@ -218,11 +221,13 @@ TEST_CASE("CallChecker - A global declared in another file is not a candidate")
     SemanticAnalysisRequest request{table, "file:///here.as", ".as.predefined", &i18n};
     request.scopeRoot = scopes.CollectScopes(here, parser);
     request.sourceCode = here;
-    request.tree = parser.Parse(here);
+    TSTree* tree = parser.Parse(here);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     const auto diagnostics = analyzer.Analyze(request);
-    ts_tree_delete(const_cast<TSTree*>(request.tree));
+    if (tree) ts_tree_delete(tree);
 
     CHECK_FALSE(HasCode(diagnostics, "as-err-call-argument-count"));
 }
@@ -413,13 +418,15 @@ TEST_CASE("CallChecker - Predefined engine stubs (.as.predefined) integrate with
     SemanticAnalysisRequest request{table, "file:///script.as", ".as.predefined", &i18n};
     request.scopeRoot = scopes.CollectScopes(validScript, parser);
     request.sourceCode = validScript;
-    request.tree = parser.Parse(validScript);
+    TSTree* tree = parser.Parse(validScript);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     auto validDiags = analyzer.Analyze(request);
-    if (request.tree)
+    if (tree)
     {
-        ts_tree_delete(const_cast<TSTree*>(request.tree));
+        ts_tree_delete(tree);
     }
 
     CHECK_FALSE(HasCode(validDiags, "as-err-call-no-matching-signature"));
@@ -437,12 +444,14 @@ TEST_CASE("CallChecker - Predefined engine stubs (.as.predefined) integrate with
     SemanticAnalysisRequest invRequest{invalidTable, "file:///script_invalid.as", ".as.predefined", &i18n};
     invRequest.scopeRoot = scopes.CollectScopes(invalidScript, parser);
     invRequest.sourceCode = invalidScript;
-    invRequest.tree = parser.Parse(invalidScript);
+    TSTree* invTree = parser.Parse(invalidScript);
+    NodeIndex invIndex(ts_tree_root_node(invTree));
+    invRequest.nodeIndex = &invIndex;
 
     auto invDiags = analyzer.Analyze(invRequest);
-    if (invRequest.tree)
+    if (invTree)
     {
-        ts_tree_delete(const_cast<TSTree*>(invRequest.tree));
+        ts_tree_delete(invTree);
     }
 
     bool hasTypeError =
@@ -1145,13 +1154,15 @@ TEST_CASE("CallChecker - Direct array initialization accepts enum value and reje
     SemanticAnalysisRequest req1{table, "file:///calls.as", ".as.predefined", &i18n};
     req1.scopeRoot = scopes.CollectScopes(validSnippet, parser);
     req1.sourceCode = validSnippet;
-    req1.tree = parser.Parse(validSnippet);
+    TSTree* tree1 = parser.Parse(validSnippet);
+    NodeIndex index1(ts_tree_root_node(tree1));
+    req1.nodeIndex = &index1;
 
     SemanticAnalyzer analyzer(nullptr);
     auto diags1 = analyzer.Analyze(req1);
     CHECK_FALSE(HasCode(diags1, "as-err-no-matching-constructor"));
-    if (req1.tree)
-        ts_tree_delete(const_cast<TSTree*>(req1.tree));
+    if (tree1)
+        ts_tree_delete(tree1);
 
     SymbolTable table2;
     collector.CollectSymbols("file:///engine.as.predefined", arrayStub, parser, table2);
@@ -1172,12 +1183,14 @@ TEST_CASE("CallChecker - Direct array initialization accepts enum value and reje
     SemanticAnalysisRequest req2{table2, "file:///calls.as", ".as.predefined", &i18n};
     req2.scopeRoot = scopes.CollectScopes(invalidSnippet, parser);
     req2.sourceCode = invalidSnippet;
-    req2.tree = parser.Parse(invalidSnippet);
+    TSTree* tree2 = parser.Parse(invalidSnippet);
+    NodeIndex index2(ts_tree_root_node(tree2));
+    req2.nodeIndex = &index2;
 
     auto diags2 = analyzer.Analyze(req2);
     CHECK(HasCode(diags2, "as-err-no-matching-constructor"));
-    if (req2.tree)
-        ts_tree_delete(const_cast<TSTree*>(req2.tree));
+    if (tree2)
+        ts_tree_delete(tree2);
 }
 
 TEST_CASE("CallChecker - A method redeclared in a subclass overrides, it does not overload")

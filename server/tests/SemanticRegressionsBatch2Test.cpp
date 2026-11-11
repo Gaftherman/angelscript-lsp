@@ -7,6 +7,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
@@ -54,7 +55,8 @@ std::vector<analysis::Diagnostic> AnalyzeSnippetWithPredefined(const std::string
     analysis::SemanticAnalyzer analyzer(nullptr);
     analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
     request.sourceCode = code;
-    request.tree = tree;
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     if (scopes)
     {
         request.mutableScopeRoot = scopes.get();
@@ -550,7 +552,8 @@ TEST_CASE("SvenCoop v2.as - this.Get overload resolution with mutable ref")
     analysis::SemanticAnalyzer analyzer(nullptr);
     analysis::SemanticAnalysisRequest request{table, v2Uri, ".as.predefined", nullptr};
     request.sourceCode = script;
-    request.tree = tree;
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     if (scopes)
     {
         request.mutableScopeRoot = scopes.get();
@@ -606,7 +609,8 @@ TEST_CASE("Overload resolution - Mutable reference with default bool does not re
     analysis::SemanticAnalyzer analyzer(nullptr);
     analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
     request.sourceCode = code;
-    request.tree = tree;
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     if (scopes)
     {
         request.mutableScopeRoot = scopes.get();
@@ -658,7 +662,8 @@ TEST_CASE("Named arguments - Variable name matches parameter name")
     analysis::SemanticAnalyzer analyzer(nullptr);
     analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
     request.sourceCode = code;
-    request.tree = tree;
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     if (scopes)
     {
         request.mutableScopeRoot = scopes.get();
@@ -701,7 +706,8 @@ TEST_CASE("Named arguments - Non-existent parameter name emits no matching signa
     analysis::SemanticAnalyzer analyzer(nullptr);
     analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
     request.sourceCode = code;
-    request.tree = tree;
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     if (scopes)
     {
         request.mutableScopeRoot = scopes.get();

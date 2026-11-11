@@ -52,7 +52,7 @@ TEST_CASE("Preprocessor - A defined word keeps the block")
                                "void inside() {}\n"
                                "#endif\n";
 
-    ankerl::unordered_dense::set<std::string> defined;
+    angel_lsp::TransparentStringSet defined;
     defined.insert("DEBUG_BUILD");
 
     CHECK_FALSE(Excludes(source, 1, defined));
@@ -398,7 +398,7 @@ namespace
 {
 /** @brief The directive names reported for a document, in source order. */
 std::vector<std::string> UnsupportedNames(const std::string& source,
-                                          const ankerl::unordered_dense::set<std::string>& defined = {},
+                                          const angel_lsp::TransparentStringSet& defined = {},
                                           const PreprocessorFeatures& features = {}, bool reportPragma = false)
 {
     std::vector<std::string> names;
@@ -542,7 +542,7 @@ TEST_CASE("Preprocessor - A well-formed block says nothing either way")
 {
     const std::string source = "#if SERVER_BUILD\nint x = 1;\n#endif\n";
 
-    ankerl::unordered_dense::set<std::string> defined;
+    angel_lsp::TransparentStringSet defined;
     defined.insert("SERVER_BUILD");
 
     CHECK(ScanPreprocessor(source, defined).unsupported.empty());
@@ -562,7 +562,7 @@ TEST_CASE("Preprocessor - The smoke file reports each directive mistake exactly 
                                    "int stray = 1;\n"
                                    "#endif\n";
 
-    ankerl::unordered_dense::set<std::string> defined;
+    angel_lsp::TransparentStringSet defined;
     defined.insert("SERVER_BUILD");
 
     const auto scan = ScanPreprocessor(bothShapes, defined);

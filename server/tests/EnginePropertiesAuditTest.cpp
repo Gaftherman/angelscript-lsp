@@ -47,9 +47,9 @@ PipelineResult RunPipeline(const std::string& sourceCode, const EngineProperties
 
     AngelScriptParser treeParser;
     req.sourceCode = sourceCode;
-    req.tree = treeParser.Parse(sourceCode);
+    TSTree* tree = treeParser.Parse(sourceCode);
 
-    const NodeIndex index(ts_tree_root_node(req.tree));
+    const NodeIndex index(ts_tree_root_node(tree));
     req.nodeIndex = &index;
 
     SemanticAnalyzer analyzer(nullptr);
@@ -61,6 +61,10 @@ PipelineResult RunPipeline(const std::string& sourceCode, const EngineProperties
     DiagnosticContext tcCtx{req, res.diagnostics};
     CheckTypeConversions(tcReq, tcCtx);
 
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
     return res;
 }
 

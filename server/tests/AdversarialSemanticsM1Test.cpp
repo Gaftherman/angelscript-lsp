@@ -2,8 +2,10 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/checkers/DefiniteAssignmentChecker.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "i18n/i18n.h"
@@ -53,16 +55,18 @@ std::string DeduceTypeAtLastExpression(const std::string& code)
                             TSNode expr = ts_node_named_child(stmt, 0);
                             TSPoint pt = ts_node_start_point(expr);
                             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
+                            IndexedByteRange exprRange{ts_node_start_byte(expr), ts_node_end_byte(expr)};
                             result = ResolveExpressionType(
-                                expr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+                                exprRange, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
                         }
                         else if (stmtType == "return_statement" && ts_node_named_child_count(stmt) > 0)
                         {
                             TSNode expr = ts_node_named_child(stmt, 0);
                             TSPoint pt = ts_node_start_point(expr);
                             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
+                            IndexedByteRange exprRange{ts_node_start_byte(expr), ts_node_end_byte(expr)};
                             result = ResolveExpressionType(
-                                expr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+                                exprRange, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
                         }
                     }
                 }
@@ -85,12 +89,14 @@ std::vector<Diagnostic> AnalyzeCodeForDiagnostics(const std::string& code,
     SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
-    request.tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(request);
-    if (request.tree)
+    if (tree)
     {
-        ts_tree_delete(const_cast<TSTree*>(request.tree));
+        ts_tree_delete(tree);
     }
     return diagnostics;
 }

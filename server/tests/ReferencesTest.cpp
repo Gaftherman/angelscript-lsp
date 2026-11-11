@@ -1040,16 +1040,14 @@ TEST_CASE("References - A local target retains the scope revision it resolved ag
                         "}\n");
     auto& workspace = env.multiEnv;
     const auto& source = workspace.sources.at(env.uri);
-    auto* tree = workspace.trees.at(env.uri);
-    TSNode node{};
-    ResolveTargetRequest request{env.uri, source, tree, {1, 8}, workspace.symbolTable, workspace.scopeIndex, node};
+    auto request = MakeTargetRequest(env.uri, source, {1, 8}, workspace.symbolTable, workspace.scopeIndex);
     const auto target = ResolveTargetSymbol(request);
     REQUIRE(target.has_value());
     REQUIRE(target->kind == TargetKind::Local);
 
     workspace.scopeIndex.ClearDocument(env.uri);
     const auto occurrences =
-        CollectOccurrences({*target, env.uri, source, tree, workspace.symbolTable, workspace.scopeIndex, false});
+        CollectOccurrences(MakeOccurrencesRequest(*target, env.uri, source, workspace.symbolTable, workspace.scopeIndex));
     REQUIRE(occurrences.size() == 1);
     CHECK(occurrences.front().range.startLine == 2);
     CHECK(occurrences.front().range.startCharacter == 4);

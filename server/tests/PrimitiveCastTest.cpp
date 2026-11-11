@@ -108,7 +108,8 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
         SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
         request.scopeRoot = std::move(scopeRoot);
         request.sourceCode = code;
-        request.tree = tree;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);
@@ -164,7 +165,8 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
         SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
         request.scopeRoot = std::move(scopeRoot);
         request.sourceCode = code;
-        request.tree = tree;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);

@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
@@ -89,7 +90,8 @@ std::vector<Diagnostic> Diagnose(const std::string& body, const std::unordered_s
     request.typeConfig = &types;
     request.scopeRoot = scopeCollector.CollectScopes(code, parser);
     request.sourceCode = code;
-    request.tree = tree;
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     std::vector<Diagnostic> result;
@@ -134,7 +136,8 @@ std::vector<Diagnostic> DiagnoseAll(const std::string& body)
     request.typeConfig = &types;
     request.scopeRoot = scopeCollector.CollectScopes(code, parser);
     request.sourceCode = code;
-    request.tree = tree;
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     auto result = analyzer.Analyze(request);

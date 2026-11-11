@@ -2,6 +2,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/Diagnostics.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/EngineRuleParser.h"
@@ -69,15 +70,17 @@ struct SvenTestContext
         SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
         request.scopeRoot = scopes.CollectScopes(scriptCode, parser);
         request.sourceCode = scriptCode;
-        request.tree = parser.Parse(scriptCode);
+        TSTree* tree = parser.Parse(scriptCode);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
         request.engineRules = engineRules;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);
-        if (request.tree)
-        {
-            ts_tree_delete(const_cast<TSTree*>(request.tree));
-        }
+        if (tree)
+    {
+        ts_tree_delete(tree);
+    }
         return diags;
     }
 

@@ -2,6 +2,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/checkers/ControlFlowChecker.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "helpers/CorpusDirectory.h"
@@ -33,7 +34,9 @@ std::vector<Diagnostic> AnalyzeFlowSnippet(const std::string& code, const std::s
     SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
-    request.tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     return analyzer.Analyze(request);

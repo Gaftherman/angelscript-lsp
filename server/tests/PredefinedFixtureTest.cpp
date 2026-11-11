@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
@@ -99,7 +100,9 @@ Result Analyze(const std::string& script)
     request.typeConfig = &types;
     request.scopeRoot = scopes.CollectScopes(script, parser);
     request.sourceCode = script;
-    request.tree = parser.Parse(script);
+    TSTree* tree = parser.Parse(script);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     for (auto& diagnostic : analyzer.Analyze(request))
@@ -107,9 +110,9 @@ Result Analyze(const std::string& script)
         result.scriptDiagnostics.push_back(std::move(diagnostic));
     }
 
-    if (request.tree)
+    if (tree)
     {
-        ts_tree_delete(const_cast<TSTree*>(request.tree));
+        ts_tree_delete(tree);
     }
     return result;
 }

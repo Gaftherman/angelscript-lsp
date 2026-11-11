@@ -7,6 +7,7 @@
 #include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/index/CallGraph.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/rules/ClassRules.h"
@@ -130,7 +131,8 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
         SemanticAnalysisRequest request{table, samples[index].fileUri, "", &i18n};
         request.scopeRoot = scopes[index];
         request.sourceCode = samples[index].sourceCode;
-        request.tree = trees[index];
+        NodeIndex nodeIndex(ts_tree_root_node(trees[index]));
+    request.nodeIndex = &nodeIndex;
         return request;
     };
 

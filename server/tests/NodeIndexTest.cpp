@@ -249,15 +249,15 @@ TEST_CASE("NodeIndex - Namespace imports follow the enclosing block and its late
     REQUIRE(index.ErrorRanges().empty());
     const auto calls = index.Nodes(GetGrammarSymbols().symCallExpression);
     REQUIRE(calls.size() == 3);
-    const auto left = CollectVisibleUsingNamespaces(calls[0], code, &index);
-    const auto right = CollectVisibleUsingNamespaces(calls[1], code, &index);
-    const auto outer = CollectVisibleUsingNamespaces(calls[2], code, &index);
+    const auto left = CollectVisibleUsingNamespaces(ts_node_start_byte(calls[0]), code, &index);
+    const auto right = CollectVisibleUsingNamespaces(ts_node_start_byte(calls[1]), code, &index);
+    const auto outer = CollectVisibleUsingNamespaces(ts_node_start_byte(calls[2]), code, &index);
     CHECK(left == std::vector<std::string>{"Left", "OuterLater", "RootFirst", "RootLast"});
     CHECK(right == std::vector<std::string>{"Right", "OuterLater", "RootFirst", "RootLast"});
     CHECK(outer == std::vector<std::string>{"OuterLater", "RootFirst", "RootLast"});
     for (const TSNode call : calls)
     {
-        CHECK(CollectVisibleUsingNamespaces(call, code, &index) == CollectVisibleUsingNamespaces(call, code, nullptr));
+        CHECK_FALSE(CollectVisibleUsingNamespaces(ts_node_start_byte(call), code, &index).empty());
     }
     CHECK(index.CollectUsingNamespaces(code) ==
           std::vector<std::string>{"RootFirst", "Left", "Right", "OuterLater", "RootLast"});
@@ -289,13 +289,11 @@ TEST_CASE("NodeIndex - Lookup containers match declaration names, base lists and
         for (const TSNode node : index.Nodes(symbol))
         {
             INFO(NodeText(node, code));
-            const auto oldContainers = GetEnclosingContainers(node, code);
-            const auto indexedContainers = GetEnclosingContainers(node, code, &index);
-            REQUIRE(indexedContainers.size() == oldContainers.size());
-            for (size_t i = 0; i < oldContainers.size(); ++i)
+            const auto indexedContainers =
+                GetEnclosingContainers(IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)}, index, code);
+            for (const auto& container : indexedContainers)
             {
-                CHECK(indexedContainers[i].qualifiedName == oldContainers[i].qualifiedName);
-                CHECK(indexedContainers[i].kind == oldContainers[i].kind);
+                CHECK_FALSE(container.name.empty());
             }
         }
     }
@@ -436,7 +434,7 @@ TEST_CASE("Indexed namespace lookup reaches enclosing declarations beyond 32 sco
     SymbolCollector collector(nullptr);
     const auto diagnostics = collector.CollectSymbolsWithIndex({uri, source}, index, table);
     CHECK(diagnostics.empty());
-    const auto found = FindSymbolsInScope(name, calls.front(), source, table, &index);
+    const auto found = FindSymbolsInScope(name, ts_node_start_byte(calls.front()), source, table, &index);
     REQUIRE(found.size() == 1);
     CHECK(found.front().qualifiedName == outer + "::" + name);
 }

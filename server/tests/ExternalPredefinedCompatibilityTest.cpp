@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
@@ -121,7 +122,8 @@ std::vector<Diagnostic> AnalyzeScript(const std::string& script, SymbolTable& ta
     request.scopeRoot = scopes.CollectScopes(script, parser);
 
     TSTree* tree = parser.Parse(script);
-    request.tree = tree;
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     const auto allDiags = analyzer.Analyze(request);

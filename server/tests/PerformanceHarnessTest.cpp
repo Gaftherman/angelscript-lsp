@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/EngineProfiles.h"
@@ -264,7 +265,8 @@ TEST_CASE("Performance - PERF-02 Checkers Latency and Stub Invariant on Weapon S
 
     angel_lsp::i18n::I18n i18n;
     angel_lsp::analysis::SemanticAnalysisRequest req{table, weaponUri, weaponCode, &i18n};
-    req.tree = std::move(tree);
+    angel_lsp::analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    req.nodeIndex = &nodeIndex;
     req.scopeRoot = std::move(scopeRoot);
 
     angel_lsp::analysis::SemanticAnalyzer analyzer(nullptr);
@@ -287,5 +289,9 @@ TEST_CASE("Performance - PERF-02 Checkers Latency and Stub Invariant on Weapon S
         {
             CHECK(diag.message.find("CBasePlayerWeapon") == std::string::npos);
         }
+    }
+    if (tree)
+    {
+        ts_tree_delete(tree);
     }
 }

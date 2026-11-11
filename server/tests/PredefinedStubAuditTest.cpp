@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "i18n/i18n.h"
@@ -145,7 +146,9 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         SemanticAnalysisRequest request{table, asFileUri, extension, &i18n};
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
-        request.tree = parser.Parse(source);
+        TSTree* tree = parser.Parse(source);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         const auto diagnostics = analyzer.Analyze(request);
@@ -156,10 +159,10 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
             ++counts[std::string(diag.code)];
         }
 
-        if (request.tree)
-        {
-            ts_tree_delete(const_cast<TSTree*>(request.tree));
-        }
+        if (tree)
+    {
+        ts_tree_delete(tree);
+    }
         return counts;
     };
 
@@ -198,34 +201,38 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         SemanticAnalysisRequest request{scriptTable, "file:///main.as", ".as.predefined", &i18n};
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
-        request.tree = parser.Parse(source);
+        TSTree* tree = parser.Parse(source);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         for (const auto& diag : analyzer.Analyze(request))
         {
             ++asScript[std::string(diag.code)];
         }
-        if (request.tree)
-        {
-            ts_tree_delete(const_cast<TSTree*>(request.tree));
-        }
+        if (tree)
+    {
+        ts_tree_delete(tree);
+    }
     }
 
     {
         SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
-        request.tree = parser.Parse(source);
+        TSTree* tree = parser.Parse(source);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         for (const auto& diag : analyzer.Analyze(request))
         {
             MESSAGE("    surviving: L" << diag.range.start.line + 1 << " [" << diag.code << "] " << diag.message);
         }
-        if (request.tree)
-        {
-            ts_tree_delete(const_cast<TSTree*>(request.tree));
-        }
+        if (tree)
+    {
+        ts_tree_delete(tree);
+    }
     }
 
     MESSAGE("  diagnostics when treated as a stub: " << std::accumulate(asStub.begin(), asStub.end(), size_t{0},

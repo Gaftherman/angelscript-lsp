@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
@@ -53,7 +54,8 @@ struct TestEnvironment
             SemanticAnalysisRequest request{symbolTable, uri, ".as.predefined", &i18n};
             request.typeConfig = &types;
             request.sourceCode = sourceCode;
-            request.tree = tree;
+            NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
             request.scopeRoot = rootScope;
             // The caller still owns this tree exclusively, which is what makes the write-back
             // sound - see TypeConversionChecker.h on mutableScopeRoot.

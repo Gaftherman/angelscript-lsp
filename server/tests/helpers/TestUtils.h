@@ -5,10 +5,14 @@
 #include "analysis/diagnostics/Diagnostics.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "features/completion/CompletionHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
@@ -25,6 +29,35 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+namespace angel_lsp::analysis
+{
+inline std::string ResolveExpressionType(TSNode node, const ExpressionTypeContext& ctx)
+{
+    if (ts_node_is_null(node))
+    {
+        return "";
+    }
+    IndexedByteRange range{ts_node_start_byte(node), ts_node_end_byte(node)};
+    return ResolveExpressionType(range, ctx);
+}
+
+inline std::string ResolveExpressionType(TSNode node, const Scope* scope,
+                                         const SymbolTable& table, std::string_view sourceCode)
+{
+    if (ts_node_is_null(node))
+    {
+        return "";
+    }
+    return ResolveExpressionType(node, ExpressionTypeContext(scope, table, sourceCode));
+}
+
+inline std::vector<Symbol> FindSymbolsInScope(std::string_view name, TSNode node,
+                                              std::string_view sourceCode, const SymbolTable& symbolTable)
+{
+    return FindSymbolsInScope(name, ts_node_start_byte(node), sourceCode, symbolTable);
+}
+} // namespace angel_lsp::analysis
 
 namespace angel_lsp::test
 {
@@ -314,7 +347,11 @@ class TestDocument
         request.sourceCode = m_sourceCode;
         // Same `#if` exclusion the server applies - see utils/PreprocessorRegions.h.
         request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(m_sourceCode);
-        request.tree = m_tree;
+        if (m_tree)
+        {
+            m_nodeIndex = std::make_unique<analysis::NodeIndex>(ts_tree_root_node(m_tree));
+            request.nodeIndex = m_nodeIndex.get();
+        }
 
         analysis::SemanticAnalyzer analyzer(nullptr);
         auto semDiags = analyzer.Analyze(request);
@@ -323,6 +360,7 @@ class TestDocument
 
     ~TestDocument()
     {
+        m_nodeIndex.reset();
         if (m_tree)
         {
             ts_tree_delete(m_tree);
@@ -953,7 +991,9 @@ class TestDocument
         auto scopeRoot = const_cast<analysis::LocalScopeCollector&>(m_scopeCollector)
                              .CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
         const analysis::Scope* scope = FindScopeByLineOrRoot(scopeRoot.get(), pos.line, pos.character);
-        std::string calleeType = analysis::ResolveExpressionType(funcNode, {scope, m_symbolTable, m_sourceCode, m_uri});
+        analysis::IndexedByteRange funcRange{ts_node_start_byte(funcNode), ts_node_end_byte(funcNode)};
+        std::string calleeType = analysis::ResolveExpressionType(
+            funcRange, analysis::ExpressionTypeContext(scope, m_symbolTable, m_sourceCode, m_uri, m_nodeIndex.get()));
         std::string clean = analysis::CleanBaseType(calleeType);
 
         auto found = m_symbolTable.FindSymbols(clean);
@@ -980,8 +1020,9 @@ class TestDocument
             TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
             if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
             {
-                std::string objType =
-                    analysis::ResolveExpressionType(objNode, {scope, m_symbolTable, m_sourceCode, m_uri});
+                analysis::IndexedByteRange objRange{ts_node_start_byte(objNode), ts_node_end_byte(objNode)};
+                std::string objType = analysis::ResolveExpressionType(
+                    objRange, analysis::ExpressionTypeContext(scope, m_symbolTable, m_sourceCode, m_uri, m_nodeIndex.get()));
                 std::string cleanObj = analysis::CleanBaseType(objType);
                 std::string memName(parser::NodeText(memNode, m_sourceCode));
                 while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front())))
@@ -1042,7 +1083,8 @@ class TestDocument
             }
         }
 
-        auto funcSymbols = analysis::FindSymbolsInScope(calleeText, funcNode, m_sourceCode, m_symbolTable);
+        auto funcSymbols = analysis::FindSymbolsInScope(
+            calleeText, ts_node_start_byte(funcNode), m_sourceCode, m_symbolTable, m_nodeIndex.get());
         std::vector<analysis::Symbol> candidates;
         for (const auto& s : funcSymbols)
         {
@@ -1148,7 +1190,8 @@ class TestDocument
         if (nodeText.empty())
             return std::nullopt;
 
-        auto syms = analysis::FindSymbolsInScope(nodeText, node, m_sourceCode, m_symbolTable);
+        auto syms = analysis::FindSymbolsInScope(
+            nodeText, ts_node_start_byte(node), m_sourceCode, m_symbolTable, m_nodeIndex.get());
         if (!syms.empty())
         {
             std::string target = syms[0].qualifiedName;
@@ -1212,7 +1255,8 @@ class TestDocument
         if (name.empty())
             return std::nullopt;
 
-        auto syms = analysis::FindSymbolsInScope(name, node, m_sourceCode, m_symbolTable);
+        auto syms = analysis::FindSymbolsInScope(
+            name, ts_node_start_byte(node), m_sourceCode, m_symbolTable, m_nodeIndex.get());
         if (!syms.empty())
         {
             std::string text = analysis::FormatFunctionDeclaration(syms[0], false);
@@ -1353,7 +1397,11 @@ class TestDocument
         request.sourceCode = m_sourceCode;
         // Same `#if` exclusion the server applies - see utils/PreprocessorRegions.h.
         request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(m_sourceCode);
-        request.tree = m_tree;
+        if (m_tree)
+        {
+            m_nodeIndex = std::make_unique<analysis::NodeIndex>(ts_tree_root_node(m_tree));
+            request.nodeIndex = m_nodeIndex.get();
+        }
 
         analysis::SemanticAnalyzer analyzer(nullptr);
         auto analyzeDiags = analyzer.Analyze(request);
@@ -1370,6 +1418,7 @@ class TestDocument
     analysis::SymbolTable m_symbolTable;
     std::shared_ptr<const analysis::Scope> m_scopeRoot;
     TSTree* m_tree = nullptr;
+    std::unique_ptr<analysis::NodeIndex> m_nodeIndex;
     std::vector<analysis::Diagnostic> m_diagnostics;
 };
 

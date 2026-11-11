@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
@@ -45,16 +46,18 @@ std::vector<Diagnostic> AnalyzeStatementSnippet(const std::string& sourceCode)
 
     AngelScriptParser treeParser;
     req.sourceCode = sourceCode;
-    req.tree = treeParser.Parse(sourceCode);
+    TSTree* tree = treeParser.Parse(sourceCode);
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    req.nodeIndex = &nodeIndex;
 
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(req);
 
     diagnostics.insert(diagnostics.end(), collectorDiagnostics.begin(), collectorDiagnostics.end());
 
-    if (req.tree)
+    if (tree)
     {
-        ts_tree_delete(const_cast<TSTree*>(req.tree));
+        ts_tree_delete(tree);
     }
 
     return diagnostics;

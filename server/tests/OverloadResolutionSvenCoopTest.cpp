@@ -7,6 +7,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
@@ -54,7 +55,8 @@ std::vector<analysis::Diagnostic> AnalyzeSnippetWithStubs(const std::string& cod
     analysis::SemanticAnalyzer analyzer(nullptr);
     analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", &translator};
     request.sourceCode = code;
-    request.tree = tree;
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
     if (scopes)
     {
         request.mutableScopeRoot = scopes.get();
