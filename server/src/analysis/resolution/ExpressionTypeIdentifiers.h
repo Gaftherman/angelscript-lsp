@@ -31,6 +31,19 @@ namespace angel_lsp::analysis
                                                   const SymbolTable& symbolTable);
 
 /**
+ * @brief Resolves scoped identifier type from global table, scope symbols, or enum members.
+ * @param[in] scopedText Raw or global-prefixed scoped identifier (e.g. `::ns::var` or `Enum::Val`).
+ * @param[in] wholeScopeSymbols Scope symbols matching whole identifier name.
+ * @param[in] qualScopeSymbols Scope symbols matching the qualifier prefix.
+ * @param[in] symbolTable Symbol table to query.
+ * @return Resolved type name, or empty string.
+ */
+[[nodiscard]] std::string ResolveScopedIdentifierType(std::string_view scopedText,
+                                                      const std::vector<Symbol>& wholeScopeSymbols,
+                                                      const std::vector<Symbol>& qualScopeSymbols,
+                                                      const SymbolTable& symbolTable);
+
+/**
  * @brief Fallback lookup for global accessor functions (get_X, set_X).
  * @param[in] name Property name without prefix.
  * @param[in] symbolTable Symbol table to query.

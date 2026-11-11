@@ -65,6 +65,26 @@ std::string ResolveScopedEnumMember(std::string_view whole,
     return "";
 }
 
+std::string ResolveScopedIdentifierType(std::string_view scopedText,
+                                        const std::vector<Symbol>& wholeScopeSymbols,
+                                        const std::vector<Symbol>& qualScopeSymbols,
+                                        const SymbolTable& symbolTable)
+{
+    std::string_view lookupPath = utils::HasLeadingGlobalPrefix(scopedText)
+                                      ? utils::StripGlobalPrefix(scopedText)
+                                      : scopedText;
+    auto syms = symbolTable.FindSymbols(lookupPath);
+    if (std::string type = ExtractVariableOrPropertyType(syms, symbolTable); !type.empty())
+    {
+        return type;
+    }
+    if (std::string type = ExtractVariableOrPropertyType(wholeScopeSymbols, symbolTable); !type.empty())
+    {
+        return type;
+    }
+    return ResolveScopedEnumMember(lookupPath, qualScopeSymbols, symbolTable);
+}
+
 std::string ResolveIdentifierAccessorFallback(std::string_view name, const SymbolTable& symbolTable)
 {
     std::string nameStr(name);

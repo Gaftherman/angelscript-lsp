@@ -137,58 +137,18 @@ static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext&
     return ResolveThisType(hostClass, containers);
 }
 
-static std::string ResolveGlobalScopedExpr(TSNode exprNode, std::string_view rootPath, const ExpressionTypeContext& ctx)
-{
-    auto syms = ctx.symbolTable.FindSymbols(rootPath);
-    if (std::string type = ExtractVariableOrPropertyType(syms, ctx.symbolTable); !type.empty())
-    {
-        return type;
-    }
-    const auto [qualView, mem] = utils::SplitScopedName(rootPath);
-    auto qSyms = ResolveScopeSymbols(qualView, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
-    return ResolveScopedEnumMember(rootPath, qSyms, ctx.symbolTable);
-}
-
 static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     const auto text = parser::NodeText(exprNode, ctx.sourceCode);
-    if (utils::HasLeadingGlobalPrefix(text))
+    const auto [qualView, mem] = utils::SplitScopedName(utils::StripGlobalPrefix(text));
+    if (!qualView.empty())
     {
-        return ResolveGlobalScopedExpr(exprNode, utils::StripGlobalPrefix(text), ctx);
+        auto wholeSyms = ResolveScopeSymbols(text, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+        auto qualSyms = ResolveScopeSymbols(qualView, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+        return ResolveScopedIdentifierType(text, wholeSyms, qualSyms, ctx.symbolTable);
     }
 
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode lastIdentifier{};
-    bool qualified = false;
-    SyntaxOperands(exprNode, ctx.nodeIndex)
-        .ForEachNamed(
-            [&](TSNode child)
-            {
-                if (ts_node_symbol(child) == gs.symIdentifier)
-                {
-                    qualified = !ts_node_is_null(lastIdentifier);
-                    lastIdentifier = child;
-                }
-                return true;
-            });
-
-    if (qualified)
-    {
-        const std::string whole(parser::NodeText(exprNode, ctx.sourceCode));
-        auto wholeSyms = ctx.symbolTable.FindSymbols(whole);
-        if (wholeSyms.empty())
-        {
-            wholeSyms = ResolveScopeSymbols(whole, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
-        }
-        if (std::string type = ExtractVariableOrPropertyType(wholeSyms, ctx.symbolTable); !type.empty())
-        {
-            return type;
-        }
-        const auto [qualView, mem] = utils::SplitScopedName(whole);
-        auto qSyms = ResolveScopeSymbols(qualView, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
-        return ResolveScopedEnumMember(whole, qSyms, ctx.symbolTable);
-    }
-
+    TSNode lastIdentifier = SyntaxOperands(exprNode, ctx.nodeIndex).LastNamed(parser::GetGrammarSymbols().symIdentifier);
     return ts_node_is_null(lastIdentifier) ? std::string() : ResolveExpressionType(lastIdentifier, ctx);
 }
 
