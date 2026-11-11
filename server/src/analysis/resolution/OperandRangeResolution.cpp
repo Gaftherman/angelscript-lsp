@@ -4,6 +4,7 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/types/TypeSanitization.h"
 
 #include <optional>
 #include <string>
@@ -36,12 +37,14 @@ std::string ResolveExpressionType(IndexedByteRange bytes, const ExpressionTypeCo
  */
 std::optional<std::string> IsBareDataType(IndexedByteRange bytes, const ExpressionTypeContext& ctx)
 {
-    const TSNode node = RecoverNodeAt(ctx, bytes.startByte, bytes.endByte);
-    if (ts_node_is_null(node))
+    if (bytes.startByte >= ctx.sourceCode.size() || bytes.endByte > ctx.sourceCode.size() ||
+        bytes.startByte >= bytes.endByte)
     {
         return std::nullopt;
     }
-    return IsBareDataType(node, ctx);
+    std::string_view text = ctx.sourceCode.substr(bytes.startByte, bytes.endByte - bytes.startByte);
+    TrimTypeWhitespace(text);
+    return IsBareDataType(text, bytes.startByte, ctx);
 }
 
 /**

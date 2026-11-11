@@ -248,6 +248,12 @@ TSNode AdjustStartNodeIfDeclarationName(TSNode node)
     return result;
 }
 
+std::vector<ContainerInfo> GetEnclosingContainers(IndexedByteRange range, const NodeIndex& nodeIndex,
+                                                  std::string_view sourceCode)
+{
+    return nodeIndex.CollectLookupContainers(range.startByte, range.endByte, 0, sourceCode);
+}
+
 std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)
 {
     if (ts_node_is_null(node))
@@ -348,105 +354,6 @@ const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest
         }
     }
     return *request.usingNamespacesCache;
-}
-
-/**
- * @brief Checks if any symbol or container in the symbol table matches the scope prefix.
- */
-static bool HasContainerMatchingPrefix(const SymbolTable& table, const std::string& prefix)
-{
-    if (const auto ruleIndex = table.GetRuleIndex())
-    {
-        if (ruleIndex->byContainer.contains(prefix))
-        {
-            return true;
-        }
-        for (const auto& [container, _] : ruleIndex->byContainer)
-        {
-            if (utils::HasScopePrefix(container, prefix))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-    return table.HasSymbol(prefix) || table.HasSymbolAnywhere(prefix);
-}
-
-/**
- * @brief Checks if the prefix is known relative to enclosing containers.
- */
-static bool IsKnownInEnclosingContainers(const SymbolTable& table, const std::string& prefix, TSNode node,
-                                         std::string_view sourceCode, const NodeIndex* nodeIndex)
-{
-    auto containers = GetEnclosingContainers(node, sourceCode, nodeIndex);
-    for (const auto& c : containers)
-    {
-        std::string q = utils::JoinScopedName(c.qualifiedName, prefix);
-        if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Checks if the prefix is known relative to using namespaces.
- */
-static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string& prefix, TSNode node,
-                                     std::string_view sourceCode, std::span<const std::string> precomputedUsings,
-                                     const NodeIndex* nodeIndex)
-{
-    if (nodeIndex || !precomputedUsings.empty())
-    {
-        for (const auto& ns : precomputedUsings)
-        {
-            std::string q = utils::JoinScopedName(ns, prefix);
-            if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    if (sourceCode.find("using") == std::string_view::npos)
-    {
-        return false;
-    }
-
-    auto usings = CollectUsingNamespaces(parser::GetRootNode(node), sourceCode);
-    for (const auto& ns : usings)
-    {
-        std::string q = utils::JoinScopedName(ns, prefix);
-        if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table,
-                  std::span<const std::string> precomputedUsings, const NodeIndex* nodeIndex)
-{
-    if (prefix.empty() || table.HasSymbol(prefix) || table.HasSymbolAnywhere(prefix))
-    {
-        return true;
-    }
-
-    if (HasContainerMatchingPrefix(table, prefix))
-    {
-        return true;
-    }
-
-    if (IsKnownInEnclosingContainers(table, prefix, node, sourceCode, nodeIndex))
-    {
-        return true;
-    }
-
-    return IsKnownInUsingNamespaces(table, prefix, node, sourceCode, precomputedUsings, nodeIndex);
 }
 
 /**
@@ -894,6 +801,37 @@ static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view source
     return name;
 }
 
+std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOffset,
+                                          const ExpressionTypeContext& ctx)
+{
+    if (name.empty())
+    {
+        return std::nullopt;
+    }
+
+    if (IsPrimitiveTypeName(name))
+    {
+        return std::string(name);
+    }
+
+    if (ctx.scope)
+    {
+        if (const LocalDefinition* def = ResolveInScopeAt(ctx.scope, name, byteOffset))
+        {
+            return def->kind == LocalDefinitionKind::Type ? std::optional<std::string>(std::string(name))
+                                                          : std::nullopt;
+        }
+    }
+
+    const auto syms = LookupTypeCandidateSymbols(std::string(name), ctx.symbolTable);
+    if (AreAllSymbolsPureTypes(syms))
+    {
+        return std::string(name);
+    }
+
+    return std::nullopt;
+}
+
 std::optional<std::string> IsBareDataType(TSNode node, const ExpressionTypeContext& ctx)
 {
     node = UnwrapIndexedParentheses(node, ctx.nodeIndex);
@@ -902,63 +840,7 @@ std::optional<std::string> IsBareDataType(TSNode node, const ExpressionTypeConte
     {
         return std::nullopt;
     }
-
-    if (IsPrimitiveTypeName(name))
-    {
-        return name;
-    }
-
-    if (ctx.scope)
-    {
-        if (const LocalDefinition* def = ResolveInScopeAt(ctx.scope, name, ts_node_start_byte(node)))
-        {
-            return def->kind == LocalDefinitionKind::Type ? std::optional<std::string>(name) : std::nullopt;
-        }
-    }
-
-    const auto syms = LookupTypeCandidateSymbols(name, ctx.symbolTable);
-    if (AreAllSymbolsPureTypes(syms))
-    {
-        return name;
-    }
-
-    return std::nullopt;
-}
-
-std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode)
-{
-    TSNode typeNode = parser::GetParent(datatypeNode);
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_is_null(typeNode) || ts_node_symbol(typeNode) != gs.symType)
-    {
-        return {};
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode c = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_symbol(c) == gs.symScope)
-            {
-                const uint32_t sStart = ts_node_start_byte(c);
-                const uint32_t sEnd = ts_node_end_byte(c);
-                ts_tree_cursor_delete(&cursor);
-                if (sStart < sourceCode.size() && sEnd <= sourceCode.size() && sStart < sEnd)
-                {
-                    std::string scopeText(sourceCode.substr(sStart, sEnd - sStart));
-                    if (!utils::EndsWithScopeSeparator(scopeText))
-                    {
-                        scopeText.append(utils::k_scopeSeparator);
-                    }
-                    return scopeText;
-                }
-                return {};
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        ts_tree_cursor_delete(&cursor);
-    }
-    return {};
+    return IsBareDataType(name, ts_node_start_byte(node), ctx);
 }
 
 } // namespace angel_lsp::analysis

@@ -56,6 +56,8 @@ bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym
 bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::string_view containerScope = {});
 [[nodiscard]] bool ResolvesToEnum(std::string_view typeName, const SymbolTable& table);
 bool IsVariableType(std::string_view typeName);
+std::vector<ContainerInfo> GetEnclosingContainers(IndexedByteRange range, const NodeIndex& nodeIndex,
+                                                  std::string_view sourceCode);
 std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode,
                                                   const NodeIndex* nodeIndex = nullptr);
 std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std::string_view sourceCode);
@@ -63,8 +65,6 @@ std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view so
 std::vector<std::string> CollectVisibleUsingNamespaces(TSNode node, std::string_view sourceCode,
                                                        const NodeIndex* nodeIndex);
 [[nodiscard]] const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request);
-bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table,
-                  std::span<const std::string> precomputedUsings = {}, const NodeIndex* nodeIndex = nullptr);
 std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std::vector<ContainerInfo>& containers,
                                        const std::string& name, const std::vector<std::string>& usingNamespaces = {});
 std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
@@ -78,6 +78,7 @@ bool NamesAFunctionNotAType(std::string_view name, const SymbolTable& table);
 std::vector<Symbol> LookupTypeCandidateSymbols(const std::string& name, const SymbolTable& symbolTable);
 bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms);
 /// Identifies a bare type used in a value expression, accounting for local shadowing.
+[[nodiscard]] std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOffset,
+                                                        const ExpressionTypeContext& ctx);
 [[nodiscard]] std::optional<std::string> IsBareDataType(TSNode node, const ExpressionTypeContext& ctx);
-std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode);
 } // namespace angel_lsp::analysis
