@@ -29,7 +29,6 @@ struct ResolvedCallee
  * @param[in] args Slice of argument fact records for the call site.
  * @param[in] ctx Semantic expression type context.
  * @return Resolved callee information, or std::nullopt if unresolvable.
- * @note Transitional: recovers TSNode internally until analysis/resolution is migrated (Rule 4.10).
  */
 std::optional<ResolvedCallee> ResolveCallSiteCallee(const IndexedCallSite& site,
                                                     std::span<const IndexedCallArgument> args,
@@ -41,7 +40,6 @@ std::optional<ResolvedCallee> ResolveCallSiteCallee(const IndexedCallSite& site,
  * @param[in] args Slice of argument fact records for the declarator.
  * @param[in] ctx Semantic expression type context.
  * @return Resolved callee information, or std::nullopt if unresolvable.
- * @note Transitional: recovers TSNode internally until analysis/resolution is migrated (Rule 4.10).
  */
 std::optional<ResolvedCallee> ResolveConstructorInitCallee(const IndexedConstructorInitDeclarator& decl,
                                                            std::span<const IndexedCallArgument> args,

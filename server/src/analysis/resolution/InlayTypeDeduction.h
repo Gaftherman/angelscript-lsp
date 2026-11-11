@@ -15,7 +15,6 @@ namespace angel_lsp::analysis
  * @param[in] endByte End byte offset of the expression.
  * @param[in] ctx Semantic expression type context.
  * @return Deduced type string, or empty string if unresolvable.
- * @note Transitional: recovers TSNode internally until analysis/resolution is migrated (Rule 4.10).
  */
 std::string DeduceExpressionTypeAt(uint32_t startByte, uint32_t endByte, const ExpressionTypeContext& ctx);
 
@@ -24,7 +23,6 @@ std::string DeduceExpressionTypeAt(uint32_t startByte, uint32_t endByte, const E
  * @param[in] site Indexed lambda site facts.
  * @param[in] ctx Semantic expression type context.
  * @return Deduced return type string, or empty string if unresolvable.
- * @note Transitional: recovers TSNode internally until analysis/resolution is migrated (Rule 4.10).
  */
 std::string DeduceLambdaReturnTypeAt(const IndexedLambdaSite& site, const ExpressionTypeContext& ctx);
 

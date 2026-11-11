@@ -1,14 +1,15 @@
-#include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/InlayCalleeResolutionInternal.h"
+
+#include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/InlayResolutionInternal.h"
-#include "analysis/resolution/ScopeLookupInternal.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -47,30 +48,25 @@ static void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, c
     }
 }
 
-std::vector<Symbol> CollectMemberCalleeCandidates(TSNode funcNode, const ExpressionTypeContext& ctx)
+std::vector<Symbol> CollectMemberCalleeCandidates(const IndexedCallSite& site, const ExpressionTypeContext& ctx)
 {
     std::vector<Symbol> candidateSymbols;
-    TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
-    TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
-    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    if (site.receiverStartByte == 0 && site.receiverEndByte == 0)
     {
         return candidateSymbols;
     }
 
-    std::string objText(parser::NodeText(objNode, ctx.sourceCode));
-    std::string memText(parser::NodeText(memNode, ctx.sourceCode));
-    const Scope* rootScope = ctx.scope;
-    while (rootScope && rootScope->parent)
-    {
-        rootScope = rootScope->parent;
-    }
-    TSPoint objPoint = ts_node_start_point(objNode);
-    const Scope* scope = rootScope ? FindInnermostScope(rootScope, objPoint.row, objPoint.column) : nullptr;
-    std::string receiverTypeName = ResolveReceiverType(objNode, ctx.sourceCode, ctx.symbolTable, {scope, "", ctx.uri});
+    std::string_view objText =
+        ctx.sourceCode.substr(site.receiverStartByte, site.receiverEndByte - site.receiverStartByte);
+    const std::string memText(site.calleeText);
+    const IndexedByteRange receiverRange{site.receiverStartByte, site.receiverEndByte};
+    ReceiverTypeContext recvCtx{ctx.scope, "", ctx.uri};
+    recvCtx.nodeIndex = ctx.nodeIndex;
+    std::string receiverTypeName = ResolveReceiverType(receiverRange, ctx.sourceCode, ctx.symbolTable, recvCtx);
 
     if (receiverTypeName.empty())
     {
-        auto directCandidates = ctx.symbolTable.FindMemberSymbols(objText, memText);
+        auto directCandidates = ctx.symbolTable.FindMemberSymbols(std::string(objText), memText);
         for (const auto& sym : directCandidates)
         {
             candidateSymbols.push_back(sym);
@@ -83,10 +79,15 @@ std::vector<Symbol> CollectMemberCalleeCandidates(TSNode funcNode, const Express
     return candidateSymbols;
 }
 
-void CollectEnclosingClassCallees(const std::string& calleeName, TSNode callNode, const ExpressionTypeContext& ctx,
-                                  std::vector<Symbol>& candidateSymbols)
+void CollectEnclosingClassCallees(const std::string& calleeName, uint32_t callByteOffset,
+                                  const ExpressionTypeContext& ctx, std::vector<Symbol>& candidateSymbols)
 {
-    auto containers = GetEnclosingContainers(callNode, ctx.sourceCode);
+    std::vector<ContainerInfo> containers;
+    if (ctx.nodeIndex)
+    {
+        containers =
+            GetEnclosingContainers(IndexedByteRange{callByteOffset, callByteOffset}, *ctx.nodeIndex, ctx.sourceCode);
+    }
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
@@ -99,7 +100,7 @@ void CollectEnclosingClassCallees(const std::string& calleeName, TSNode callNode
     }
 }
 
-std::vector<Symbol> CollectScopedCalleeCandidates(const std::string& calleeName, TSNode callNode,
+std::vector<Symbol> CollectScopedCalleeCandidates(const std::string& calleeName, uint32_t callByteOffset,
                                                   const ExpressionTypeContext& ctx)
 {
     std::vector<Symbol> candidates;
@@ -122,7 +123,12 @@ std::vector<Symbol> CollectScopedCalleeCandidates(const std::string& calleeName,
         }
     }
 
-    auto containers = GetEnclosingContainers(callNode, ctx.sourceCode);
+    std::vector<ContainerInfo> containers;
+    if (ctx.nodeIndex)
+    {
+        containers =
+            GetEnclosingContainers(IndexedByteRange{callByteOffset, callByteOffset}, *ctx.nodeIndex, ctx.sourceCode);
+    }
     for (auto it = containers.rbegin(); it != containers.rend(); ++it)
     {
         if (it->kind == ContainerKind::Namespace)
