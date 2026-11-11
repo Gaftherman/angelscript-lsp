@@ -370,7 +370,8 @@ class Server
     [[nodiscard]] bool IsCommitAnalysisStale(const CommitAnalysisRequest& req) const;
     bool CommitAnalysisResults(CommitAnalysisRequest req);
     std::vector<analysis::Diagnostic> ReplaceSymbolsFromTree(const std::string& uriStr, const std::string& text,
-                                                             TSTree* tree, bool* outInterfaceChanged = nullptr,
+                                                             const parser::TreePtr* tree = nullptr,
+                                                             bool* outInterfaceChanged = nullptr,
                                                              const analysis::NodeIndex* index = nullptr);
     std::vector<analysis::Diagnostic> ReplaceSymbolsFromSource(const std::string& uriStr, const std::string& text,
                                                                parser::AngelScriptParser& parser);

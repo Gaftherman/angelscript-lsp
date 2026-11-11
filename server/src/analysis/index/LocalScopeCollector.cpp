@@ -192,6 +192,12 @@ static LocalScopeCollector::DocumentContext BuildDocumentContext(const NodeIndex
     return context;
 }
 
+std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromIndex(const NodeIndex& nodeIndex,
+                                                                  const std::string& sourceCode) const
+{
+    return CollectScopesFromTree(nodeIndex.Root(), sourceCode, &nodeIndex);
+}
+
 std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode,
                                                                   const NodeIndex* nodeIndex) const
 {

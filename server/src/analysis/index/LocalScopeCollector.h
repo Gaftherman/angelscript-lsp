@@ -49,6 +49,15 @@ class LocalScopeCollector
     std::unique_ptr<Scope> CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode,
                                                  const NodeIndex* nodeIndex = nullptr) const;
 
+    /**
+     * @brief Builds a Scope tree from a precomputed NodeIndex without exposing raw AST nodes.
+     * @param nodeIndex Precomputed node index of the document.
+     * @param sourceCode Full text of the document.
+     * @return The document's root Scope, or nullptr on failure.
+     */
+    std::unique_ptr<Scope> CollectScopesFromIndex(const NodeIndex& nodeIndex,
+                                                  const std::string& sourceCode) const;
+
     struct ByteSpan
     {
         uint32_t startByte = 0;

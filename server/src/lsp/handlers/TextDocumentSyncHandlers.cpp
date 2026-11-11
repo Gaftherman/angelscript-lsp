@@ -91,7 +91,7 @@ void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string&
     {
         ClaimPredefinedFile(uriStr, true);
         m_predefinedManager.SetDocumentText(uriStr, analysisText);
-        ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get());
+        ReplaceSymbolsFromTree(uriStr, analysisText, &savedTree);
     }
     else
     {
@@ -216,7 +216,7 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
 
     bool interfaceChanged = false;
     auto diagnostics =
-        ReplaceSymbolsFromTree(uriStr, prepared.text, syntax.tree.get(), &interfaceChanged, &syntax.index);
+        ReplaceSymbolsFromTree(uriStr, prepared.text, &syntax.tree, &interfaceChanged, &syntax.index);
 
     const auto bindingRevision =
         savedDocument && savedDocument->text == text
@@ -225,7 +225,7 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
             : std::nullopt;
     auto semanticDiagnostics = CollectScopesAndAnalyze({.uriStr = uriStr,
                                                         .source = prepared,
-                                                        .tree = syntax.tree.get(),
+                                                        .hasTree = static_cast<bool>(syntax.tree),
                                                         .nodeIndex = syntax.index,
                                                         .callBindingRevision = bindingRevision});
     diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
@@ -354,11 +354,11 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
         return;
     }
 
-    TSTree* tree = m_parser->Parse(analysisText);
-    ReplaceSymbolsFromTree(req.uriStr, analysisText, tree);
+    parser::TreePtr tree = parser::MakeTreePtr(m_parser->Parse(analysisText));
+    ReplaceSymbolsFromTree(req.uriStr, analysisText, &tree);
     CommitPredefinedIndex(req.uriStr, analysisText, parser::CopyTree(tree));
     GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
-                                                                       parser::MakeTreePtr(tree), req.clientUri});
+                                                                       std::move(tree), req.clientUri});
 
     ScheduleAnalysisImmediate(ScheduleAnalysisRequest{
         .uriStr = req.uriStr,
@@ -411,7 +411,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     const auto open = GetDocumentStore().GetDocument(uriStr);
     const auto revision = ResolveProtocolSyntax(uriStr, prepared.text, open.get());
     const auto& syntax = *revision.syntax;
-    auto diagnostics = ReplaceSymbolsFromTree(uriStr, prepared.text, syntax.tree.get(), nullptr, &syntax.index);
+    auto diagnostics = ReplaceSymbolsFromTree(uriStr, prepared.text, &syntax.tree, nullptr, &syntax.index);
     const double colMs = colTimer.ElapsedMs();
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
@@ -431,7 +431,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
                                                             m_sessionCoordinator->GetConfigRevision()};
         auto semanticDiagnostics = CollectScopesAndAnalyze({.uriStr = uriStr,
                                                             .source = prepared,
-                                                            .tree = syntax.tree.get(),
+                                                            .hasTree = static_cast<bool>(syntax.tree),
                                                             .outScopeMs = &scopeMs,
                                                             .outCheckMs = &checkMs,
                                                             .nodeIndex = syntax.index,

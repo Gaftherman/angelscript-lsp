@@ -110,7 +110,7 @@
       "originalSymbolOrCode": "ScheduleAnalysis ScheduleAnalysisImmediate",
       "whatItDidAndWhyInThatFile": "Duplicated request preparation and queued closed documents without a disk revision.",
       "whyChangedOrDeleted": "Capture the immutable cached disk snapshot and carry its revision through the worker to the protected commit.",
-      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysisScheduling.cpp",
       "replacedByCanonicalSymbol": "MakeScheduleRequest",
       "ramOrCpuImpact": "Revision checks are constant-time keyed lookups. Closed source text is shared with navigation and parse work remains outside the publication lock.",
       "verifiedByTests": [
@@ -348,7 +348,7 @@
       "originalSymbolOrCode": "CollectScopesAndCalls ParseAndCollectSymbols",
       "whatItDidAndWhyInThatFile": "Collected lexical scopes again during closed diagnostics and limited the worker syntax cache to open generations.",
       "whyChangedOrDeleted": "Reuse the lexical records published by closure indexing for the matching disk and parser-input revision, and retain eligible closed syntax on its owning worker.",
-      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysisExecution.cpp",
       "replacedByCanonicalSymbol": "FindClosedAnalysisInputs",
       "ramOrCpuImpact": "The first closed analysis copies lexical facts without walking the AST to collect scopes. The staging reference is released on commit, and the existing worker budget also covers closed syntax.",
       "verifiedByTests": [
@@ -365,7 +365,7 @@
       "originalSymbolOrCode": "IsUnchangedClosedDocument FindClosedLexicalScopes PrepareAnalysisSnapshot",
       "whatItDidAndWhyInThatFile": "Recollected closed symbols to compare public interface hashes and compared masked input against original source bytes.",
       "whyChangedOrDeleted": "Reuse symbols and syntax diagnostics only when the exact published parser input and disk revision match. Preserve the active module filter even when no staging symbols replace the published file.",
-      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysisExecution.cpp",
       "replacedByCanonicalSymbol": "FindClosedAnalysisInputs",
       "ramOrCpuImpact": "An exact closed revision skips symbol and call collection. The retained source aliases the disk text when masking left it intact.",
       "verifiedByTests": [

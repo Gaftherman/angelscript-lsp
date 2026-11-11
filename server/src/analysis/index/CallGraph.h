@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "utils/TransparentHash.h"
@@ -54,6 +55,14 @@ struct DocumentCalls
  * @return Every call in the document, in source order.
  */
 std::vector<CallSite> CollectCalls(TSNode root, std::string_view sourceCode);
+
+/**
+ * @brief Collects the calls in one parsed document from a NodeIndex.
+ * @param index Node index of the document.
+ * @param sourceCode Text the document was parsed from.
+ * @return Every call in the document, in source order.
+ */
+std::vector<CallSite> CollectCallsFromIndex(const NodeIndex& index, std::string_view sourceCode);
 
 /**
  * @brief Collects the calls directly from a document's Scope tree without full AST traversal.

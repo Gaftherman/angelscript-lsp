@@ -53,4 +53,14 @@ using TreePtr = std::unique_ptr<TSTree, decltype(&ts_tree_delete)>;
     return tree ? ts_tree_root_node(tree.get()) : TSNode{};
 }
 
+/**
+ * @brief Checks whether a managed syntax tree has any syntax errors.
+ * @param[in] tree Owning tree pointer.
+ * @return True if syntax tree root contains errors, false otherwise.
+ */
+[[nodiscard]] inline bool TreeHasError(const TreePtr& tree) noexcept
+{
+    return tree && ts_node_has_error(ts_tree_root_node(tree.get()));
+}
+
 } // namespace angel_lsp::parser

@@ -83,10 +83,6 @@ struct PendingAnalysisEntry
         : text(std::move(t)), tree(std::move(tr)), version(v), generation(0), configRevision(0)
     {
     }
-    PendingAnalysisEntry(std::string t, TSTree* tr, int v = -1)
-        : text(std::move(t)), tree(parser::MakeTreePtr(tr)), version(v), generation(0), configRevision(0)
-    {
-    }
 
     PendingAnalysisEntry(const PendingAnalysisEntry&) = delete;
     PendingAnalysisEntry& operator=(const PendingAnalysisEntry&) = delete;

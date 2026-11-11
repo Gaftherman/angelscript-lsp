@@ -25,7 +25,6 @@
 #include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <unordered_set>
 #include <vector>
 
@@ -194,7 +193,7 @@ struct CollectScopesRequest
 {
     std::string uriStr;
     const PreparedAnalysisSource& source;
-    const TSTree* tree = nullptr;
+    bool hasTree = false;
     double* outScopeMs = nullptr;
     double* outCheckMs = nullptr;
     const analysis::NodeIndex& nodeIndex;
@@ -315,7 +314,6 @@ struct OpenDocument
 {
     std::string uri;
     const std::string* text = nullptr;
-    TSTree* tree = nullptr;
     std::shared_ptr<const document::Document> docHandle;
     std::shared_ptr<const std::string> predefinedHandle;
 };

@@ -174,6 +174,11 @@ std::vector<CallSite> CollectCalls(TSNode root, std::string_view sourceCode)
     return calls;
 }
 
+std::vector<CallSite> CollectCallsFromIndex(const NodeIndex& index, std::string_view sourceCode)
+{
+    return CollectCalls(index.Root(), sourceCode);
+}
+
 std::vector<CallSite> CollectCallsFromScopeTree(const Scope& rootScope)
 {
     std::vector<CallSite> calls;

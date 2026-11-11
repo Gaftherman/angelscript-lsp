@@ -35,9 +35,10 @@
     "server/src/analysis/checkers/null_safety",
     "server/src/analysis/checkers",
     "server/src/analysis/resolution",
-    "server/src/lsp/state"
+    "server/src/lsp/state",
+    "server/src/lsp/services"
   ],
-  "active_folder": "server/src/lsp/state",
+  "active_folder": "server/src/lsp/pipeline",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/analysis/diagnostics",
@@ -51,18 +52,6 @@
     }
   ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/lsp/state",
-      "complexity_rank": 39,
-      "selection_rationale": "LSP in-memory state stores (7 files, 910 lines) DocumentStore, WorkspaceStateStore, ModuleIndex.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/lsp/services",
-      "complexity_rank": 40,
-      "selection_rationale": "LSP domain services (2 files, 300 lines) ServerAnalysis, ServerDiagnostics, ServerModules.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/lsp/pipeline",
       "complexity_rank": 41,
