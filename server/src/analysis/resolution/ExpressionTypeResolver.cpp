@@ -10,6 +10,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeBinary.h"
 #include "analysis/resolution/ExpressionTypeCall.h"
+#include "analysis/resolution/ExpressionTypeCast.h"
 #include "analysis/resolution/ExpressionTypeIdentifiers.h"
 #include "analysis/resolution/ExpressionTypeIndex.h"
 #include "analysis/resolution/ExpressionTypeLiterals.h"
@@ -556,13 +557,10 @@ static std::string ResolveConstructCallExpr(const SyntaxOperands& syntax, std::s
     {
         return "";
     }
-    std::string written(parser::NodeText(typeNode, sourceCode));
+    std::string_view written = parser::NodeText(typeNode, sourceCode);
     const TSNode templates = syntax.FirstNamed(gs.symTemplateTypeList);
-    if (!ts_node_is_null(templates))
-    {
-        written += std::string(parser::NodeText(templates, sourceCode));
-    }
-    return CleanExpressionType(written);
+    std::string_view tmplText = !ts_node_is_null(templates) ? parser::NodeText(templates, sourceCode) : "";
+    return ResolveConstructCallType(written, tmplText);
 }
 
 /**
@@ -575,8 +573,7 @@ static std::optional<std::string> ResolveCastOrConstructExpr(TSSymbol sym, TSNod
     if (sym == gs.symCastExpression || sym == gs.symFunctionalCastExpression)
     {
         const TSNode typeNode = SyntaxOperands(exprNode, ctx.nodeIndex).Field(gs.fieldType);
-        return ts_node_is_null(typeNode) ? ""
-                                         : CleanExpressionType(std::string(parser::NodeText(typeNode, ctx.sourceCode)));
+        return ts_node_is_null(typeNode) ? "" : ResolveCastExpressionType(parser::NodeText(typeNode, ctx.sourceCode));
     }
     if (sym == gs.symConstructCallExpression)
     {
@@ -602,11 +599,7 @@ static std::optional<std::string> ResolveLambdaOrInitExpr(TSSymbol sym, TSNode e
     }
     if (sym == gs.symLambdaExpression)
     {
-        if (auto target = FuncdefTargetOfLambda(ReadLambdaTarget(exprNode, ctx.sourceCode), ctx.symbolTable))
-        {
-            return target->qualifiedName.empty() ? target->name : target->qualifiedName;
-        }
-        return "";
+        return ResolveLambdaTargetFuncdefType(ReadLambdaTarget(exprNode, ctx.sourceCode), ctx.symbolTable);
     }
     return std::nullopt;
 }
