@@ -33,9 +33,10 @@
     "server/src/parser",
     "server/src/analysis/rules",
     "server/src/analysis/checkers/null_safety",
-    "server/src/analysis/checkers"
+    "server/src/analysis/checkers",
+    "server/src/analysis/resolution"
   ],
-  "active_folder": "server/src/analysis/rules",
+  "active_folder": "server/src/analysis/resolution",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/utils",
@@ -55,39 +56,9 @@
   ],
   "pending_folders": [
     {
-      "folder_path": "server/src/analysis/rules",
-      "complexity_rank": 34,
-      "selection_rationale": "Language rules (10 files, 591 lines) ClassRules, FunctionRules, OperatorRules, TypeRules, VariableRules.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/analysis/checkers/null_safety",
-      "complexity_rank": 35,
-      "selection_rationale": "Semantic checkers (7 files, 266 lines) null safety analysis.",
-      "files_to_refactor": [
-        "NullSafetyChecker.cpp",
-        "NullSafetyCondition.cpp",
-        "NullSafetyDecl.cpp",
-        "NullSafetyExpr.cpp",
-        "NullSafetyParam.cpp"
-      ]
-    },
-    {
-      "folder_path": "server/src/analysis/checkers",
-      "complexity_rank": 36,
-      "selection_rationale": "Semantic checkers (19 files, 1635 lines) access, operator, call, type conversion checkers. Split into milestones: M23 operator family on BinaryExpressionFacts, M24 TypeConversion symbol queries onto string_view (Core, Hierarchy, Symbols), M24b condition, ternary, foreach and auto sites onto ConversionSiteFacts (Conditions, TernaryForeach, Auto; M24c Returns with LambdaTargetFacts and ReturnSiteFacts, M24d Funcdefs, Assignments and Properties, M24d2 ValueType, M24e Declarations and Construction, M24f driver, Expressions, NumericWarnings and Hierarchy), M25 Access/Const/LValue/Isolation, M26 CallChecker and InitializerListChecker, M27 ControlFlow/DefiniteAssignment/Namespace/UndefinedIdentifier.",
-      "files_to_refactor": ["TypeConversionCore.cpp", "TypeConversionHierarchy.cpp", "TypeConversionSymbols.cpp", "TypeConversionConditions.cpp", "TypeConversionTernaryForeach.cpp", "TypeConversionAuto.cpp", "TypeConversionReturns.cpp", "TypeConversionFuncdefs.cpp", "TypeConversionAssignments.cpp", "TypeConversionProperties.cpp", "TypeConversionValueType.cpp", "TypeConversionDeclarations.cpp", "TypeConversionConstruction.cpp"]
-    },
-    {
       "folder_path": "server/src/analysis/resolution",
       "complexity_rank": 37,
       "selection_rationale": "Semantic resolution engines (15 files, 1714 lines) overload, target, class hierarchy resolution.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/analysis",
-      "complexity_rank": 38,
-      "selection_rationale": "Semantic analysis coordinator root (3 files, 518 lines) SemanticAnalyzer.",
       "files_to_refactor": []
     },
     {
