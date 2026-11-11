@@ -5,7 +5,6 @@
 #include "analysis/index/NodeIndex.h"
 
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -16,17 +15,12 @@ namespace angel_lsp::analysis
 struct NamespaceCheckRequest
 {
     /**
-     * @brief Root AST node of the document or tree (legacy; retained for caller compatibility).
-     */
-    TSNode root{};
-
-    /**
      * @brief Document source text the tree was parsed from.
      */
     std::string_view sourceCode{};
 
     /**
-     * @brief Optional pre-indexed node index for fast single-pass querying.
+     * @brief Pre-indexed node index for fast single-pass querying.
      */
     const NodeIndex* nodeIndex = nullptr;
 

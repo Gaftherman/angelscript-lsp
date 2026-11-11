@@ -12,16 +12,6 @@ namespace angel_lsp::analysis
 {
 
 /**
- * @brief Identifies the enclosing method symbol, declaring class, and const-qualifier status during const checks.
- */
-struct EnclosingMethodInfo
-{
-    bool inClass = false;
-    bool isConstMethod = false;
-    std::string_view className;
-};
-
-/**
  * @brief Runs the const-correctness pass over one document.
  * @param[in] request Tree, source text and scope tree for the document.
  * @param[in,out] ctx Diagnostic sink and the analysis request behind it.

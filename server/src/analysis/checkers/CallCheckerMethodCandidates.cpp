@@ -68,8 +68,8 @@ std::vector<Symbol> FindMethodCandidates(std::string_view typeName, std::string_
     return candidates;
 }
 
-static void SubstituteFunctionTemplateParams(FunctionSignature& fn, const std::string& paramName,
-                                             const std::string& concreteType)
+static void SubstituteFunctionTemplateParams(FunctionSignature& fn, std::string_view paramName,
+                                             std::string_view concreteType)
 {
     fn.returnType = SubstituteTypeParam(fn.returnType, paramName, concreteType);
     for (auto& p : fn.parameters)
@@ -80,7 +80,7 @@ static void SubstituteFunctionTemplateParams(FunctionSignature& fn, const std::s
 }
 
 void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, std::string_view typeName,
-                                const std::vector<std::string>& fallbackArgs, const SymbolTable& table)
+                                std::span<const std::string> fallbackArgs, const SymbolTable& table)
 {
     const auto binding = BindTemplateArguments(typeName, table);
     if (binding.usable)
@@ -179,7 +179,7 @@ static std::optional<Symbol> TryResolveGetterCallableFuncdef(std::string_view ty
                 const auto& fn = sym.GetFunction();
                 if (fn.parameters.empty())
                 {
-                    std::string clean = CleanBaseType(fn.returnType);
+                    const std::string_view clean = CleanBaseTypeView(fn.returnType);
                     if (!clean.empty())
                     {
                         if (auto funcdefSym = FindFuncdefSymbol(clean, table))
@@ -207,7 +207,7 @@ std::optional<Symbol> TryResolveMemberCallableFuncdef(std::string_view objectTyp
                 if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
                     std::holds_alternative<VariableSignature>(sym.signature))
                 {
-                    std::string clean = CleanBaseType(sym.GetVariable().typeName);
+                    const std::string_view clean = CleanBaseTypeView(sym.GetVariable().typeName);
                     if (!clean.empty())
                     {
                         if (auto funcdefSym = FindFuncdefSymbol(clean, table))

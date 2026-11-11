@@ -107,7 +107,7 @@ static void CollectScopeCandidates(std::string_view scopeName, std::string_view 
     }
 }
 
-static void CollectUsingNamespaceCandidates(std::string_view name, const std::vector<std::string>& reachableScopes,
+static void CollectUsingNamespaceCandidates(std::string_view name, std::span<const std::string> reachableScopes,
                                             const FreeLookupContext& ctx, std::vector<Symbol>& candidates)
 {
     std::vector<std::string> usings;

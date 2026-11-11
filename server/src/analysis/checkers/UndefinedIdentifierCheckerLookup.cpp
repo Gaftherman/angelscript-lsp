@@ -104,10 +104,14 @@ bool IsEnclosingScopeMember(uint32_t byteOffset, std::string_view refName, std::
         }
     }
 
-    const auto localUsings = ctx.request.nodeIndex
-                                 ? ctx.request.nodeIndex->CollectUsingNamespaces(ctx.request.sourceCode, byteOffset)
-                                 : std::vector<std::string>(usingNamespaces.begin(), usingNamespaces.end());
-    for (const auto& uNs : localUsings)
+    std::vector<std::string> localUsingsStorage;
+    std::span<const std::string> activeUsings = usingNamespaces;
+    if (ctx.request.nodeIndex)
+    {
+        localUsingsStorage = ctx.request.nodeIndex->CollectUsingNamespaces(ctx.request.sourceCode, byteOffset);
+        activeUsings = localUsingsStorage;
+    }
+    for (const auto& uNs : activeUsings)
     {
         if (index.NamespaceMembers(uNs).allMemberNames.contains(refName))
         {

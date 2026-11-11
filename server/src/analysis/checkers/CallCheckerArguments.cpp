@@ -132,20 +132,25 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
             continue;
         }
 
-        std::optional<std::string> dataTypeName = IsBareDataType(arg.bytes, exprCtx);
-        if (!dataTypeName && IsPrimitiveTypeName(trimmedArg))
+        const std::optional<std::string> dtOpt = IsBareDataType(arg.bytes, exprCtx);
+        std::string_view dataTypeName;
+        if (dtOpt)
         {
-            dataTypeName = std::string(trimmedArg);
+            dataTypeName = *dtOpt;
+        }
+        else if (IsPrimitiveTypeName(trimmedArg))
+        {
+            dataTypeName = trimmedArg;
         }
 
-        if (dataTypeName)
+        if (!dataTypeName.empty())
         {
-            if (*dataTypeName == "void")
+            if (dataTypeName == "void")
             {
                 result.argTypes.push_back("void");
                 continue;
             }
-            ctx.EmitAtRange(arg.range, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+            ctx.EmitAtRange(arg.range, diagnostics::codes::ExpressionIsDataType, dataTypeName);
             result.allArgsResolved = false;
             result.argTypes.push_back("");
             continue;

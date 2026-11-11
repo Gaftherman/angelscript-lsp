@@ -104,7 +104,7 @@ static void CheckUnknownListPattern(const InitializerListFact& list, std::string
 void InitializerListValidator::ValidateList(const InitializerListFact& list, std::string_view targetType,
                                             const ListValidationContext& valCtx)
 {
-    const std::string type = StripDecorations(targetType);
+    const std::string_view type = StripDecorations(targetType);
     if (type.empty() || type == "auto" || type == "void")
     {
         return;

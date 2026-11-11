@@ -89,7 +89,7 @@ double SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, D
 void SemanticAnalyzer::RunStatementAndControlFlowRules(const SemanticAnalysisRequest& request,
                                                        const NodeIndex* indexPtr, DiagnosticContext& ctx) const
 {
-    const ControlFlowCheckRequest flowRequest{SafeGetRootNode(request), request.sourceCode};
+    const ControlFlowCheckRequest flowRequest{request.sourceCode, indexPtr ? indexPtr : request.nodeIndex};
     CheckControlFlow(flowRequest, ctx);
     if (indexPtr)
     {
@@ -120,7 +120,7 @@ void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& r
     const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), indexPtr,
                               &mediator};
     RunCheckers<IsolationChecker, InitializerListChecker>(ast, ctx);
-    CheckNamespacesAndScopes(NamespaceCheckRequest{SafeGetRootNode(request), request.sourceCode, indexPtr}, ctx);
+    CheckNamespacesAndScopes(NamespaceCheckRequest{request.sourceCode, indexPtr ? indexPtr : request.nodeIndex}, ctx);
 }
 
 /// Supplies extracted sites even for standalone analyzer callers that only provide a tree.

@@ -71,9 +71,9 @@ static std::optional<ListContainerInfo> InspectClassContainer(const Symbol& sym,
         InspectContainerMembers(containerKey, sym.name, ctx, inspection);
     }
 
-    auto resolveElem = [&](std::string_view fallback) -> std::string
+    auto resolveElem = [&](std::string_view fallback) -> std::string_view
     {
-        std::string elem = !spelling.arguments.empty() ? spelling.arguments[0] : StripDecorations(fallback);
+        std::string_view elem = !spelling.arguments.empty() ? spelling.arguments[0] : StripDecorations(fallback);
         return elem.empty() ? "auto" : elem;
     };
 
@@ -93,13 +93,13 @@ ListContainerInfo InspectContainer(std::string_view type, const TemplateSpelling
 {
     if (type.ends_with("[]"))
     {
-        return {true, 1, std::string(type.substr(0, type.size() - 2))};
+        return {true, 1, type.substr(0, type.size() - 2)};
     }
 
     if (ctx.request.IsArrayLikeTemplate(spelling.name))
     {
-        std::string elem = spelling.arguments.empty() ? "auto" : spelling.arguments[0];
-        return {true, 1, std::move(elem)};
+        std::string_view elem = spelling.arguments.empty() ? "auto" : spelling.arguments[0];
+        return {true, 1, elem};
     }
 
     if (!spelling.name.empty())

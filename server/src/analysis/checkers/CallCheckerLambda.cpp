@@ -37,7 +37,7 @@ static LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidat
             return LambdaCandidateStatus::Rejected;
         }
 
-        const std::string parameterType = CleanBaseType(fn.parameters[position].typeName);
+        const std::string_view parameterType = CleanBaseTypeView(fn.parameters[position].typeName);
         const auto funcdef = FindFuncdefSymbol(parameterType, lctx.table);
         if (!funcdef)
         {
@@ -54,7 +54,7 @@ static LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidat
     return LambdaCandidateStatus::Accepted;
 }
 
-static void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& acceptedShapes,
+static void ReportLambdaDiagnostics(std::span<const std::vector<std::string>> acceptedShapes,
                                     const Symbol* priorityCandidate, const LambdaCheckFactsContext& lctx,
                                     DiagnosticContext& ctx)
 {

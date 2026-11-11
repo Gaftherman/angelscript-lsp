@@ -63,12 +63,6 @@ void CheckDefiniteAssignment(const AstCheckContext& request, DiagnosticContext& 
         const DefiniteAssignmentFacts facts = BuildDefiniteAssignmentFacts(*request.nodeIndex, request.sourceCode);
         CheckDefiniteAssignment(facts, request, ctx);
     }
-    else if (request.rootNode.id != nullptr)
-    {
-        const NodeIndex localIndex(request.rootNode);
-        const DefiniteAssignmentFacts facts = BuildDefiniteAssignmentFacts(localIndex, request.sourceCode);
-        CheckDefiniteAssignment(facts, request, ctx);
-    }
 }
 
 } // namespace angel_lsp::analysis

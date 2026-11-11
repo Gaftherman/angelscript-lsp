@@ -15,9 +15,10 @@
 namespace angel_lsp::analysis
 {
 
-std::string FormatSignatureAttempt(const std::string& targetType, const std::vector<std::string>& argTypes)
+std::string FormatSignatureAttempt(std::string_view targetType, std::span<const std::string> argTypes)
 {
-    std::string sig = targetType + "(";
+    std::string sig(targetType);
+    sig += "(";
     for (size_t a = 0; a < argTypes.size(); ++a)
     {
         if (a > 0)
@@ -30,7 +31,7 @@ std::string FormatSignatureAttempt(const std::string& targetType, const std::vec
     return sig;
 }
 
-std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const SymbolTable& table)
+std::vector<Symbol> LookupRawConstructors(std::string_view baseName, const SymbolTable& table)
 {
     std::vector<Symbol> rawConstructors;
     auto collectMemberFunctions = [&](std::string_view scope, std::string_view member)
@@ -89,7 +90,7 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
     return rawConstructors;
 }
 
-bool IsClassDeclarationVisible(const std::string& baseName, const SymbolTable& table, const std::string& predefinedExt)
+bool IsClassDeclarationVisible(std::string_view baseName, const SymbolTable& table, std::string_view predefinedExt)
 {
     auto checkBucket = [&](const std::vector<Symbol>& syms)
     {
@@ -116,16 +117,19 @@ bool IsClassDeclarationVisible(const std::string& baseName, const SymbolTable& t
     return checkBucket(table.FindTypeSymbolsByShortName(shortName));
 }
 
-static std::vector<std::string> GetClassTemplateParams(const std::string& baseName, const SymbolTable& table)
+static std::vector<std::string_view> GetClassTemplateParams(std::string_view baseName, const SymbolTable& table)
 {
-    std::vector<std::string> templateParams;
+    std::vector<std::string_view> templateParams;
     if (auto classSymbols = table.FindSymbolsPtr(baseName))
     {
         for (const auto& cs : *classSymbols)
         {
             if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
             {
-                templateParams = cs.GetClass().templateParams;
+                for (const auto& tp : cs.GetClass().templateParams)
+                {
+                    templateParams.push_back(tp);
+                }
                 break;
             }
         }
@@ -136,7 +140,10 @@ static std::vector<std::string> GetClassTemplateParams(const std::string& baseNa
         {
             if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
             {
-                templateParams = cs.GetClass().templateParams;
+                for (const auto& tp : cs.GetClass().templateParams)
+                {
+                    templateParams.push_back(tp);
+                }
                 break;
             }
         }
@@ -148,15 +155,15 @@ static std::vector<std::string> GetClassTemplateParams(const std::string& baseNa
     return templateParams;
 }
 
-static void SpecializeConstructorParam(ParameterInformation& param, const std::string& paramName,
-                                       const std::string& concreteArg)
+static void SpecializeConstructorParam(ParameterInformation& param, std::string_view paramName,
+                                       std::string_view concreteArg)
 {
     if (param.baseTypeName == paramName)
     {
         param.baseTypeName = concreteArg;
     }
     size_t pos = 0;
-    while ((pos = param.typeName.find(paramName, pos)) != std::string::npos)
+    while ((pos = param.typeName.find(paramName, pos)) != std::string_view::npos)
     {
         const bool beforeOk = (pos == 0 || !isalnum(static_cast<unsigned char>(param.typeName[pos - 1])));
         const bool afterOk = (pos + paramName.size() >= param.typeName.size() ||
@@ -174,14 +181,14 @@ static void SpecializeConstructorParam(ParameterInformation& param, const std::s
 }
 
 std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& rawConstructors, const TemplateTypeInfo& tmplInfo,
-                                           const std::string& baseName, const SymbolTable& table)
+                                           std::string_view baseName, const SymbolTable& table)
 {
     if (tmplInfo.templateArgs.empty())
     {
         return rawConstructors;
     }
 
-    const std::vector<std::string> templateParams = GetClassTemplateParams(baseName, table);
+    const auto templateParams = GetClassTemplateParams(baseName, table);
     std::vector<Symbol> candidates;
 
     for (const auto& sym : rawConstructors)

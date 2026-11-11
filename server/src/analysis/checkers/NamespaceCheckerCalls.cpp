@@ -72,9 +72,7 @@ static bool IsCalleeAccessorProperty(std::string_view name, uint32_t byteOffset,
         return true;
     }
 
-    return !FindGlobalPropertyAccessors(std::string(name), ctx.request.symbolTable,
-                                        ctx.request.RequiresAccessorKeyword())
-                .empty();
+    return !FindGlobalPropertyAccessors(name, ctx.request.symbolTable, ctx.request.RequiresAccessorKeyword()).empty();
 }
 
 static bool IsSpecialContextCallee(std::string_view name, const CallSiteFact& call,

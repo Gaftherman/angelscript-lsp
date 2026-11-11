@@ -53,8 +53,8 @@ static bool CheckUnmatchedDefaultParameters(const FunctionSignature& sig,
     return true;
 }
 
-static bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vector<std::string>& argNames,
-                                    const std::vector<std::string>& argTypes, const SymbolTable& symbolTable)
+static bool CheckCandidateNamedArgs(const FunctionSignature& sig, std::span<const std::string> argNames,
+                                    std::span<const std::string> argTypes, const SymbolTable& symbolTable)
 {
     ankerl::unordered_dense::set<size_t> matchedParams;
     for (size_t i = 0; i < argNames.size(); ++i)
@@ -162,7 +162,7 @@ void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticConte
     }
 
     const bool hasNamedArgs = std::any_of(request.args.argNames.begin(), request.args.argNames.end(),
-                                          [](const std::string& n) { return !n.empty(); });
+                                          [](std::string_view n) { return !n.empty(); });
     if (hasNamedArgs)
     {
         HandleNamedCallOverloads(request, ctx);
@@ -177,7 +177,7 @@ void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticConte
             match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
         bool hasInitList =
             std::any_of(request.args.argTypes.begin(), request.args.argTypes.end(),
-                        [](const std::string& t) { return t == constants::k_initializerListTypeSentinel; });
+                        [](std::string_view t) { return t == constants::k_initializerListTypeSentinel; });
         if (!hasInitList)
         {
             hasInitList = std::any_of(request.arguments.begin(), request.arguments.end(), [](const CallArgumentFact& a)
@@ -185,8 +185,7 @@ void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticConte
         }
         const SourceRange emitRange =
             request.site.calleeNameRange != SourceRange{} ? request.site.calleeNameRange : request.site.calleeRange;
-        ctx.EmitAtRange(emitRange, "as-err-call-ambiguous",
-                        {std::string_view(request.calleeRes.reportedName), prioritySig},
+        ctx.EmitAtRange(emitRange, "as-err-call-ambiguous", {request.calleeRes.reportedName, prioritySig},
                         hasInitList ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning);
     }
     else if (match.viableCandidates.empty() || match.bestCandidate == nullptr)

@@ -4,7 +4,6 @@
 #include "analysis/index/ControlFlowFacts.h"
 
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -14,11 +13,6 @@ namespace angel_lsp::analysis
  */
 struct ControlFlowCheckRequest
 {
-    /**
-     * @brief Root node of the document's syntax tree (legacy; retained for external callers).
-     */
-    TSNode root{};
-
     /**
      * @brief Document source text the tree was parsed from.
      */

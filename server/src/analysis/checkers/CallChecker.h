@@ -105,7 +105,7 @@ enum class LambdaCandidateStatus
 struct CalleeResolution
 {
     std::vector<Symbol> candidates;
-    std::string reportedName;
+    std::string_view reportedName;
     bool candidatesAreFreeFunctions = false;
     bool isUnqualifiedClassCall = false;
     bool isReceiverConst = false;
@@ -127,8 +127,8 @@ struct ObjectTypeInfo
  */
 struct VarInitContext
 {
-    std::string declaredType;
-    std::string baseName;
+    std::string_view declaredType;
+    std::string_view baseName;
     TemplateTypeInfo tmplInfo;
     const AstCheckContext& request;
     DiagnosticContext& ctx;

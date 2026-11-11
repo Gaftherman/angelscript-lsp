@@ -123,7 +123,7 @@ bool IsObjectOperandConst(const BinaryOperandFact& objectOperand, const Scope* s
  * @param[in] table Symbol table.
  */
 void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, std::string_view typeName,
-                                const std::vector<std::string>& fallbackArgs, const SymbolTable& table);
+                                std::span<const std::string> fallbackArgs, const SymbolTable& table);
 
 /**
  * @brief Filters method candidates based on the constness of the receiver.
@@ -258,7 +258,7 @@ void CheckInitializerListArgs(std::span<const CallArgumentFact> arguments, const
 struct MalformedTernaryCheckRequest
 {
     std::span<const CallArgumentFact> arguments; ///< Call argument facts.
-    const std::vector<std::string>& argTypes;    ///< Resolved argument types.
+    std::span<const std::string> argTypes;       ///< Resolved argument types.
     std::span<const Symbol* const> candidates;   ///< Available matching candidates.
     const Scope* scope = nullptr;                ///< Lexical scope at call site.
 };
@@ -365,7 +365,7 @@ CalleeResolution ResolveCalleeCandidates(const CallSiteFact& site, const Scope* 
  * @param[in] argTypes Resolved argument types.
  * @return Formatted signature string, e.g. "Type(int, string)".
  */
-std::string FormatSignatureAttempt(const std::string& targetType, const std::vector<std::string>& argTypes);
+std::string FormatSignatureAttempt(std::string_view targetType, std::span<const std::string> argTypes);
 
 /**
  * @brief Looks up constructor declarations for a given type name in symbol table.
@@ -373,7 +373,7 @@ std::string FormatSignatureAttempt(const std::string& targetType, const std::vec
  * @param[in] table Symbol table.
  * @return Candidate constructor symbols.
  */
-std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const SymbolTable& table);
+std::vector<Symbol> LookupRawConstructors(std::string_view baseName, const SymbolTable& table);
 
 /**
  * @brief Checks if a class declaration is visible in script source (not predefined).
@@ -382,7 +382,7 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
  * @param[in] predefinedExt Predefined file extension.
  * @return True if class declaration is visible in script.
  */
-bool IsClassDeclarationVisible(const std::string& baseName, const SymbolTable& table, const std::string& predefinedExt);
+bool IsClassDeclarationVisible(std::string_view baseName, const SymbolTable& table, std::string_view predefinedExt);
 
 /**
  * @brief Specializes raw constructor candidates using template argument mappings.
@@ -393,7 +393,7 @@ bool IsClassDeclarationVisible(const std::string& baseName, const SymbolTable& t
  * @return Specialized constructor symbols.
  */
 std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& rawConstructors, const TemplateTypeInfo& tmplInfo,
-                                           const std::string& baseName, const SymbolTable& table);
+                                           std::string_view baseName, const SymbolTable& table);
 
 /**
  * @brief Verifies constructor candidate overloads against provided arguments.

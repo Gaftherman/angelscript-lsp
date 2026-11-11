@@ -13,7 +13,7 @@
 namespace angel_lsp::analysis
 {
 
-static bool IsTernaryBranchCompatible(const std::string& branchType, const std::string& expected)
+static bool IsTernaryBranchCompatible(std::string_view branchType, std::string_view expected)
 {
     if (branchType.empty())
     {
@@ -30,7 +30,7 @@ static bool IsTernaryBranchCompatible(const std::string& branchType, const std::
     return false;
 }
 
-static std::string ResolveTernaryMismatchType(const std::string& t1, const std::string& t2, const std::string& expected)
+static std::string_view ResolveTernaryMismatchType(std::string_view t1, std::string_view t2, std::string_view expected)
 {
     if (!t1.empty() && !IsTernaryBranchCompatible(t1, expected))
     {
@@ -64,7 +64,7 @@ void CheckMalformedTernaryArgs(const MalformedTernaryCheckRequest& req, Diagnost
             continue;
         }
 
-        const std::string expected = fn.parameters[i].typeName;
+        const std::string_view expected = fn.parameters[i].typeName;
         std::string t1 = ResolveExpressionType(arg.ternaryConsequence.bytes, ExpressionTypeContext(req.scope, ctx));
         std::string t2 = ResolveExpressionType(arg.ternaryAlternative.bytes, ExpressionTypeContext(req.scope, ctx));
 
@@ -73,12 +73,12 @@ void CheckMalformedTernaryArgs(const MalformedTernaryCheckRequest& req, Diagnost
             continue;
         }
 
-        std::string badType = ResolveTernaryMismatchType(t1, t2, expected);
+        const std::string_view badType = ResolveTernaryMismatchType(t1, t2, expected);
         ctx.EmitAtRange(arg.range, "as-err-no-implicit-conversion", badType, expected);
     }
 }
 
-static size_t FindCandidateBadArgument(const Symbol& candidate, const std::vector<std::string>& argTypes,
+static size_t FindCandidateBadArgument(const Symbol& candidate, std::span<const std::string> argTypes,
                                        const SymbolTable& table)
 {
     const auto& fn = candidate.GetFunction();
@@ -93,8 +93,7 @@ static size_t FindCandidateBadArgument(const Symbol& candidate, const std::vecto
 }
 
 static std::optional<size_t> FindAgreedBlamedArgument(std::span<const Symbol* const> candidates,
-                                                      const std::vector<std::string>& argTypes,
-                                                      const SymbolTable& table)
+                                                      std::span<const std::string> argTypes, const SymbolTable& table)
 {
     if (candidates.empty())
     {
@@ -125,10 +124,10 @@ static std::optional<size_t> FindAgreedBlamedArgument(std::span<const Symbol* co
     return blamed < argTypes.size() ? std::optional<size_t>(blamed) : std::nullopt;
 }
 
-static std::string FormatCallDescriptionWithNull(const std::string& calleeName,
-                                                 const std::vector<std::string>& argTypes)
+static std::string FormatCallDescriptionWithNull(std::string_view calleeName, std::span<const std::string> argTypes)
 {
-    std::string callDesc = calleeName + "(";
+    std::string callDesc(calleeName);
+    callDesc += "(";
     for (size_t i = 0; i < argTypes.size(); ++i)
     {
         if (i > 0)
@@ -151,13 +150,14 @@ void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, Di
             const SourceRange emitRange =
                 req.site.calleeNameRange != SourceRange{} ? req.site.calleeNameRange : req.site.calleeRange;
             ctx.EmitAtRange(emitRange, "as-err-call-no-matching-signature",
-                            FormatCallDescriptionWithNull(std::string(req.site.calleeName), req.args.argTypes));
+                            FormatCallDescriptionWithNull(req.site.calleeName, req.args.argTypes));
             return;
         }
 
         const auto& fn = req.candidates[0]->GetFunction();
-        const std::string expected =
-            *blamedArg < fn.parameters.size() ? fn.parameters[*blamedArg].typeName : std::string();
+        const std::string_view expected = *blamedArg < fn.parameters.size()
+                                              ? std::string_view(fn.parameters[*blamedArg].typeName)
+                                              : std::string_view();
         ctx.EmitAtRange(req.arguments[*blamedArg].range, "as-err-no-implicit-conversion", req.args.argTypes[*blamedArg],
                         expected);
         return;
@@ -166,11 +166,11 @@ void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, Di
     if (req.args.allArgsResolved)
     {
         const bool hasNull = std::any_of(req.args.argTypes.begin(), req.args.argTypes.end(),
-                                         [](const std::string& t) { return t == "null"; });
+                                         [](std::string_view t) { return t == "null"; });
         const SourceRange emitRange =
             req.site.calleeNameRange != SourceRange{} ? req.site.calleeNameRange : req.site.calleeRange;
         ctx.EmitAtRange(emitRange, "as-err-call-no-matching-signature",
-                        hasNull ? FormatCallDescriptionWithNull(std::string(req.site.calleeName), req.args.argTypes)
+                        hasNull ? FormatCallDescriptionWithNull(req.site.calleeName, req.args.argTypes)
                                 : req.site.calleeName);
     }
 }

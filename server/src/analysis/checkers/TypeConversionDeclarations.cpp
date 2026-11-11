@@ -209,37 +209,6 @@ static void CheckInitializer(const VariableDeclaratorFact& declarator, const Dec
 }
 
 /**
- * @brief Validates non-handle declarator construction semantics.
- * @param[in] declarator Variable declarator fact.
- * @param[in] declared Declared type details.
- * @param[in] scope Enclosing lexical scope.
- * @param[in,out] ctx Diagnostic context.
- */
-void CheckDeclaratorConstruction(const VariableDeclaratorFact& declarator, const DeclaredType& declared,
-                                 const Scope* scope, DiagnosticContext& ctx)
-{
-    if (declared.isTemplateOrArray)
-    {
-        return;
-    }
-
-    if (ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable) == NonInstantiableKind::Abstract)
-    {
-        ctx.EmitAtRange(declarator.range, "as-err-abstract-instantiated", {declared.baseName, declared.baseName});
-        return;
-    }
-
-    if (!declarator.hasArguments && !declarator.hasValue)
-    {
-        CheckDefaultConstructor(declarator.nameRange, declared.baseName, ctx);
-    }
-    else if (declarator.hasArguments)
-    {
-        CheckConstruction(declarator.argument, declared.baseName, scope, ctx);
-    }
-}
-
-/**
  * @brief Validates each declarator in a declared-type variable declaration statement.
  * @param[in] site Variable declaration site fact.
  * @param[in] request Analysis request carrying declaration facts and scope root.

@@ -88,7 +88,7 @@ static void CheckCall(const CallCheckFactRequest& req, DiagnosticContext& ctx)
 
     const CallResolutionContext args = ResolveCallArguments(req.arguments, req.scope, ctx, req.request.nodeIndex);
     if (std::any_of(args.argTypes.begin(), args.argTypes.end(),
-                    [](const std::string& t) { return ExpressionTypeCache::IsPoisonType(t); }))
+                    [](std::string_view t) { return ExpressionTypeCache::IsPoisonType(t); }))
     {
         return;
     }
@@ -186,48 +186,27 @@ void CheckCallArguments(const CallSiteFacts& facts, const InitializerListFacts& 
 
 void CheckCallArguments(const CallSiteFacts& facts, const AstCheckContext& request, DiagnosticContext& ctx)
 {
-    if (request.sourceCode.empty() || utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+    if (!request.nodeIndex || request.sourceCode.empty() ||
+        utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
     {
         return;
     }
 
-    if (request.nodeIndex)
-    {
-        const InitializerListFacts initFacts = BuildInitializerListFacts(*request.nodeIndex, request.sourceCode);
-        CheckCallArguments(facts, initFacts, request, ctx);
-    }
-    else if (request.rootNode.id != nullptr)
-    {
-        const NodeIndex localIndex(request.rootNode);
-        AstCheckContext indexedRequest = request;
-        indexedRequest.nodeIndex = &localIndex;
-        const InitializerListFacts initFacts = BuildInitializerListFacts(localIndex, request.sourceCode);
-        CheckCallArguments(facts, initFacts, indexedRequest, ctx);
-    }
+    const InitializerListFacts initFacts = BuildInitializerListFacts(*request.nodeIndex, request.sourceCode);
+    CheckCallArguments(facts, initFacts, request, ctx);
 }
 
 void CheckCallArguments(const AstCheckContext& request, DiagnosticContext& ctx)
 {
-    if (request.sourceCode.empty() || utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+    if (!request.nodeIndex || request.sourceCode.empty() ||
+        utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
     {
         return;
     }
 
-    if (request.nodeIndex)
-    {
-        const CallSiteFacts facts = BuildCallSiteFacts(*request.nodeIndex, request.sourceCode);
-        const InitializerListFacts initFacts = BuildInitializerListFacts(*request.nodeIndex, request.sourceCode);
-        CheckCallArguments(facts, initFacts, request, ctx);
-    }
-    else if (request.rootNode.id != nullptr)
-    {
-        const NodeIndex localIndex(request.rootNode);
-        AstCheckContext indexedRequest = request;
-        indexedRequest.nodeIndex = &localIndex;
-        const CallSiteFacts facts = BuildCallSiteFacts(localIndex, request.sourceCode);
-        const InitializerListFacts initFacts = BuildInitializerListFacts(localIndex, request.sourceCode);
-        CheckCallArguments(facts, initFacts, indexedRequest, ctx);
-    }
+    const CallSiteFacts facts = BuildCallSiteFacts(*request.nodeIndex, request.sourceCode);
+    const InitializerListFacts initFacts = BuildInitializerListFacts(*request.nodeIndex, request.sourceCode);
+    CheckCallArguments(facts, initFacts, request, ctx);
 }
 
 } // namespace angel_lsp::analysis

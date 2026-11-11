@@ -13,31 +13,32 @@
 namespace angel_lsp::analysis
 {
 
-static std::string FindEnclosingClassOrInterface(const CallSiteFact& site, const Scope* scope,
-                                                 const NodeIndex* nodeIndex = nullptr, std::string_view sourceCode = {})
+static std::string_view FindEnclosingClassOrInterface(const CallSiteFact& site, const Scope* scope,
+                                                      const NodeIndex* nodeIndex = nullptr,
+                                                      std::string_view sourceCode = {})
 {
     if (scope)
     {
         if (auto enc = scope->GetEnclosingClass(); !enc.empty())
         {
-            return std::string(enc);
+            return enc;
         }
     }
     if (!site.enclosingClassName.empty())
     {
-        return std::string(site.enclosingClassName);
+        return site.enclosingClassName;
     }
     if (nodeIndex && !sourceCode.empty())
     {
-        for (const auto& container : nodeIndex->CollectEnclosingContainers(site.bytes.startByte, sourceCode))
+        if (const auto* span = nodeIndex->FindInnermostClassSpan(site.bytes.startByte))
         {
-            if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+            if (span->nameStartByte < span->nameEndByte && span->nameEndByte <= sourceCode.size())
             {
-                return container.qualifiedName.empty() ? container.name : container.qualifiedName;
+                return sourceCode.substr(span->nameStartByte, span->nameEndByte - span->nameStartByte);
             }
         }
     }
-    return "";
+    return {};
 }
 
 static std::string_view GetScopeQualifierPrefix(std::string_view name) noexcept
@@ -52,7 +53,7 @@ static bool IsInsideTargetClassOrSubclass(const CallSiteFact& site, std::string_
     {
         return false;
     }
-    const std::string enclosing =
+    const std::string_view enclosing =
         FindEnclosingClassOrInterface(site, scope, ctx.request.nodeIndex, ctx.request.sourceCode);
     if (enclosing.empty())
     {
@@ -63,7 +64,7 @@ static bool IsInsideTargetClassOrSubclass(const CallSiteFact& site, std::string_
         return true;
     }
     const auto hierarchy = GetInheritedTypeHierarchy(enclosing, ctx.request.symbolTable);
-    return std::any_of(hierarchy.begin(), hierarchy.end(), [targetClass](const std::string& ancestor)
+    return std::any_of(hierarchy.begin(), hierarchy.end(), [targetClass](std::string_view ancestor)
                        { return ancestor == targetClass || LastScopeSegment(ancestor) == targetClass; });
 }
 
@@ -112,13 +113,13 @@ static bool ResolveScopedCallee(const CallSiteFact& site, const Scope* scope, Di
 static bool ResolveEnclosingClassCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx,
                                         CalleeResolution& res)
 {
-    std::string enclosingClass;
+    std::string_view enclosingClass;
     bool isConst = false;
     if (scope)
     {
         if (auto enc = scope->GetEnclosingClass(); !enc.empty())
         {
-            enclosingClass = std::string(enc);
+            enclosingClass = enc;
             isConst = scope->isConstMethod;
         }
     }
@@ -163,7 +164,7 @@ static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const 
         return res;
     }
 
-    res.reportedName = std::string(site.calleeName);
+    res.reportedName = site.calleeName;
 
     if (site.calleeKind == CalleeKind::Scoped)
     {

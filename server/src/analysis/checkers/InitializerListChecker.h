@@ -105,8 +105,8 @@ void ValidateInitializerList(const InitializerListFact& list, const InitializerL
  */
 struct TemplateSpelling
 {
-    std::string name;
-    std::vector<std::string> arguments;
+    std::string_view name;
+    std::vector<std::string_view> arguments;
 };
 
 /**
@@ -116,7 +116,7 @@ struct ListContainerInfo
 {
     bool isContainer = false;
     uint32_t dimensions = 1;
-    std::string elementType;
+    std::string_view elementType;
 };
 
 /**
@@ -125,7 +125,7 @@ struct ListContainerInfo
 struct ContainerMemberInspection
 {
     uint32_t maxIndexParams = 0;
-    std::string indexReturnType;
+    std::string_view indexReturnType;
     bool hasListConstructor = false;
 };
 
@@ -135,8 +135,8 @@ struct ContainerMemberInspection
 struct DictInfo
 {
     bool isDict = false;
-    std::string keyType;
-    std::string valType;
+    std::string_view keyType;
+    std::string_view valType;
 };
 
 /**
@@ -144,8 +144,8 @@ struct DictInfo
  */
 struct DictTypeState
 {
-    std::string keyType;
-    std::string valType;
+    std::string_view keyType;
+    std::string_view valType;
     bool isAssociative = false;
 };
 
@@ -154,8 +154,8 @@ struct DictTypeState
  */
 struct StructFieldInfo
 {
-    std::string name;
-    std::string type;
+    std::string_view name;
+    std::string_view type;
     uint32_t line = 0;
     uint32_t col = 0;
 };

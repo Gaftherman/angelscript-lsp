@@ -1,5 +1,6 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/DeclarationSiteFacts.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "utils/Utils.h"
 
@@ -237,6 +238,30 @@ void CheckConstructorDelegation(const ConstructorDelegationSiteFact& site, const
     for (size_t i = site.callBegin; i < end; ++i)
     {
         ctx.EmitAtNodeRange(facts.delegationCalls[i], "as-err-constructor-delegation-disallowed");
+    }
+}
+
+void CheckDeclaratorConstruction(const VariableDeclaratorFact& declarator, const DeclaredType& declared,
+                                 const Scope* scope, DiagnosticContext& ctx)
+{
+    if (declared.isTemplateOrArray)
+    {
+        return;
+    }
+
+    if (ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable) == NonInstantiableKind::Abstract)
+    {
+        ctx.EmitAtRange(declarator.range, "as-err-abstract-instantiated", {declared.baseName, declared.baseName});
+        return;
+    }
+
+    if (!declarator.hasArguments && !declarator.hasValue)
+    {
+        CheckDefaultConstructor(declarator.nameRange, declared.baseName, ctx);
+    }
+    else if (declarator.hasArguments)
+    {
+        CheckConstruction(declarator.argument, declared.baseName, scope, ctx);
     }
 }
 

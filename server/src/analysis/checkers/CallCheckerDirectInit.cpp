@@ -15,7 +15,7 @@
 namespace angel_lsp::analysis
 {
 
-static void CheckPrimitiveDirectInit(SourceRange argumentListRange, const std::vector<std::string>& argTypes,
+static void CheckPrimitiveDirectInit(SourceRange argumentListRange, std::span<const std::string> argTypes,
                                      const VarInitContext& vctx)
 {
     if (argTypes.size() != 1)
@@ -45,15 +45,16 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
         return;
     }
 
-    const std::string declaredType = CleanExpressionType(std::string(init.declaredType));
+    const std::string declaredType = CleanExpressionType(init.declaredType);
     if (declaredType.empty() || declaredType == "auto" || init.declaredType.find('[') != std::string_view::npos)
     {
         return;
     }
 
     const TemplateTypeInfo tmplInfo = ParseTemplateType(declaredType);
-    std::string baseName = tmplInfo.containerName.empty() ? declaredType : tmplInfo.containerName;
-    baseName = CleanBaseType(baseName);
+    const std::string_view base =
+        tmplInfo.containerName.empty() ? std::string_view(declaredType) : std::string_view(tmplInfo.containerName);
+    const std::string_view baseName = CleanBaseTypeView(base);
 
     const VarInitContext vctx{declaredType, baseName, tmplInfo, request, ctx};
     const Scope* scope = request.scopeRoot
@@ -68,7 +69,7 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
         argTypes.push_back(ResolveExpressionType(arg.bytes, ExpressionTypeContext(scope, ctx)));
     }
     if (std::any_of(argTypes.begin(), argTypes.end(),
-                    [](const std::string& t) { return ExpressionTypeCache::IsPoisonType(t); }))
+                    [](std::string_view t) { return ExpressionTypeCache::IsPoisonType(t); }))
     {
         return;
     }

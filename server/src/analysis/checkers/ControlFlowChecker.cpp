@@ -134,16 +134,6 @@ void CheckControlFlow(const ControlFlowCheckRequest& request, DiagnosticContext&
     {
         const ControlFlowFacts facts = BuildControlFlowFacts(*index, request.sourceCode);
         CheckControlFlow(facts, request.sourceCode, ctx);
-        return;
-    }
-
-    if (request.root.id != nullptr)
-    {
-        const NodeIndex localIndex(request.root);
-        const ControlFlowFacts facts = BuildControlFlowFacts(localIndex, request.sourceCode);
-        ReportFlowFindings(localIndex.FlowFindings(), ctx);
-        ControlFlowVisitor visitor(request.sourceCode, ctx, facts);
-        visitor.Run();
     }
 }
 

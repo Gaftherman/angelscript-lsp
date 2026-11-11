@@ -3,7 +3,6 @@
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 
-#include <string>
 #include <string_view>
 #include <utility>
 

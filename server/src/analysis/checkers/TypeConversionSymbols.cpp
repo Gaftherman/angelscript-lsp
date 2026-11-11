@@ -3,7 +3,6 @@
 #include "utils/ScopedNameUtils.h"
 
 #include <cctype>
-#include <string>
 #include <string_view>
 #include <vector>
 

@@ -19,13 +19,13 @@ static void UpdateDictValType(const ParameterInformation& param, DictTypeState& 
 {
     const std::string_view paramVal =
         param.baseTypeName.empty() ? std::string_view(param.typeName) : std::string_view(param.baseTypeName);
-    if (paramVal == "?" || param.typeName.find('?') != std::string::npos)
+    if (paramVal == "?" || std::string_view(param.typeName).find('?') != std::string_view::npos)
     {
         state.valType = "?";
     }
     else if (state.valType.empty())
     {
-        state.valType = std::string(paramVal);
+        state.valType = paramVal;
     }
     else if (state.valType != paramVal)
     {

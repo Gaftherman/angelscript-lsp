@@ -17,7 +17,7 @@ namespace angel_lsp::analysis
  * @param[in] raw Unsanitized type name string view.
  * @return Compact type string without qualifiers or surrounding whitespace.
  */
-std::string StripDecorations(std::string_view raw);
+std::string_view StripDecorations(std::string_view raw);
 
 /**
  * @brief Decomposes a templated type name into its base identifier and argument list.
@@ -32,7 +32,7 @@ TemplateSpelling ReadTemplateSpelling(std::string_view type);
  * @param[in] fallbackName Fallback type name if symbol name is empty or distinct.
  * @return Vector of candidate lookup keys.
  */
-std::vector<std::string> CandidateContainerKeys(const Symbol& sym, std::string_view fallbackName);
+std::vector<std::string_view> CandidateContainerKeys(const Symbol& sym, std::string_view fallbackName);
 
 /**
  * @brief Returns the total value count represented by an initializer list fact.

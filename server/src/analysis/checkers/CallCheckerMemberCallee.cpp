@@ -64,7 +64,7 @@ static ObjectTypeInfo ResolveMemberObjectType(const CallSiteFact& site, const Sc
                                             : IsObjectOperandConst(site.objectOperand, scope, ctx.request.symbolTable);
     info.qualifiers.isConst = IsConstTypeView(rawObjType) || isObjConst;
 
-    if (rawObjType.find('<') != std::string::npos && rawObjType.ends_with('>'))
+    if (rawObjType.find('<') != std::string_view::npos && rawObjType.ends_with('>'))
     {
         const size_t openBracket = rawObjType.find('<');
         std::string_view tmplView(rawObjType.data(), openBracket);
@@ -80,12 +80,12 @@ static ObjectTypeInfo ResolveMemberObjectType(const CallSiteFact& site, const Sc
 
 static bool CheckNonCallableVariable(const NonCallableCheckRequest& req, DiagnosticContext& ctx, CalleeResolution& res)
 {
-    std::string cleanType = CleanBaseType(req.typeName);
+    const std::string_view cleanType = CleanBaseTypeView(req.typeName);
     if (!cleanType.empty())
     {
         if (auto funcdefSym = FindFuncdefSymbol(cleanType, ctx.request.symbolTable))
         {
-            res.reportedName = std::string(req.name);
+            res.reportedName = req.name;
             res.candidates = {FuncdefToFunctionSymbol(*funcdefSym, req.name)};
             res.candidatesAreFreeFunctions = true;
             res.shouldCheck = true;
@@ -95,7 +95,7 @@ static bool CheckNonCallableVariable(const NonCallableCheckRequest& req, Diagnos
     auto opCallSyms = FindMethodCandidates(cleanType, "opCall", ctx.request.symbolTable, ctx.request.exprCache);
     if (!opCallSyms.empty())
     {
-        res.reportedName = std::string(req.name);
+        res.reportedName = req.name;
         res.candidates = std::move(opCallSyms);
         res.candidatesAreFreeFunctions = false;
         res.shouldCheck = true;
@@ -145,7 +145,7 @@ CalleeResolution ResolveMemberCallee(const CallSiteFact& site, const Scope* scop
         return res;
     }
 
-    res.reportedName = std::string(site.calleeName);
+    res.reportedName = site.calleeName;
     if (IsConstructorOrDestructorName(res.reportedName, objInfo.objectType))
     {
         ctx.EmitAtRange(site.calleeNameRange, "as-err-constructor-not-callable", res.reportedName, objInfo.objectType);
@@ -220,7 +220,7 @@ bool CheckGlobalNonCallableVariable(const CallSiteFact& site, DiagnosticContext&
         }
         bool hasVar = false;
         bool hasFunc = false;
-        std::string varType;
+        std::string_view varType;
         for (const auto& sym : *found)
         {
             if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&

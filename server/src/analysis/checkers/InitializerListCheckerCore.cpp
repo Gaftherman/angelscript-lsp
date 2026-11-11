@@ -31,7 +31,7 @@ static std::string_view TrimmedView(std::string_view text) noexcept
     return text;
 }
 
-std::string StripDecorations(std::string_view raw)
+std::string_view StripDecorations(std::string_view raw)
 {
     std::string_view sv = raw;
     for (;;)
@@ -44,17 +44,8 @@ std::string StripDecorations(std::string_view raw)
             break;
         }
     }
-
-    std::string compact;
-    compact.reserve(sv.size());
-    for (const char c : sv)
-    {
-        if (!std::isspace(static_cast<unsigned char>(c)))
-        {
-            compact += c;
-        }
-    }
-    return compact;
+    TrimTypeWhitespace(sv);
+    return sv;
 }
 
 TemplateSpelling ReadTemplateSpelling(std::string_view type)
@@ -64,11 +55,11 @@ TemplateSpelling ReadTemplateSpelling(std::string_view type)
     const size_t open = type.find('<');
     if (open == std::string_view::npos || !type.ends_with('>'))
     {
-        spelling.name = std::string(type);
+        spelling.name = type;
         return spelling;
     }
 
-    spelling.name = std::string(type.substr(0, open));
+    spelling.name = type.substr(0, open);
 
     const std::string_view inner = type.substr(open + 1, type.size() - open - 2);
     int depth = 0;
@@ -102,9 +93,9 @@ TemplateSpelling ReadTemplateSpelling(std::string_view type)
     return spelling;
 }
 
-std::vector<std::string> CandidateContainerKeys(const Symbol& sym, std::string_view fallbackName)
+std::vector<std::string_view> CandidateContainerKeys(const Symbol& sym, std::string_view fallbackName)
 {
-    std::vector<std::string> containers;
+    std::vector<std::string_view> containers;
     if (!sym.qualifiedName.empty())
     {
         containers.push_back(sym.qualifiedName);
