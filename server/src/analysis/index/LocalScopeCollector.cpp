@@ -1,5 +1,6 @@
 #include "analysis/index/LocalScopeCollector.h"
 
+#include "analysis/index/CallArgumentFacts.h"
 #include "analysis/index/ReferenceReceiverIndex.h"
 #include "analysis/index/TypeExtraction.h"
 #include "analysis/types/TypeSanitization.h"

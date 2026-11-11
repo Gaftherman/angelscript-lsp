@@ -1,7 +1,7 @@
 #include "analysis/index/InlayHintFacts.h"
 
 #include "analysis/index/InlayHintFactsInternal.h"
-#include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/index/CallArgumentFacts.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 

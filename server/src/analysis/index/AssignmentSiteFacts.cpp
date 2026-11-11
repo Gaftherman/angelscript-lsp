@@ -2,7 +2,7 @@
 
 #include "analysis/index/SpanFactSearch.h"
 #include "analysis/index/SyntaxOperands.h"
-#include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/index/CallArgumentFacts.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"

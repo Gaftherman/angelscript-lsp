@@ -1,5 +1,6 @@
 #include "analysis/resolution/TargetResolution.h"
 
+#include "analysis/index/CallArgumentFacts.h"
 #include "analysis/resolution/ReferenceReceiver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"

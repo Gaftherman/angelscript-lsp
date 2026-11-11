@@ -1,4 +1,5 @@
 #include "analysis/documentation/SignatureFormatter.h"
+#include "analysis/index/CallArgumentFacts.h"
 #include "analysis/index/HoverFacts.h"
 #include "analysis/index/HoverFactsInternal.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
