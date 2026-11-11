@@ -27,6 +27,14 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
     TSNode curr = exprNode;
     while (!ts_node_is_null(curr) && ts_node_symbol(curr) == gs.symBinaryExpression)
     {
+        if (ctx.cache && !ts_node_eq(curr, exprNode))
+        {
+            const ExpressionCacheKey key{ts_node_start_byte(curr), ts_node_end_byte(curr), gs.symBinaryExpression};
+            if (ctx.cache->types.contains(key))
+            {
+                break;
+            }
+        }
         chain.emplace_back(curr, ctx.nodeIndex);
         curr = chain.back().Field(gs.fieldLeft);
     }
@@ -57,6 +65,14 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
         if (currentType.empty())
         {
             break;
+        }
+
+        if (ctx.cache)
+        {
+            const TSNode binNode = it->Node();
+            const ExpressionCacheKey key{ts_node_start_byte(binNode), ts_node_end_byte(binNode),
+                                         gs.symBinaryExpression};
+            ctx.cache->types.insert_or_assign(key, currentType);
         }
     }
     return currentType;

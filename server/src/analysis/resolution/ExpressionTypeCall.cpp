@@ -120,11 +120,24 @@ void CollectScopeAndGlobalFunctions(const std::string& funcName, const std::vect
 
 std::string FindClassOrInterfaceName(const std::string& funcName, const SymbolTable& symbolTable)
 {
-    auto globalFound = symbolTable.FindSymbols(funcName);
+    const auto templatePos = funcName.find('<');
+    const std::string_view baseName = (templatePos != std::string::npos)
+                                          ? std::string_view(funcName).substr(0, templatePos)
+                                          : std::string_view(funcName);
+
+    auto globalFound = symbolTable.FindSymbols(baseName);
     for (const auto& sym : globalFound)
     {
         if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
         {
+            if (templatePos != std::string::npos)
+            {
+                if (!sym.containerName.empty() && !utils::ContainsScopeSeparator(funcName))
+                {
+                    return utils::JoinScopedName(sym.containerName, funcName);
+                }
+                return funcName;
+            }
             if (!sym.qualifiedName.empty())
             {
                 return sym.qualifiedName;

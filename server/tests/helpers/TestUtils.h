@@ -39,7 +39,15 @@ inline std::string ResolveExpressionType(TSNode node, const ExpressionTypeContex
         return "";
     }
     IndexedByteRange range{ts_node_start_byte(node), ts_node_end_byte(node)};
-    return ResolveExpressionType(range, ctx);
+    if (ctx.nodeIndex)
+    {
+        return ResolveExpressionType(range, ctx);
+    }
+    const TSNode root = parser::GetRootNode(node);
+    NodeIndex localIndex(root);
+    ExpressionTypeContext localCtx = ctx;
+    localCtx.nodeIndex = &localIndex;
+    return ResolveExpressionType(range, localCtx);
 }
 
 inline std::string ResolveExpressionType(TSNode node, const Scope* scope,

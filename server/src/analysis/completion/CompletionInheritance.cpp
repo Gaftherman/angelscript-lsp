@@ -82,10 +82,15 @@ std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& 
     {
         return {};
     }
+    const std::string cleanStart = std::string(analysis::CleanBaseTypeView(initialTypeName));
+    if (cleanStart.empty())
+    {
+        return {};
+    }
     std::vector<std::string> hierarchy;
     std::unordered_set<std::string> visited;
     std::vector<std::string> worklist;
-    worklist.push_back(initialTypeName);
+    worklist.push_back(cleanStart);
 
     while (!worklist.empty())
     {
@@ -264,7 +269,8 @@ bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& coll
 
 std::string FindCanonicalBaseContainer(const std::string& canonicalType, const analysis::SymbolTable& symbolTable)
 {
-    auto targetTemplate = analysis::ParseTemplateType(canonicalType);
+    const std::string_view cleanType = analysis::CleanBaseTypeView(canonicalType);
+    auto targetTemplate = analysis::ParseTemplateType(cleanType);
     return symbolTable.QualifyShortTypeName(targetTemplate.containerName);
 }
 

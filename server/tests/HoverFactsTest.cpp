@@ -230,7 +230,7 @@ TEST_CASE("HoverFacts - Include directive path bytes")
     CHECK(directive->hash == 0);
     CHECK(directive->closeQuote == code.find('"', code.find('"') + 1));
     const std::string_view pathSlice =
-        code.substr(directive->pathStartByte, directive->pathEndByte - directive->pathStartByte);
+        std::string_view(code).substr(directive->pathStartByte, directive->pathEndByte - directive->pathStartByte);
     CHECK(pathSlice == incPath);
 }
 

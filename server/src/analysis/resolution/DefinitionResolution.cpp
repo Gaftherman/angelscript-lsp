@@ -133,7 +133,7 @@ DefinitionTargetResult ResolveDefinitionTarget(const DefinitionQuery& query)
             result.localRange =
                 hasFull ? SourceRange{def.fullStartLine, def.fullStartCharacter, def.fullEndLine, def.fullEndCharacter}
                         : SourceRange{def.startLine, def.startCharacter, def.endLine, def.endCharacter};
-            result.localUri = target->localUri.empty() ? query.uri : std::string_view(target->localUri);
+            result.localUri = query.uri;
             return result;
         }
         if (target->kind == TargetKind::ClassMember)

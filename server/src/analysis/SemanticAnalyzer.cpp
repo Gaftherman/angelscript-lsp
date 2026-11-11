@@ -17,6 +17,7 @@
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/mediator/SemanticMediator.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/DirectiveRules.h"
 #include "analysis/rules/EngineRuleChecker.h"
@@ -231,6 +232,13 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
     std::vector<Diagnostic> diagnostics;
     LogSymbolDump(request);
 
+    ExpressionTypeCache localCache;
+    const bool ownsCache = (request.exprCache == nullptr);
+    if (ownsCache)
+    {
+        request.exprCache = &localCache;
+    }
+
     AnalysisContextGuards guards(request);
     const NodeIndex* indexPtr = request.nodeIndex;
 
@@ -260,6 +268,10 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
     }
 
     rules::FilterSuppressedDiagnostics(diagnostics, request, indexPtr);
+    if (ownsCache)
+    {
+        request.exprCache = nullptr;
+    }
     return diagnostics;
 }
 

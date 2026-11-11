@@ -67,7 +67,10 @@ std::string DeduceTypeAtLastExpression(const std::string& code)
             TSPoint pt = ts_node_start_point(lastExpr);
             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
             IndexedByteRange exprRange{ts_node_start_byte(lastExpr), ts_node_end_byte(lastExpr)};
-            result = ResolveExpressionType(exprRange, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+            NodeIndex nodeIndex(root);
+            ExpressionTypeContext exprCtx{innerScope ? innerScope : scopeRoot.get(), table, code, fileUri};
+            exprCtx.nodeIndex = &nodeIndex;
+            result = ResolveExpressionType(exprRange, exprCtx);
         }
         ts_tree_delete(tree);
     }

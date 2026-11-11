@@ -36,6 +36,7 @@ std::string DeduceTypeAtLastExpression(const std::string& code)
     if (tree)
     {
         TSNode root = ts_tree_root_node(tree);
+        NodeIndex nodeIndex(root);
         uint32_t count = ts_node_named_child_count(root);
         for (uint32_t i = 0; i < count; ++i)
         {
@@ -56,8 +57,9 @@ std::string DeduceTypeAtLastExpression(const std::string& code)
                             TSPoint pt = ts_node_start_point(expr);
                             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
                             IndexedByteRange exprRange{ts_node_start_byte(expr), ts_node_end_byte(expr)};
-                            result = ResolveExpressionType(
-                                exprRange, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+                            ExpressionTypeContext exprCtx{innerScope ? innerScope : scopeRoot.get(), table, code, fileUri};
+                            exprCtx.nodeIndex = &nodeIndex;
+                            result = ResolveExpressionType(exprRange, exprCtx);
                         }
                         else if (stmtType == "return_statement" && ts_node_named_child_count(stmt) > 0)
                         {
@@ -65,8 +67,9 @@ std::string DeduceTypeAtLastExpression(const std::string& code)
                             TSPoint pt = ts_node_start_point(expr);
                             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
                             IndexedByteRange exprRange{ts_node_start_byte(expr), ts_node_end_byte(expr)};
-                            result = ResolveExpressionType(
-                                exprRange, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+                            ExpressionTypeContext exprCtx{innerScope ? innerScope : scopeRoot.get(), table, code, fileUri};
+                            exprCtx.nodeIndex = &nodeIndex;
+                            result = ResolveExpressionType(exprRange, exprCtx);
                         }
                     }
                 }
