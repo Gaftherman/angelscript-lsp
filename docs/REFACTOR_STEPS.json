@@ -36,7 +36,8 @@
     "server/src/analysis/checkers",
     "server/src/analysis/resolution",
     "server/src/lsp/state",
-    "server/src/lsp/services"
+    "server/src/lsp/services",
+    "server/src/lsp/pipeline"
   ],
   "active_folder": "server/src/lsp/pipeline",
   "cross_module_impacts": [
@@ -52,12 +53,6 @@
     }
   ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/lsp/pipeline",
-      "complexity_rank": 41,
-      "selection_rationale": "LSP background pipeline (4 files, 663 lines) AnalysisScheduler, DiagnosticsPipeline.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/lsp/handlers",
       "complexity_rank": 42,
