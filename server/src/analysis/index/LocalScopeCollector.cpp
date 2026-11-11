@@ -2,7 +2,6 @@
 
 #include "analysis/index/ReferenceReceiverIndex.h"
 #include "analysis/index/TypeExtraction.h"
-#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
@@ -850,6 +849,52 @@ bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcep
            sym == m_gs.symForeachVariable || sym == m_gs.symClassDeclaration || sym == m_gs.symInterfaceDeclaration ||
            sym == m_gs.symEnumDeclaration || sym == m_gs.symFuncDeclaration || sym == m_gs.symInterfaceMethod ||
            sym == m_gs.symMixinDeclaration || sym == m_gs.symFuncdefDeclaration;
+}
+
+static bool HasBaseClassList(TSNode classNode)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const uint32_t childCount = ts_node_named_child_count(classNode);
+    for (uint32_t i = 0; i < childCount; ++i)
+    {
+        if (ts_node_symbol(ts_node_named_child(classNode, i)) == gs.symBaseClassList)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
+{
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSNode function = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symFuncDeclaration);
+    if (ts_node_is_null(function) ||
+        !ts_node_is_null(parser::GetChildByField(function, parser::GetGrammarSymbols().fieldReturnType)))
+    {
+        return false;
+    }
+
+    const TSNode functionName = parser::GetChildByField(function, parser::GetGrammarSymbols().fieldName);
+    const TSNode owner = parser::FindAncestorWithSymbol(parser::GetParent(function), gs.symClassDeclaration);
+    if (ts_node_is_null(functionName) || ts_node_is_null(owner))
+    {
+        return false;
+    }
+
+    const TSNode className = parser::GetChildByField(owner, parser::GetGrammarSymbols().fieldName);
+    if (ts_node_is_null(className) ||
+        parser::NodeText(className, sourceCode) != parser::NodeText(functionName, sourceCode))
+    {
+        return false;
+    }
+
+    return HasBaseClassList(owner);
 }
 
 void LocalScopeCollector::EnrichReferenceContext(TSNode captureNode, TSNode parent, std::string_view sourceCode,

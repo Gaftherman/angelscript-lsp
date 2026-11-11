@@ -18,6 +18,7 @@ struct DelegateTargetClassRequest
     const SymbolTable& symbolTable;
     std::string_view virtualHostClass = {};
     const config::EngineRuleConfig* engineRules = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
 };
 
 struct DelegatePropertyReceiverContext
@@ -27,6 +28,7 @@ struct DelegatePropertyReceiverContext
     std::string_view effectiveHostClass;
     std::string_view sourceCode;
     std::string_view arrayTypeName;
+    const NodeIndex* nodeIndex = nullptr;
 };
 
 std::string PropertyNameFromAccessor(const Symbol& sym, bool keywordRequired);

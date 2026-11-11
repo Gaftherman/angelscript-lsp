@@ -166,18 +166,21 @@ bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbo
 }
 
 static std::string FindEnclosingClassOrHost(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                            std::string_view virtualHostClass)
+                                            std::string_view virtualHostClass, const NodeIndex* nodeIndex)
 {
     if (!virtualHostClass.empty())
     {
         return std::string(virtualHostClass);
     }
-    std::string hostClass = InferHostClassFromEnclosingMixin(node, sourceCode, symbolTable);
+    std::string hostClass =
+        nodeIndex ? InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)},
+                                                     *nodeIndex, sourceCode, symbolTable)
+                  : "";
     if (!hostClass.empty())
     {
         return hostClass;
     }
-    for (const auto& c : GetEnclosingContainers(node, sourceCode))
+    for (const auto& c : GetEnclosingContainers(node, sourceCode, nodeIndex))
     {
         if (c.kind == ContainerKind::Class)
         {
@@ -189,7 +192,8 @@ static std::string FindEnclosingClassOrHost(TSNode node, std::string_view source
 
 std::string ResolveDelegateTargetBaseClass(const DelegateTargetClassRequest& req)
 {
-    std::string targetClass = FindEnclosingClassOrHost(req.node, req.sourceCode, req.symbolTable, req.virtualHostClass);
+    std::string targetClass =
+        FindEnclosingClassOrHost(req.node, req.sourceCode, req.symbolTable, req.virtualHostClass, req.nodeIndex);
     if (targetClass.empty())
     {
         return "";
@@ -214,7 +218,7 @@ std::string ResolveDelegatePropertyReceiver(const DelegatePropertyReceiverContex
         return "";
     }
     std::string baseClass = ResolveDelegateTargetBaseClass(
-        {dctx.objNode, dctx.sourceCode, symbolTable, dctx.effectiveHostClass, ctx.engineRules});
+        {dctx.objNode, dctx.sourceCode, symbolTable, dctx.effectiveHostClass, ctx.engineRules, dctx.nodeIndex});
     if (!baseClass.empty())
     {
         return MemberOwnerType(baseClass, dctx.arrayTypeName);

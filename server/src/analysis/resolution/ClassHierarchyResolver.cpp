@@ -2,12 +2,9 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/RuleIndex.h"
-#include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
@@ -891,17 +888,23 @@ static std::string FindHostClassInContainers(const std::vector<ContainerInfo>& c
     return "";
 }
 
-std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                             ExpressionTypeCache* cache)
-{
-    return FindHostClassInContainers(GetEnclosingContainers(node, sourceCode), symbolTable, cache);
-}
-
 std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex& index,
                                              std::string_view sourceCode, const SymbolTable& symbolTable)
 {
-    TSNode node = RecoverNodeAt(index, targetRange.startByte, targetRange.endByte);
-    return FindHostClassInContainers(GetEnclosingContainers(node, sourceCode, &index), symbolTable, nullptr);
+    return FindHostClassInContainers(
+        index.CollectLookupContainers(targetRange.startByte, targetRange.endByte, 0, sourceCode), symbolTable, nullptr);
+}
+
+std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex* index,
+                                             std::string_view sourceCode, const SymbolTable& symbolTable)
+{
+    if (!index)
+    {
+        return "";
+    }
+    return FindHostClassInContainers(
+        index->CollectLookupContainers(targetRange.startByte, targetRange.endByte, 0, sourceCode), symbolTable,
+        nullptr);
 }
 
 bool IsDestructorSymbol(const Symbol& sym)
@@ -960,52 +963,6 @@ bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
         return false;
     }
     return IsDestructorDeclaration(sym, ctx.request.sourceCode);
-}
-
-bool HasBaseClassList(TSNode classNode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const uint32_t childCount = ts_node_named_child_count(classNode);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        if (ts_node_symbol(ts_node_named_child(classNode, i)) == gs.symBaseClassList)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSNode function = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symFuncDeclaration);
-    if (ts_node_is_null(function) ||
-        !ts_node_is_null(parser::GetChildByField(function, parser::GetGrammarSymbols().fieldReturnType)))
-    {
-        return false;
-    }
-
-    const TSNode functionName = parser::GetChildByField(function, parser::GetGrammarSymbols().fieldName);
-    const TSNode owner = parser::FindAncestorWithSymbol(parser::GetParent(function), gs.symClassDeclaration);
-    if (ts_node_is_null(functionName) || ts_node_is_null(owner))
-    {
-        return false;
-    }
-
-    const TSNode className = parser::GetChildByField(owner, parser::GetGrammarSymbols().fieldName);
-    if (ts_node_is_null(className) ||
-        parser::NodeText(className, sourceCode) != parser::NodeText(functionName, sourceCode))
-    {
-        return false;
-    }
-
-    return HasBaseClassList(owner);
 }
 
 } // namespace angel_lsp::analysis

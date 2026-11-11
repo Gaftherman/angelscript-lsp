@@ -147,7 +147,9 @@ static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext&
     std::string hostClass = isVirtual ? SymbolTable::ExtractVirtualHostClass(ctx.uri) : "";
     if (hostClass.empty())
     {
-        hostClass = InferHostClassFromEnclosingMixin(exprNode, ctx.sourceCode, ctx.symbolTable, ctx.cache);
+        hostClass =
+            InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
+                                             ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable);
     }
     return ResolveThisIdentifier(exprNode, ctx, hostClass);
 }
@@ -335,7 +337,9 @@ static std::string ResolveIdentifierHostFallback(const std::string& name, TSNode
     }
     else
     {
-        hostClass = InferHostClassFromEnclosingMixin(exprNode, ctx.sourceCode, ctx.symbolTable, ctx.cache);
+        hostClass =
+            InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
+                                             ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable);
     }
     if (hostClass.empty())
     {
@@ -2548,7 +2552,9 @@ static std::string ResolveReceiverTypeUncached(TSNode objNode, std::string_view 
     std::string effectiveHostClass = GetEffectiveHostClass(ctx.virtualHostClass, ctx.fileUri);
     if (effectiveHostClass.empty())
     {
-        effectiveHostClass = InferHostClassFromEnclosingMixin(objNode, sourceCode, symbolTable, ctx.cache);
+        effectiveHostClass =
+            InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(objNode), ts_node_end_byte(objNode)},
+                                             ctx.nodeIndex, sourceCode, symbolTable);
     }
     const std::string_view arrayTypeName =
         ctx.arrayTypeName.empty() ? symbolTable.GetDefaultArrayType() : ctx.arrayTypeName;
@@ -2578,8 +2584,8 @@ static std::string ResolveReceiverTypeUncached(TSNode objNode, std::string_view 
         return res;
     }
 
-    if (auto delRes = ResolveDelegatePropertyReceiver({objNode, objText, effectiveHostClass, sourceCode, arrayTypeName},
-                                                      symbolTable, ctx);
+    if (auto delRes = ResolveDelegatePropertyReceiver(
+            {objNode, objText, effectiveHostClass, sourceCode, arrayTypeName, ctx.nodeIndex}, symbolTable, ctx);
         !delRes.empty())
     {
         return delRes;

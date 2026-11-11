@@ -12,7 +12,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -53,8 +52,6 @@ struct MixinExpansionContext
 bool IsDestructorSymbol(const Symbol& sym);
 bool IsDestructorDeclaration(const Symbol& sym, std::string_view source);
 bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
-bool HasBaseClassList(TSNode classNode);
-bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode);
 
 NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable& table);
 bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table);
@@ -111,18 +108,16 @@ std::vector<std::string> GetAllRelatedClasses(const std::string& className, cons
 std::vector<std::string> GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable);
 std::vector<std::string> GetCompatibleMemberClasses(const std::string& className, const std::string& memberName,
                                                     AccessModifier access, const SymbolTable& symbolTable);
-std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                             ExpressionTypeCache* cache = nullptr);
-
 /**
  * @brief Infers the host class of the mixin enclosing a byte range, answering the container lookup from the index.
  * @param[in] targetRange Byte range of the node whose enclosing containers are inspected.
- * @param[in] index Document index; its container spans give the same containers as the node-based overload.
+ * @param[in] index Document index; its container spans give the enclosing containers.
  * @param[in] sourceCode Document source text buffer.
  * @param[in] symbolTable Symbol table providing the rule index of mixin hosts.
  * @return Qualified name of the first recorded host class; empty when no enclosing mixin has a host.
- * @note Recovers the node with one O(depth) descent, then uses NodeIndex::CollectLookupContainers. No cache is used.
  */
 std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex& index,
+                                             std::string_view sourceCode, const SymbolTable& symbolTable);
+std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex* index,
                                              std::string_view sourceCode, const SymbolTable& symbolTable);
 } // namespace angel_lsp::analysis

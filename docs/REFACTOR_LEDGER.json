@@ -3115,6 +3115,175 @@
       "verifiedByTests": [
         "TypeConversionCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M24F-EXPRESSION-SITE-FACTS",
+      "phase": "M24F",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionExpressions.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckBinaryExpression; CheckUnaryExpression; CheckMemberExpression; CheckIndexExpression; CheckCastExpression",
+      "whatItDidAndWhyInThatFile": "Expression type-checking traversed raw binary, unary, member, index and cast nodes via TSNode in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder extracts binary, unary, member, index and cast expression facts into immutable records with operator spellings and source ranges; checkers consume ExpressionSiteFacts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ExpressionSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildExpressionSiteFacts",
+      "ramOrCpuImpact": "One O(N) extraction per revision and O(log N) indexed lookups; eliminates AST traversal and string allocations in expression type checking.",
+      "verifiedByTests": [
+        "ExpressionSiteFactsTest"
+      ]
+    },
+    {
+      "id": "REF-M25-MEMBER-ACCESS-FACTS",
+      "phase": "M25",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/AccessChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CollectDirectCandidates; CheckMemberAccess; CheckScopeResolution; CheckObjectAccess; CheckTypeAccess",
+      "whatItDidAndWhyInThatFile": "Member access checks parsed member nodes and inspected receivers and access qualifiers across TSNode AST structures in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder indexes member accesses, qualifier scopes and receiver expressions once per revision; AccessChecker consumes MemberAccessFacts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/MemberAccessFacts.h",
+      "replacedByCanonicalSymbol": "BuildMemberAccessFacts",
+      "ramOrCpuImpact": "One O(N) extraction per revision and O(log N) lookups; zero TSNode queries or string copies during access checking.",
+      "verifiedByTests": [
+        "MemberAccessFactsTest",
+        "AccessCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M25-CONST-SITE-FACTS",
+      "phase": "M25",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/ConstChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckConstAssignments; CheckConstCalls; CheckConstMembers; CheckConstExpressions",
+      "whatItDidAndWhyInThatFile": "Const modifier enforcement recursively checked assignment targets, method calls and member mutations via TSNode in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder pre-extracts mutating assignments, const method calls and target expressions; ConstChecker consumes ConstSiteFacts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ConstSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildConstSiteFacts",
+      "ramOrCpuImpact": "Precomputed mutation and call sites eliminate AST walks during constness verification.",
+      "verifiedByTests": [
+        "ConstSiteFactsTest",
+        "ConstCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M25-LVALUE-SITE-FACTS",
+      "phase": "M25",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/LValueChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckLValueAssignments; CheckLValueCalls; CheckLValueExpressions",
+      "whatItDidAndWhyInThatFile": "LValue validation inspected expression operands and assignment destinations through TSNode child traversal in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder indexes assignment target sites and call-argument sites requiring lvalues; LValueChecker consumes LValueSiteFacts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/LValueSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildLValueSiteFacts",
+      "ramOrCpuImpact": "O(log N) site lookup replaces recursive AST inspection of nested expressions.",
+      "verifiedByTests": [
+        "LValueSiteFactsTest",
+        "LValueCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M25-ISOLATION-SITE-FACTS",
+      "phase": "M25",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/IsolationChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckSharedModifiers; CheckFunctionIsolation; CheckClassIsolation; CheckVariableIsolation",
+      "whatItDidAndWhyInThatFile": "Shared entity and isolation rules inspected shared modifiers, member declarations and external references via TSNode in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder extracts shared modifier sites, isolation declarations and external identifier sites; IsolationChecker consumes IsolationSiteFacts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/IsolationSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildIsolationSiteFacts",
+      "ramOrCpuImpact": "Single-pass extraction eliminates repetitive AST sweeps across class bodies and shared entities.",
+      "verifiedByTests": [
+        "IsolationSiteFactsTest",
+        "IsolationCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M26-CALL-SITE-FACTS",
+      "phase": "M26",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/CallChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckCallArguments; ResolveCallee; CheckDirectInit; CheckConstructorCalls; CheckOverloads",
+      "whatItDidAndWhyInThatFile": "Call checking and argument validation traversed call expressions, argument lists and direct initialization nodes via TSNode in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder indexes call sites, direct initializations and argument lists into CallSiteFacts with zero AST dependency; CallChecker consumes CallSiteFacts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CallSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildCallSiteFacts",
+      "ramOrCpuImpact": "Pre-indexed call sites and argument slices avoid tree navigation during overload and signature checks.",
+      "verifiedByTests": [
+        "CallSiteFactsTest",
+        "CallCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M26-INITIALIZER-LIST-FACTS",
+      "phase": "M26",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/InitializerListChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckAggregateInit; CheckContainerInit; CheckDictionaryInit; ValidateInitListElements",
+      "whatItDidAndWhyInThatFile": "Initializer list semantic checks traversed list elements, aggregate patterns and dictionary key-value entries via TSNode in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder pre-extracts initializer list structures, element spans and dictionary pairings; InitializerListChecker consumes InitializerListFacts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/InitializerListFacts.h",
+      "replacedByCanonicalSymbol": "BuildInitializerListFacts",
+      "ramOrCpuImpact": "One pass extracts nested list structures; eliminates recursive AST inspections.",
+      "verifiedByTests": [
+        "InitializerListFactsTest",
+        "InitializerListCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M27-CONTROL-FLOW-FACTS",
+      "phase": "M27",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/ControlFlowChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckBranchFlow; CheckReturnFlow; CheckSwitchFlow; ValidateControlFlow",
+      "whatItDidAndWhyInThatFile": "Control flow analysis traversed branches, switch cases and return statements by climbing TSNode parents and checking node points in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder extracts branching structures, break/continue targets and statement boundaries into ControlFlowFacts; ControlFlowChecker consumes indexed facts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ControlFlowFacts.h",
+      "replacedByCanonicalSymbol": "BuildControlFlowFacts",
+      "ramOrCpuImpact": "O(1) / O(log N) flow boundary queries replace recursive AST walks and parent climbing.",
+      "verifiedByTests": [
+        "ControlFlowFactsTest",
+        "ControlFlowTest"
+      ]
+    },
+    {
+      "id": "REF-M27-DEFINITE-ASSIGNMENT-FACTS",
+      "phase": "M27",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckDefiniteAssignmentFlow; CheckVariableReads; CheckVariableAssignments; TrackDefiniteAssignmentCalls",
+      "whatItDidAndWhyInThatFile": "Definite assignment analysis walked syntax trees to track variable reads, assignments, and argument usage across control paths via TSNode in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder captures read and write occurrences, assignment sites and variable usages into DefiniteAssignmentFacts; DefiniteAssignmentChecker consumes indexed facts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/DefiniteAssignmentFacts.h",
+      "replacedByCanonicalSymbol": "BuildDefiniteAssignmentFacts",
+      "ramOrCpuImpact": "One pass records all variable flow events; removes AST traversals in dataflow analysis.",
+      "verifiedByTests": [
+        "DefiniteAssignmentFactsTest",
+        "DefiniteAssignmentTest"
+      ]
+    },
+    {
+      "id": "REF-M27-NAMESPACE-USAGE-FACTS",
+      "phase": "M27",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/NamespaceChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckCallExpression; CheckImportBody; ProcessNamespaceNode; CheckFromASTTraversal",
+      "whatItDidAndWhyInThatFile": "Namespace and scope checks walked AST nodes to inspect identifier usages, import statements and call qualifiers in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder captures identifier usage sites, scope qualification prefixes and import boundaries into NamespaceUsageFacts; NamespaceChecker consumes indexed facts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NamespaceUsageFacts.h",
+      "replacedByCanonicalSymbol": "BuildNamespaceUsageFacts",
+      "ramOrCpuImpact": "Indexed usage sites eliminate AST cursor traversal across the document.",
+      "verifiedByTests": [
+        "NamespaceUsageFactsTest",
+        "NamespaceCheckerTest"
+      ]
     }
   ]
 }

@@ -390,15 +390,6 @@ std::string_view FirstAttributeName(const SymbolModifiers& modifiers);
 bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable& table);
 
 /**
- * @brief Whether `node` is the callee of a legal `super(...)` base-constructor call.
- *        `super` is not a general reference to the base class. The compiler answers
- * @param node Any node whose text is the identifier `super` - the callee of a call expression.
- * @param sourceCode Document source text.
- * @return True when the enclosing function is a constructor of a class with a base list.
- */
-bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode);
-
-/**
  * @brief Pair of source and destination type names for conversion evaluation.
  */
 struct ConversionTypePair

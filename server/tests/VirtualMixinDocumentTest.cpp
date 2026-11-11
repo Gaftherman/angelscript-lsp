@@ -318,13 +318,11 @@ TEST_CASE("VirtualMixin - InferHostClassFromEnclosingMixin overloads parity")
     TSNode methodNode = ts_node_descendant_for_point_range(ts_tree_root_node(tree), pt, pt);
     REQUIRE(!ts_node_is_null(methodNode));
 
-    std::string hostFromTsNode = InferHostClassFromEnclosingMixin(methodNode, code, table);
     std::string hostFromRange = InferHostClassFromEnclosingMixin(
         IndexedByteRange{ts_node_start_byte(methodNode), ts_node_end_byte(methodNode)}, nodeIndex, code, table);
 
-    CHECK(!hostFromTsNode.empty());
-    CHECK(hostFromTsNode == hostName);
-    CHECK(hostFromRange == hostFromTsNode);
+    CHECK(!hostFromRange.empty());
+    CHECK(hostFromRange == hostName);
 
     const size_t mixinNamePos = code.find(mixinName);
     REQUIRE(mixinNamePos != std::string::npos);
@@ -332,8 +330,7 @@ TEST_CASE("VirtualMixin - InferHostClassFromEnclosingMixin overloads parity")
     TSNode nameNode = ts_node_descendant_for_point_range(ts_tree_root_node(tree), namePt, namePt);
     REQUIRE(!ts_node_is_null(nameNode));
     CHECK(InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(nameNode), ts_node_end_byte(nameNode)},
-                                           nodeIndex, code,
-                                           table) == InferHostClassFromEnclosingMixin(nameNode, code, table));
+                                           nodeIndex, code, table) == hostName);
 
     ts_tree_delete(tree);
 }

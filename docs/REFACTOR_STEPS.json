@@ -32,9 +32,10 @@
     "server/src/analysis/mediator",
     "server/src/parser",
     "server/src/analysis/rules",
-    "server/src/analysis/checkers/null_safety"
+    "server/src/analysis/checkers/null_safety",
+    "server/src/analysis/checkers"
   ],
-  "active_folder": "server/src/analysis/checkers",
+  "active_folder": "server/src/analysis/rules",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/utils",
