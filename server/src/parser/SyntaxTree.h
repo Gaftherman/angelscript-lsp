@@ -33,4 +33,24 @@ using TreePtr = std::unique_ptr<TSTree, decltype(&ts_tree_delete)>;
     return MakeTreePtr(tree ? ts_tree_copy(tree) : nullptr);
 }
 
+/**
+ * @brief Creates an independent, thread-safe owning copy of a managed syntax tree.
+ * @param[in] tree Owning tree pointer to copy.
+ * @return An owning TreePtr managing the newly duplicated tree, or an empty TreePtr when tree is empty.
+ */
+[[nodiscard]] inline TreePtr CopyTree(const TreePtr& tree)
+{
+    return CopyTree(tree.get());
+}
+
+/**
+ * @brief Retrieves root node of a managed TreePtr syntax tree.
+ * @param[in] tree Owning tree pointer.
+ * @return Root TSNode or null node if tree is null.
+ */
+[[nodiscard]] inline TSNode GetRootNode(const TreePtr& tree) noexcept
+{
+    return tree ? ts_tree_root_node(tree.get()) : TSNode{};
+}
+
 } // namespace angel_lsp::parser

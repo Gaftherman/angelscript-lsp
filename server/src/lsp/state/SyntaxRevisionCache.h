@@ -18,7 +18,7 @@ struct ParsedDocumentSyntax
 {
     explicit ParsedDocumentSyntax(parser::TreePtr parsed, std::string_view source = {})
         : tree(std::move(parsed)),
-          index(tree ? ts_tree_root_node(tree.get()) : TSNode{}, analysis::NodeIndexOptions{.source = source})
+          index(parser::GetRootNode(tree), analysis::NodeIndexOptions{.source = source})
     {
     }
 
@@ -83,7 +83,7 @@ struct SyntaxRevisionInput
     SyntaxRevisionKey key;
     parser::AngelScriptParser& parser;
     parser::TreePtr tree = parser::MakeTreePtr();
-    const TSTree* exactTreeToCopy = nullptr;
+    const parser::TreePtr* exactTreeToCopy = nullptr;
 };
 
 /**

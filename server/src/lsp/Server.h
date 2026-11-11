@@ -97,7 +97,7 @@ class Server
     [[nodiscard]] std::shared_ptr<const std::vector<std::string>> SearchDirectories() const;
     [[nodiscard]] std::string EngineProfile() const;
     [[nodiscard]] std::vector<utils::ExcludedLineRange> ExcludedLineRanges(const std::string& text) const;
-    [[nodiscard]] std::shared_ptr<const ankerl::unordered_dense::set<std::string>> DefinedWords() const;
+    [[nodiscard]] std::shared_ptr<const TransparentStringSet> DefinedWords() const;
     bool SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words);
     [[nodiscard]] std::vector<std::string> IncludableFiles() const;
     [[nodiscard]] std::string_view ImplicitIncludeExtension() const noexcept;

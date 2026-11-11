@@ -479,7 +479,7 @@ static void ProcessDirectiveHit(PreprocessorScanContext& ctx, const DirectiveHit
 }
 
 PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
-                                  const ankerl::unordered_dense::set<std::string>& definedWords,
+                                  const TransparentStringSet& definedWords,
                                   const PreprocessorFeatures& features, bool reportPragma)
 {
     PreprocessorScan scan;
@@ -498,7 +498,7 @@ PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
 }
 
 std::vector<ExcludedLineRange> FindExcludedLineRanges(std::string_view sourceCode,
-                                                      const ankerl::unordered_dense::set<std::string>& definedWords,
+                                                      const TransparentStringSet& definedWords,
                                                       const PreprocessorFeatures& features)
 {
     return ScanPreprocessor(sourceCode, definedWords, features).excluded;

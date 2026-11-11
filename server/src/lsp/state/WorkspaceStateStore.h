@@ -4,6 +4,7 @@
 #include "document/Document.h"
 #include "lsp/state/DocumentStore.h"
 #include "lsp/state/ModuleIndex.h"
+#include "utils/TransparentHash.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include <ankerl/unordered_dense.h>
@@ -34,7 +35,7 @@ struct WorkspaceSnapshot
     /**
      * @brief Active preprocessor defined symbols.
      */
-    std::shared_ptr<const ankerl::unordered_dense::set<std::string>> definedWords;
+    std::shared_ptr<const TransparentStringSet> definedWords;
 };
 
 /**
@@ -165,7 +166,7 @@ class WorkspaceStateStore
      * @brief Retrieves a thread-safe snapshot of defined preprocessor words.
      * @return Shared pointer to const set of defined words.
      */
-    [[nodiscard]] std::shared_ptr<const ankerl::unordered_dense::set<std::string>> GetDefinedWords() const;
+    [[nodiscard]] std::shared_ptr<const TransparentStringSet> GetDefinedWords() const;
 
     /**
      * @brief Records preprocessor define contributions from a specific source.
@@ -256,7 +257,7 @@ class WorkspaceStateStore
     std::shared_ptr<const std::vector<std::string>> m_searchDirectories;
     std::string m_engineProfile;
 
-    std::shared_ptr<const ankerl::unordered_dense::set<std::string>> m_definedWords;
+    std::shared_ptr<const TransparentStringSet> m_definedWords;
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_definedWordsBySource;
 
     mutable std::mutex m_preindexedMutex;

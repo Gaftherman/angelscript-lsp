@@ -10,7 +10,7 @@ namespace angel_lsp
 
 WorkspaceStateStore::WorkspaceStateStore()
     : m_searchDirectories(std::make_shared<const std::vector<std::string>>()),
-      m_definedWords(std::make_shared<const ankerl::unordered_dense::set<std::string>>())
+      m_definedWords(std::make_shared<const TransparentStringSet>())
 {
 }
 
@@ -61,7 +61,7 @@ void WorkspaceStateStore::SetEngineProfile(std::string profile)
     m_engineProfile = std::move(profile);
 }
 
-std::shared_ptr<const ankerl::unordered_dense::set<std::string>> WorkspaceStateStore::GetDefinedWords() const
+std::shared_ptr<const TransparentStringSet> WorkspaceStateStore::GetDefinedWords() const
 {
     std::lock_guard<std::mutex> lock(m_configMutex);
     return m_definedWords;
@@ -69,7 +69,7 @@ std::shared_ptr<const ankerl::unordered_dense::set<std::string>> WorkspaceStateS
 
 bool WorkspaceStateStore::SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words)
 {
-    auto merged = std::make_shared<ankerl::unordered_dense::set<std::string>>();
+    auto merged = std::make_shared<TransparentStringSet>();
 
     std::lock_guard<std::mutex> lock(m_configMutex);
     if (words.empty())
@@ -237,7 +237,7 @@ void WorkspaceStateStore::Clear()
     m_workspaceRoots.clear();
     m_searchDirectories = std::make_shared<const std::vector<std::string>>();
     m_engineProfile.clear();
-    m_definedWords = std::make_shared<const ankerl::unordered_dense::set<std::string>>();
+    m_definedWords = std::make_shared<const TransparentStringSet>();
     m_definedWordsBySource.clear();
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <ankerl/unordered_dense.h>
+#include "utils/TransparentHash.h"
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -46,7 +47,7 @@ struct PreprocessorFeatures
  * @note Preserves newlines across blanked regions to keep line numbering synchronized.
  */
 std::vector<ExcludedLineRange>
-FindExcludedLineRanges(std::string_view sourceCode, const ankerl::unordered_dense::set<std::string>& definedWords = {},
+FindExcludedLineRanges(std::string_view sourceCode, const TransparentStringSet& definedWords = {},
                        const PreprocessorFeatures& features = {});
 
 /**
@@ -104,7 +105,7 @@ struct PreprocessorScan
  *        every one - with no callback registered the add-on substitutes a failure and fails the
  */
 PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
-                                  const ankerl::unordered_dense::set<std::string>& definedWords = {},
+                                  const TransparentStringSet& definedWords = {},
                                   const PreprocessorFeatures& features = {}, bool reportPragma = false);
 
 /**
@@ -174,8 +175,8 @@ struct PreprocessorScanContext
     PreprocessorScan& scan;
     std::vector<OpenDirective> stack;
     int excludedNesting{0};
-    ankerl::unordered_dense::set<std::string> localWords;
-    const ankerl::unordered_dense::set<std::string>& definedWords;
+    TransparentStringSet localWords;
+    const TransparentStringSet& definedWords;
     const PreprocessorFeatures& features;
     bool usingLocalWords{false};
     bool sawMalformedIf{false};
@@ -183,8 +184,7 @@ struct PreprocessorScanContext
 
     bool IsDefined(std::string_view word) const
     {
-        const std::string key(word);
-        return usingLocalWords ? localWords.contains(key) : definedWords.contains(key);
+        return usingLocalWords ? localWords.contains(word) : definedWords.contains(word);
     }
 
     void CloseBranch(OpenDirective& open, uint32_t boundaryLine)

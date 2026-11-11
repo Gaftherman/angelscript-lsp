@@ -552,7 +552,7 @@ ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req
         ResolveSyntaxRevision({.key = {req.uriStr, req.text, req.generation, req.closedRevision},
                                .parser = req.parser,
                                .tree = std::move(req.treeCopy),
-                               .exactTreeToCopy = hasExactTree ? open->tree.get() : nullptr},
+                               .exactTreeToCopy = hasExactTree ? &open->tree : nullptr},
                               syntaxCache);
     if (!syntax)
     {

@@ -25,7 +25,7 @@ using namespace angel_lsp::utils;
 
 namespace
 {
-bool Excludes(const std::string& source, uint32_t line, const ankerl::unordered_dense::set<std::string>& defined = {})
+bool Excludes(const std::string& source, uint32_t line, const angel_lsp::TransparentStringSet& defined = {})
 {
     return IsLineExcluded(FindExcludedLineRanges(source, defined), line);
 }
@@ -178,7 +178,7 @@ TEST_CASE("Preprocessor - Defined words from stub control exclusion in FindExclu
     const auto wordsFrom = [](std::string_view stub)
     {
         const auto words = ScanDefinedWords(stub);
-        return ankerl::unordered_dense::set<std::string>(words.begin(), words.end());
+        return angel_lsp::TransparentStringSet(words.begin(), words.end());
     };
 
     // When the stub defines FOO, the #if FOO block is preserved and no range is excluded.
@@ -204,9 +204,9 @@ namespace
 {
 using angel_lsp::utils::PreprocessorFeatures;
 
-ankerl::unordered_dense::set<std::string> Defined(std::initializer_list<std::string> words)
+angel_lsp::TransparentStringSet Defined(std::initializer_list<std::string> words)
 {
-    return ankerl::unordered_dense::set<std::string>(words);
+    return angel_lsp::TransparentStringSet(words);
 }
 } // namespace
 

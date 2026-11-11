@@ -43,7 +43,7 @@ struct IncludeDirective
  */
 struct IncludePreprocessor
 {
-    std::shared_ptr<const ankerl::unordered_dense::set<std::string>> definedWords;
+    std::shared_ptr<const TransparentStringSet> definedWords;
     PreprocessorFeatures features;
 
     [[nodiscard]] std::vector<ExcludedLineRange> ExcludedLines(std::string_view source) const;

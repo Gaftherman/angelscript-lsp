@@ -228,7 +228,7 @@ std::string Server::EngineProfile() const
     return m_workspaceStore->GetEngineProfile();
 }
 
-std::shared_ptr<const ankerl::unordered_dense::set<std::string>> Server::DefinedWords() const
+std::shared_ptr<const TransparentStringSet> Server::DefinedWords() const
 {
     return m_workspaceStore->GetDefinedWords();
 }

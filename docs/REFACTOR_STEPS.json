@@ -34,15 +34,11 @@
     "server/src/analysis/rules",
     "server/src/analysis/checkers/null_safety",
     "server/src/analysis/checkers",
-    "server/src/analysis/resolution"
+    "server/src/analysis/resolution",
+    "server/src/lsp/state"
   ],
-  "active_folder": "server/src/analysis/resolution",
+  "active_folder": "server/src/lsp/state",
   "cross_module_impacts": [
-    {
-      "source_folder": "server/src/utils",
-      "target_folder": "server/src/lsp/state",
-      "impact": "PreprocessorRegions IsDefined builds a std::string key per lookup; making the defined-words set transparent (TransparentStringHash, std::equal_to<>) changes its type across WorkspaceStateStore, Server and ServerModules, so it is deferred to the lsp/ milestone."
-    },
     {
       "source_folder": "server/src/analysis/diagnostics",
       "target_folder": "server/src/analysis/checkers",
@@ -55,12 +51,6 @@
     }
   ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/analysis/resolution",
-      "complexity_rank": 37,
-      "selection_rationale": "Semantic resolution engines (15 files, 1714 lines) overload, target, class hierarchy resolution.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/lsp/state",
       "complexity_rank": 39,

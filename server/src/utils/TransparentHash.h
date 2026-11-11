@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ankerl/unordered_dense.h>
+#include <string>
 #include <string_view>
 
 namespace angel_lsp
@@ -18,5 +19,10 @@ struct TransparentStringHash
         return ankerl::unordered_dense::hash<std::string_view>{}(sv);
     }
 };
+
+/**
+ * @brief Transparent string set allowing heterogeneous lookups using std::string_view.
+ */
+using TransparentStringSet = ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>;
 
 } // namespace angel_lsp

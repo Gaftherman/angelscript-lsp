@@ -703,7 +703,7 @@ std::vector<std::string> IncludeResolver::ResolveAllIncludes(std::string_view ro
 
 std::vector<ExcludedLineRange> IncludePreprocessor::ExcludedLines(std::string_view source) const
 {
-    static const ankerl::unordered_dense::set<std::string> empty;
+    static const TransparentStringSet empty;
     return FindExcludedLineRanges(source, definedWords ? *definedWords : empty, features);
 }
 

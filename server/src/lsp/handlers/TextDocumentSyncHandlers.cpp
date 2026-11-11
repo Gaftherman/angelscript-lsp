@@ -168,7 +168,7 @@ SyntaxRevision Server::ResolveProtocolSyntax(std::string_view uri, std::string_v
     const bool hasExactTree = open && open->tree && open->ParsedSource() == source;
     return ResolveSyntaxRevision({.key = {uri, source, open ? open->generation : 0},
                                   .parser = *m_parser,
-                                  .exactTreeToCopy = hasExactTree ? open->tree.get() : nullptr},
+                                  .exactTreeToCopy = hasExactTree ? &open->tree : nullptr},
                                  &m_protocolSyntax);
 }
 
