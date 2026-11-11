@@ -63,4 +63,41 @@ using TreePtr = std::unique_ptr<TSTree, decltype(&ts_tree_delete)>;
     return tree && ts_node_has_error(ts_tree_root_node(tree.get()));
 }
 
+/**
+ * @brief Abstract text change geometry for Tree-Sitter incremental edits.
+ */
+struct TextChangeEdit
+{
+    uint32_t startByte = 0;
+    uint32_t oldEndByte = 0;
+    uint32_t newEndByte = 0;
+    uint32_t startRow = 0;
+    uint32_t startColumn = 0;
+    uint32_t oldEndRow = 0;
+    uint32_t oldEndColumn = 0;
+    uint32_t newEndRow = 0;
+    uint32_t newEndColumn = 0;
+};
+
+/**
+ * @brief Applies an incremental edit to a managed syntax tree.
+ * @param[in,out] tree Owning tree to edit.
+ * @param[in] edit Text change edit geometry.
+ */
+inline void ApplyTreeEdit(const TreePtr& tree, const TextChangeEdit& edit) noexcept
+{
+    if (!tree)
+    {
+        return;
+    }
+    TSInputEdit tsEdit;
+    tsEdit.start_byte = edit.startByte;
+    tsEdit.old_end_byte = edit.oldEndByte;
+    tsEdit.new_end_byte = edit.newEndByte;
+    tsEdit.start_point = TSPoint{edit.startRow, edit.startColumn};
+    tsEdit.old_end_point = TSPoint{edit.oldEndRow, edit.oldEndColumn};
+    tsEdit.new_end_point = TSPoint{edit.newEndRow, edit.newEndColumn};
+    ts_tree_edit(tree.get(), &tsEdit);
+}
+
 } // namespace angel_lsp::parser

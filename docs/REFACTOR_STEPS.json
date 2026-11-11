@@ -37,9 +37,10 @@
     "server/src/analysis/resolution",
     "server/src/lsp/state",
     "server/src/lsp/services",
-    "server/src/lsp/pipeline"
+    "server/src/lsp/pipeline",
+    "server/src/lsp/handlers"
   ],
-  "active_folder": "server/src/lsp/pipeline",
+  "active_folder": "server/src/lsp",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/analysis/diagnostics",
@@ -53,12 +54,6 @@
     }
   ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/lsp/handlers",
-      "complexity_rank": 42,
-      "selection_rationale": "LSP protocol request and notification handlers (8 files, ~180KB).",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/lsp",
       "complexity_rank": 43,

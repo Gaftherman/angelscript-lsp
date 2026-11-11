@@ -94,6 +94,7 @@ class Server
     void NotifyModuleWarning(const std::string& text);
     [[nodiscard]] WorkspaceSnapshot CreateWorkspaceSnapshot() const;
     [[nodiscard]] std::vector<std::string> WorkspaceRoots() const;
+    [[nodiscard]] std::vector<std::string> WorkspaceRootPaths() const;
     [[nodiscard]] std::shared_ptr<const std::vector<std::string>> SearchDirectories() const;
     [[nodiscard]] std::string EngineProfile() const;
     [[nodiscard]] std::vector<utils::ExcludedLineRange> ExcludedLineRanges(const std::string& text) const;
@@ -487,6 +488,17 @@ inline WorkspaceStateStore& Server::GetWorkspaceStore() noexcept
 inline const WorkspaceStateStore& Server::GetWorkspaceStore() const noexcept
 {
     return *m_workspaceStore;
+}
+inline std::vector<std::string> Server::WorkspaceRootPaths() const
+{
+    const auto roots = WorkspaceRoots();
+    std::vector<std::string> paths;
+    paths.reserve(roots.size());
+    for (const auto& root : roots)
+    {
+        paths.push_back(angel_lsp::utils::UriToPath(root));
+    }
+    return paths;
 }
 inline DiagnosticsPipeline& Server::GetDiagnosticsPipeline() noexcept
 {

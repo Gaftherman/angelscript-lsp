@@ -863,14 +863,13 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     if (syntax && m_localScopeCollector && !request.scopeRoot)
     {
-        request.scopeRoot = m_localScopeCollector->CollectScopesFromTree(syntax->index.Root(), text, &syntax->index);
+        request.scopeRoot = m_localScopeCollector->CollectScopesFromIndex(syntax->index, text);
     }
     request.excludedLineRanges = ExcludedLineRanges(text);
     lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
     codec::EncodeSemanticTokens(text, m_sessionCoordinator->GetPositionEncoding(), tokens.data);
 
-    TSTree* tree = syntax ? syntax->tree.get() : nullptr;
-    const bool hasError = tree != nullptr && ts_node_has_error(ts_tree_root_node(tree));
+    const bool hasError = syntax && parser::TreeHasError(syntax->tree);
 
     // Cached after encoding, so a delta is computed against exactly the bytes the client holds.
     const std::string resultId = std::to_string(++m_semanticTokensRevision);
@@ -985,7 +984,7 @@ std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const s
     {
         return nullptr;
     }
-    parser::TreePtr tree = m_parser ? parser::MakeTreePtr(m_parser->Parse(text)) : parser::MakeTreePtr(nullptr);
+    parser::TreePtr tree = m_parser ? m_parser->ParseTree(text) : parser::MakeTreePtr(nullptr);
     GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
     return GetDocumentStore().GetDocument(key);
 }
@@ -1001,7 +1000,7 @@ std::optional<OpenDocument> Server::LookupPreindexedFallback(const std::string& 
         }
         if (preindexed)
         {
-            return OpenDocument{key, &preindexed->text, preindexed->tree.get(), preindexed, nullptr};
+            return OpenDocument{key, &preindexed->text, preindexed, nullptr};
         }
         return std::nullopt;
     }
@@ -1009,7 +1008,7 @@ std::optional<OpenDocument> Server::LookupPreindexedFallback(const std::string& 
     {
         if (auto wsDoc = m_workspaceStore->GetPreindexedDocument(key))
         {
-            return OpenDocument{key, &wsDoc->text, wsDoc->tree.get(), wsDoc, nullptr};
+            return OpenDocument{key, &wsDoc->text, wsDoc, nullptr};
         }
     }
     return std::nullopt;
@@ -1037,7 +1036,6 @@ std::optional<OpenDocument> Server::LookupOpenDocument(const std::string& uriStr
     }
 
     const std::string* textPtr = doc ? &doc->text : nullptr;
-    TSTree* treePtr = doc ? doc->tree.get() : nullptr;
     std::shared_ptr<const std::string> predefinedHandle;
 
     if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
@@ -1049,7 +1047,7 @@ std::optional<OpenDocument> Server::LookupOpenDocument(const std::string& uriStr
         }
     }
 
-    return OpenDocument{key, textPtr, treePtr, doc, predefinedHandle};
+    return OpenDocument{key, textPtr, doc, predefinedHandle};
 }
 
 void Server::InitHandles()
