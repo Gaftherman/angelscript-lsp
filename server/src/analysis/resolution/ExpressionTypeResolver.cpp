@@ -73,65 +73,7 @@ static std::vector<Symbol> ResolveScopeSymbols(std::string_view name, TSNode exp
     return FindSymbolsInScope(name, byteOffset, sourceCode, symbolTable, nodeIndex);
 }
 
-static uint32_t FindLambdaParamIndex(TSNode paramsNode, std::string_view paramName, std::string_view sourceCode)
-{
-    auto astParams = ExtractLambdaParameters(paramsNode, sourceCode);
-    for (const auto& p : astParams)
-    {
-        if (p.name == paramName)
-        {
-            return p.index;
-        }
-    }
-    return UINT32_MAX;
-}
 
-static std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,
-                                        std::string_view sourceCode)
-{
-    if (ts_node_is_null(nodeInLambda) || paramName.empty())
-    {
-        return "";
-    }
-
-    TSNode lambdaNode = parser::FindAncestorWithSymbol(nodeInLambda, parser::GetGrammarSymbols().symLambdaExpression);
-    if (ts_node_is_null(lambdaNode))
-    {
-        return "";
-    }
-
-    TSNode paramsNode = parser::GetChildByField(lambdaNode, parser::GetGrammarSymbols().fieldParameters);
-    if (ts_node_is_null(paramsNode))
-    {
-        return "";
-    }
-
-    uint32_t paramIdx = FindLambdaParamIndex(paramsNode, paramName, sourceCode);
-    if (paramIdx == UINT32_MAX)
-    {
-        return "";
-    }
-
-    auto targetFuncdef = FuncdefTargetOfLambda(ReadLambdaTarget(lambdaNode, sourceCode), symbolTable);
-    if (!targetFuncdef)
-    {
-        return "";
-    }
-
-    if (std::holds_alternative<FuncdefSignature>(targetFuncdef->signature))
-    {
-        const auto& params = targetFuncdef->GetFuncdef().parameters;
-        return paramIdx < params.size() ? MemberOwnerType(params[paramIdx].typeName, symbolTable.GetDefaultArrayType())
-                                        : "";
-    }
-    if (std::holds_alternative<FunctionSignature>(targetFuncdef->signature))
-    {
-        const auto& params = targetFuncdef->GetFunction().parameters;
-        return paramIdx < params.size() ? MemberOwnerType(params[paramIdx].typeName, symbolTable.GetDefaultArrayType())
-                                        : "";
-    }
-    return "";
-}
 
 static std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
 {
@@ -179,27 +121,6 @@ static std::string ResolveParenthesizedExpr(TSNode exprNode, const ExpressionTyp
 }
 
 /**
- * @brief Resolves 'this' expression type based on enclosing container hierarchy.
- */
-static std::string ResolveThisIdentifier(TSNode exprNode, const ExpressionTypeContext& ctx,
-                                         const std::string& hostClass)
-{
-    if (!hostClass.empty())
-    {
-        return CleanExpressionType(hostClass);
-    }
-    auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
-    for (const auto& c : containers)
-    {
-        if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
-        {
-            return CleanExpressionType(c.qualifiedName.empty() ? c.name : c.qualifiedName);
-        }
-    }
-    return "";
-}
-
-/**
  * @brief Resolves 'this' expression type based on enclosing container hierarchy or mixin host.
  */
 static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
@@ -212,7 +133,8 @@ static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext&
             InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
                                              ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable);
     }
-    return ResolveThisIdentifier(exprNode, ctx, hostClass);
+    auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
+    return ResolveThisType(hostClass, containers);
 }
 
 static std::string ResolveGlobalScopedExpr(TSNode exprNode, std::string_view rootPath, const ExpressionTypeContext& ctx)

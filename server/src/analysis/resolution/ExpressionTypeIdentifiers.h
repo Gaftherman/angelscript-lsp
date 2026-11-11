@@ -65,6 +65,15 @@ namespace angel_lsp::analysis
                                                                      ExpressionTypeCache* cache);
 
 /**
+ * @brief Resolves 'this' expression type given a host class name or enclosing container list.
+ * @param[in] hostClass Virtual or mixin host class name.
+ * @param[in] containers Enclosing container declarations.
+ * @return Cleaned class/interface type name, or empty string.
+ */
+[[nodiscard]] std::string ResolveThisType(std::string_view hostClass,
+                                          const std::vector<ContainerInfo>& containers);
+
+/**
  * @brief Extracts type from resolved candidate symbols (variable, property, or accessor).
  * @param[in] syms Candidate symbols.
  * @param[in] symbolTable Symbol table to query.

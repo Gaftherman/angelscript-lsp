@@ -177,6 +177,22 @@ std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name,
     return "";
 }
 
+std::string ResolveThisType(std::string_view hostClass, const std::vector<ContainerInfo>& containers)
+{
+    if (!hostClass.empty())
+    {
+        return CleanExpressionType(hostClass);
+    }
+    for (const auto& c : containers)
+    {
+        if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+        {
+            return CleanExpressionType(c.qualifiedName.empty() ? c.name : c.qualifiedName);
+        }
+    }
+    return "";
+}
+
 std::string ExtractFirstSymbolTypeOrAccessor(const std::vector<Symbol>& syms,
                                              const SymbolTable& symbolTable)
 {
