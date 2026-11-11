@@ -1,16 +1,16 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
 
+#include "analysis/index/CallArgumentFacts.h"
+#include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/NodeRecoveryInternal.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SyntaxOperands.h"
-#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
-#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
-#include "analysis/resolution/ScopeLookupInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
@@ -24,12 +24,108 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
+
+static TSNode RecoverNodeFromContext(const ExpressionTypeContext& ctx, uint32_t startByte, uint32_t endByte) noexcept
+{
+    if (ctx.nodeIndex)
+    {
+        return RecoverNodeAt(*ctx.nodeIndex, startByte, endByte);
+    }
+    if (!ts_node_is_null(ctx.rootNode))
+    {
+        return RecoverNodeFromRoot(ctx.rootNode, startByte, endByte);
+    }
+    return TSNode{};
+}
+
+static std::vector<ContainerInfo> ResolveEnclosingContainers(TSNode exprNode, std::string_view sourceCode,
+                                                             const NodeIndex* nodeIndex)
+{
+    if (nodeIndex && !ts_node_is_null(exprNode))
+    {
+        return GetEnclosingContainers(
+            IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)}, *nodeIndex, sourceCode);
+    }
+    return {};
+}
+
+static std::vector<Symbol> ResolveScopeSymbols(std::string_view name, TSNode exprNode, std::string_view sourceCode,
+                                               const SymbolTable& symbolTable, const NodeIndex* nodeIndex)
+{
+    if (name.empty())
+    {
+        return {};
+    }
+    const uint32_t byteOffset = !ts_node_is_null(exprNode) ? ts_node_start_byte(exprNode) : 0;
+    return FindSymbolsInScope(name, byteOffset, sourceCode, symbolTable, nodeIndex);
+}
+
+static uint32_t FindLambdaParamIndex(TSNode paramsNode, std::string_view paramName, std::string_view sourceCode)
+{
+    auto astParams = ExtractLambdaParameters(paramsNode, sourceCode);
+    for (const auto& p : astParams)
+    {
+        if (p.name == paramName)
+        {
+            return p.index;
+        }
+    }
+    return UINT32_MAX;
+}
+
+static std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,
+                                        std::string_view sourceCode)
+{
+    if (ts_node_is_null(nodeInLambda) || paramName.empty())
+    {
+        return "";
+    }
+
+    TSNode lambdaNode = parser::FindAncestorWithSymbol(nodeInLambda, parser::GetGrammarSymbols().symLambdaExpression);
+    if (ts_node_is_null(lambdaNode))
+    {
+        return "";
+    }
+
+    TSNode paramsNode = parser::GetChildByField(lambdaNode, parser::GetGrammarSymbols().fieldParameters);
+    if (ts_node_is_null(paramsNode))
+    {
+        return "";
+    }
+
+    uint32_t paramIdx = FindLambdaParamIndex(paramsNode, paramName, sourceCode);
+    if (paramIdx == UINT32_MAX)
+    {
+        return "";
+    }
+
+    auto targetFuncdef = FuncdefTargetOfLambda(ReadLambdaTarget(lambdaNode, sourceCode), symbolTable);
+    if (!targetFuncdef)
+    {
+        return "";
+    }
+
+    if (std::holds_alternative<FuncdefSignature>(targetFuncdef->signature))
+    {
+        const auto& params = targetFuncdef->GetFuncdef().parameters;
+        return paramIdx < params.size() ? MemberOwnerType(params[paramIdx].typeName, symbolTable.GetDefaultArrayType())
+                                        : "";
+    }
+    if (std::holds_alternative<FunctionSignature>(targetFuncdef->signature))
+    {
+        const auto& params = targetFuncdef->GetFunction().parameters;
+        return paramIdx < params.size() ? MemberOwnerType(params[paramIdx].typeName, symbolTable.GetDefaultArrayType())
+                                        : "";
+    }
+    return "";
+}
 
 static std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
 {
@@ -137,7 +233,7 @@ static std::string ResolveThisIdentifier(TSNode exprNode, const ExpressionTypeCo
     {
         return CleanExpressionType(hostClass);
     }
-    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
+    auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
@@ -178,7 +274,7 @@ static std::string ResolveScopedEnumMember(std::string_view whole, TSNode exprNo
     auto qSyms = ctx.symbolTable.FindSymbols(qual);
     if (qSyms.empty())
     {
-        qSyms = FindSymbolsInScope(qual, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+        qSyms = ResolveScopeSymbols(qual, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
     }
     for (const auto& qSym : qSyms)
     {
@@ -259,7 +355,7 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
         auto wholeSyms = ctx.symbolTable.FindSymbols(whole);
         if (wholeSyms.empty())
         {
-            wholeSyms = FindSymbolsInScope(whole, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+            wholeSyms = ResolveScopeSymbols(whole, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
         }
         if (std::string type = ExtractVariableOrPropertyType(wholeSyms, ctx.symbolTable); !type.empty())
         {
@@ -281,7 +377,7 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
 static std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(const std::string& name, TSNode exprNode,
                                                                   const ExpressionTypeContext& ctx)
 {
-    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
+    auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind != ContainerKind::Class && c.kind != ContainerKind::Interface)
@@ -319,7 +415,7 @@ static std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(const std::str
 static std::vector<Symbol> ResolveIdentifierSymbols(const std::string& name, TSNode exprNode,
                                                     const ExpressionTypeContext& ctx)
 {
-    auto syms = FindSymbolsInScope(name, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+    auto syms = ResolveScopeSymbols(name, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
     if (!syms.empty())
     {
         return syms;
@@ -1519,7 +1615,7 @@ static std::vector<Symbol> CollectEnclosingCallCandidates(TSNode exprNode, const
                                                           const ExpressionTypeContext& ctx)
 {
     std::vector<Symbol> candidates;
-    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
+    auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
@@ -1587,7 +1683,7 @@ static void CollectScopeAndGlobalFunctions(const std::string& funcName, TSNode e
                                            const ExpressionTypeContext& ctx, std::vector<Symbol>& candidates)
 {
     std::vector<Symbol> inScope =
-        FindSymbolsInScope(funcName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+        ResolveScopeSymbols(funcName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
     for (const auto& sym : inScope)
     {
         if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
@@ -1736,7 +1832,7 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
                 return true;
         }
     }
-    auto syms = FindSymbolsInScope(targetName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+    auto syms = ResolveScopeSymbols(targetName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
     if (syms.empty())
     {
         syms = ctx.symbolTable.FindSymbols(targetName);
@@ -1888,7 +1984,7 @@ static std::optional<std::string> ResolveLambdaOrInitExpr(TSSymbol sym, TSNode e
     }
     if (sym == gs.symLambdaExpression)
     {
-        if (auto target = FuncdefTargetOfLambda(exprNode, ctx.symbolTable, ctx.sourceCode))
+        if (auto target = FuncdefTargetOfLambda(ReadLambdaTarget(exprNode, ctx.sourceCode), ctx.symbolTable))
         {
             return target->qualifiedName.empty() ? target->name : target->qualifiedName;
         }
@@ -2427,7 +2523,7 @@ static std::string ResolveThisReceiver(TSNode objNode, std::string_view sourceCo
     {
         return std::string(effectiveHostClass);
     }
-    auto containers = GetEnclosingContainers(objNode, sourceCode, nodeIndex);
+    auto containers = ResolveEnclosingContainers(objNode, sourceCode, nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
@@ -2445,7 +2541,7 @@ static std::string ResolveReceiverInEnclosingContainers(TSNode objNode, std::str
                                                         const MemberHierarchyQuery& query,
                                                         const SymbolTable& symbolTable)
 {
-    auto containers = GetEnclosingContainers(objNode, sourceCode, query.nodeIndex);
+    auto containers = ResolveEnclosingContainers(objNode, sourceCode, query.nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
@@ -2646,7 +2742,7 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
 
 std::string ResolveExpressionTypeAt(IndexedByteRange expressionRange, const ExpressionTypeContext& ctx)
 {
-    const TSNode node = RecoverNodeAt(ctx, expressionRange.startByte, expressionRange.endByte);
+    const TSNode node = RecoverNodeFromContext(ctx, expressionRange.startByte, expressionRange.endByte);
     if (ts_node_is_null(node))
     {
         return "";

@@ -3,7 +3,6 @@
 #include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SyntaxOperands.h"
-#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
