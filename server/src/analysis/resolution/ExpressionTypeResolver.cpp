@@ -10,6 +10,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeBinary.h"
 #include "analysis/resolution/ExpressionTypeCall.h"
+#include "analysis/resolution/ExpressionTypeIdentifiers.h"
 #include "analysis/resolution/ExpressionTypeIndex.h"
 #include "analysis/resolution/ExpressionTypeLiterals.h"
 #include "analysis/resolution/ExpressionTypeMember.h"
@@ -214,62 +215,6 @@ static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext&
     return ResolveThisIdentifier(exprNode, ctx, hostClass);
 }
 
-/**
- * @brief Resolves scoped identifier expression type.
- */
-static std::string ResolveScopedEnumMember(std::string_view whole, TSNode exprNode, const ExpressionTypeContext& ctx)
-{
-    const auto [qualView, mem] = utils::SplitScopedName(whole);
-    if (qualView.empty())
-    {
-        return "";
-    }
-    std::string qual(qualView);
-    auto qSyms = ctx.symbolTable.FindSymbols(qual);
-    if (qSyms.empty())
-    {
-        qSyms = ResolveScopeSymbols(qual, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
-    }
-    for (const auto& qSym : qSyms)
-    {
-        if (qSym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(qSym.signature))
-        {
-            for (const auto& m : qSym.GetEnum().members)
-            {
-                if (m.name == mem)
-                {
-                    return qSym.qualifiedName.empty() ? qSym.name : qSym.qualifiedName;
-                }
-            }
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Resolves the type name of the first variable or property symbol found in a span of candidates.
- * @param[in] syms Span of matching candidate symbols to inspect.
- * @param[in] table Symbol table containing container type information.
- * @return Type name string of the resolved variable or property, or empty string if none match.
- */
-static std::string ExtractVariableOrPropertyType(std::span<const Symbol> syms, const SymbolTable& table)
-{
-    for (const auto& sym : syms)
-    {
-        if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
-            !sym.GetVariable().typeName.empty())
-        {
-            std::string type = sym.GetVariable().typeName;
-            if (!sym.containerName.empty())
-            {
-                type = QualifyTypeInContainer(type, sym.containerName, table);
-            }
-            return CleanExpressionType(type);
-        }
-    }
-    return {};
-}
-
 static std::string ResolveGlobalScopedExpr(TSNode exprNode, std::string_view rootPath, const ExpressionTypeContext& ctx)
 {
     auto syms = ctx.symbolTable.FindSymbols(rootPath);
@@ -277,7 +222,9 @@ static std::string ResolveGlobalScopedExpr(TSNode exprNode, std::string_view roo
     {
         return type;
     }
-    return ResolveScopedEnumMember(std::string(rootPath), exprNode, ctx);
+    const auto [qualView, mem] = utils::SplitScopedName(rootPath);
+    auto qSyms = ResolveScopeSymbols(qualView, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+    return ResolveScopedEnumMember(rootPath, qSyms, ctx.symbolTable);
 }
 
 static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
@@ -315,7 +262,9 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
         {
             return type;
         }
-        return ResolveScopedEnumMember(whole, exprNode, ctx);
+        const auto [qualView, mem] = utils::SplitScopedName(whole);
+        auto qSyms = ResolveScopeSymbols(qualView, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+        return ResolveScopedEnumMember(whole, qSyms, ctx.symbolTable);
     }
 
     return ts_node_is_null(lastIdentifier) ? std::string() : ResolveExpressionType(lastIdentifier, ctx);
@@ -332,31 +281,7 @@ static std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(const std::str
                                                                   const ExpressionTypeContext& ctx)
 {
     auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
-    for (const auto& c : containers)
-    {
-        if (c.kind != ContainerKind::Class && c.kind != ContainerKind::Interface)
-        {
-            continue;
-        }
-        const std::string& typeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-        auto hierarchy = GetInheritedTypeHierarchy(typeName, ctx.symbolTable, ctx.cache);
-        ExpandMixinHostHierarchies(typeName, ctx.symbolTable, hierarchy, ctx.cache);
-        for (const auto& cls : hierarchy)
-        {
-            auto found = FilterSymbolsByContainerKind(ctx.symbolTable.FindMemberSymbols(cls, name), c.kind);
-            if (!found.empty())
-            {
-                return found;
-            }
-            auto accessors = FindPropertyAccessors(cls, name, ctx.symbolTable, false);
-            if (!accessors.empty())
-            {
-                return accessors;
-            }
-        }
-        break;
-    }
-    return {};
+    return ResolveEnclosingContainerMemberSymbols(name, containers, ctx.symbolTable, ctx.cache);
 }
 
 /**
@@ -401,79 +326,7 @@ static std::string ResolveIdentifierHostFallback(const std::string& name, TSNode
             InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
                                              ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable);
     }
-    if (hostClass.empty())
-    {
-        return "";
-    }
-    auto hierarchy = GetInheritedTypeHierarchy(hostClass, ctx.symbolTable, ctx.cache);
-    for (const auto& cls : hierarchy)
-    {
-        auto found = ctx.symbolTable.FindMemberSymbols(cls, name);
-        if (!found.empty())
-        {
-            for (const auto& sym : found)
-            {
-                if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
-                    !sym.GetVariable().typeName.empty())
-                {
-                    std::string type = sym.GetVariable().typeName;
-                    if (!sym.containerName.empty())
-                    {
-                        type = QualifyTypeInContainer(type, sym.containerName, ctx.symbolTable);
-                    }
-                    return CleanExpressionType(type);
-                }
-            }
-            break;
-        }
-    }
-    for (const auto& cls : hierarchy)
-    {
-        auto accessors = FindPropertyAccessors(cls, name, ctx.symbolTable, false);
-        if (!accessors.empty())
-        {
-            std::string pType = PropertyTypeFromAccessors(accessors);
-            if (!pType.empty())
-            {
-                return CleanExpressionType(pType);
-            }
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Fallback lookup for global accessor functions (get_X, set_X).
- */
-static std::string ResolveIdentifierAccessorFallback(const std::string& name, const SymbolTable& symbolTable)
-{
-    for (const auto& prefix : {"get_", "set_"})
-    {
-        auto accessorSyms = symbolTable.FindSymbols(std::string(prefix) + name);
-        for (const auto& sym : accessorSyms)
-        {
-            if (sym.type == SymbolType::Function && sym.containerName.empty() &&
-                std::holds_alternative<FunctionSignature>(sym.signature))
-            {
-                const auto& fn = sym.GetFunction();
-                const bool isIndexed = (sym.name.starts_with("get_") && !fn.parameters.empty()) ||
-                                       (sym.name.starts_with("set_") && fn.parameters.size() > 1);
-                if (isIndexed)
-                {
-                    continue;
-                }
-                if (!fn.returnType.empty() && fn.returnType != "void")
-                {
-                    return CleanExpressionType(fn.returnType);
-                }
-                if (!fn.parameters.empty())
-                {
-                    return CleanExpressionType(fn.parameters.front().typeName);
-                }
-            }
-        }
-    }
-    return "";
+    return ResolveIdentifierHostFallbackFromHierarchy(name, hostClass, ctx.symbolTable, ctx.cache);
 }
 
 static std::string ResolveIdentifierDelegateProperty(std::string_view name, TSNode exprNode,
@@ -525,22 +378,9 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
             return hostRes;
         }
     }
-    for (const auto& sym : syms)
+    if (std::string firstType = ExtractFirstSymbolTypeOrAccessor(syms, ctx.symbolTable); !firstType.empty())
     {
-        if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
-            !sym.GetVariable().typeName.empty())
-        {
-            std::string type = sym.GetVariable().typeName;
-            if (!sym.containerName.empty())
-            {
-                type = QualifyTypeInContainer(type, sym.containerName, ctx.symbolTable);
-            }
-            return CleanExpressionType(type);
-        }
-    }
-    if (std::string pType = PropertyTypeFromAccessors(syms); !pType.empty())
-    {
-        return CleanExpressionType(pType);
+        return firstType;
     }
     if (auto accessorRes = ResolveIdentifierAccessorFallback(name, ctx.symbolTable); !accessorRes.empty())
     {
