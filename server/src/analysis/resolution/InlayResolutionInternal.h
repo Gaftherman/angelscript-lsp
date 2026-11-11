@@ -10,29 +10,11 @@
 #include <optional>
 #include <span>
 #include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
-
-/**
- * @brief Recovers a Tree-Sitter AST node matching an exact byte interval [startByte, endByte).
- * @param[in] ctx Semantic context containing NodeIndex with document AST root.
- * @param[in] startByte Inclusive start byte offset.
- * @param[in] endByte Exclusive end byte offset.
- * @return Recovered AST node, or null node if recovery fails.
- */
-TSNode RecoverNodeAt(const ExpressionTypeContext& ctx, uint32_t startByte, uint32_t endByte) noexcept;
-
-/**
- * @brief Recovers a Tree-Sitter AST node matching an exact byte interval [startByte, endByte) from a NodeIndex root.
- * @param[in] index Document NodeIndex retaining AST root.
- * @param[in] startByte Inclusive start byte offset.
- * @param[in] endByte Exclusive end byte offset.
- * @return Recovered AST node, or null node if recovery fails.
- */
-TSNode RecoverNodeAt(const NodeIndex& index, uint32_t startByte, uint32_t endByte) noexcept;
 
 /**
  * @brief Retrieves parameter information vector pointer from a Function or Funcdef symbol if available.
@@ -73,41 +55,13 @@ const Symbol* SelectFallbackCandidate(const std::vector<Symbol>& candidateSymbol
 /**
  * @brief Resolves constructor parameters for a variable direct-initialization or construct-call.
  * @param[in] declaredTypeName The type name written in the declaration or construct expression.
- * @param[in] declaratorNode The variable_declarator or construct_call AST node.
+ * @param[in] declaratorByteOffset Byte offset where the declarator begins.
  * @param[in] ctx Semantic expression type context.
  * @param[in] args Arguments passed to constructor.
  * @return Callee resolution result matching the constructor call.
  */
-ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, TSNode declaratorNode,
+ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, uint32_t declaratorByteOffset,
                                             const ExpressionTypeContext& ctx,
                                             std::span<const IndexedCallArgument> args);
-
-/**
- * @brief Collects candidate method symbols for a member call expression across type hierarchy.
- * @param[in] funcNode AST member_expression node.
- * @param[in] ctx Semantic expression type context.
- * @return Vector of candidate symbols.
- */
-std::vector<Symbol> CollectMemberCalleeCandidates(TSNode funcNode, const ExpressionTypeContext& ctx);
-
-/**
- * @brief Collects candidate member methods from enclosing class hierarchy for an unqualified call.
- * @param[in] calleeName Callee identifier text.
- * @param[in] callNode AST call_expression node.
- * @param[in] ctx Semantic expression type context.
- * @param[in,out] candidateSymbols Symbol collection receiving candidates.
- */
-void CollectEnclosingClassCallees(const std::string& calleeName, TSNode callNode, const ExpressionTypeContext& ctx,
-                                  std::vector<Symbol>& candidateSymbols);
-
-/**
- * @brief Resolves scoped callee candidates by walking enclosing namespaces and inherited hierarchies.
- * @param[in] calleeName Callee identifier string.
- * @param[in] callNode AST call_expression node.
- * @param[in] ctx Semantic expression type context.
- * @return Vector of resolved candidate symbols.
- */
-std::vector<Symbol> CollectScopedCalleeCandidates(const std::string& calleeName, TSNode callNode,
-                                                  const ExpressionTypeContext& ctx);
 
 } // namespace angel_lsp::analysis

@@ -83,8 +83,9 @@ std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const Express
     return types;
 }
 
-std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode contextNode,
-                                                 std::string_view sourceCode, const SymbolTable& symbolTable)
+std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, uint32_t byteOffset,
+                                                 std::string_view sourceCode, const SymbolTable& symbolTable,
+                                                 const NodeIndex* nodeIndex)
 {
     std::vector<Symbol> candidateSymbols;
     auto ctorSyms = symbolTable.FindMemberSymbols(baseName, LastScopeSegment(baseName));
@@ -98,7 +99,7 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TS
 
     if (candidateSymbols.empty())
     {
-        auto scopeSyms = FindSymbolsInScope(baseName, contextNode, sourceCode, symbolTable);
+        auto scopeSyms = FindSymbolsInScope(baseName, byteOffset, sourceCode, symbolTable, nodeIndex);
         for (const auto& s : scopeSyms)
         {
             if (s.type == SymbolType::Class)
@@ -129,6 +130,13 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TS
     }
 
     return candidateSymbols;
+}
+
+std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode contextNode,
+                                                 std::string_view sourceCode, const SymbolTable& symbolTable)
+{
+    const uint32_t byteOffset = !ts_node_is_null(contextNode) ? ts_node_start_byte(contextNode) : 0;
+    return CollectConstructorCandidates(baseName, byteOffset, sourceCode, symbolTable, nullptr);
 }
 
 // --- A lambda against the funcdef it is being handed to -------------------------------

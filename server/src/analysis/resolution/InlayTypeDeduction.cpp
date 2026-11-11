@@ -1,7 +1,7 @@
 #include "analysis/resolution/InlayTypeDeduction.h"
 
 #include "analysis/index/ScopeTree.h"
-#include "analysis/resolution/InlayResolutionInternal.h"
+#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/InlayTypeDeductionInternal.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"

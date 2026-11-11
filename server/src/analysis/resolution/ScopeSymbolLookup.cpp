@@ -598,6 +598,16 @@ static void CollectUsingsFromAncestor(TSNode p, std::string_view sourceCode, std
     ts_tree_cursor_delete(&cursor);
 }
 
+std::vector<std::string> CollectVisibleUsingNamespaces(uint32_t byteOffset, std::string_view sourceCode,
+                                                       const NodeIndex* nodeIndex)
+{
+    if (nodeIndex)
+    {
+        return nodeIndex->CollectUsingNamespaces(sourceCode, byteOffset);
+    }
+    return {};
+}
+
 std::vector<std::string> CollectVisibleUsingNamespaces(TSNode node, std::string_view sourceCode,
                                                        const NodeIndex* nodeIndex)
 {
@@ -607,7 +617,7 @@ std::vector<std::string> CollectVisibleUsingNamespaces(TSNode node, std::string_
     }
     if (nodeIndex)
     {
-        return nodeIndex->CollectUsingNamespaces(sourceCode, ts_node_start_byte(node));
+        return CollectVisibleUsingNamespaces(ts_node_start_byte(node), sourceCode, nodeIndex);
     }
 
     std::vector<std::string> usings;
@@ -618,12 +628,32 @@ std::vector<std::string> CollectVisibleUsingNamespaces(TSNode node, std::string_
     return usings;
 }
 
+std::vector<Symbol> FindSymbolsInScope(std::string_view name, uint32_t byteOffset, std::string_view sourceCode,
+                                       const SymbolTable& symbolTable, const NodeIndex* nodeIndex)
+{
+    if (name.empty())
+    {
+        return {};
+    }
+    std::vector<ContainerInfo> containers;
+    if (nodeIndex)
+    {
+        containers = GetEnclosingContainers(IndexedByteRange{byteOffset, byteOffset}, *nodeIndex, sourceCode);
+    }
+    return FindSymbolsInScope(symbolTable, containers, std::string(name),
+                              CollectVisibleUsingNamespaces(byteOffset, sourceCode, nodeIndex));
+}
+
 std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
                                        const SymbolTable& symbolTable, const NodeIndex* nodeIndex)
 {
     if (name.empty())
     {
         return {};
+    }
+    if (nodeIndex && !ts_node_is_null(node))
+    {
+        return FindSymbolsInScope(name, ts_node_start_byte(node), sourceCode, symbolTable, nodeIndex);
     }
     return FindSymbolsInScope(symbolTable, GetEnclosingContainers(node, sourceCode, nodeIndex), name,
                               CollectVisibleUsingNamespaces(node, sourceCode, nodeIndex));

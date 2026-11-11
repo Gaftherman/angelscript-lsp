@@ -1,4 +1,6 @@
+#include "analysis/index/NodeRecoveryInternal.h"
 #include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/InlayCalleeResolution.h"
 #include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/resolution/OverloadResolver.h"
@@ -23,8 +25,8 @@ namespace angel_lsp::analysis
  * @param[in] args Parsed argument information.
  * @return Pointer to best matching symbol, or nullptr.
  */
-static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candidateSymbols, TSNode declaratorNode,
-                                              const ExpressionTypeContext& ctx,
+static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candidateSymbols,
+                                              uint32_t declaratorByteOffset, const ExpressionTypeContext& ctx,
                                               std::span<const IndexedCallArgument> args)
 {
     if (candidateSymbols.size() <= 1)
@@ -37,8 +39,7 @@ static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candida
     {
         rootScope = rootScope->parent;
     }
-    TSPoint pt = ts_node_start_point(declaratorNode);
-    const Scope* scope = rootScope ? FindInnermostScope(rootScope, pt.row, pt.column) : nullptr;
+    const Scope* scope = ctx.scope ? ctx.scope : rootScope;
 
     std::vector<std::string> argTypes;
     argTypes.reserve(args.size());
@@ -48,8 +49,15 @@ static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candida
     argCtx.arrayTypeName = ctx.arrayTypeName;
     for (const auto& arg : args)
     {
-        TSNode argNode = RecoverNodeAt(ctx, arg.startByte, arg.endByte);
-        std::string aType = !ts_node_is_null(argNode) ? ResolveExpressionType(argNode, argCtx) : "";
+        std::string aType;
+        if (ctx.nodeIndex)
+        {
+            TSNode argNode = RecoverNodeAt(*ctx.nodeIndex, arg.startByte, arg.endByte);
+            if (!ts_node_is_null(argNode))
+            {
+                aType = ResolveExpressionType(argNode, argCtx);
+            }
+        }
         argTypes.push_back(std::move(aType));
     }
 
@@ -57,8 +65,9 @@ static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candida
     return match.bestCandidate;
 }
 
-ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, TSNode declaratorNode,
-                                            const ExpressionTypeContext& ctx, std::span<const IndexedCallArgument> args)
+ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, uint32_t declaratorByteOffset,
+                                            const ExpressionTypeContext& ctx,
+                                            std::span<const IndexedCallArgument> args)
 {
     std::string baseName = CleanBaseType(std::string(declaredTypeName));
     if (baseName.empty())
@@ -67,13 +76,13 @@ ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, T
     }
 
     std::vector<Symbol> candidateSymbols =
-        CollectConstructorCandidates(baseName, declaratorNode, ctx.sourceCode, ctx.symbolTable);
+        CollectConstructorCandidates(baseName, declaratorByteOffset, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
     if (candidateSymbols.empty())
     {
         return {};
     }
 
-    const Symbol* bestSym = MatchConstructorOverload(candidateSymbols, declaratorNode, ctx, args);
+    const Symbol* bestSym = MatchConstructorOverload(candidateSymbols, declaratorByteOffset, ctx, args);
 
     if (!bestSym)
     {
@@ -100,16 +109,19 @@ ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, T
     return {};
 }
 
+ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, TSNode declaratorNode,
+                                            const ExpressionTypeContext& ctx,
+                                            std::span<const IndexedCallArgument> args)
+{
+    const uint32_t byteOffset = !ts_node_is_null(declaratorNode) ? ts_node_start_byte(declaratorNode) : 0;
+    return ResolveConstructorParameters(declaredTypeName, byteOffset, ctx, args);
+}
+
 std::optional<ResolvedCallee> ResolveConstructorInitCallee(const IndexedConstructorInitDeclarator& decl,
                                                            std::span<const IndexedCallArgument> args,
                                                            const ExpressionTypeContext& ctx)
 {
-    TSNode declarator = RecoverNodeAt(ctx, decl.startByte, decl.endByte);
-    if (ts_node_is_null(declarator))
-    {
-        return std::nullopt;
-    }
-    ResolvedCallee callee = ResolveConstructorParameters(decl.declaredTypeName, declarator, ctx, args);
+    ResolvedCallee callee = ResolveConstructorParameters(decl.declaredTypeName, decl.startByte, ctx, args);
     if (callee.calleeName.empty() && callee.parameters.empty())
     {
         return std::nullopt;

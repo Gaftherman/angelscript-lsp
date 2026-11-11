@@ -5,7 +5,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/HoverResolution.h"
-#include "analysis/resolution/InlayResolutionInternal.h"
+#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"

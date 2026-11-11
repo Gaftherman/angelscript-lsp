@@ -2,7 +2,7 @@
 
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
-#include "analysis/resolution/InlayResolutionInternal.h"
+#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/types/TypeSanitization.h"
 

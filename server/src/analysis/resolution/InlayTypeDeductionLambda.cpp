@@ -1,6 +1,6 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
-#include "analysis/resolution/InlayResolutionInternal.h"
+#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/InlayTypeDeduction.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"

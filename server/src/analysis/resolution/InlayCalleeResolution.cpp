@@ -1,7 +1,9 @@
 #include "analysis/resolution/InlayCalleeResolution.h"
 
 #include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/InlayCalleeResolutionInternal.h"
 #include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -206,7 +208,7 @@ std::optional<ResolvedCallee> ResolveCallSiteCallee(const IndexedCallSite& site,
         {
             return std::nullopt;
         }
-        ResolvedCallee callee = ResolveConstructorParameters(typeText, callNode, ctx, args);
+        ResolvedCallee callee = ResolveConstructorParameters(typeText, site.startByte, ctx, args);
         if (callee.calleeName.empty() && callee.parameters.empty())
         {
             return std::nullopt;

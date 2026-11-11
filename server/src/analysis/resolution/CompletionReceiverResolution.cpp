@@ -1,6 +1,6 @@
 #include "analysis/resolution/CompletionReceiverResolution.h"
 
-#include "analysis/resolution/InlayResolutionInternal.h"
+#include "analysis/resolution/AstRecoveryInternal.h"
 
 #include <tree_sitter/api.h>
 

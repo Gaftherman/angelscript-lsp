@@ -6,7 +6,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ConversionRankingEngine.h"
 #include "analysis/resolution/HoverResolution.h"
-#include "analysis/resolution/InlayResolutionInternal.h"
+#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/TargetResolution.h"

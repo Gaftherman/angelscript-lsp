@@ -31,6 +31,9 @@ struct FuncdefAgreement
 };
 
 std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const ExpressionTypeContext& ctx);
+std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, uint32_t byteOffset,
+                                                 std::string_view sourceCode, const SymbolTable& symbolTable,
+                                                 const NodeIndex* nodeIndex = nullptr);
 std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode contextNode,
                                                  std::string_view sourceCode, const SymbolTable& symbolTable);
 bool LambdaContradictsFuncdef(const std::vector<LambdaParameter>& lambdaParameters, const FuncdefSignature& funcdefSig,

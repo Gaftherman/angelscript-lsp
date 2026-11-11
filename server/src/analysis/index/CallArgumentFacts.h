@@ -33,6 +33,26 @@ struct CallNodes
 };
 
 /**
+ * @brief State tracking parser delimiters across argument lists.
+ */
+struct CallDelimiterState
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    int angleDepth = 0;
+    bool inString = false;
+    char stringChar = '\0';
+    bool inLineComment = false;
+    bool inBlockComment = false;
+
+    [[nodiscard]] bool AtTopLevel() const noexcept
+    {
+        return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0;
+    }
+};
+
+/**
  * @brief Precalculated AST details for a single lambda parameter.
  */
 struct LambdaParamASTInfo

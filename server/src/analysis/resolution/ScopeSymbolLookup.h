@@ -62,11 +62,15 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
                                                   const NodeIndex* nodeIndex = nullptr);
 std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std::string_view sourceCode);
 std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode);
+std::vector<std::string> CollectVisibleUsingNamespaces(uint32_t byteOffset, std::string_view sourceCode,
+                                                       const NodeIndex* nodeIndex);
 std::vector<std::string> CollectVisibleUsingNamespaces(TSNode node, std::string_view sourceCode,
                                                        const NodeIndex* nodeIndex);
 [[nodiscard]] const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request);
 std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std::vector<ContainerInfo>& containers,
                                        const std::string& name, const std::vector<std::string>& usingNamespaces = {});
+std::vector<Symbol> FindSymbolsInScope(std::string_view name, uint32_t byteOffset, std::string_view sourceCode,
+                                       const SymbolTable& symbolTable, const NodeIndex* nodeIndex = nullptr);
 std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
                                        const SymbolTable& symbolTable, const NodeIndex* nodeIndex = nullptr);
 std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> found, ContainerKind expected);
