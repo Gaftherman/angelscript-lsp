@@ -27,8 +27,16 @@ static void ProcessCallNode(TSNode node, std::string_view sourceCode, const pars
     site.callRange = ToSourceRange(node);
     site.startByte = ts_node_start_byte(node);
     site.endByte = ts_node_end_byte(node);
-    site.calleeStartByte = ts_node_start_byte(target.funcNode);
-    site.calleeEndByte = ts_node_end_byte(target.funcNode);
+    if (target.isMember && target.calleeEndByte > target.calleeStartByte)
+    {
+        site.calleeStartByte = target.calleeStartByte;
+        site.calleeEndByte = target.calleeEndByte;
+    }
+    else
+    {
+        site.calleeStartByte = ts_node_start_byte(target.funcNode);
+        site.calleeEndByte = ts_node_end_byte(target.funcNode);
+    }
     site.calleeText = utils::SliceSource(sourceCode, site.calleeStartByte, site.calleeEndByte);
     site.isMemberCall = target.isMember;
     site.receiverStartByte = target.receiverStartByte;

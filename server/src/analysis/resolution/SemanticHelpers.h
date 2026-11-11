@@ -283,16 +283,6 @@ template <typename RefLike, typename TargetLike>
     return false;
 }
 
-/**
- * @brief Strips leading '@' or 'this.' from candidate identifier strings.
- */
-[[nodiscard]] std::string_view CleanCandidateIdentifier(std::string_view text) noexcept;
-
-/**
- * @brief Validates if string is a valid identifier or qualified scoped identifier (e.g. NS::Class).
- */
-[[nodiscard]] bool IsValidIdentifierOrQualified(std::string_view text) noexcept;
-
 [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
 {
     return parser::primitives::IsFloatingPoint(typeName);

@@ -179,44 +179,4 @@ bool IsSimpleLiteralExpression(std::string_view expr)
     return IsValidNumberLiteral(expr);
 }
 
-std::string_view CleanCandidateIdentifier(std::string_view text) noexcept
-{
-    if (text.starts_with('@'))
-    {
-        text.remove_prefix(1);
-    }
-    if (text.starts_with("this."))
-    {
-        text.remove_prefix(5);
-    }
-    return text;
-}
-
-bool IsValidIdentifierOrQualified(std::string_view text) noexcept
-{
-    text = CleanCandidateIdentifier(text);
-    if (text.empty() || text.size() > 128)
-    {
-        return false;
-    }
-    while (!text.empty())
-    {
-        const auto [part, rest] = utils::SplitFirstScopeSegment(text);
-        if (part.empty() || (!std::isalpha(static_cast<unsigned char>(part[0])) && part[0] != '_'))
-        {
-            return false;
-        }
-        for (size_t i = 1; i < part.size(); ++i)
-        {
-            unsigned char c = static_cast<unsigned char>(part[i]);
-            if (!std::isalnum(c) && c != '_')
-            {
-                return false;
-            }
-        }
-        text = rest;
-    }
-    return true;
-}
-
 } // namespace angel_lsp::analysis

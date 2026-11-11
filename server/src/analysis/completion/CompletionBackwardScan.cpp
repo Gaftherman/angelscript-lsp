@@ -95,11 +95,79 @@ IndexPeelResult PeelIndexBracketsWithExpr(const std::string& prefix, size_t& s)
     return res;
 }
 
+bool PeelCallParentheses(const std::string& prefix, size_t& s)
+{
+    size_t cur = s;
+    if (cur > 0 && prefix[cur - 1] == ')')
+    {
+        --cur;
+        int depth = 1;
+        while (cur > 0 && depth > 0)
+        {
+            if (prefix[cur - 1] == ')')
+            {
+                ++depth;
+            }
+            else if (prefix[cur - 1] == '(')
+            {
+                --depth;
+            }
+            --cur;
+        }
+        if (depth == 0)
+        {
+            s = cur;
+            while (s > 0 && (prefix[s - 1] == ' ' || prefix[s - 1] == '\t'))
+            {
+                --s;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
 {
     while (pos > 0 && (text[pos - 1] == ' ' || text[pos - 1] == '\t'))
     {
         --pos;
+    }
+    return pos;
+}
+
+size_t SkipWhitespaceAndCommentsBackward(const std::string& text, size_t pos)
+{
+    while (pos > 0)
+    {
+        if (text[pos - 1] == ' ' || text[pos - 1] == '\t' || text[pos - 1] == '\r' || text[pos - 1] == '\n')
+        {
+            --pos;
+            continue;
+        }
+        if (pos >= 2 && text[pos - 1] == '/' && text[pos - 2] == '*')
+        {
+            pos -= 2;
+            while (pos >= 2 && !(text[pos - 1] == '*' && text[pos - 2] == '/'))
+            {
+                --pos;
+            }
+            if (pos >= 2)
+            {
+                pos -= 2;
+            }
+            continue;
+        }
+        if (pos >= 2 && text[pos - 1] == '/' && text[pos - 2] == '/')
+        {
+            pos -= 2;
+            while (pos > 0 && text[pos - 1] != '\n')
+            {
+                --pos;
+            }
+            continue;
+        }
+        break;
     }
     return pos;
 }

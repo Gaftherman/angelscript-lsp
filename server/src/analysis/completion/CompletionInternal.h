@@ -275,12 +275,28 @@ std::string ResolveNamedReceiverType(std::string_view nodeText, const Completion
 IndexPeelResult PeelIndexBracketsWithExpr(const std::string& prefix, size_t& s);
 
 /**
+ * @brief Peels matched call parentheses preceding a member access.
+ * @param[in] prefix Source prefix preceding cursor.
+ * @param[in,out] s Offset position before parentheses.
+ * @return True if parentheses were peeled; false otherwise.
+ */
+bool PeelCallParentheses(const std::string& prefix, size_t& s);
+
+/**
  * @brief Skips spaces and horizontal tabs backward from a given position.
  * @param[in] text Input string containing the source line or expression.
  * @param[in] pos Starting character offset.
  * @return Adjusted offset positioned at the first non-whitespace character or zero.
  */
 size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos);
+
+/**
+ * @brief Skips whitespace and block comments backward from a given position.
+ * @param[in] text Input string containing the source code.
+ * @param[in] pos Starting character offset.
+ * @return Adjusted offset positioned at first non-whitespace, non-comment character.
+ */
+size_t SkipWhitespaceAndCommentsBackward(const std::string& text, size_t pos);
 
 /**
  * @brief Finds the start byte offset of an identifier moving backwards from the specified end position.

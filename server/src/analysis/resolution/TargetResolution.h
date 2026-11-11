@@ -225,6 +225,7 @@ struct OccurrenceCollector
      */
     void Add(const std::string& uri, const SourceRange& range)
     {
+        printf("DEBUG OccurrenceCollector::Add uri=%s line=%u col=%u\n", uri.c_str(), range.startLine, range.startCharacter);
         if (seen.insert({uri, range.startLine, range.startCharacter}).second)
         {
             results.push_back(OccurrenceLocation{uri, range});

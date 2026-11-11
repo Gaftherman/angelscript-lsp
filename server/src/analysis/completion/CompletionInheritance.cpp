@@ -5,6 +5,7 @@
 #include "analysis/resolution/CompletionReceiverResolution.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
@@ -269,9 +270,8 @@ bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& coll
 
 std::string FindCanonicalBaseContainer(const std::string& canonicalType, const analysis::SymbolTable& symbolTable)
 {
-    const std::string_view cleanType = analysis::CleanBaseTypeView(canonicalType);
-    auto targetTemplate = analysis::ParseTemplateType(cleanType);
-    return symbolTable.QualifyShortTypeName(targetTemplate.containerName);
+    const std::string owner = analysis::MemberOwnerType(canonicalType, symbolTable.GetDefaultArrayType());
+    return symbolTable.QualifyShortTypeName(owner);
 }
 
 std::string SubstituteTypeParameters(std::string text, const analysis::TemplateBinding& binding,

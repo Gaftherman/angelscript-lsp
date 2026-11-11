@@ -1076,8 +1076,8 @@ void LocalScopeCollector::ProcessStringCallRefCapture(const RawCapture& capture,
     {
         return;
     }
-    text = analysis::CleanCandidateIdentifier(text);
-    if (!analysis::IsValidIdentifierOrQualified(text))
+    text = utils::CleanCandidateIdentifier(text);
+    if (!utils::IsValidIdentifierOrQualified(text))
     {
         return;
     }

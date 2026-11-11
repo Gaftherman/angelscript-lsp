@@ -47,6 +47,21 @@ static std::string ExtractMemberTypeFromSymbols(const std::vector<analysis::Symb
     return "";
 }
 
+static std::string FindFunctionReturnType(const analysis::SymbolTable& table, std::string_view name)
+{
+    if (auto syms = table.FindSymbolsPtr(name))
+    {
+        for (const auto& sym : *syms)
+        {
+            if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+            {
+                return sym.GetFunction().returnType;
+            }
+        }
+    }
+    return "";
+}
+
 static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table, const std::string& parentType,
                                              std::string_view memberName)
 {
@@ -57,8 +72,7 @@ static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table,
     char getterBuf[128];
     const std::string_view getterView = utils::ComposeGetterName(memberName, getterBuf);
 
-    auto hierarchy = GetInheritedTypeHierarchy(table, parentType);
-    for (const auto& cls : hierarchy)
+    for (const auto& cls : GetInheritedTypeHierarchy(table, parentType))
     {
         if (auto syms = table.FindMemberSymbolPtr(cls, memberName))
         {
@@ -93,17 +107,9 @@ static std::string ResolveScopeOrGlobalVariableType(std::string_view nodeText, c
             {
                 return def->typeName;
             }
-            analysis::ExpressionTypeContext exprCtx(innermostScope, request.symbolTable, request.sourceCode,
-                                                    request.uri, request.nodeIndex);
-            std::string deduced = analysis::ResolveLocalDefinitionType(*def, exprCtx);
-            if (!deduced.empty())
-            {
-                return deduced;
-            }
-            if (!def->typeName.empty())
-            {
-                return def->typeName;
-            }
+            std::string deduced = analysis::ResolveLocalDefinitionType(
+                *def, {innermostScope, request.symbolTable, request.sourceCode, request.uri, request.nodeIndex});
+            return !deduced.empty() ? deduced : def->typeName;
         }
     }
     if (auto syms = request.symbolTable.FindSymbolsPtr(nodeText))
@@ -146,18 +152,12 @@ std::string ResolveNamedReceiverType(std::string_view nodeText, const Completion
     char getterBuf[128];
     if (const std::string_view getterView = utils::ComposeGetterName(nodeText, getterBuf); !getterView.empty())
     {
-        if (auto globalSyms = request.symbolTable.FindSymbolsPtr(getterView))
+        if (std::string ret = FindFunctionReturnType(request.symbolTable, getterView); !ret.empty())
         {
-            for (const auto& sym : *globalSyms)
-            {
-                if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
-                {
-                    return sym.GetFunction().returnType;
-                }
-            }
+            return ret;
         }
     }
-    return "";
+    return FindFunctionReturnType(request.symbolTable, nodeText);
 }
 
 /**
@@ -176,9 +176,8 @@ static std::string ResolveReceiverRangeType(IndexedByteRange receiverRange, cons
     {
         return named;
     }
-    const analysis::ExpressionTypeContext exprCtx(innermostScope, request.symbolTable, request.sourceCode, request.uri,
-                                                  request.nodeIndex);
-    return analysis::ResolveCompletionReceiverType(receiverRange, exprCtx);
+    return analysis::ResolveCompletionReceiverType(
+        receiverRange, {innermostScope, request.symbolTable, request.sourceCode, request.uri, request.nodeIndex});
 }
 
 /**
@@ -193,8 +192,10 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
                                                const CompletionCollector& collector,
                                                const analysis::Scope* innermostScope)
 {
-    size_t s = SkipInlineWhitespaceBackward(prefix, dotCol);
+    size_t s = SkipWhitespaceAndCommentsBackward(prefix, dotCol);
     auto peel = PeelIndexBracketsWithExpr(prefix, s);
+    PeelCallParentheses(prefix, s);
+    s = SkipWhitespaceAndCommentsBackward(prefix, s);
     size_t e = s;
     s = ExtractIdentifierBackward(prefix, s);
     if (e <= s)
@@ -204,13 +205,13 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
     std::string ident(prefix.substr(s, e - s));
     std::string rawTypeName;
     std::string parentType;
-    size_t prevDot = SkipInlineWhitespaceBackward(prefix, s);
+    size_t prevDot = SkipWhitespaceAndCommentsBackward(prefix, s);
     if (prevDot > 0 && prefix[prevDot - 1] == '.')
     {
         parentType = ResolveFallbackReceiverType(prefix, prevDot - 1, collector, innermostScope);
         rawTypeName = FindMemberInTypeHierarchy(collector.request.symbolTable, parentType, ident);
     }
-    if (rawTypeName.empty())
+    else
     {
         rawTypeName = ResolveNamedReceiverType(ident, collector.request, innermostScope);
     }
@@ -264,14 +265,21 @@ bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* i
         }
     }
 
-    if (rawTypeName.empty())
+    if (rawTypeName.empty() || rawTypeName.find("<poison>") != std::string::npos)
     {
         rawTypeName = ResolveFallbackReceiverType(prefix, *dotCol, collector, innermostScope);
+        if (rawTypeName.empty() && collector.request.nodeIndex)
+        {
+            size_t lineStart = utils::LineStartOffset(collector.request.sourceCode, collector.request.position.line);
+            const auto dotByteOffset = static_cast<uint32_t>(lineStart + *dotCol);
+            std::string sourcePrefix(collector.request.sourceCode.substr(0, dotByteOffset + 1));
+            rawTypeName = ResolveFallbackReceiverType(sourcePrefix, dotByteOffset, collector, innermostScope);
+        }
     }
     else if (analysis::IsCorePrimitive(rawTypeName))
     {
         std::string fallback = ResolveFallbackReceiverType(prefix, *dotCol, collector, innermostScope);
-        if (!fallback.empty() && !analysis::IsCorePrimitive(fallback))
+        if (!fallback.empty() && !analysis::IsCorePrimitive(fallback) && fallback.find("<poison>") == std::string::npos)
         {
             rawTypeName = std::move(fallback);
         }
@@ -282,11 +290,8 @@ bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* i
         return true;
     }
 
-    std::string_view memberPrefix;
-    if (*dotCol + 1 < prefix.size())
-    {
-        memberPrefix = std::string_view(prefix).substr(*dotCol + 1);
-    }
+    std::string_view memberPrefix =
+        (*dotCol + 1 < prefix.size()) ? std::string_view(prefix).substr(*dotCol + 1) : "";
     PopulateHierarchicalMembers(rawTypeName, memberPrefix, collector);
     return true;
 }

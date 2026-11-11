@@ -622,7 +622,9 @@ bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms)
 std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOffset,
                                           const ExpressionTypeContext& ctx)
 {
-    if (name.empty() || name.ends_with(')') || name.find('(') != std::string_view::npos)
+    if (name.empty() || name.ends_with(')') || name.find('(') != std::string_view::npos ||
+        name.find('=') != std::string_view::npos || name.find('{') != std::string_view::npos ||
+        name.find('}') != std::string_view::npos)
     {
         return std::nullopt;
     }
