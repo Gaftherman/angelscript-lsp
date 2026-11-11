@@ -4,6 +4,7 @@
 #include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/HoverResolution.h"
 #include "analysis/resolution/AstRecoveryInternal.h"
+#include "analysis/resolution/ScopeLookupInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"

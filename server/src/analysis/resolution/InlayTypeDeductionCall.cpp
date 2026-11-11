@@ -1,5 +1,6 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/InlayTypeDeductionInternal.h"
+#include "analysis/resolution/ScopeLookupInternal.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"

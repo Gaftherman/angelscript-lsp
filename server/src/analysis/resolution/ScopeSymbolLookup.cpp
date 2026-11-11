@@ -6,6 +6,7 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ScopeLookupInternal.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"

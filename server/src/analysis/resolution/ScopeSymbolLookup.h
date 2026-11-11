@@ -12,7 +12,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -58,20 +57,16 @@ bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::s
 bool IsVariableType(std::string_view typeName);
 std::vector<ContainerInfo> GetEnclosingContainers(IndexedByteRange range, const NodeIndex& nodeIndex,
                                                   std::string_view sourceCode);
-std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode,
                                                   const NodeIndex* nodeIndex = nullptr);
 std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std::string_view sourceCode);
-std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode);
 std::vector<std::string> CollectVisibleUsingNamespaces(uint32_t byteOffset, std::string_view sourceCode,
                                                        const NodeIndex* nodeIndex);
-std::vector<std::string> CollectVisibleUsingNamespaces(TSNode node, std::string_view sourceCode,
                                                        const NodeIndex* nodeIndex);
 [[nodiscard]] const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request);
 std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std::vector<ContainerInfo>& containers,
                                        const std::string& name, const std::vector<std::string>& usingNamespaces = {});
 std::vector<Symbol> FindSymbolsInScope(std::string_view name, uint32_t byteOffset, std::string_view sourceCode,
                                        const SymbolTable& symbolTable, const NodeIndex* nodeIndex = nullptr);
-std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
                                        const SymbolTable& symbolTable, const NodeIndex* nodeIndex = nullptr);
 std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> found, ContainerKind expected);
 std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable,
@@ -84,5 +79,4 @@ bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms);
 /// Identifies a bare type used in a value expression, accounting for local shadowing.
 [[nodiscard]] std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOffset,
                                                         const ExpressionTypeContext& ctx);
-[[nodiscard]] std::optional<std::string> IsBareDataType(TSNode node, const ExpressionTypeContext& ctx);
 } // namespace angel_lsp::analysis

@@ -9,6 +9,7 @@
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
+#include "analysis/resolution/ScopeLookupInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
