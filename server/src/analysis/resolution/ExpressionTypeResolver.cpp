@@ -425,8 +425,9 @@ static std::string ResolveIdentifierDelegateProperty(std::string_view name, TSNo
     }
     const bool isVirtual = ctx.uri.starts_with("angelscript-virtual:") || ctx.uri.starts_with("angelscript-virtual://");
     std::string hostClass = isVirtual ? SymbolTable::ExtractVirtualHostClass(ctx.uri) : "";
-    std::string baseClass =
-        ResolveDelegateTargetBaseClass({exprNode, ctx.sourceCode, ctx.symbolTable, hostClass, nullptr});
+    std::string baseClass = ResolveDelegateTargetBaseClass(
+        {IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)}, ctx.nodeIndex, ctx.sourceCode,
+         ctx.symbolTable, hostClass, nullptr});
     if (!baseClass.empty())
     {
         return MemberOwnerType(baseClass, ctx.arrayTypeName);
@@ -2585,7 +2586,9 @@ static std::string ResolveReceiverTypeUncached(TSNode objNode, std::string_view 
     }
 
     if (auto delRes = ResolveDelegatePropertyReceiver(
-            {objNode, objText, effectiveHostClass, sourceCode, arrayTypeName, ctx.nodeIndex}, symbolTable, ctx);
+            {IndexedByteRange{ts_node_start_byte(objNode), ts_node_end_byte(objNode)}, objText, effectiveHostClass,
+             sourceCode, arrayTypeName, ctx.nodeIndex},
+            symbolTable, ctx);
         !delRes.empty())
     {
         return delRes;

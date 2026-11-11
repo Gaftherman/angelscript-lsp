@@ -6,9 +6,6 @@
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
-#include "parser/Primitives.h"
 #include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
 
@@ -165,26 +162,29 @@ bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbo
     return std::any_of(delegateProps.begin(), delegateProps.end(), [&](const std::string& p) { return p == name; });
 }
 
-static std::string FindEnclosingClassOrHost(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                            std::string_view virtualHostClass, const NodeIndex* nodeIndex)
+static std::string FindEnclosingClassOrHost(IndexedByteRange targetRange, std::string_view sourceCode,
+                                            const SymbolTable& symbolTable, std::string_view virtualHostClass,
+                                            const NodeIndex* nodeIndex)
 {
     if (!virtualHostClass.empty())
     {
         return std::string(virtualHostClass);
     }
     std::string hostClass =
-        nodeIndex ? InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)},
-                                                     *nodeIndex, sourceCode, symbolTable)
-                  : "";
+        nodeIndex ? InferHostClassFromEnclosingMixin(targetRange, *nodeIndex, sourceCode, symbolTable) : "";
     if (!hostClass.empty())
     {
         return hostClass;
     }
-    for (const auto& c : GetEnclosingContainers(node, sourceCode, nodeIndex))
+    if (nodeIndex)
     {
-        if (c.kind == ContainerKind::Class)
+        for (const auto& c :
+             nodeIndex->CollectLookupContainers(targetRange.startByte, targetRange.endByte, 0, sourceCode))
         {
-            return c.qualifiedName.empty() ? c.name : c.qualifiedName;
+            if (c.kind == ContainerKind::Class)
+            {
+                return c.qualifiedName.empty() ? c.name : c.qualifiedName;
+            }
         }
     }
     return "";
@@ -193,7 +193,7 @@ static std::string FindEnclosingClassOrHost(TSNode node, std::string_view source
 std::string ResolveDelegateTargetBaseClass(const DelegateTargetClassRequest& req)
 {
     std::string targetClass =
-        FindEnclosingClassOrHost(req.node, req.sourceCode, req.symbolTable, req.virtualHostClass, req.nodeIndex);
+        FindEnclosingClassOrHost(req.targetRange, req.sourceCode, req.symbolTable, req.virtualHostClass, req.nodeIndex);
     if (targetClass.empty())
     {
         return "";
@@ -218,7 +218,7 @@ std::string ResolveDelegatePropertyReceiver(const DelegatePropertyReceiverContex
         return "";
     }
     std::string baseClass = ResolveDelegateTargetBaseClass(
-        {dctx.objNode, dctx.sourceCode, symbolTable, dctx.effectiveHostClass, ctx.engineRules, dctx.nodeIndex});
+        {dctx.objRange, dctx.nodeIndex, dctx.sourceCode, symbolTable, dctx.effectiveHostClass, ctx.engineRules});
     if (!baseClass.empty())
     {
         return MemberOwnerType(baseClass, dctx.arrayTypeName);

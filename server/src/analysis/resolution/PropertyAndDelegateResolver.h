@@ -1,33 +1,33 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "config/EngineRuleConfig.h"
 
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
 struct DelegateTargetClassRequest
 {
-    TSNode node;
-    std::string_view sourceCode;
+    IndexedByteRange targetRange{};
+    const NodeIndex* nodeIndex = nullptr;
+    std::string_view sourceCode{};
     const SymbolTable& symbolTable;
     std::string_view virtualHostClass = {};
     const config::EngineRuleConfig* engineRules = nullptr;
-    const NodeIndex* nodeIndex = nullptr;
 };
 
 struct DelegatePropertyReceiverContext
 {
-    TSNode objNode;
-    std::string_view objText;
-    std::string_view effectiveHostClass;
-    std::string_view sourceCode;
-    std::string_view arrayTypeName;
+    IndexedByteRange objRange{};
+    std::string_view objText{};
+    std::string_view effectiveHostClass{};
+    std::string_view sourceCode{};
+    std::string_view arrayTypeName{};
     const NodeIndex* nodeIndex = nullptr;
 };
 

@@ -1,6 +1,5 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/HoverResolution.h"
-#include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 
@@ -129,11 +128,8 @@ std::string TryHoverDelegateProperty(const VirtualHostSymbolQuery& query, const 
     {
         return "";
     }
-    TSNode node = query.nodeIndex
-                      ? RecoverNodeAt(*query.nodeIndex, query.targetRange.startByte, query.targetRange.endByte)
-                      : TSNode{};
     std::string baseClass = ResolveDelegateTargetBaseClass(
-        {node, query.sourceCode, query.symbolTable, query.virtualHostClass, engineRules});
+        {query.targetRange, query.nodeIndex, query.sourceCode, query.symbolTable, query.virtualHostClass, engineRules});
     if (!baseClass.empty())
     {
         return "```angelscript\n" + baseClass + "@ " + std::string(query.nodeText) + "\n```";
