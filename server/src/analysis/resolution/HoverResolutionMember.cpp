@@ -1,17 +1,15 @@
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/HoverMarkdown.h"
 #include "analysis/documentation/SignatureFormatter.h"
+#include "analysis/index/DeclarationSiteFacts.h"
+#include "analysis/index/ReturnSiteFacts.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
-#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/HoverResolution.h"
-#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 
 #include <algorithm>
 #include <optional>
@@ -58,28 +56,26 @@ std::optional<HoverCandidateSymbols> ResolveMemberAccess(IndexedByteRange receiv
 std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, IndexedByteRange hoverNode, bool isAutoHandle,
                                      const ExpressionTypeContext& exprCtx)
 {
-    TSNode declNode = RecoverNodeAt(exprCtx, autoDeclRange.startByte, autoDeclRange.endByte);
-    if (ts_node_is_null(declNode))
-    {
-        return "";
-    }
-
     std::string deduced;
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(declNode) == gs.symVariableDeclaration)
+    if (exprCtx.nodeIndex)
     {
-        parser::ForEachChildNodeUntil(declNode,
-                                      [&](TSNode child)
-                                      {
-                                          if (ts_node_symbol(child) == gs.symVariableDeclarator)
-                                          {
-                                              deduced = DeduceAutoDeclaratorType(
-                                                  IndexedByteRange{ts_node_start_byte(child), ts_node_end_byte(child)},
-                                                  hoverNode, exprCtx);
-                                              return false;
-                                          }
-                                          return true;
-                                      });
+        const auto declFacts = BuildDeclarationSiteFacts(*exprCtx.nodeIndex, exprCtx.sourceCode);
+        for (const auto& decl : declFacts.variableDeclarations)
+        {
+            if (decl.bytes.startByte == autoDeclRange.startByte && decl.bytes.endByte == autoDeclRange.endByte)
+            {
+                for (uint32_t i = 0; i < decl.declaratorCount; ++i)
+                {
+                    const auto& d = declFacts.declarators[decl.declaratorBegin + i];
+                    deduced = DeduceAutoDeclaratorType(d.bytes, hoverNode, exprCtx);
+                    if (!deduced.empty())
+                    {
+                        break;
+                    }
+                }
+                break;
+            }
+        }
     }
 
     if (!deduced.empty() && deduced != "auto")
@@ -96,14 +92,27 @@ std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, IndexedByte
 std::string FormatLambdaHover(IndexedByteRange lambdaRange, const ExpressionTypeContext& exprCtx,
                               const HoverDocLookupContext& docCtx)
 {
-    TSNode lambdaNode = RecoverNodeAt(exprCtx, lambdaRange.startByte, lambdaRange.endByte);
-
     std::ostringstream oss;
     oss << "```angelscript\n";
 
-    auto targetFuncdef = !ts_node_is_null(lambdaNode)
-                             ? FuncdefTargetOfLambda(lambdaNode, exprCtx.symbolTable, exprCtx.sourceCode)
-                             : std::nullopt;
+    std::optional<Symbol> targetFuncdef;
+    if (exprCtx.nodeIndex)
+    {
+        const auto returnFacts = BuildReturnSiteFacts(*exprCtx.nodeIndex, exprCtx.sourceCode);
+        for (const auto& ret : returnFacts.returns)
+        {
+            if (ret.owner == ReturnOwnerKind::Lambda && ret.bytes.startByte >= lambdaRange.startByte &&
+                ret.bytes.endByte <= lambdaRange.endByte)
+            {
+                targetFuncdef = FuncdefTargetOfLambda(ret.lambdaTarget, exprCtx.symbolTable);
+                if (targetFuncdef)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
     if (targetFuncdef)
     {
         oss << "(anonymous function) -> " << targetFuncdef->name << "\n";

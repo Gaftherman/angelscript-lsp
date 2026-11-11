@@ -2,11 +2,8 @@
 #include "analysis/resolution/AmbiguityDetector.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/HoverResolution.h"
-#include "analysis/resolution/AstRecoveryInternal.h"
-#include "analysis/resolution/ScopeLookupInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -56,8 +53,11 @@ bool MemberBelongsToNamespace(const Symbol& nsSym, std::string_view memberName, 
 void AppendEnclosingClassMethods(IndexedByteRange targetRange, std::string_view nodeText,
                                  const ExpressionTypeContext& ctx, std::vector<Symbol>& symbols)
 {
-    TSNode node = RecoverNodeAt(ctx, targetRange.startByte, targetRange.endByte);
-    auto containers = analysis::GetEnclosingContainers(node, ctx.sourceCode, ctx.nodeIndex);
+    std::vector<ContainerInfo> containers;
+    if (ctx.nodeIndex)
+    {
+        containers = analysis::GetEnclosingContainers(targetRange, *ctx.nodeIndex, ctx.sourceCode);
+    }
 
     for (const auto& c : containers)
     {

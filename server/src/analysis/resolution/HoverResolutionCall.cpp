@@ -1,24 +1,20 @@
 #include "analysis/documentation/SignatureFormatter.h"
-#include "analysis/index/CallArgumentFacts.h"
+#include "analysis/index/CallSiteFacts.h"
 #include "analysis/index/HoverFacts.h"
-#include "analysis/index/HoverFactsInternal.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
-#include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ConversionRankingEngine.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/HoverResolution.h"
-#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
-#include "analysis/resolution/TargetResolution.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/ServerConfig.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -30,15 +26,11 @@ namespace angel_lsp::analysis
 std::string ResolveReceiverTypeName(IndexedByteRange objectRange, const ExpressionTypeContext& ctx,
                                     std::string_view virtualHostClass, const config::ServerConfig* config)
 {
-    TSNode objectNode = RecoverNodeAt(ctx, objectRange.startByte, objectRange.endByte);
-    if (ts_node_is_null(objectNode))
-    {
-        return "";
-    }
     const config::EngineRuleConfig* engineRules = config ? &config->engineRules : nullptr;
-    std::string receiverTypeName = analysis::ResolveReceiverType(
-        objectNode, ctx.sourceCode, ctx.symbolTable,
-        {ctx.scope, virtualHostClass, ctx.uri, ctx.symbolTable.GetDefaultArrayType(), nullptr, engineRules});
+    ReceiverTypeContext recvCtx{ctx.scope, virtualHostClass, ctx.uri, ctx.symbolTable.GetDefaultArrayType(), nullptr,
+                                engineRules};
+    recvCtx.nodeIndex = ctx.nodeIndex;
+    std::string receiverTypeName = analysis::ResolveReceiverType(objectRange, ctx.sourceCode, ctx.symbolTable, recvCtx);
     if (!receiverTypeName.empty() && config && !config->types.arrayTypeName.empty())
     {
         receiverTypeName = analysis::MemberOwnerType(receiverTypeName, config->types.arrayTypeName);
@@ -98,41 +90,27 @@ std::vector<Symbol> ResolveNamedArgCalleeCandidates(IndexedByteRange callRange, 
                                                     std::string_view virtualHostClass,
                                                     const config::ServerConfig* config)
 {
-    TSNode callNode = RecoverNodeAt(ctx, callRange.startByte, callRange.endByte);
-    if (ts_node_is_null(callNode))
+    if (!ctx.nodeIndex)
     {
         return {};
     }
-    TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
-    if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
-    {
-        funcNode = ts_node_child(callNode, 0);
-    }
-    if (ts_node_is_null(funcNode))
+    const auto callFacts = BuildCallSiteFacts(*ctx.nodeIndex, ctx.sourceCode);
+    const auto* site = callFacts.FindCallSite(callRange);
+    if (!site)
     {
         return {};
     }
 
-    if (ts_node_symbol(funcNode) == parser::GetGrammarSymbols().symMemberExpression)
+    if (site->isMemberCall)
     {
-        TSNode objectNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
-        TSNode memberNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
-        if (!ts_node_is_null(objectNode) && !ts_node_is_null(memberNode))
-        {
-            std::string receiverTypeName =
-                ResolveReceiverTypeName(IndexedByteRange{ts_node_start_byte(objectNode), ts_node_end_byte(objectNode)},
-                                        ctx, virtualHostClass, config);
-            std::string memberName(parser::NodeText(memberNode, ctx.sourceCode));
-            return CollectReceiverMemberSymbols(receiverTypeName, memberName, ctx.symbolTable);
-        }
+        std::string receiverTypeName =
+            ResolveReceiverTypeName(site->objectOperand.bytes, ctx, virtualHostClass, config);
+        return CollectReceiverMemberSymbols(receiverTypeName, site->calleeName, ctx.symbolTable);
     }
-    else
+
+    if (const auto found = ctx.symbolTable.FindSymbolsPtr(site->calleeText))
     {
-        std::string funcName(parser::NodeText(funcNode, ctx.sourceCode));
-        if (const auto found = ctx.symbolTable.FindSymbolsPtr(funcName))
-        {
-            return *found;
-        }
+        return *found;
     }
     return {};
 }
@@ -140,41 +118,51 @@ std::vector<Symbol> ResolveNamedArgCalleeCandidates(IndexedByteRange callRange, 
 std::optional<Symbol> ResolveConstructorForDeclarator(uint32_t declStartByte, uint32_t declEndByte,
                                                       std::string_view typeName, const ExpressionTypeContext& ctx)
 {
-    TSNode declarator = RecoverNodeAt(ctx, declStartByte, declEndByte);
-    if (!ts_node_is_null(declarator) && ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
-    {
-        declarator = parser::GetParent(declarator);
-    }
-    if (ts_node_is_null(declarator) || ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
-    {
-        return std::nullopt;
-    }
-
-    TSNode argList = analysis::ResolveArgumentListNode(declarator);
-    if (ts_node_is_null(argList))
-    {
-        return std::nullopt;
-    }
-
     std::string_view baseName = analysis::CleanBaseTypeView(typeName);
-    if (baseName.empty() || parser::primitives::IsPrimitive(baseName))
+    if (baseName.empty() || parser::primitives::IsPrimitive(baseName) || !ctx.nodeIndex)
     {
         return std::nullopt;
     }
 
-    auto candidates =
-        analysis::CollectConstructorCandidates(std::string(baseName), declarator, ctx.sourceCode, ctx.symbolTable);
+    auto candidates = analysis::CollectConstructorCandidates(std::string(baseName), declStartByte, ctx.sourceCode,
+                                                             ctx.symbolTable, ctx.nodeIndex);
     if (candidates.empty())
     {
         return std::nullopt;
     }
-
     if (candidates.size() == 1)
     {
         return candidates[0];
     }
 
-    auto argTypes = analysis::ExtractCallArgumentTypes(argList, {ctx.scope, ctx.symbolTable, ctx.sourceCode, ctx.uri});
+    const auto callFacts = BuildCallSiteFacts(*ctx.nodeIndex, ctx.sourceCode);
+    const DirectInitSiteFact* initSite = nullptr;
+    uint32_t bestSpan = UINT32_MAX;
+    for (const auto& init : callFacts.directInits)
+    {
+        if (init.bytes.startByte <= declStartByte && declEndByte <= init.bytes.endByte)
+        {
+            uint32_t span = init.bytes.endByte - init.bytes.startByte;
+            if (span < bestSpan)
+            {
+                bestSpan = span;
+                initSite = &init;
+            }
+        }
+    }
+    if (!initSite)
+    {
+        return candidates[0];
+    }
+
+    std::vector<std::string> argTypes;
+    argTypes.reserve(initSite->argumentCount);
+    for (uint32_t i = 0; i < initSite->argumentCount; ++i)
+    {
+        const auto& arg = callFacts.arguments[initSite->argumentBegin + i];
+        argTypes.push_back(ResolveExpressionTypeAt(arg.bytes, ctx));
+    }
+
     auto match = analysis::ResolveBestOverload(candidates, argTypes, ctx.symbolTable);
     if (match.bestCandidate != nullptr)
     {
@@ -215,16 +203,38 @@ std::optional<Symbol> ResolveCallOverload(uint32_t startByte, uint32_t endByte, 
     {
         return candidates.front();
     }
-
-    TSNode node = RecoverNodeAt(ctx, startByte, endByte);
-    TSNode callNode = FindEnclosingCallNode(node);
-    if (ts_node_is_null(callNode))
+    if (!ctx.nodeIndex)
     {
-        return std::nullopt;
+        return candidates.front();
     }
 
-    std::vector<std::string> argTypes =
-        analysis::ExtractCallArgumentTypes(callNode, {ctx.scope, ctx.symbolTable, ctx.sourceCode, ctx.uri});
+    const auto callFacts = BuildCallSiteFacts(*ctx.nodeIndex, ctx.sourceCode);
+    const CallSiteFact* bestSite = nullptr;
+    uint32_t bestSpan = UINT32_MAX;
+    for (const auto& site : callFacts.callSites)
+    {
+        if (site.bytes.startByte <= startByte && endByte <= site.bytes.endByte)
+        {
+            uint32_t span = site.bytes.endByte - site.bytes.startByte;
+            if (span < bestSpan)
+            {
+                bestSpan = span;
+                bestSite = &site;
+            }
+        }
+    }
+    if (!bestSite)
+    {
+        return candidates.front();
+    }
+
+    std::vector<std::string> argTypes;
+    argTypes.reserve(bestSite->argumentCount);
+    for (uint32_t i = 0; i < bestSite->argumentCount; ++i)
+    {
+        const auto& arg = callFacts.arguments[bestSite->argumentBegin + i];
+        argTypes.push_back(ResolveExpressionTypeAt(arg.bytes, ctx));
+    }
 
     auto match = analysis::ResolveBestOverload(candidates, argTypes, ctx.symbolTable);
     if (match.bestCandidate != nullptr)
@@ -241,11 +251,7 @@ std::optional<Symbol> ResolveCallOverload(uint32_t startByte, uint32_t endByte, 
     {
         return *fallback;
     }
-    if (!candidates.empty())
-    {
-        return candidates.front();
-    }
-    return std::nullopt;
+    return candidates.front();
 }
 
 } // namespace angel_lsp::analysis
