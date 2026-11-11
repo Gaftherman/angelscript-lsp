@@ -364,7 +364,7 @@ class Server
     void LoadEngineProfileStub(analysis::EngineProfileKind pKind, parser::AngelScriptParser& parser);
     void LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots);
     analysis::SemanticAnalysisRequest
-    BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const TSTree* tree,
+    BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const analysis::NodeIndex* nodeIndex,
                          const utils::PreprocessorScan& preprocessing,
                          const analysis::SymbolTable* customSymbolTable = nullptr) const;
     [[nodiscard]] bool IsCommitAnalysisStale(const CommitAnalysisRequest& req) const;

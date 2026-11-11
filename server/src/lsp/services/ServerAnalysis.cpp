@@ -56,7 +56,8 @@ ankerl::unordered_dense::set<std::string> Server::ComputeModuleClosureUris(const
 }
 
 angel_lsp::analysis::SemanticAnalysisRequest
-Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const TSTree* tree,
+Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
+                             const analysis::NodeIndex* nodeIndex,
                              const utils::PreprocessorScan& preprocessing,
                              const angel_lsp::analysis::SymbolTable* customSymbolTable) const
 {
@@ -80,7 +81,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     request.scopeIndex = &m_scopeIndex;
     request.sourceCode = text;
-    request.tree = tree;
+    request.nodeIndex = nodeIndex;
 
     request.excludedLineRanges = preprocessing.excluded;
     request.unsupportedDirectives = preprocessing.unsupported;
@@ -205,7 +206,7 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
     }
 
     auto analysisReq =
-        BuildAnalysisRequest(request.uriStr, request.source.text, request.tree, *request.source.preprocessing);
+        BuildAnalysisRequest(request.uriStr, request.source.text, &request.nodeIndex, *request.source.preprocessing);
     analysisReq.scopeRoot = scopeRoot;
     analysisReq.mutableScopeRoot = scopeRoot.get();
     analysisReq.nodeIndex = &request.nodeIndex;
@@ -806,7 +807,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     }
 
     const auto& preprocessing = *req.preprocessing;
-    auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.syntax->tree.get(), preprocessing, activeTable);
+    auto request = BuildAnalysisRequest(req.uriStr, req.text, &nodeIndex, preprocessing, activeTable);
     request.scopeRoot = scopeRoot;
     request.mutableScopeRoot = scopeRoot.get();
     request.nodeIndex = &nodeIndex;

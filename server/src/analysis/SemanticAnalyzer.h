@@ -112,7 +112,6 @@ struct AnalysisContextGuards
     ExpressionTypeCache* prevCache;
     const NodeIndex* prevIndex;
     ExpressionTypeCache localCache;
-    std::unique_ptr<NodeIndex> localNodeIndex;
 
     explicit AnalysisContextGuards(const SemanticAnalysisRequest& request)
         : req(request), prevCache(request.exprCache), prevIndex(request.nodeIndex)
@@ -123,11 +122,6 @@ struct AnalysisContextGuards
             localCache.types.reserve(typeCapacity);
             localCache.hierarchies.reserve(256);
             req.exprCache = &localCache;
-        }
-        if (!req.nodeIndex && req.tree)
-        {
-            localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(req.tree), nullptr, req.traversalBudget);
-            req.nodeIndex = localNodeIndex.get();
         }
     }
 

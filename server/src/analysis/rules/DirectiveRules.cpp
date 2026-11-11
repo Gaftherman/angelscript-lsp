@@ -117,7 +117,7 @@ void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, const Sem
         }
     }
 
-    if (TreeHasSyntaxError(request.tree) && !request.sourceCode.empty())
+    if (indexPtr && indexPtr->HasSyntaxErrors() && !request.sourceCode.empty())
     {
         const auto braceBalance = parser::ComputeBraceBalance(request.sourceCode);
         if (braceBalance.HasMissingOpenBrace() && braceBalance.firstUnmatchedCloseLine >= 0)

@@ -9,7 +9,6 @@
 #include "analysis/types/VirtualMixinContext.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
-#include "parser/ASTUtils.h"
 #include "parser/TraversalBudget.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
@@ -21,7 +20,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -189,14 +187,8 @@ struct SemanticAnalysisRequest
     std::string_view sourceCode;
 
     /**
-     * @brief Parsed syntax tree of the document, or nullptr.
-     *        The SymbolTable records declarations, not expressions, so a rule about what an
-     */
-    const TSTree* tree = nullptr;
-
-    /**
      * @brief Optional precomputed single-pass AST node index.
-     *        When null, SemanticAnalyzer builds a local NodeIndex from tree on first use.
+     *        Provides indexed structural, type, and call facts for semantic rule analysis.
      */
     mutable const NodeIndex* nodeIndex = nullptr;
 

@@ -137,7 +137,7 @@ bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticCont
         return true;
     }
 
-    if (ctx.request.nodeIndex != nullptr || ctx.request.tree != nullptr)
+    if (ctx.request.nodeIndex != nullptr)
     {
         if (IsContainerAccessorProperty(ref.startByte, ref.name, ctx))
         {

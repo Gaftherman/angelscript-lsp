@@ -203,15 +203,10 @@ static void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& rul
 static MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstantiationCheckRequest& req)
 {
     MixinAstTarget target;
-    if (mixinSym.fileUri == req.ctx.request.fileUri && req.ctx.request.tree)
+    if (mixinSym.fileUri == req.ctx.request.fileUri)
     {
         target.source = req.ctx.request.sourceCode;
         target.nodeIndex = req.ctx.request.GetNodeIndex();
-        if (!target.nodeIndex)
-        {
-            target.localIndex = BuildNodeIndexForTree(req.ctx.request.tree);
-            target.nodeIndex = target.localIndex.get();
-        }
         return target;
     }
 

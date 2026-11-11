@@ -25,7 +25,6 @@
 #include "analysis/rules/TypeRules.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "analysis/rules/VariableRules.h"
-#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
@@ -58,11 +57,6 @@ void SemanticAnalyzer::LogSymbolDump(const SemanticAnalysisRequest& request) con
                 }
             });
     }
-}
-
-static TSNode SafeGetRootNode(const SemanticAnalysisRequest& request)
-{
-    return request.tree ? ts_tree_root_node(request.tree) : TSNode{};
 }
 
 double SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const
@@ -120,22 +114,15 @@ void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& r
     CheckNamespacesAndScopes(NamespaceCheckRequest{request.sourceCode, indexPtr ? indexPtr : request.nodeIndex}, ctx);
 }
 
-/// Supplies extracted sites even for standalone analyzer callers that only provide a tree.
+/// Supplies extracted sites for semantic type conversion checks.
 static void RunTypeConversions(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
                                DiagnosticContext& ctx)
 {
-    if (indexPtr)
+    const NodeIndex* index = indexPtr ? indexPtr : request.nodeIndex;
+    if (index)
     {
-        CheckTypeConversions({*indexPtr, request.sourceCode, request.scopeRoot.get(), request.mutableScopeRoot}, ctx);
-        return;
+        CheckTypeConversions({*index, request.sourceCode, request.scopeRoot.get(), request.mutableScopeRoot}, ctx);
     }
-
-    const NodeIndex localIndex(SafeGetRootNode(request));
-    auto indexedRequest = request;
-    indexedRequest.nodeIndex = &localIndex;
-    DiagnosticContext indexedContext(indexedRequest, ctx.diagnostics, ctx.logger);
-    CheckTypeConversions({localIndex, request.sourceCode, request.scopeRoot.get(), request.mutableScopeRoot},
-                         indexedContext);
 }
 
 SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const SemanticAnalysisRequest& request,
@@ -143,10 +130,11 @@ SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const Sem
                                                                        DiagnosticContext& ctx) const
 {
     TimedAstBreakdown breakdown;
-    if (request.tree && !request.sourceCode.empty())
+    const NodeIndex* index = indexPtr ? indexPtr : request.nodeIndex;
+    if (index && !request.sourceCode.empty())
     {
         utils::HighResTimer stmtTimer;
-        RunStatementAndControlFlowRules(request, indexPtr, ctx);
+        RunStatementAndControlFlowRules(request, index, ctx);
         breakdown.stmtMs = stmtTimer.ElapsedMs();
 
         if (request.enableTypeConversionChecks)
