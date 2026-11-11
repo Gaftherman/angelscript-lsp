@@ -31,8 +31,9 @@ Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Comple
     }
 
     const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+        (doc->docHandle && doc->docHandle->tree)
+            ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+            : nullptr;
     const lsp::Position position = codec::Decode(*doc->text, m_sessionCoordinator->GetPositionEncoding(), req.position);
     const std::string documentPath = CanonicalPathFromUri(doc->uri);
 
@@ -98,8 +99,9 @@ Server::HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_Sig
     }
 
     const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+        (doc->docHandle && doc->docHandle->tree)
+            ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+            : nullptr;
 
     features::SignatureHelpRequest sr{doc->uri,
                                       *doc->text,
@@ -159,8 +161,9 @@ Server::HandleRequestsTextDocument_DocumentLink(lsp::requests::TextDocument_Docu
     const auto searchDirectories = SearchDirectories();
 
     const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+        (doc->docHandle && doc->docHandle->tree)
+            ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+            : nullptr;
 
     const auto allowedRoots = IncludeAllowedRoots();
     features::DocumentLinkRequest dlr{doc->uri,

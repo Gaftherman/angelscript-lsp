@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/ExpressionTypeCache.h"
 

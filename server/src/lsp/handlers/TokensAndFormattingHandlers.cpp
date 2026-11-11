@@ -68,7 +68,10 @@ Server::HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_Se
         decodedPositions.push_back(codec::Decode(*doc->text, GetPositionEncoding(), pos));
     }
 
-    features::SelectionRangeRequest sr{*doc->text, nodeIndex, decodedPositions};
+    features::SelectionRangeRequest sr{
+        .sourceCode = *doc->text,
+        .positions = decodedPositions,
+        .nodeIndex = nodeIndex};
     auto ranges = features::GetSelectionRanges(sr);
     if (ranges.empty())
     {

@@ -60,7 +60,7 @@ void Server::CommitPredefinedIndex(const std::string& uri, const std::string& co
 }
 
 static uint64_t
-ComputeDefinedWordsHash(const std::shared_ptr<const ankerl::unordered_dense::set<std::string>>& defsSnapshot)
+ComputeDefinedWordsHash(const std::shared_ptr<const TransparentStringSet>& defsSnapshot)
 {
     uint64_t definesHash = 0;
     if (defsSnapshot)

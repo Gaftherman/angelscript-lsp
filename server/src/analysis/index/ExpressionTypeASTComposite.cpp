@@ -4,7 +4,6 @@
 #include "analysis/resolution/ExpressionTypeBinary.h"
 #include "analysis/resolution/ExpressionTypeMember.h"
 #include "analysis/resolution/ExpressionTypeTernary.h"
-#include "analysis/resolution/ExpressionTypeUnary.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 
@@ -121,48 +120,6 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
 
     return ResolveMemberPropertyType(objType, fallbackObj, memName, ctx.symbolTable);
-}
-
-/**
- * @brief Resolves unary expression type.
- * @param[in] exprNode Unary expression AST node.
- * @param[in] ctx Semantic expression typing context.
- * @return Evaluated unary type name.
- */
-static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const SyntaxOperands syntax(exprNode, ctx.nodeIndex);
-    const TSNode operandNode = syntax.Field(gs.fieldOperand);
-    if (ts_node_is_null(operandNode) || ts_node_is_error(operandNode) || ts_node_is_missing(operandNode))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
-    const TSNode operatorNode = syntax.Field(gs.fieldOperator);
-    const TSSymbol opSym = !ts_node_is_null(operatorNode) ? ts_node_symbol(operatorNode) : 0;
-    if (opSym == gs.tokBang || opSym == gs.tokNot)
-    {
-        return "bool";
-    }
-    if (opSym == gs.tokAt)
-    {
-        std::string targetName = GetTrimmedNodeText(operandNode, ctx.sourceCode);
-        std::vector<Symbol> inScope =
-            ResolveScopeSymbols(targetName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
-        bool isFuncTarget = IsFunctionHandleTargetName(targetName, inScope, ctx.symbolTable);
-        std::string operandType = ResolveASTExpressionType(operandNode, ctx);
-        return ResolveUnaryHandle(isFuncTarget, operandType);
-    }
-    std::string operandType = ResolveASTExpressionType(operandNode, ctx);
-    if (ExpressionTypeCache::IsPoisonType(operandType))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
-    if (opSym == gs.tokDash)
-    {
-        return ResolveUnaryMinus(operandType);
-    }
-    return operandType;
 }
 
 std::string ResolveASTCompositeExpr(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx)

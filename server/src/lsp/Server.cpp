@@ -46,15 +46,12 @@ std::string_view Server::ImplicitIncludeExtension() const noexcept
 void Server::SetWorkspaceScanComplete(bool complete) noexcept
 {
     m_sessionCoordinator->SetWorkspaceScanComplete(complete);
-    if (complete)
-    {
-        std::lock_guard<std::mutex> lock(m_onScanCompleteMutex);
-        for (const auto& callback : m_onScanCompleteCallbacks)
-        {
-            callback();
-        }
-        m_onScanCompleteCallbacks.clear();
-    }
+}
+
+analysis::formatting::BraceStyle Server::CurrentBraceStyle() const
+{
+    return m_sessionCoordinator->GetFormatBraceStyleKR() ? analysis::formatting::BraceStyle::KAndR
+                                                         : analysis::formatting::BraceStyle::Allman;
 }
 
 bool Server::CurrentSpacesInsideParentheses() const noexcept
@@ -65,6 +62,11 @@ bool Server::CurrentSpacesInsideParentheses() const noexcept
 bool Server::CurrentKeepEmptyBlocksOnSingleLine() const noexcept
 {
     return m_sessionCoordinator->GetFormatKeepEmptyBlocksOnSingleLine();
+}
+
+analysis::formatting::PointerAlignment Server::CurrentPointerAlignment() const noexcept
+{
+    return m_sessionCoordinator->GetFormatPointerAlignment();
 }
 
 void Server::BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,

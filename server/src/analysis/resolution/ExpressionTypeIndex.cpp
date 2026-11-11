@@ -2,6 +2,7 @@
 
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 
 #include <string>

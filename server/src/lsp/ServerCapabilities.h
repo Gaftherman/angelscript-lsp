@@ -4,7 +4,6 @@
 
 #include <mutex>
 #include <optional>
-#include <lsp/protocol.h>
 
 namespace angel_lsp
 {

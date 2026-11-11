@@ -131,6 +131,42 @@ class SyntaxOperands
         return FirstNamedOperands(symbol).Node();
     }
 
+    [[nodiscard]] SyntaxOperands LastNamedOperands(TSSymbol symbol = 0) const noexcept
+    {
+        if (!m_fact || !m_index)
+        {
+            if (symbol == 0)
+            {
+                const uint32_t count = ts_node_is_null(m_node) ? 0 : ts_node_named_child_count(m_node);
+                return SyntaxOperands(count > 0 ? ts_node_named_child(m_node, count - 1) : TSNode{}, m_index);
+            }
+            TSNode match{};
+            parser::ForEachNamedChildNode(m_node,
+                                          [&](TSNode child)
+                                          {
+                                              if (ts_node_symbol(child) == symbol)
+                                              {
+                                                  match = child;
+                                              }
+                                          });
+            return SyntaxOperands(match, m_index);
+        }
+        const IndexedSyntaxNode* match = nullptr;
+        for (const auto* child = m_index->SyntaxNode(m_fact->first); child; child = m_index->SyntaxNode(child->next))
+        {
+            if (child->named && (symbol == 0 || child->symbol == symbol))
+            {
+                match = child;
+            }
+        }
+        return match ? SyntaxOperands(match, m_index) : SyntaxOperands(TSNode{}, m_index);
+    }
+
+    [[nodiscard]] TSNode LastNamed(TSSymbol symbol = 0) const noexcept
+    {
+        return LastNamedOperands(symbol).Node();
+    }
+
     [[nodiscard]] SyntaxOperands NamedAtOperands(uint32_t ordinal) const noexcept
     {
         if (!m_fact || !m_index)

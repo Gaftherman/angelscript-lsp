@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/Symbol.h"
 

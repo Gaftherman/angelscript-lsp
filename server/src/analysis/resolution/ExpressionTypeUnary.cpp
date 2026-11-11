@@ -1,5 +1,6 @@
 #include "analysis/resolution/ExpressionTypeUnary.h"
 
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 #include "utils/Utils.h"

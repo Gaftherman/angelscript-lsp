@@ -94,8 +94,9 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
         return lsp::Null{};
     }
     const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+        (doc->docHandle && doc->docHandle->tree)
+            ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+            : nullptr;
 
     lsp::CodeActionContext context = req.context;
     for (auto& diag : context.diagnostics)

@@ -300,23 +300,7 @@ static bool HasClassMemberSymbol(const std::vector<Symbol>& syms)
     return false;
 }
 
-/**
- * @brief Checks if any symbol in candidates represents a namespace-scoped symbol.
- * @param[in] syms Candidate symbols to inspect.
- * @return True if at least one candidate is not declared within a class, interface, or enum.
- */
-static bool HasNamespaceSymbol(const std::vector<Symbol>& syms)
-{
-    for (const auto& s : syms)
-    {
-        if (s.containerKind != analysis::ContainerKind::Class &&
-            s.containerKind != analysis::ContainerKind::Interface && s.containerKind != analysis::ContainerKind::Enum)
-        {
-            return true;
-        }
-    }
-    return false;
-}
+
 
 
 

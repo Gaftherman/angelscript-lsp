@@ -6,7 +6,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include <lsp/protocol.h>
 
 namespace angel_lsp
 {

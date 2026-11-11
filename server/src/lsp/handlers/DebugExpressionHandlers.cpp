@@ -88,7 +88,7 @@ lsp::json::Value Server::HandleRequestsTextDocument_EvaluatableExpression(lsp::j
     }
 
     const auto doc = LookupOpenDocument(uri);
-    if (!doc || !doc->tree || !doc->text)
+    if (!doc || !doc->docHandle || !doc->docHandle->tree || !doc->text)
     {
         return lsp::json::Value(nullptr);
     }
@@ -96,9 +96,7 @@ lsp::json::Value Server::HandleRequestsTextDocument_EvaluatableExpression(lsp::j
     const lsp::Position rawPos = ExtractPosition(obj);
     const lsp::Position decodedPos = codec::Decode(*doc->text, GetPositionEncoding(), rawPos);
 
-    const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+    const auto syntax = ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax;
     const auto* nodeIndex = syntax ? &syntax->index : nullptr;
 
     const features::EvaluatableExpressionRequest req{nodeIndex, *doc->text, decodedPos.line, decodedPos.character};
@@ -127,7 +125,7 @@ lsp::json::Value Server::HandleRequestsAngelscript_DebugCompletion(lsp::json::Va
     }
 
     const auto doc = LookupOpenDocument(uri);
-    if (!doc || !doc->tree || !doc->text)
+    if (!doc || !doc->docHandle || !doc->docHandle->tree || !doc->text)
     {
         return lsp::json::Value(lsp::json::Array{});
     }
@@ -138,9 +136,7 @@ lsp::json::Value Server::HandleRequestsAngelscript_DebugCompletion(lsp::json::Va
         line = static_cast<uint32_t>(lVal->number());
     }
 
-    const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+    const auto syntax = ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax;
     const std::string documentPath = CanonicalPathFromUri(doc->uri);
     analysis::completion::CompletionQuery cr{doc->uri,
                                              *doc->text,

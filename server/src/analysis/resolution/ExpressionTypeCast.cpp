@@ -1,6 +1,8 @@
 #include "analysis/resolution/ExpressionTypeCast.h"
 
 #include "analysis/index/LambdaTargetFacts.h"
+#include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 
 #include <string>
@@ -32,11 +34,11 @@ std::string ResolveCastExpressionType(std::string_view typeText)
     return CleanExpressionType(typeText);
 }
 
-std::string ResolveLambdaTargetFuncdefType(std::string_view targetName, const SymbolTable& symbolTable)
+std::string ResolveLambdaTargetFuncdefType(const LambdaTargetFact& target, const SymbolTable& symbolTable)
 {
-    if (auto target = FuncdefTargetOfLambda(targetName, symbolTable))
+    if (auto resolved = FuncdefTargetOfLambda(target, symbolTable))
     {
-        return target->qualifiedName.empty() ? target->name : target->qualifiedName;
+        return resolved->qualifiedName.empty() ? resolved->name : resolved->qualifiedName;
     }
     return "";
 }

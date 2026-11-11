@@ -53,7 +53,7 @@ std::optional<HoverCandidateSymbols> ResolveMemberAccess(IndexedByteRange receiv
     return HoverCandidateSymbols{std::move(memberSymbols), std::move(accessorPropertyType)};
 }
 
-std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, IndexedByteRange hoverNode, bool isAutoHandle,
+std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, bool isAutoHandle,
                                      const ExpressionTypeContext& exprCtx)
 {
     std::string deduced;
@@ -67,7 +67,7 @@ std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, IndexedByte
                 for (uint32_t i = 0; i < decl.declaratorCount; ++i)
                 {
                     const auto& d = declFacts.declarators[decl.declaratorBegin + i];
-                    deduced = DeduceAutoDeclaratorType(d.bytes, hoverNode, exprCtx);
+                    deduced = DeduceAutoDeclaratorType(d.bytes, exprCtx);
                     if (!deduced.empty())
                     {
                         break;

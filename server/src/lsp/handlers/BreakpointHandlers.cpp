@@ -139,14 +139,12 @@ lsp::json::Value Server::HandleRequestsTextDocument_BreakpointLocations(lsp::jso
     }
 
     const auto doc = LookupOpenDocument(parsed.uri);
-    if (!doc || !doc->tree || !doc->text)
+    if (!doc || !doc->docHandle || !doc->docHandle->tree || !doc->text)
     {
         return lsp::json::Value(lsp::json::Array{});
     }
 
-    const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+    const auto syntax = ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax;
     const auto* nodeIndex = syntax ? &syntax->index : nullptr;
 
     const auto excluded = ExcludedLineRanges(*doc->text);

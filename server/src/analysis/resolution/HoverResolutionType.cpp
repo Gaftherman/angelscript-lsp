@@ -35,7 +35,7 @@ std::string InferTypeFromAst(uint32_t nodeStartByte, uint32_t nodeEndByte, const
 }
 
 std::optional<std::string> ResolveIdentifierDefaultValue(std::string_view name, uint32_t nodeStartByte,
-                                                         uint32_t nodeEndByte, const ExpressionTypeContext& ctx)
+                                                         const ExpressionTypeContext& ctx)
 {
     if (ctx.scope)
     {
@@ -95,7 +95,7 @@ std::optional<std::string> EvaluateConstantStringExpr(uint32_t nodeStartByte, ui
         }
     }
 
-    return ResolveIdentifierDefaultValue(text, nodeStartByte, nodeEndByte, ctx);
+    return ResolveIdentifierDefaultValue(text, nodeStartByte, ctx);
 }
 
 std::string FormatLambdaSignature(uint32_t lambdaStartByte, uint32_t lambdaEndByte, const ExpressionTypeContext& ctx)
@@ -128,7 +128,7 @@ std::string DeduceLocalDefinitionHoverType(const LocalDefinition& def, IndexedBy
     return !inferred.empty() ? inferred : def.typeName;
 }
 
-std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, IndexedByteRange hoverNode,
+std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange,
                                      const ExpressionTypeContext& ctx)
 {
     if (ctx.nodeIndex)

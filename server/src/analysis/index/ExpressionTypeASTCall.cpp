@@ -4,6 +4,7 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeCall.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"

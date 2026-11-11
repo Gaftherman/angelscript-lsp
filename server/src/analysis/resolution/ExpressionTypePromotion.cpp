@@ -1,6 +1,8 @@
 #include "analysis/resolution/ExpressionTypeBinary.h"
 
+#include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/Primitives.h"
 

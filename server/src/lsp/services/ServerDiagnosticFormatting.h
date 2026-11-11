@@ -2,7 +2,7 @@
 
 #include "analysis/diagnostics/Diagnostics.h"
 
-#include <lsp/protocol.h>
+#include <lsp/messages.h>
 #include <string>
 #include <string_view>
 

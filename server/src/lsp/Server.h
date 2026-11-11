@@ -29,6 +29,7 @@
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
 #include "utils/Timer.h"
+#include "utils/Utils.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include <ankerl/unordered_dense.h>

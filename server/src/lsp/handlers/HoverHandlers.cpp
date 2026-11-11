@@ -23,14 +23,12 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
         return lsp::Null{};
     }
     const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-    if (!doc)
+    if (!doc || !doc->docHandle || !doc->docHandle->tree)
     {
         return lsp::Null{};
     }
 
-    const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+    const auto syntax = ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax;
     if (!syntax)
     {
         return lsp::Null{};

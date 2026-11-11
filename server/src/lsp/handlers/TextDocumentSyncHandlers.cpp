@@ -95,6 +95,11 @@ static void ApplyContentChange(std::string& buffer, parser::TreePtr& workingTree
     }
 }
 
+static std::shared_ptr<const std::string> TransformedSource(std::string_view original, const std::string& parsed)
+{
+    return original == parsed ? nullptr : std::make_shared<const std::string>(parsed);
+}
+
 void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params&& params)
 {
     std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
@@ -124,7 +129,7 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
 
     utils::HighResTimer parseTimer;
     const bool canReuseTree = prepared.text == buffer;
-    auto newTree = m_parser->ParseTree(prepared.text, canReuseTree ? workingTree : nullptr);
+    auto newTree = canReuseTree ? m_parser->ParseTree(prepared.text, workingTree) : m_parser->ParseTree(prepared.text);
     if (buffer != doc->text)
     {
         m_scopeIndex.InvalidateDocumentOccurrences(uriStr);

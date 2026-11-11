@@ -211,9 +211,10 @@ void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::stri
 
     const auto searchDirectories = SearchDirectories();
     const auto doc = LookupOpenDocument(uriStr);
+    const auto hasTree = doc && doc->docHandle && doc->docHandle->tree;
     const auto syntax =
-        doc && doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                         : nullptr;
+        hasTree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                : nullptr;
 
     const auto allowedRoots = IncludeAllowedRoots();
     features::DocumentLinkRequest request{uriStr,

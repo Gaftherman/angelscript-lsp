@@ -1,5 +1,6 @@
 #include "lsp/Server.h"
 #include "lsp/services/ServerAnalysisTypes.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -61,7 +62,7 @@ static const angel_lsp::analysis::Symbol* FindMixinClassSymbol(const angel_lsp::
         }
     }
 
-    std::string shortName = std::string(angel_lsp::analysis::LastScopeSegment(mixinName));
+    std::string shortName = std::string(utils::LastScopeSegment(mixinName));
     auto shortCandidates = symTable.FindTypeSymbolsByShortName(shortName);
     for (const auto& cand : shortCandidates)
     {

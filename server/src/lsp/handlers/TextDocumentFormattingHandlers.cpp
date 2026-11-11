@@ -82,8 +82,9 @@ Server::HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_
     }
 
     const auto syntax =
-        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-                  : nullptr;
+        (doc->docHandle && doc->docHandle->tree)
+            ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+            : nullptr;
     features::OnTypeFormattingRequest otfr{doc->uri,
                                            *doc->text,
                                            syntax ? &syntax->index : nullptr,

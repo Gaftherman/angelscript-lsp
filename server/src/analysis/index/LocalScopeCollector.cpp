@@ -3,6 +3,7 @@
 #include "analysis/index/CallArgumentFacts.h"
 #include "analysis/index/ReferenceReceiverIndex.h"
 #include "analysis/index/TypeExtraction.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
@@ -14,6 +15,7 @@
 #include "spdlog/fmt/fmt.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>

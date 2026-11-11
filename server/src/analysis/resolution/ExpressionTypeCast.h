@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/index/SymbolTable.h"
 
 #include <string>
@@ -25,12 +26,12 @@ namespace angel_lsp::analysis
 [[nodiscard]] std::string ResolveCastExpressionType(std::string_view typeText);
 
 /**
- * @brief Resolves lambda target funcdef type name from target name.
- * @param[in] targetName Target funcdef or function signature name.
+ * @brief Resolves lambda target funcdef type name from target fact.
+ * @param[in] target Target fact describing where the lambda expression appears.
  * @param[in] symbolTable Symbol table to query.
  * @return Qualified funcdef type name, or empty string.
  */
-[[nodiscard]] std::string ResolveLambdaTargetFuncdefType(std::string_view targetName,
+[[nodiscard]] std::string ResolveLambdaTargetFuncdefType(const LambdaTargetFact& target,
                                                          const SymbolTable& symbolTable);
 
 } // namespace angel_lsp::analysis

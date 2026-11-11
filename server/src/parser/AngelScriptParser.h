@@ -29,10 +29,20 @@ class AngelScriptParser
     /**
      * @brief Parses AngelScript source text into a managed TreePtr.
      * @param[in] sourceCode Source text to parse.
-     * @param[in] oldTree Optional previous AST for incremental re-parsing.
      * @return Managed TreePtr or null on failure.
      */
-    TreePtr ParseTree(std::string_view sourceCode, const TreePtr& oldTree = nullptr)
+    TreePtr ParseTree(std::string_view sourceCode)
+    {
+        return MakeTreePtr(Parse(sourceCode, nullptr));
+    }
+
+    /**
+     * @brief Parses AngelScript source text into a managed TreePtr with an old tree for incremental parsing.
+     * @param[in] sourceCode Source text to parse.
+     * @param[in] oldTree Previous AST for incremental re-parsing.
+     * @return Managed TreePtr or null on failure.
+     */
+    TreePtr ParseTree(std::string_view sourceCode, const TreePtr& oldTree)
     {
         return MakeTreePtr(Parse(sourceCode, oldTree ? oldTree.get() : nullptr));
     }

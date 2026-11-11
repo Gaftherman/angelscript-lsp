@@ -1,4 +1,6 @@
 #include "lsp/ServerCapabilities.h"
+
+#include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
 #include "utils/MultiFileLogger.h"

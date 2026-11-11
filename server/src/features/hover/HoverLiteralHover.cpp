@@ -135,7 +135,6 @@ std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
                                             ctx.request.nodeIndex);
     lsp::MarkupContent content{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
                                analysis::ResolveAutoHoverMarkdown(ctx.site.enclosingAutoDeclRange,
-                                                                  {ctx.site.targetStartByte, ctx.site.targetEndByte},
                                                                   ctx.site.isAutoHandle != 0, exprCtx)};
     if (content.value.empty())
     {

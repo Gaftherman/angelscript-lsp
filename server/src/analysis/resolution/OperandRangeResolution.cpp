@@ -81,7 +81,7 @@ static bool HasGlobalFunctionSymbol(std::string_view name, const SymbolTable& sy
     {
         return HasFunctionSymbolOnly(*found);
     }
-    const std::string_view lastSeg = LastScopeSegment(name);
+    const std::string_view lastSeg = utils::LastScopeSegment(name);
     if (lastSeg != name)
     {
         if (const auto found = symbolTable.FindSymbolsPtr(lastSeg))

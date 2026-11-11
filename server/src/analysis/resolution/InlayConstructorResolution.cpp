@@ -18,13 +18,12 @@ namespace angel_lsp::analysis
 /**
  * @brief Matches the best constructor overload using argument types.
  * @param[in] candidateSymbols Candidate constructor symbols.
- * @param[in] declaratorByteOffset Byte offset of the declarator.
  * @param[in] ctx Semantic expression type context.
  * @param[in] args Parsed argument information.
  * @return Pointer to best matching symbol, or nullptr.
  */
 static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candidateSymbols,
-                                              uint32_t declaratorByteOffset, const ExpressionTypeContext& ctx,
+                                              const ExpressionTypeContext& ctx,
                                               std::span<const IndexedCallArgument> args)
 {
     if (candidateSymbols.size() <= 1)
@@ -76,7 +75,7 @@ ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, u
         return {};
     }
 
-    const Symbol* bestSym = MatchConstructorOverload(candidateSymbols, declaratorByteOffset, ctx, args);
+    const Symbol* bestSym = MatchConstructorOverload(candidateSymbols, ctx, args);
 
     if (!bestSym)
     {

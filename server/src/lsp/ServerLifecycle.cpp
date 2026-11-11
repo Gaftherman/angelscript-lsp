@@ -1,4 +1,5 @@
 #include "lsp/Server.h"
+#include "lsp/ServerCapabilities.h"
 #include "lsp/pipeline/DiagnosticsPipeline.h"
 #include "lsp/pipeline/LspSessionCoordinator.h"
 #include "lsp/state/PositionCodec.h"
@@ -17,82 +18,98 @@
 namespace angel_lsp
 {
 
-/**
- * @brief How many message errors in a row are tolerated before the session is closed.
- *        A malformed frame is recoverable and must not end the session, but a stream that fails
- *        continually is broken and spinning on it burns CPU while filling logs.
- */
+static bool BraceStyleIsKR(std::string_view style) noexcept
+{
+    return style == "kr" || style == "k&r" || style == "otbs" || style == "1tbs";
+}
+
 constexpr unsigned k_maxConsecutiveMessageErrors = 64;
 
 Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream)
-    : m_config(config),
-      m_logger(std::make_unique<utils::LspLogger>(m_config.logging.channelLogDirs)),
-      m_i18n(std::make_unique<i18n::I18nManager>(config.info.locale)),
-      m_workspaceStore(std::make_unique<WorkspaceStateStore>()),
+    : m_config(config), m_workspaceStore(std::make_unique<WorkspaceStateStore>()),
       m_diagnosticsPipeline(std::make_unique<DiagnosticsPipeline>()),
-      m_sessionCoordinator(std::make_unique<LspSessionCoordinator>()),
-      m_scheduler(std::make_unique<AnalysisScheduler>(
-          *m_logger, [this](AnalysisDocumentRequest req) { ExecuteAnalysisPass(std::move(req)); })),
-      m_ioStream(stream),
-      m_messageHandler(std::make_unique<lsp::MessageHandler>(m_ioStream)),
-      m_predefinedManager(PredefinedStubManager::Create(
-          m_symbolTable, *m_workspaceStore, m_runtimeConfigMutex, m_discoveredPredefined, m_effectivePredefined)),
-      m_effectivePredefined(config.activePredefined)
+      m_sessionCoordinator(std::make_unique<LspSessionCoordinator>())
 {
-    InitDomainServices();
+    m_sessionCoordinator->Start();
+    m_sessionCoordinator->SetFormatBraceStyleKR(BraceStyleIsKR(m_config.format.braceStyle));
+    m_sessionCoordinator->SetFormatSpacesInsideParentheses(m_config.format.spacesInsideParentheses);
+    m_sessionCoordinator->SetFormatKeepEmptyBlocksOnSingleLine(m_config.format.keepEmptyBlocksOnSingleLine);
+    if (!m_config.features.enablePredefinedLoader)
+    {
+        m_sessionCoordinator->SetPredefinedReady(true);
+    }
+
+    m_connection = std::make_unique<lsp::Connection>(stream);
+    m_messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
+
+    m_logger = std::make_unique<angel_lsp::utils::LspLogger>(m_messageHandler.get());
+    if (m_logger)
+    {
+        m_logger->SetLevel(angel_lsp::utils::ParseLogLevel(m_config.info.logLevel, angel_lsp::utils::LogLevel::Info));
+    }
+
+    m_parser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
+    m_workerParser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
+    m_symbolCollector = std::make_unique<angel_lsp::analysis::SymbolCollector>(m_logger.get());
+    m_localScopeCollector = std::make_unique<angel_lsp::analysis::LocalScopeCollector>(m_logger.get());
+    m_semanticAnalyzer = std::make_unique<angel_lsp::analysis::SemanticAnalyzer>(m_logger.get());
+    m_i18n = std::make_unique<angel_lsp::i18n::I18n>(m_config.info.locale.empty() ? "en" : m_config.info.locale);
+
+    m_workspaceStore->SetSearchDirectories(m_config.searchDirectories);
+    m_workspaceStore->SetEngineProfile(m_config.engineProfile);
+    m_workspaceStore->SetDefinedWordsFrom(std::string(), m_config.definedWords);
+
+    m_diagnosticsPipeline->InitScheduler(
+        [this](angel_lsp::AnalyzeRequest req)
+        {
+            AnalyzeDocument({.uriStr = std::move(req.uriStr),
+                             .text = std::move(req.text),
+                             .parser = *m_workerParser,
+                             .treeCopy = std::move(req.tree),
+                             .version = req.version,
+                             .generation = req.generation,
+                             .configRevision = req.configRevision,
+                             .closedRevision = req.closedRevision,
+                             .fromScheduler = true,
+                             .preprocessing = std::move(req.preprocessing)});
+        });
+
+    BuildDiagnosticSeverityOverrides(m_diagnosticsPipeline.get(), m_config, m_logger.get());
     InitHandles();
 }
 
 void Server::InitDomainServices()
 {
-    m_sessionCoordinator->SetFormatBraceStyleKR(m_config.format.braceStyle == "kr");
-    m_sessionCoordinator->SetFormatSpacesInsideParentheses(m_config.format.spacesInsideParentheses);
-    m_sessionCoordinator->SetFormatKeepEmptyBlocksOnSingleLine(m_config.format.keepEmptyBlocksOnSingleLine);
-    m_sessionCoordinator->SetFormatPointerAlignment(m_config.format.pointerAlignment);
-    m_diagnosticsPipeline->SetPublishCallback(
-        [this](const std::string& uri, std::vector<lsp::Diagnostic> diags)
-        {
-            PublishDiagnostics(uri, std::move(diags));
-        });
-    m_diagnosticsPipeline->SetRefreshCallback([this]() { RefreshClientDiagnostics(); });
-    m_diagnosticsPipeline->SetClientPullsCallback(
-        [this]() { return m_sessionCoordinator->GetClientPullsDiagnostics(); });
-    m_diagnosticsPipeline->SetClientSupportsRefreshCallback(
-        [this]() { return m_sessionCoordinator->GetClientSupportsDiagnosticRefresh(); });
 }
 
 Server::~Server()
 {
-    // The coordinator's stop flag unblocks any thread waiting on a conditional variable, and
-    // must be raised before those threads are joined - otherwise joining a worker that is
-    // waiting on an empty queue hangs the server.
+    if (m_sessionCoordinator)
+    {
+        m_sessionCoordinator->RequestShutdown();
+    }
+    if (m_diagnosticsPipeline)
+    {
+        m_diagnosticsPipeline->StopScheduler();
+    }
     m_workspaceStop.Request();
     if (m_workspaceThread.joinable())
     {
         m_workspaceThread.join();
     }
-
-    if (m_scheduler)
+    GetDocumentStore().Clear();
+    m_predefinedManager.Clear();
+    if (m_workspaceStore)
     {
-        m_scheduler->Stop();
-    }
-
-    if (m_parser)
-    {
-        m_parser.reset();
-    }
-
-    if (m_messageHandler)
-    {
-        m_messageHandler.reset();
+        m_workspaceStore->Clear();
     }
 }
 
 void Server::DrainQueue()
 {
-    while (m_ioStream.hasPendingData())
+    if (m_diagnosticsPipeline)
     {
-        ProcessIncomingMessageStep();
+        m_diagnosticsPipeline->DrainQueue();
     }
 }
 
@@ -100,71 +117,90 @@ bool Server::ProcessIncomingMessageStep()
 {
     try
     {
-        lsp::MessageError error = m_messageHandler->processIncomingMessageStep();
-        if (error == lsp::MessageError::NoError)
-        {
-            m_consecutiveMessageErrors = 0;
-            return true;
-        }
-
-        if (error == lsp::MessageError::ConnectionClosed)
-        {
-            LogInfo("Client closed the connection stream; terminating message processing loop.");
-            return false;
-        }
-
-        m_consecutiveMessageErrors++;
-        LogWarning(fmt::format("Recoverable LSP protocol framing error encountered (code: {}, streak: {}/{})",
-                               static_cast<int>(error), m_consecutiveMessageErrors, k_maxConsecutiveMessageErrors));
-
-        if (m_consecutiveMessageErrors >= k_maxConsecutiveMessageErrors)
-        {
-            LogError(fmt::format(
-                "Excessive consecutive protocol framing errors ({}); aborting connection loop to protect CPU.",
-                m_consecutiveMessageErrors));
-            return false;
-        }
-
+        m_messageHandler->processIncomingMessages();
         return true;
+    }
+    catch (const lsp::ConnectionError& e)
+    {
+        const std::string_view msg = e.what();
+        if (msg.find("exceeds maximum allowable LSP envelope") != std::string_view::npos ||
+            msg.starts_with("Protocol:"))
+        {
+            LogError(fmt::format("Protocol error, message discarded: {}", e.what()));
+            return false;
+        }
+        LogInfo(fmt::format("Connection closed: {}", e.what()));
+        m_sessionCoordinator->RequestShutdown();
+        return false;
+    }
+    catch (const lsp::io::Error& e)
+    {
+        LogInfo(fmt::format("Transport closed: {}", e.what()));
+        m_sessionCoordinator->RequestShutdown();
+        return false;
+    }
+    catch (const lsp::json::ParseError& e)
+    {
+        LogError(fmt::format("Malformed JSON-RPC message discarded: {}", e.what()));
+        return false;
+    }
+    catch (const lsp::jsonrpc::ProtocolError& e)
+    {
+        LogError(fmt::format("Protocol error, message discarded: {}", e.what()));
+        return false;
     }
     catch (const std::exception& e)
     {
-        LogError(fmt::format("Unhandled standard exception in message loop step: {}", e.what()));
-        angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
-            fmt::format("Unhandled exception in processIncomingMessageStep: {}", e.what()));
+        LogError(fmt::format("Unhandled exception handling message: {}", e.what()));
         return false;
     }
     catch (...)
     {
-        LogError("Unknown non-standard exception trapped in message loop step; halting.");
-        angel_lsp::utils::MultiFileLogger::Instance().LogCrash("Unknown exception in processIncomingMessageStep");
+        LogError("Unknown fatal exception in message step; recovering.");
         return false;
     }
 }
 
 void Server::Run()
 {
-    try
+    unsigned consecutiveErrors = 0;
+
+    while (m_sessionCoordinator->IsRunning())
     {
-        LogInfo("AngelLSP Server event dispatch loop started successfully.");
-        while (!m_hasShutdown)
+        try
         {
-            if (!ProcessIncomingMessageStep())
+            if (ProcessIncomingMessageStep())
+            {
+                consecutiveErrors = 0;
+                continue;
+            }
+
+            if (!m_sessionCoordinator->IsRunning())
             {
                 break;
             }
+
+            if (++consecutiveErrors >= k_maxConsecutiveMessageErrors)
+            {
+                std::string err = fmt::format("Giving up after {} consecutive message errors; closing the session.",
+                                              consecutiveErrors);
+                LogError(err);
+                angel_lsp::utils::MultiFileLogger::Instance().LogCrash(err);
+                m_sessionCoordinator->RequestShutdown();
+            }
         }
-        LogInfo("AngelLSP Server event dispatch loop exited cleanly.");
-    }
-    catch (const std::exception& e)
-    {
-        LogError(fmt::format("Fatal exception in main server Run loop: {}", e.what()));
-        angel_lsp::utils::MultiFileLogger::Instance().LogCrash(fmt::format("Fatal crash in Server::Run: {}", e.what()));
-    }
-    catch (...)
-    {
-        LogError("Fatal unknown crash in main server Run loop.");
-        angel_lsp::utils::MultiFileLogger::Instance().LogCrash("Fatal unknown crash in Server::Run");
+        catch (const std::exception& e)
+        {
+            LogError(fmt::format("Fatal unhandled exception in main server loop: {}", e.what()));
+            angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
+                fmt::format("Fatal unhandled exception in main server loop: {}", e.what()));
+        }
+        catch (...)
+        {
+            LogError("Unknown fatal exception in main server loop recovered.");
+            angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
+                "Unknown fatal exception in main server loop recovered.");
+        }
     }
 }
 

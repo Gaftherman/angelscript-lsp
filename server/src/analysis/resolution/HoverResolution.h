@@ -103,12 +103,10 @@ namespace angel_lsp::analysis
  * @brief Resolves the default value of an identifier by querying local scope, visible symbols, and globals.
  * @param[in] name Identifier symbol name.
  * @param[in] nodeStartByte Inclusive start byte offset of identifier node.
- * @param[in] nodeEndByte Exclusive end byte offset of identifier node.
  * @param[in] ctx Semantic expression context.
  * @return Unquoted default value text if resolved; std::nullopt otherwise.
  */
 [[nodiscard]] std::optional<std::string> ResolveIdentifierDefaultValue(std::string_view name, uint32_t nodeStartByte,
-                                                                       uint32_t nodeEndByte,
                                                                        const ExpressionTypeContext& ctx);
 
 /**
@@ -144,11 +142,10 @@ namespace angel_lsp::analysis
 /**
  * @brief Deduces type of a variable declarator initialized with auto type specifier.
  * @param[in] declaratorRange Byte range of the variable declarator.
- * @param[in] hoverNode Byte range of the hovered `auto` node, forwarded to local-definition deduction.
  * @param[in] ctx Semantic expression context.
  * @return Deduced concrete type name, or empty string if unresolved.
  */
-[[nodiscard]] std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, IndexedByteRange hoverNode,
+[[nodiscard]] std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange,
                                                    const ExpressionTypeContext& ctx);
 
 /**
@@ -205,13 +202,12 @@ ResolveMemberAccess(IndexedByteRange receiverRange, std::string_view memberName,
 /**
  * @brief Resolves deduced type for an auto variable declaration and renders the hover markdown.
  * @param[in] autoDeclRange Byte range of the enclosing variable declaration or foreach statement.
- * @param[in] hoverNode Byte range of the hovered auto keyword node.
  * @param[in] isAutoHandle True if the auto keyword specifies handle (@).
  * @param[in] exprCtx Semantic expression context.
  * @return Formatted hover markdown block, or empty string if unresolved.
  */
-[[nodiscard]] std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, IndexedByteRange hoverNode,
-                                                   bool isAutoHandle, const ExpressionTypeContext& exprCtx);
+[[nodiscard]] std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, bool isAutoHandle,
+                                                   const ExpressionTypeContext& exprCtx);
 
 /**
  * @brief Renders the complete hover markdown block for an anonymous function or lambda expression.

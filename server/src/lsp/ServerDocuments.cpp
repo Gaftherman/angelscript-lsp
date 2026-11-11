@@ -21,14 +21,11 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     const auto syntax = docHandle && docHandle->tree
                             ? ResolveProtocolSyntax(uriStr, docHandle->ParsedSource(), docHandle.get()).syntax
                             : nullptr;
+    const analysis::SemanticTokenFacts facts =
+        syntax ? analysis::CollectSemanticTokenFacts(syntax->index, text) : analysis::SemanticTokenFacts{};
+    const int currentVersion = docHandle ? docHandle->version : GetDocumentStore().GetVersion(uriStr);
 
-    const int currentVersion = GetDocumentVersion(uriStr);
-
-    features::SemanticTokensRequest request;
-    request.uri = uriStr;
-    request.sourceCode = text;
-    request.nodeIndex = syntax ? &syntax->index : nullptr;
-    request.symbolTable = m_symbolTable;
+    features::SemanticTokensRequest request{uriStr, text, facts, m_symbolTable};
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     if (syntax && m_localScopeCollector && !request.scopeRoot)
     {
@@ -56,39 +53,49 @@ std::string Server::CanonicalPathFromUri(const std::string& uriStr)
     const std::string path = angel_lsp::utils::UriToPath(uriStr);
     if (path.empty())
     {
-        return {};
+        return "";
     }
     return angel_lsp::utils::IncludeResolver::NormalizePath(path);
 }
 
 std::string Server::DocumentKey(const std::string& uriStr)
 {
-    return GetDocumentStore().GetCanonicalUri(uriStr);
+    const std::string path = CanonicalPathFromUri(uriStr);
+    return path.empty() ? uriStr : UriFromPath(path);
 }
 
 std::string Server::UriFromPath(const std::string& path)
 {
-    return angel_lsp::utils::UriToPath(path);
+    return angel_lsp::utils::PathToUri(angel_lsp::utils::IncludeResolver::NormalizePath(path));
 }
 
 std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& uri) const
 {
-    const std::string key = GetDocumentStore().GetCanonicalUri(uri);
-    if (auto open = GetDocumentStore().GetDocumentText(key))
+    const std::string key = DocumentKey(uri);
+
+    if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
+    {
+        if (auto predefined = m_predefinedManager.GetDocumentTextShared(key))
+        {
+            return predefined;
+        }
+    }
+
+    if (auto open = GetDocumentStore().GetTextShared(key))
     {
         return open;
     }
 
-    if (auto stub = m_predefinedManager.GetDocumentTextShared(key))
+    if (auto predefined = m_predefinedManager.GetDocumentTextShared(key))
     {
-        return stub;
+        return predefined;
     }
 
     {
         std::lock_guard lock(m_closureMutex);
-        if (const auto closure = m_closureDocuments.find(key); closure != m_closureDocuments.end())
+        if (const auto it = m_closureDocuments.find(key); it != m_closureDocuments.end())
         {
-            return closure->second.text;
+            return it->second.text;
         }
     }
 
