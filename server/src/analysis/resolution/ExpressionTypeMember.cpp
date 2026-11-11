@@ -185,7 +185,7 @@ std::string ResolveCandidateMethodReturn(const std::vector<Symbol>& candidates,
     return CleanExpressionType(candidates[0].GetFunction().returnType);
 }
 
-static void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
+void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
 {
     if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
     {

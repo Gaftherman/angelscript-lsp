@@ -9,6 +9,7 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeBinary.h"
+#include "analysis/resolution/ExpressionTypeCall.h"
 #include "analysis/resolution/ExpressionTypeLiterals.h"
 #include "analysis/resolution/ExpressionTypeMember.h"
 #include "analysis/resolution/ExpressionTypeTernary.h"
@@ -699,182 +700,13 @@ static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std:
         return "";
     }
 
-    std::string objType = CanonicalizeArrayType(ResolveExpressionType(objNode, ctx), ctx.arrayTypeName);
+    std::string objType = ResolveExpressionType(objNode, ctx);
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
+    std::string fallbackObj = GetTrimmedNodeText(objNode, ctx.sourceCode);
 
-    std::string ownerType = MemberOwnerType(objType, ctx.arrayTypeName);
-    if (ownerType.empty())
-    {
-        ownerType = CleanExpressionType(objType);
-    }
-    if (ownerType.empty())
-    {
-        ownerType = GetTrimmedNodeText(objNode, ctx.sourceCode);
-    }
-
-    auto candidates = CollectMemberMethodCandidates(ownerType, memName, ctx.symbolTable);
-    if (!candidates.empty())
-    {
-        return ResolveCandidateMethodReturn(candidates, argTypes, objType, ctx.symbolTable);
-    }
-
-    auto templateInfo = ParseTemplateType(objType);
-    return ResolveContainerMethodFallback(memName, templateInfo, objType, ctx.arrayTypeName);
-}
-
-/**
- * @brief Appends call candidates from mixins included in a class.
- * @param[in] containerName Enclosing container name.
- * @param[in] funcName Function name being called.
- * @param[in] symbolTable Symbol table to query.
- * @param[in,out] candidates Accumulating candidate symbols.
- */
-static void CollectMixinCallCandidates(std::string_view containerName, const std::string& funcName,
-                                       const SymbolTable& symbolTable, std::vector<Symbol>& candidates)
-{
-    auto classSyms = symbolTable.FindSymbols(containerName);
-    for (const auto& cs : classSyms)
-    {
-        if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
-        {
-            for (const auto& mixin : cs.GetClass().includedMixins)
-            {
-                auto mixinFound = symbolTable.FindMemberSymbols(mixin, funcName);
-                for (const auto& sym : mixinFound)
-                {
-                    AppendCandidateIfUnique(candidates, sym);
-                }
-            }
-        }
-    }
-}
-
-/**
- * @brief Collects candidate function symbols from enclosing class/interface hierarchy.
- * @param[in] exprNode Expression AST node inside enclosing container.
- * @param[in] funcName Function name being called.
- * @param[in] ctx Expression type resolution context.
- * @return Vector of candidate function symbols.
- */
-static std::vector<Symbol> CollectEnclosingCallCandidates(TSNode exprNode, const std::string& funcName,
-                                                          const ExpressionTypeContext& ctx)
-{
-    std::vector<Symbol> candidates;
-    auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
-    for (const auto& c : containers)
-    {
-        if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
-        {
-            std::string containerName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-            auto hierarchy = GetInheritedTypeHierarchy(containerName, ctx.symbolTable, ctx.cache);
-            for (const auto& cls : hierarchy)
-            {
-                auto found = ctx.symbolTable.FindMemberSymbols(cls, funcName);
-                for (const auto& sym : found)
-                {
-                    AppendCandidateIfUnique(candidates, sym);
-                }
-            }
-            CollectMixinCallCandidates(containerName, funcName, ctx.symbolTable, candidates);
-            break;
-        }
-    }
-    return candidates;
-}
-
-/**
- * @brief Resolves return type from call candidates given argument types.
- * @param[in] candidates Function overload candidates.
- * @param[in] argTypes Evaluated argument types.
- * @param[in] symbolTable Symbol table to query.
- * @return Resolved return type, or empty string.
- */
-static std::string ResolveCallOverloadReturn(const std::vector<Symbol>& candidates,
-                                             const std::vector<std::string>& argTypes, const SymbolTable& symbolTable)
-{
-    if (candidates.empty())
-    {
-        return "";
-    }
-    auto match = ResolveBestOverload(candidates, argTypes, symbolTable);
-    const Symbol* chosen = match.bestCandidate ? match.bestCandidate : &candidates[0];
-    if (chosen && std::holds_alternative<FunctionSignature>(chosen->signature))
-    {
-        std::string ret = CleanExpressionType(chosen->GetFunction().returnType);
-        if (ret.empty() &&
-            (chosen->name == chosen->containerName || LastScopeSegment(chosen->containerName) == chosen->name))
-        {
-            return chosen->containerName;
-        }
-        return ret;
-    }
-    std::string ret = CleanExpressionType(candidates[0].GetFunction().returnType);
-    if (ret.empty() && (candidates[0].name == candidates[0].containerName ||
-                        LastScopeSegment(candidates[0].containerName) == candidates[0].name))
-    {
-        return candidates[0].containerName;
-    }
-    return ret;
-}
-
-/**
- * @brief Collects function symbols from scope and global table matching funcName.
- * @param[in] funcName Target function name.
- * @param[in] exprNode Call expression AST node.
- * @param[in] ctx Expression type resolution context.
- * @param[in,out] candidates Accumulating candidate symbols.
- */
-static void CollectScopeAndGlobalFunctions(const std::string& funcName, TSNode exprNode,
-                                           const ExpressionTypeContext& ctx, std::vector<Symbol>& candidates)
-{
-    std::vector<Symbol> inScope =
-        ResolveScopeSymbols(funcName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
-    for (const auto& sym : inScope)
-    {
-        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-        {
-            candidates.push_back(sym);
-        }
-    }
-    if (!candidates.empty())
-    {
-        return;
-    }
-    auto globalFound = ctx.symbolTable.FindSymbols(funcName);
-    for (const auto& sym : globalFound)
-    {
-        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-        {
-            candidates.push_back(sym);
-        }
-    }
-}
-
-/**
- * @brief Checks if funcName refers to a class or interface type (for constructor-like bare calls).
- * @param[in] funcName Candidate type name.
- * @param[in] symbolTable Symbol table to query.
- * @return Matched type name, or empty string.
- */
-static std::string FindClassOrInterfaceName(const std::string& funcName, const SymbolTable& symbolTable)
-{
-    auto globalFound = symbolTable.FindSymbols(funcName);
-    for (const auto& sym : globalFound)
-    {
-        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
-        {
-            if (!sym.qualifiedName.empty())
-            {
-                return sym.qualifiedName;
-            }
-            if (!sym.containerName.empty())
-            {
-                return utils::JoinScopedName(sym.containerName, sym.name);
-            }
-            return sym.name;
-        }
-    }
-    return "";
+    return ResolveMemberCallReturn(
+        MemberCallResolutionRequest{objType, memName, fallbackObj, ctx.arrayTypeName},
+        argTypes, ctx.symbolTable);
 }
 
 /**
@@ -893,10 +725,13 @@ static std::string ResolveBareCallExpr(TSNode exprNode, TSNode funcNode, const s
     {
         return funcName;
     }
-    std::vector<Symbol> candidates = CollectEnclosingCallCandidates(exprNode, funcName, ctx);
+    auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
+    std::vector<Symbol> candidates = CollectEnclosingCallCandidates(containers, funcName, ctx.symbolTable, ctx.cache);
     if (candidates.empty())
     {
-        CollectScopeAndGlobalFunctions(funcName, exprNode, ctx, candidates);
+        std::vector<Symbol> inScope =
+            ResolveScopeSymbols(funcName, exprNode, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+        CollectScopeAndGlobalFunctions(funcName, inScope, ctx.symbolTable, candidates);
     }
     if (!candidates.empty())
     {
@@ -944,15 +779,7 @@ static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext&
     }
 
     std::string calleeType = ResolveExpressionType(funcNode, ctx);
-    std::string cleanCallee = CleanBaseType(calleeType);
-    if (!cleanCallee.empty())
-    {
-        if (auto funcdef = FindFuncdefSymbol(cleanCallee, ctx.symbolTable))
-        {
-            return CleanExpressionType(funcdef->GetFuncdef().returnType);
-        }
-    }
-    return calleeType;
+    return ResolveCalleeFuncdefReturn(calleeType, ctx.symbolTable);
 }
 
 /**

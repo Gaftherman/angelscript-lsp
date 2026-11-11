@@ -46,6 +46,11 @@ namespace angel_lsp::analysis
                                                        const std::string& objType, const SymbolTable& symbolTable);
 
 /**
+ * @brief Appends candidate function if not already overridden by signature.
+ */
+void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym);
+
+/**
  * @brief Collects candidate member methods along the type inheritance hierarchy.
  */
 [[nodiscard]] std::vector<Symbol> CollectMemberMethodCandidates(const std::string& ownerType,
