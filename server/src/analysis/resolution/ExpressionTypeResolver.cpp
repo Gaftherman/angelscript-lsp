@@ -32,15 +32,15 @@
 namespace angel_lsp::analysis
 {
 
+static std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx);
+static std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                       const ReceiverTypeContext& ctx);
+
 static TSNode RecoverNodeFromContext(const ExpressionTypeContext& ctx, uint32_t startByte, uint32_t endByte) noexcept
 {
     if (ctx.nodeIndex)
     {
         return RecoverNodeAt(*ctx.nodeIndex, startByte, endByte);
-    }
-    if (!ts_node_is_null(ctx.rootNode))
-    {
-        return RecoverNodeFromRoot(ctx.rootNode, startByte, endByte);
     }
     return TSNode{};
 }
@@ -2290,7 +2290,7 @@ static std::string_view GetTrimmedNodeTextView(TSNode node, std::string_view sou
     return sv;
 }
 
-std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx)
+static std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     exprNode = UnwrapIndexedParentheses(exprNode, ctx.nodeIndex);
     if (ts_node_is_null(exprNode) || ctx.sourceCode.empty())
@@ -2712,8 +2712,8 @@ static std::string ResolveReceiverTypeUncached(TSNode objNode, std::string_view 
     return ResolveReceiverInGlobalOrShort(objText, symbolTable, arrayTypeName);
 }
 
-std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                const ReceiverTypeContext& ctx)
+static std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                       const ReceiverTypeContext& ctx)
 {
     if (ts_node_is_null(objNode))
     {

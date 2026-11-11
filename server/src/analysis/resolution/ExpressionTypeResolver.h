@@ -12,7 +12,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -29,27 +28,25 @@ struct ExpressionTypeContext
     bool disableIntegerDivision = false;
     ExpressionTypeCache* cache = nullptr;
     const NodeIndex* nodeIndex = nullptr;
-    TSNode rootNode = {};
 
-    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "",
-                          TSNode root = {})
+    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "")
         : scope(sc), symbolTable(st), sourceCode(src), uri(u), stringTypeName(st.GetStringType()),
-          arrayTypeName(st.GetDefaultArrayType()), rootNode(root)
+          arrayTypeName(st.GetDefaultArrayType())
     {
     }
 
     /**
-     * @brief Constructs an expression context resolving the AST root directly from an optional node index.
+     * @brief Constructs an expression context resolving symbols directly with an optional node index.
      * @param[in] sc Innermost lexical scope at query position.
      * @param[in] st Symbol table for type and method resolution.
      * @param[in] src Document source text buffer.
      * @param[in] u Document file URI.
-     * @param[in] ni Optional document node index supplying the tree root.
+     * @param[in] ni Optional document node index.
      */
     ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u,
                           const NodeIndex* ni)
         : scope(sc), symbolTable(st), sourceCode(src), uri(u), stringTypeName(st.GetStringType()),
-          arrayTypeName(st.GetDefaultArrayType()), nodeIndex(ni), rootNode(ni ? ni->Root() : TSNode{})
+          arrayTypeName(st.GetDefaultArrayType()), nodeIndex(ni)
     {
     }
 
@@ -58,8 +55,7 @@ struct ExpressionTypeContext
           uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
           arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
           disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache),
-          nodeIndex(diagCtx.request.nodeIndex),
-          rootNode(diagCtx.request.tree ? ts_tree_root_node(diagCtx.request.tree) : TSNode{})
+          nodeIndex(diagCtx.request.nodeIndex)
     {
     }
 };
@@ -127,20 +123,35 @@ inline std::string ResolveReceiverMemberType(std::string_view receiverType, std:
     }
     return {};
 }
-std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx);
-inline std::string ResolveExpressionType(TSNode exprNode, const Scope* scope, const SymbolTable& symbolTable,
-                                         std::string_view sourceCode)
-{
-    return ResolveExpressionType(exprNode, ExpressionTypeContext{scope, symbolTable, sourceCode, ""});
-}
+/**
+ * @brief Resolves the type of the expression that spans the given byte range.
+ * @param[in] expressionRange Byte span of the expression.
+ * @param[in] ctx Semantic expression context.
+ * @return Resolved type name or empty string.
+ */
 std::string ResolveExpressionTypeAt(IndexedByteRange expressionRange, const ExpressionTypeContext& ctx);
+
 inline std::string ResolveExpressionTypeAt(uint32_t startByte, uint32_t endByte, const ExpressionTypeContext& ctx)
 {
     return ResolveExpressionTypeAt(IndexedByteRange{startByte, endByte}, ctx);
 }
+
+/**
+ * @brief Resolves the type of a local definition.
+ * @param[in] def Local definition to resolve.
+ * @param[in] ctx Semantic expression context.
+ * @return Resolved type name or empty string.
+ */
 std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx);
+
+/**
+ * @brief Resolves receiver expression type across class hierarchy and member chains.
+ * @param[in] objRange Byte span of the receiver expression.
+ * @param[in] sourceCode Document source text.
+ * @param[in] symbolTable Symbol table.
+ * @param[in] ctx Receiver type resolution context.
+ * @return Resolved receiver type name or empty string.
+ */
 std::string ResolveReceiverType(IndexedByteRange objRange, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                const ReceiverTypeContext& ctx = {});
-std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
                                 const ReceiverTypeContext& ctx = {});
 } // namespace angel_lsp::analysis
