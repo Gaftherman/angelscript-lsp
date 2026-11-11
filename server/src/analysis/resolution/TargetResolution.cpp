@@ -2,11 +2,7 @@
 
 #include "analysis/index/CallArgumentFacts.h"
 #include "analysis/resolution/ReferenceReceiver.h"
-#include "analysis/resolution/ScopeLookupInternal.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "parser/GrammarSymbols.h"
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
 
@@ -22,58 +18,6 @@
 
 namespace angel_lsp::analysis
 {
-
-/**
- * @brief Checks if a node type represents an identifier or type token.
- * @param[in] nodeType Tree-Sitter node type.
- * @return True if valid identifier, primitive type, or scoped identifier.
- */
-static bool IsIdentifierOrType(TSSymbol sym) noexcept
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    return sym == gs.symIdentifier || sym == gs.symPrimitiveType || sym == gs.symScopedIdentifier;
-}
-
-/**
- * @brief Attempts to locate an identifier token immediately preceding the cursor position.
- * @param[in] rootNode AST root node.
- * @param[in] position Cursor position.
- * @return Preceding identifier node or null node.
- */
-static TSNode FindPrecedingIdentifierNode(TSNode rootNode, TargetPosition position)
-{
-    if (position.character == 0)
-    {
-        return {};
-    }
-    TSPoint prevPoint = {position.line, position.character - 1};
-    TSNode prevNode = ts_node_descendant_for_point_range(rootNode, prevPoint, prevPoint);
-    if (!ts_node_is_null(prevNode) && IsIdentifierOrType(ts_node_symbol(prevNode)))
-    {
-        return prevNode;
-    }
-    return {};
-}
-
-/**
- * @brief Resolves leaf identifier if node is a scoped identifier.
- * @param[in] node Starting node.
- * @param[in] point Cursor point coordinates.
- * @return Leaf identifier node or original node.
- */
-static TSNode ResolveIdentifierLeaf(TSNode node, TSPoint point)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(node) == gs.symScopedIdentifier)
-    {
-        TSNode leaf = ts_node_descendant_for_point_range(node, point, point);
-        if (!ts_node_is_null(leaf) && ts_node_symbol(leaf) == gs.symIdentifier)
-        {
-            return leaf;
-        }
-    }
-    return node;
-}
 
 static bool IsIdentChar(char c) noexcept
 {
@@ -113,66 +57,19 @@ static std::string_view ExtractLineFromSource(std::string_view source, uint32_t 
 }
 
 /**
- * @brief Extracts token text and AST node under cursor with trailing-edge tolerance.
+ * @brief Extracts token text under cursor with trailing-edge tolerance.
  * @param[in] sourceCode Document source text.
- * @param[in] tree Tree-sitter AST.
  * @param[in] position Cursor position.
- * @param[out] outNode Output TSNode.
  * @param[out] outStartByte Optional output start byte.
  * @param[out] outEndByte Optional output end byte.
  * @return Token text or empty string if not an identifier.
  */
-static std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, TargetPosition position, TSNode& outNode,
+static std::string GetNodeTextAt(std::string_view sourceCode, TargetPosition position,
                                  uint32_t* outStartByte = nullptr, uint32_t* outEndByte = nullptr)
 {
     if (sourceCode.empty())
     {
         return "";
-    }
-
-    if (tree)
-    {
-        TSNode rootNode = ts_tree_root_node(tree);
-        TSPoint point = {position.line, position.character};
-        TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
-
-        if (ts_node_is_null(node))
-        {
-            return "";
-        }
-
-        if (!IsIdentifierOrType(ts_node_symbol(node)))
-        {
-            node = FindPrecedingIdentifierNode(rootNode, position);
-        }
-        if (ts_node_is_null(node))
-        {
-            return "";
-        }
-
-        node = ResolveIdentifierLeaf(node, point);
-        if (!IsIdentifierOrType(ts_node_symbol(node)))
-        {
-            return "";
-        }
-
-        uint32_t startByte = ts_node_start_byte(node);
-        uint32_t endByte = ts_node_end_byte(node);
-        if (startByte >= sourceCode.size() || endByte > sourceCode.size() || startByte >= endByte)
-        {
-            return "";
-        }
-
-        outNode = node;
-        if (outStartByte)
-        {
-            *outStartByte = startByte;
-        }
-        if (outEndByte)
-        {
-            *outEndByte = endByte;
-        }
-        return sourceCode.substr(startByte, endByte - startByte);
     }
 
     uint32_t lineStartByte = 0;
@@ -288,103 +185,7 @@ bool IsValidIdentifier(std::string_view name)
     return true;
 }
 
-/**
- * @brief Resolves receiver type name from explicit object text.
- * @param[in] objText Object expression text.
- * @param[in] request Resolution request.
- * @param[in] rootScope Document root scope.
- * @return Cleaned base type name or empty string.
- */
-static std::string ResolveExplicitReceiverType(const std::string& objText, const ResolveTargetRequest& request,
-                                               const std::shared_ptr<const analysis::Scope>& rootScope)
-{
-    if (objText == "this")
-    {
-        return GetEnclosingClassName(request.symbolTable, request.uri, request.position.line);
-    }
-    if (rootScope)
-    {
-        const analysis::Scope* scope =
-            FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
-        if (scope)
-        {
-            const uint32_t cursorByte =
-                ts_node_is_null(request.outNode) ? UINT32_MAX : ts_node_start_byte(request.outNode);
-            const analysis::LocalDefinition* objDef = analysis::ResolveInScopeAt(scope, objText, cursorByte);
-            if (objDef)
-            {
-                if (!objDef->typeName.empty() && analysis::CleanBaseTypeView(objDef->typeName) != "auto")
-                {
-                    return analysis::CleanBaseType(objDef->typeName);
-                }
-                analysis::ExpressionTypeContext exprCtx(scope, request.symbolTable, request.sourceCode, request.uri,
-                                                        request.tree ? ts_tree_root_node(request.tree) : TSNode{});
-                std::string deduced = analysis::ResolveLocalDefinitionType(*objDef, exprCtx);
-                if (!deduced.empty())
-                {
-                    return analysis::CleanBaseType(deduced);
-                }
-                if (!objDef->typeName.empty())
-                {
-                    return analysis::CleanBaseType(objDef->typeName);
-                }
-            }
-        }
-    }
-    auto globSyms = request.symbolTable.FindSymbols(objText);
-    for (const auto& sym : globSyms)
-    {
-        if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
-        {
-            return analysis::CleanBaseType(sym.GetVariable().typeName);
-        }
-    }
-    return "";
-}
 
-/**
- * @brief Resolves explicit member access expression (obj.mem) under cursor.
- * @param[in] outNode Identifier AST node.
- * @param[in] request Resolution request.
- * @param[in] rootScope Document root scope.
- * @param[out] target Target descriptor to populate.
- * @return True if cursor is on an explicit member access expression.
- */
-static bool ResolveExplicitMemberAccess(TSNode outNode, const ResolveTargetRequest& request,
-                                        const std::shared_ptr<const analysis::Scope>& rootScope,
-                                        TargetDescriptor& target)
-{
-    TSNode parent = parser::GetParent(outNode);
-    if (ts_node_is_null(parent) || ts_node_symbol(parent) != parser::GetGrammarSymbols().symMemberExpression)
-    {
-        return false;
-    }
-    TSNode memNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldMember);
-    if (ts_node_is_null(memNode) ||
-        (!ts_node_eq(memNode, outNode) && ts_node_start_byte(memNode) != ts_node_start_byte(outNode)))
-    {
-        return false;
-    }
-    TSNode objectNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldObject);
-    if (ts_node_is_null(objectNode))
-    {
-        return false;
-    }
-    uint32_t objStart = ts_node_start_byte(objectNode);
-    uint32_t objEnd = ts_node_end_byte(objectNode);
-    if (objStart >= request.sourceCode.size() || objEnd > request.sourceCode.size())
-    {
-        return false;
-    }
-    std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
-    std::string receiverTypeName = ResolveExplicitReceiverType(objText, request, rootScope);
-    if (!receiverTypeName.empty())
-    {
-        target.kind = TargetKind::ClassMember;
-        target.declaringClass = receiverTypeName;
-    }
-    return true;
-}
 
 /**
  * @brief Searches for a local definition matching name and line spanning scope ancestors.
@@ -464,8 +265,7 @@ static void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& roo
         FindLocalDefinitionAtLine(innerScope, nodeText, request.position.line, declScope);
     if (!matchedDef)
     {
-        const uint32_t cursorByte =
-            !ts_node_is_null(request.outNode) ? ts_node_start_byte(request.outNode) : identStartByte;
+        const uint32_t cursorByte = identStartByte;
         matchedDef = analysis::ResolveInScopeAt(innerScope, nodeText, cursorByte, &declScope, false);
     }
     if (!matchedDef || !declScope)
@@ -518,216 +318,7 @@ static bool HasNamespaceSymbol(const std::vector<Symbol>& syms)
     return false;
 }
 
-static bool IsContainerDeclarationName(TSNode outNode)
-{
-    TSNode parent = parser::GetParent(outNode);
-    if (ts_node_is_null(parent))
-    {
-        return false;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol pSym = ts_node_symbol(parent);
-    if (pSym == gs.symClassDeclaration || pSym == gs.symInterfaceDeclaration || pSym == gs.symEnumDeclaration)
-    {
-        TSNode nameChild = parser::GetChildByField(parent, gs.fieldName);
-        return !ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(outNode);
-    }
-    return false;
-}
 
-static bool TryResolveNamespaceEnumMember(const std::string& containerQualifiedName, const std::string& nodeText,
-                                          const SymbolTable& symbolTable, TargetDescriptor& target)
-{
-    const auto ruleIndex = symbolTable.GetRuleIndex();
-    if (!ruleIndex)
-    {
-        return false;
-    }
-    auto it = ruleIndex->enumSymbolsByMemberName.find(nodeText);
-    if (it == ruleIndex->enumSymbolsByMemberName.end())
-    {
-        return false;
-    }
-    for (const auto& enumSym : it->second)
-    {
-        if (enumSym.containerName == containerQualifiedName ||
-            analysis::IsSameOrNestedNamespace(enumSym.containerName, containerQualifiedName))
-        {
-            target.kind = TargetKind::EnumMember;
-            target.declaringEnum = enumSym.qualifiedName;
-            target.qualifiedName = utils::JoinScopedName(enumSym.qualifiedName, nodeText);
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Resolves a target as a member or symbol within an enclosing container.
- * @param[in] outNode Identifier AST node.
- * @param[in] nodeText Symbol identifier text.
- * @param[in] request Original resolve target request.
- * @param[out] target Target descriptor to populate.
- */
-static void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
-                                   TargetDescriptor& target)
-{
-    if (IsContainerDeclarationName(outNode))
-    {
-        return;
-    }
-
-    auto containers = analysis::GetEnclosingContainers(outNode, request.sourceCode);
-    for (const auto& container : containers)
-    {
-        if (container.kind == analysis::ContainerKind::Class || container.kind == analysis::ContainerKind::Interface)
-        {
-            auto hierarchy = analysis::GetInheritedTypeHierarchy(container.qualifiedName, request.symbolTable);
-            for (const auto& cls : hierarchy)
-            {
-                auto syms = request.symbolTable.FindMemberSymbols(cls, nodeText);
-                if (HasClassMemberSymbol(syms))
-                {
-                    target.kind = TargetKind::ClassMember;
-                    target.declaringClass = cls;
-                    return;
-                }
-            }
-        }
-        else if (container.kind == analysis::ContainerKind::Namespace)
-        {
-            auto syms = request.symbolTable.FindMemberSymbols(container.qualifiedName, nodeText);
-            if (HasNamespaceSymbol(syms))
-            {
-                target.kind = TargetKind::NamespaceSymbol;
-                target.declaringNamespace = container.qualifiedName;
-                target.qualifiedName = utils::JoinScopedName(container.qualifiedName, nodeText);
-                return;
-            }
-            if (TryResolveNamespaceEnumMember(container.qualifiedName, nodeText, request.symbolTable, target))
-            {
-                return;
-            }
-        }
-    }
-}
-
-/**
- * @brief Attempts to resolve target from an enum_member AST declaration node.
- * @param[in] memberNode The enum_member node.
- * @param[in] nodeText Symbol identifier text.
- * @param[in] sourceCode Source text.
- * @param[out] target Target descriptor to populate.
- * @return True if successfully resolved as an enum member.
- */
-static bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeText, std::string_view sourceCode,
-                                            TargetDescriptor& target)
-{
-    TSNode enumDecl = parser::GetParent(memberNode);
-    if (ts_node_is_null(enumDecl) || ts_node_symbol(enumDecl) != parser::GetGrammarSymbols().symEnumDeclaration)
-    {
-        return false;
-    }
-    TSNode nameNode = parser::GetChildByField(enumDecl, parser::GetGrammarSymbols().fieldName);
-    if (ts_node_is_null(nameNode))
-    {
-        return false;
-    }
-    std::string enumName(parser::NodeText(nameNode, sourceCode));
-    std::string prefix;
-    auto containers = analysis::GetEnclosingContainers(enumDecl, sourceCode);
-    for (const auto& c : containers)
-    {
-        if (c.kind == analysis::ContainerKind::Namespace)
-        {
-            prefix = c.qualifiedName;
-            break;
-        }
-    }
-    std::string fullEnum = utils::JoinScopedName(prefix, enumName);
-    target.kind = TargetKind::EnumMember;
-    target.declaringEnum = fullEnum;
-    target.qualifiedName = utils::JoinScopedName(fullEnum, nodeText);
-    return true;
-}
-
-/**
- * @brief Attempts to resolve target from a scoped_identifier AST access node.
- * @param[in] scopedNode The scoped_identifier node.
- * @param[in] nodeText Symbol identifier text.
- * @param[in] request Resolution request.
- * @param[out] target Target descriptor to populate.
- * @return True if successfully resolved as an enum member.
- */
-static bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText,
-                                       const ResolveTargetRequest& request, TargetDescriptor& target)
-{
-    uint32_t pStart = ts_node_start_byte(scopedNode);
-    uint32_t pEnd = ts_node_end_byte(scopedNode);
-    if (pStart >= request.sourceCode.size() || pEnd > request.sourceCode.size() || pStart >= pEnd)
-    {
-        return false;
-    }
-    std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
-    if (!utils::EndsWithScopedMember(scopedText, nodeText))
-    {
-        return false;
-    }
-    std::string qualifier = scopedText.substr(0, scopedText.size() - (nodeText.size() + 2));
-    auto syms = request.symbolTable.FindSymbols(scopedText);
-    for (const auto& s : syms)
-    {
-        if (s.type == analysis::SymbolType::Variable &&
-            std::holds_alternative<analysis::VariableSignature>(s.signature) && s.GetVariable().isEnumConstant)
-        {
-            target.kind = TargetKind::EnumMember;
-            target.declaringEnum = s.containerName.empty() ? qualifier : s.containerName;
-            target.qualifiedName = scopedText;
-            return true;
-        }
-    }
-    auto enumSyms = request.symbolTable.FindSymbols(qualifier);
-    for (const auto& es : enumSyms)
-    {
-        if (es.type == analysis::SymbolType::Enum)
-        {
-            target.kind = TargetKind::EnumMember;
-            target.declaringEnum = qualifier;
-            target.qualifiedName = scopedText;
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Resolves target if node is an enum member declaration or scoped enum member access.
- * @param[in] outNode AST node.
- * @param[in] nodeText Symbol identifier text.
- * @param[in] request Resolution request.
- * @param[out] target Target descriptor to populate.
- * @return True if successfully resolved as an enum member.
- */
-static bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
-                              TargetDescriptor& target)
-{
-    TSNode parent = parser::GetParent(outNode);
-    if (ts_node_is_null(parent))
-    {
-        return false;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol pSym = ts_node_symbol(parent);
-    if (pSym == gs.symEnumMember)
-    {
-        return TryResolveEnumMemberDeclaration(parent, nodeText, request.sourceCode, target);
-    }
-    if (pSym == gs.symScopedIdentifier)
-    {
-        return TryResolveScopedEnumAccess(parent, nodeText, request, target);
-    }
-    return false;
-}
 
 /**
  * @brief Assign target from container kind.
@@ -833,60 +424,7 @@ static void ResolveGlobalFallbackTarget(const std::string& nodeText, const Resol
         });
 }
 
-/**
- * @brief Finds argument_list node from a call_expression node.
- * @param[in] callNode Call expression AST node.
- * @return Argument list node or null node.
- */
-static TSNode FindArgumentListNode(TSNode callNode)
-{
-    TSNode argsChild = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldArguments);
-    if (!ts_node_is_null(argsChild))
-    {
-        return argsChild;
-    }
-    return parser::FindChildWithSymbol(callNode, parser::GetGrammarSymbols().symArgumentList);
-}
 
-/**
- * @brief Gathers call expression and argument constraints for identifier under cursor.
- * @param[in] outNode Identifier AST node.
- * @return Function argument constraints.
- */
-static FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    FunctionArgConstraints info;
-    TSNode prev = outNode;
-    parser::ForEachAncestor(
-        parser::GetParent(outNode),
-        [&](TSNode walkP) -> bool
-        {
-            const TSSymbol wpSym = ts_node_symbol(walkP);
-            if (wpSym == gs.symCallExpression)
-            {
-                TSNode funcChild = parser::GetCallCallee(walkP);
-                if (!ts_node_is_null(funcChild) &&
-                    (ts_node_eq(funcChild, prev) || ts_node_start_byte(funcChild) == ts_node_start_byte(prev)))
-                {
-                    info.cursorOnCall = true;
-                    TSNode argsChild = FindArgumentListNode(walkP);
-                    if (!ts_node_is_null(argsChild))
-                    {
-                        info.callArgCount = CountCallArguments(argsChild);
-                    }
-                }
-                return false;
-            }
-            if (wpSym == gs.symMemberExpression || wpSym == gs.symScopedIdentifier)
-            {
-                prev = walkP;
-                return true;
-            }
-            return false;
-        });
-    return info;
-}
 
 /**
  * @brief Matches an appropriate function signature from candidate symbols based on call constraints.
@@ -1078,7 +616,7 @@ static void ResolveTargetSignature(TargetDescriptor& target, const ResolveTarget
     }
 }
 
-static bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const parser::GlobalScopeQualifier& gsq,
+static bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const GlobalScopeQualifier& gsq,
                                       TargetDescriptor& target)
 {
     if (gsq.isDirectRoot)
@@ -1091,7 +629,7 @@ static bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const
                 {
                     target.kind = TargetKind::GlobalSymbol;
                     target.name = std::string(gsq.rootPath);
-                    FunctionArgConstraints callInfo = GetCallArgumentConstraints(request.outNode);
+                    FunctionArgConstraints callInfo{};
                     ResolveTargetSignature(target, request, callInfo);
                     return true;
                 }
@@ -1120,7 +658,7 @@ static bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const
                 target.name = std::string(gsq.rootPath);
                 target.qualifiedName = std::string(gsq.rootPath);
             }
-            FunctionArgConstraints callInfo = GetCallArgumentConstraints(request.outNode);
+            FunctionArgConstraints callInfo{};
             ResolveTargetSignature(target, request, callInfo);
             return true;
         }
@@ -1163,7 +701,7 @@ static bool ResolveTargetFromCall(const ResolveTargetRequest& request, const Sco
     {
         return false;
     }
-    const uint32_t callByte = !ts_node_is_null(request.outNode) ? ts_node_start_byte(request.outNode) : identStartByte;
+    const uint32_t callByte = identStartByte;
     if (callByte == UINT32_MAX)
     {
         return false;
@@ -1192,26 +730,16 @@ static void CaptureCallDeclaration(TargetDescriptor& target, const ResolveTarget
     {
         return;
     }
-    SourceRange selection;
-    if (!ts_node_is_null(request.outNode))
-    {
-        const auto start = ts_node_start_point(request.outNode);
-        const auto end = ts_node_end_point(request.outNode);
-        selection = SourceRange{start.row, start.column, end.row, end.column};
-    }
-    else if (identStartByte != UINT32_MAX && identEndByte != UINT32_MAX)
-    {
-        uint32_t lineStartByte = 0;
-        ExtractLineFromSource(request.sourceCode, request.position.line, lineStartByte);
-        uint32_t sCol = identStartByte >= lineStartByte ? (identStartByte - lineStartByte) : request.position.character;
-        uint32_t eCol = identEndByte >= lineStartByte ? (identEndByte - lineStartByte)
-                                                      : sCol + static_cast<uint32_t>(target.name.size());
-        selection = SourceRange{request.position.line, sCol, request.position.line, eCol};
-    }
-    else
+    if (identStartByte == UINT32_MAX || identEndByte == UINT32_MAX)
     {
         return;
     }
+    uint32_t lineStartByte = 0;
+    ExtractLineFromSource(request.sourceCode, request.position.line, lineStartByte);
+    uint32_t sCol = identStartByte >= lineStartByte ? (identStartByte - lineStartByte) : request.position.character;
+    uint32_t eCol = identEndByte >= lineStartByte ? (identEndByte - lineStartByte)
+                                                  : sCol + static_cast<uint32_t>(target.name.size());
+    SourceRange selection{request.position.line, sCol, request.position.line, eCol};
     const auto query = target.kind == TargetKind::ClassMember
                            ? utils::JoinScopedName(target.declaringClass, target.name)
                            : (target.qualifiedName.empty() ? target.name : target.qualifiedName);
@@ -1237,10 +765,10 @@ static void CaptureCallDeclaration(TargetDescriptor& target, const ResolveTarget
  * @param[in] identEndByte End byte of identifier.
  * @return GlobalScopeQualifier structure.
  */
-static parser::GlobalScopeQualifier GetGlobalScopeQualifierNoAst(std::string_view sourceCode, uint32_t identStartByte,
+static GlobalScopeQualifier GetGlobalScopeQualifierNoAst(std::string_view sourceCode, uint32_t identStartByte,
                                                                  uint32_t identEndByte) noexcept
 {
-    parser::GlobalScopeQualifier gsq{};
+    GlobalScopeQualifier gsq{};
     size_t chainStart = identStartByte;
     while (chainStart >= 2 && sourceCode[chainStart - 1] == ':' && sourceCode[chainStart - 2] == ':')
     {
@@ -1508,11 +1036,6 @@ static bool TryResolveScopedTargetNoAst(const ResolveTargetRequest& request, uin
 static bool TryResolveEnumOrScopedTarget(const ResolveTargetRequest& request, const std::string& nodeText,
                                          uint32_t identStartByte, TargetDescriptor& target)
 {
-    if (request.tree)
-    {
-        return ResolveEnumTarget(request.outNode, nodeText, request, target);
-    }
-
     request.symbolTable.ForEachSymbolInFile(
         request.uri,
         [&]([[maybe_unused]] const std::string& qn, const std::vector<analysis::Symbol>& syms)
@@ -1633,10 +1156,9 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
     uint32_t identStartByte = UINT32_MAX;
     uint32_t identEndByte = UINT32_MAX;
-    std::string nodeText = GetNodeTextAt(request.sourceCode, request.tree, request.position, request.outNode,
+    std::string nodeText = GetNodeTextAt(request.sourceCode, request.position,
                                          &identStartByte, &identEndByte);
-    if (nodeText.empty() || (!request.tree && identStartByte == UINT32_MAX) ||
-        (request.tree && ts_node_is_null(request.outNode)) || !IsValidIdentifier(nodeText))
+    if (nodeText.empty() || identStartByte == UINT32_MAX || !IsValidIdentifier(nodeText))
     {
         return std::nullopt;
     }
@@ -1651,9 +1173,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
         return target;
     }
 
-    parser::GlobalScopeQualifier gsq =
-        request.tree ? parser::GetGlobalScopeQualifier(request.outNode, request.sourceCode)
-                     : GetGlobalScopeQualifierNoAst(request.sourceCode, identStartByte, identEndByte);
+    GlobalScopeQualifier gsq = GetGlobalScopeQualifierNoAst(request.sourceCode, identStartByte, identEndByte);
 
     if (gsq.isGlobal)
     {
@@ -1665,9 +1185,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
         return target;
     }
 
-    bool isExplicitMemberAccess = request.tree
-                                      ? ResolveExplicitMemberAccess(request.outNode, request, rootScope, target)
-                                      : ResolveExplicitMemberAccessNoAst(request, rootScope.get(), nodeText, target);
+    bool isExplicitMemberAccess = ResolveExplicitMemberAccessNoAst(request, rootScope.get(), nodeText, target);
 
     if (!isExplicitMemberAccess)
     {
@@ -1675,27 +1193,18 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
     }
     if (target.kind == TargetKind::GlobalSymbol && !isExplicitMemberAccess)
     {
-        if (request.tree)
-        {
-            ResolveContainerTarget(request.outNode, nodeText, request, target);
-        }
-        else
-        {
-            ResolveEnclosingClassMember(request, nodeText, target);
-        }
+        ResolveEnclosingClassMember(request, nodeText, target);
     }
     if (target.kind == TargetKind::GlobalSymbol)
     {
         ResolveGlobalFallbackTarget(nodeText, request, target);
     }
 
-    FunctionArgConstraints callInfo =
-        request.tree ? GetCallArgumentConstraints(request.outNode) : FunctionArgConstraints{};
+    FunctionArgConstraints callInfo{};
     ResolveTargetSignature(target, request, callInfo);
     CaptureCallDeclaration(target, request, identStartByte, identEndByte);
 
-    if (target.kind == TargetKind::GlobalSymbol && !request.tree &&
-        !HasGlobalSymbolOrAccessor(request.symbolTable, target.name))
+    if (target.kind == TargetKind::GlobalSymbol && !HasGlobalSymbolOrAccessor(request.symbolTable, target.name))
     {
         return std::nullopt;
     }
@@ -1879,55 +1388,6 @@ static std::string ResolveNamedIdentifierType(std::string_view name, const analy
 }
 
 /**
- * @brief Resolves receiver type name from AST member expression.
- * @param[in] ref Reference under test.
- * @param[in] scope Lexical scope.
- * @param[in] ctx Occurrence scan context.
- * @return Cleaned receiver type or empty string.
- */
-static std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                          const OccurrenceScanContext& ctx)
-{
-    if (ctx.fileUri != ctx.request.currentUri || !ctx.request.tree)
-    {
-        return "";
-    }
-    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
-    TSPoint pt = {ref.startLine, ref.startCharacter};
-    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(refNode))
-    {
-        return "";
-    }
-    TSNode exprParent = parser::GetParent(refNode);
-    const auto& syms = parser::GetGrammarSymbols();
-    if (ts_node_is_null(exprParent) || ts_node_symbol(exprParent) != syms.symMemberAccess)
-    {
-        return "";
-    }
-    TSNode objNode = parser::GetChildByField(exprParent, parser::GetGrammarSymbols().fieldObject);
-    if (ts_node_is_null(objNode))
-    {
-        return "";
-    }
-    std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-    std::string resolved = analysis::ResolveReceiverType(objNode, ctx.request.sourceCode, ctx.request.symbolTable,
-                                                         {scope, encClass, ctx.fileUri});
-    if (!resolved.empty())
-    {
-        return analysis::CleanBaseType(resolved);
-    }
-    uint32_t oStart = ts_node_start_byte(objNode);
-    uint32_t oEnd = ts_node_end_byte(objNode);
-    if (oStart >= ctx.request.sourceCode.size() || oEnd > ctx.request.sourceCode.size() || oStart >= oEnd)
-    {
-        return "";
-    }
-    std::string_view oText = std::string_view(ctx.request.sourceCode).substr(oStart, oEnd - oStart);
-    return ResolveNamedIdentifierType(oText, scope, ctx.request, ref.startLine, ctx.fileUri);
-}
-
-/**
  * @brief Resolves receiver type name by scanning preceding references in scope.
  * @param[in] ref Reference under test.
  * @param[in] scope Lexical scope.
@@ -1983,11 +1443,6 @@ static std::string ResolveReceiverType(const analysis::LocalReference& ref, cons
     if (auto indexed = ResolveIndexedReferenceReceiver(ref, *scope, ctx.request.symbolTable); !indexed.empty())
     {
         return indexed;
-    }
-    std::string astType = ResolveReceiverFromAst(ref, scope, ctx);
-    if (!astType.empty())
-    {
-        return astType;
     }
     return ResolveReceiverFromScope(ref, scope, ctx);
 }
@@ -2463,17 +1918,6 @@ static bool MatchesDeclaringNamespace(const analysis::LocalReference& ref, std::
         if (ref.startLine >= nr.first && ref.startLine <= nr.second)
         {
             return true;
-        }
-    }
-    if (ctx.fileUri == ctx.request.currentUri && ctx.request.tree)
-    {
-        auto usings = analysis::CollectUsingNamespaces(ts_tree_root_node(ctx.request.tree), ctx.request.sourceCode);
-        for (const auto& u : usings)
-        {
-            if (u == declaringNamespace)
-            {
-                return true;
-            }
         }
     }
     return false;

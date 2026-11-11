@@ -10,11 +10,20 @@
 #include <set>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Global scope prefix qualifier for symbols explicitly rooted with :: syntax.
+ */
+struct GlobalScopeQualifier
+{
+    bool isGlobal = false;
+    bool isDirectRoot = false;
+    std::string_view rootPath{};
+};
+
 /**
  * @brief What kind of thing the cursor is on, which decides where its occurrences can be.
  */
@@ -86,11 +95,9 @@ struct ResolveTargetRequest
 {
     std::string uri;
     std::string sourceCode;
-    TSTree* tree = nullptr;
     TargetPosition position;
     const SymbolTable& symbolTable;
     const ScopeIndex& scopeIndex;
-    TSNode outNode{};
     angel_lsp::utils::LspLogger* logger = nullptr;
     bool useCallBindings = false;
     std::optional<CallBindingRevision> callBindingRevision = std::nullopt;
@@ -104,7 +111,6 @@ struct CollectOccurrencesRequest
     const TargetDescriptor& target;
     std::string currentUri;
     std::string sourceCode;
-    TSTree* tree = nullptr;
     const SymbolTable& symbolTable;
     const ScopeIndex& scopeIndex;
     bool includeDeclaration = true;
@@ -128,7 +134,6 @@ inline ResolveTargetRequest MakeTargetRequest(std::string_view uri, std::string_
     return ResolveTargetRequest{
         .uri = std::string(uri),
         .sourceCode = std::string(sourceCode),
-        .tree = nullptr,
         .position = position,
         .symbolTable = symbolTable,
         .scopeIndex = scopeIndex,
@@ -152,7 +157,6 @@ inline CollectOccurrencesRequest MakeOccurrencesRequest(const TargetDescriptor& 
         .target = target,
         .currentUri = std::string(uri),
         .sourceCode = std::string(sourceCode),
-        .tree = nullptr,
         .symbolTable = symbolTable,
         .scopeIndex = scopeIndex,
     };

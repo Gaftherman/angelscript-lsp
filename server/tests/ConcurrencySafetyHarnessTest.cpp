@@ -179,15 +179,12 @@ void AssertMalformedSnippetTolerance(const std::string& malformedCode, uint32_t 
     auto hlResult = features::GetDocumentHighlights(hlReq);
     CHECK((!hlResult.has_value() || hlResult->empty()));
 
-    TSNode outNode{};
     analysis::ResolveTargetRequest resReq{
         .uri = uri,
         .sourceCode = malformedCode,
-        .tree = managedTree.get(),
         .position = analysis::TargetPosition{queryLine, queryCol},
         .symbolTable = symTable,
         .scopeIndex = scopeIndex,
-        .outNode = outNode,
         .logger = nullptr,
     };
     auto resResult = analysis::ResolveTargetSymbol(resReq);
