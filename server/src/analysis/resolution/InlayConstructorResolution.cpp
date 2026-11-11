@@ -1,4 +1,3 @@
-#include "analysis/index/NodeRecoveryInternal.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/InlayCalleeResolution.h"
@@ -6,7 +5,6 @@
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
 
 #include <optional>
 #include <span>
@@ -20,7 +18,7 @@ namespace angel_lsp::analysis
 /**
  * @brief Matches the best constructor overload using argument types.
  * @param[in] candidateSymbols Candidate constructor symbols.
- * @param[in] declaratorNode AST variable_declarator or construct_call node.
+ * @param[in] declaratorByteOffset Byte offset of the declarator.
  * @param[in] ctx Semantic expression type context.
  * @param[in] args Parsed argument information.
  * @return Pointer to best matching symbol, or nullptr.
@@ -52,11 +50,7 @@ static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candida
         std::string aType;
         if (ctx.nodeIndex)
         {
-            TSNode argNode = RecoverNodeAt(*ctx.nodeIndex, arg.startByte, arg.endByte);
-            if (!ts_node_is_null(argNode))
-            {
-                aType = ResolveExpressionType(argNode, argCtx);
-            }
+            aType = ResolveExpressionTypeAt(IndexedByteRange{arg.startByte, arg.endByte}, argCtx);
         }
         argTypes.push_back(std::move(aType));
     }
@@ -107,14 +101,6 @@ ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, u
     }
 
     return {};
-}
-
-ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, TSNode declaratorNode,
-                                            const ExpressionTypeContext& ctx,
-                                            std::span<const IndexedCallArgument> args)
-{
-    const uint32_t byteOffset = !ts_node_is_null(declaratorNode) ? ts_node_start_byte(declaratorNode) : 0;
-    return ResolveConstructorParameters(declaredTypeName, byteOffset, ctx, args);
 }
 
 std::optional<ResolvedCallee> ResolveConstructorInitCallee(const IndexedConstructorInitDeclarator& decl,

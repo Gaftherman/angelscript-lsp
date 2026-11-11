@@ -3,13 +3,11 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
-#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/types/TypeSanitization.h"
 
 #include <optional>
 #include <string>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -22,12 +20,7 @@ namespace angel_lsp::analysis
  */
 std::string ResolveExpressionType(IndexedByteRange bytes, const ExpressionTypeContext& ctx)
 {
-    const TSNode node = RecoverNodeAt(ctx, bytes.startByte, bytes.endByte);
-    if (ts_node_is_null(node))
-    {
-        return {};
-    }
-    return ResolveExpressionType(node, ctx);
+    return ResolveExpressionTypeAt(bytes, ctx);
 }
 
 /**
@@ -56,12 +49,7 @@ std::optional<std::string> IsBareDataType(IndexedByteRange bytes, const Expressi
  */
 bool IsFunctionReference(IndexedByteRange bytes, const ExpressionTypeContext& ctx)
 {
-    const TSNode node = RecoverNodeAt(ctx, bytes.startByte, bytes.endByte);
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-    return IsFunctionReference(node, ctx);
+    return IsFunctionReferenceAt(bytes, ctx);
 }
 
 } // namespace angel_lsp::analysis

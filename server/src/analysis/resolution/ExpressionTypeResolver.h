@@ -133,7 +133,14 @@ inline std::string ResolveExpressionType(TSNode exprNode, const Scope* scope, co
 {
     return ResolveExpressionType(exprNode, ExpressionTypeContext{scope, symbolTable, sourceCode, ""});
 }
+std::string ResolveExpressionTypeAt(IndexedByteRange expressionRange, const ExpressionTypeContext& ctx);
+inline std::string ResolveExpressionTypeAt(uint32_t startByte, uint32_t endByte, const ExpressionTypeContext& ctx)
+{
+    return ResolveExpressionTypeAt(IndexedByteRange{startByte, endByte}, ctx);
+}
 std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx);
+std::string ResolveReceiverType(IndexedByteRange objRange, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                const ReceiverTypeContext& ctx = {});
 std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
                                 const ReceiverTypeContext& ctx = {});
 } // namespace angel_lsp::analysis

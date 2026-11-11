@@ -60,4 +60,12 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
  */
 [[nodiscard]] bool IsFunctionReference(TSNode node, const ExpressionTypeContext& ctx);
 
+/**
+ * @brief Tests whether a byte range denotes a function or method without invoking it.
+ * @param[in] bytes Byte span of the expression.
+ * @param[in] ctx Semantic expression context.
+ * @return True if node denotes a function symbol.
+ */
+[[nodiscard]] bool IsFunctionReferenceAt(IndexedByteRange bytes, const ExpressionTypeContext& ctx);
+
 } // namespace angel_lsp::analysis

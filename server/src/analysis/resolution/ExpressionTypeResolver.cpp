@@ -3,6 +3,7 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SyntaxOperands.h"
+#include "analysis/resolution/AstRecoveryInternal.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/CallableResolutionInternal.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
@@ -2641,6 +2642,35 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         ctx.cache->receiverTypes.emplace(cacheKey, result);
     }
     return result;
+}
+
+std::string ResolveExpressionTypeAt(IndexedByteRange expressionRange, const ExpressionTypeContext& ctx)
+{
+    const TSNode node = RecoverNodeAt(ctx, expressionRange.startByte, expressionRange.endByte);
+    if (ts_node_is_null(node))
+    {
+        return "";
+    }
+    return ResolveExpressionType(node, ctx);
+}
+
+std::string ResolveReceiverType(IndexedByteRange objRange, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                const ReceiverTypeContext& ctx)
+{
+    if (objRange.startByte == 0 && objRange.endByte == 0)
+    {
+        return "";
+    }
+    TSNode node = TSNode{};
+    if (ctx.nodeIndex)
+    {
+        node = RecoverNodeAt(*ctx.nodeIndex, objRange.startByte, objRange.endByte);
+    }
+    if (ts_node_is_null(node))
+    {
+        return "";
+    }
+    return ResolveReceiverType(node, sourceCode, symbolTable, ctx);
 }
 
 } // namespace angel_lsp::analysis
