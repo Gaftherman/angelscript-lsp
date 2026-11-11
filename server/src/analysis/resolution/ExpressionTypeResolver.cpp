@@ -10,6 +10,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeBinary.h"
 #include "analysis/resolution/ExpressionTypeCall.h"
+#include "analysis/resolution/ExpressionTypeIndex.h"
 #include "analysis/resolution/ExpressionTypeLiterals.h"
 #include "analysis/resolution/ExpressionTypeMember.h"
 #include "analysis/resolution/ExpressionTypeTernary.h"
@@ -889,43 +890,6 @@ static std::optional<std::string> ResolveLambdaOrInitExpr(TSSymbol sym, TSNode e
 }
 
 /**
- * @brief Searches a collection of accessor symbols for an indexed getter return type.
- * @param[in] accessors Vector of accessor symbols.
- * @param[in] symbolTable Global symbol table pointer for overload resolution.
- * @param[in] indexArgType Deduced type of the index argument.
- * @return Return type of the indexed getter, or empty string.
- */
-static std::string FindIndexedGetterType(const std::vector<Symbol>& accessors, const SymbolTable* symbolTable = nullptr,
-                                         std::string_view indexArgType = "")
-{
-    std::vector<Symbol> getters;
-    for (const auto& sym : accessors)
-    {
-        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-        {
-            const auto& fn = sym.GetFunction();
-            if (sym.name.starts_with("get_") && !fn.parameters.empty())
-            {
-                getters.push_back(sym);
-            }
-        }
-    }
-    if (getters.empty())
-    {
-        return "";
-    }
-    if (symbolTable && !indexArgType.empty())
-    {
-        auto match = ResolveBestOverload(getters, {std::string(indexArgType)}, *symbolTable);
-        if (match.bestCandidate)
-        {
-            return CleanExpressionType(match.bestCandidate->GetFunction().returnType);
-        }
-    }
-    return CleanExpressionType(getters.front().GetFunction().returnType);
-}
-
-/**
  * @brief Resolves indexed property accessor type from member expression receiver.
  * @param[in] objNode Member expression AST node.
  * @param[in] ctx Expression type resolution context.
@@ -944,12 +908,7 @@ static std::string ResolveMemberIndexedProperty(TSNode objNode, const Expression
     }
     std::string recType = CleanBaseType(ResolveExpressionType(recNode, ctx));
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
-    if (recType.empty() || memName.empty())
-    {
-        return "";
-    }
-    return FindIndexedGetterType(FindPropertyAccessors(recType, memName, ctx.symbolTable, false), &ctx.symbolTable,
-                                 indexArgType);
+    return ResolveMemberIndexedPropertyType(recType, memName, ctx.symbolTable, indexArgType);
 }
 
 /**
@@ -968,41 +927,16 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
     {
         std::string_view text = parser::NodeText(objNode, ctx.sourceCode);
         const auto [scopeName, name] = utils::SplitScopedName(text);
-        if (!scopeName.empty())
-        {
-            return FindIndexedGetterType(
-                FindPropertyAccessors(std::string(scopeName), std::string(name), ctx.symbolTable, false),
-                &ctx.symbolTable, indexArgType);
-        }
-        return "";
+        return ResolveScopedIndexedPropertyType(scopeName, name, ctx.symbolTable, indexArgType);
     }
 
     std::string_view name = parser::NodeText(objNode, ctx.sourceCode);
-    if (name.empty())
-    {
-        return "";
-    }
-    if (std::string hit = FindIndexedGetterType(FindGlobalPropertyAccessors(std::string(name), ctx.symbolTable, false),
-                                                &ctx.symbolTable, indexArgType);
-        !hit.empty())
-    {
-        return hit;
-    }
+    std::string enclosing;
     if (!ctx.uri.empty())
     {
-        std::string enclosing = ctx.symbolTable.FindEnclosingClassName(ctx.uri, ts_node_start_point(objNode).row);
-        if (!enclosing.empty())
-        {
-            if (std::string hit =
-                    FindIndexedGetterType(FindPropertyAccessors(enclosing, std::string(name), ctx.symbolTable, false),
-                                          &ctx.symbolTable, indexArgType);
-                !hit.empty())
-            {
-                return hit;
-            }
-        }
+        enclosing = ctx.symbolTable.FindEnclosingClassName(ctx.uri, ts_node_start_point(objNode).row);
     }
-    return "";
+    return ResolveBareIndexedPropertyType(name, enclosing, ctx.symbolTable, indexArgType);
 }
 
 /**
