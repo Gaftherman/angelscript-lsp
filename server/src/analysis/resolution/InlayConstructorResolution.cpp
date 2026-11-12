@@ -59,8 +59,7 @@ static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candida
 }
 
 ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, uint32_t declaratorByteOffset,
-                                            const ExpressionTypeContext& ctx,
-                                            std::span<const IndexedCallArgument> args)
+                                            const ExpressionTypeContext& ctx, std::span<const IndexedCallArgument> args)
 {
     std::string baseName = CleanBaseType(std::string(declaredTypeName));
     if (baseName.empty())

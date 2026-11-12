@@ -1,5 +1,4 @@
 #include "lsp/state/PredefinedStubManager.h"
-
 #include "utils/IncludeResolver.h"
 
 #include <algorithm>

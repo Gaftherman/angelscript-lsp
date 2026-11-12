@@ -39,8 +39,7 @@ void CollectMixinCallCandidates(std::string_view containerName, const std::strin
 }
 
 std::vector<Symbol> CollectEnclosingCallCandidates(const std::vector<ContainerInfo>& containers,
-                                                   const std::string& funcName,
-                                                   const SymbolTable& symbolTable,
+                                                   const std::string& funcName, const SymbolTable& symbolTable,
                                                    ExpressionTypeCache* cache)
 {
     std::vector<Symbol> candidates;
@@ -65,8 +64,7 @@ std::vector<Symbol> CollectEnclosingCallCandidates(const std::vector<ContainerIn
     return candidates;
 }
 
-std::string ResolveCallOverloadReturn(const std::vector<Symbol>& candidates,
-                                      const std::vector<std::string>& argTypes,
+std::string ResolveCallOverloadReturn(const std::vector<Symbol>& candidates, const std::vector<std::string>& argTypes,
                                       const SymbolTable& symbolTable)
 {
     if (candidates.empty())
@@ -152,8 +150,7 @@ std::string FindClassOrInterfaceName(const std::string& funcName, const SymbolTa
     return "";
 }
 
-std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req,
-                                    const std::vector<std::string>& argTypes,
+std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req, const std::vector<std::string>& argTypes,
                                     const SymbolTable& symbolTable)
 {
     std::string objType = CanonicalizeArrayType(std::string(req.objType), req.arrayTypeName);

@@ -12,8 +12,7 @@
 namespace angel_lsp::analysis
 {
 
-bool IsFunctionHandleTargetName(std::string_view targetName,
-                                const std::vector<Symbol>& inScopeSymbols,
+bool IsFunctionHandleTargetName(std::string_view targetName, const std::vector<Symbol>& inScopeSymbols,
                                 const SymbolTable& symbolTable)
 {
     if (targetName.empty() || targetName.find('(') != std::string_view::npos)

@@ -1116,15 +1116,15 @@ TEST_CASE("FunctionRules - Reports standalone anonymous function")
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
         TSTree* tree = parser.Parse(code);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);
         if (tree)
-    {
-        ts_tree_delete(tree);
-    }
+        {
+            ts_tree_delete(tree);
+        }
         return diags;
     };
 
@@ -1190,15 +1190,15 @@ TEST_CASE("FunctionRules - Reports a reserved keyword used as a parameter name")
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
         TSTree* tree = parser.Parse(code);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);
         if (tree)
-    {
-        ts_tree_delete(tree);
-    }
+        {
+            ts_tree_delete(tree);
+        }
         return diags;
     };
 

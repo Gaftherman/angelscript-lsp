@@ -1,8 +1,8 @@
 #include "analysis/index/AssignmentSiteFacts.h"
 
+#include "analysis/index/CallArgumentFacts.h"
 #include "analysis/index/SpanFactSearch.h"
 #include "analysis/index/SyntaxOperands.h"
-#include "analysis/index/CallArgumentFacts.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"

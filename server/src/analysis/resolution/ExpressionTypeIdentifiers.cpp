@@ -34,8 +34,7 @@ std::string ExtractVariableOrPropertyType(std::span<const Symbol> syms, const Sy
     return {};
 }
 
-std::string ResolveScopedEnumMember(std::string_view whole,
-                                    const std::vector<Symbol>& scopeSymbols,
+std::string ResolveScopedEnumMember(std::string_view whole, const std::vector<Symbol>& scopeSymbols,
                                     const SymbolTable& symbolTable)
 {
     const auto [qualView, mem] = utils::SplitScopedName(whole);
@@ -65,14 +64,11 @@ std::string ResolveScopedEnumMember(std::string_view whole,
     return "";
 }
 
-std::string ResolveScopedIdentifierType(std::string_view scopedText,
-                                        const std::vector<Symbol>& wholeScopeSymbols,
-                                        const std::vector<Symbol>& qualScopeSymbols,
-                                        const SymbolTable& symbolTable)
+std::string ResolveScopedIdentifierType(std::string_view scopedText, const std::vector<Symbol>& wholeScopeSymbols,
+                                        const std::vector<Symbol>& qualScopeSymbols, const SymbolTable& symbolTable)
 {
-    std::string_view lookupPath = utils::HasLeadingGlobalPrefix(scopedText)
-                                      ? utils::StripGlobalPrefix(scopedText)
-                                      : scopedText;
+    std::string_view lookupPath =
+        utils::HasLeadingGlobalPrefix(scopedText) ? utils::StripGlobalPrefix(scopedText) : scopedText;
     auto syms = symbolTable.FindSymbols(lookupPath);
     if (std::string type = ExtractVariableOrPropertyType(syms, symbolTable); !type.empty())
     {
@@ -118,9 +114,8 @@ std::string ResolveIdentifierAccessorFallback(std::string_view name, const Symbo
 }
 
 std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(std::string_view name,
-                                                          const std::vector<ContainerInfo>& containers,
-                                                          const SymbolTable& symbolTable,
-                                                          ExpressionTypeCache* cache)
+                                                           const std::vector<ContainerInfo>& containers,
+                                                           const SymbolTable& symbolTable, ExpressionTypeCache* cache)
 {
     std::string nameStr(name);
     for (const auto& c : containers)
@@ -150,10 +145,8 @@ std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(std::string_view name
     return {};
 }
 
-std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name,
-                                                       const std::string& hostClass,
-                                                       const SymbolTable& symbolTable,
-                                                       ExpressionTypeCache* cache)
+std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name, const std::string& hostClass,
+                                                       const SymbolTable& symbolTable, ExpressionTypeCache* cache)
 {
     if (hostClass.empty())
     {
@@ -213,8 +206,7 @@ std::string ResolveThisType(std::string_view hostClass, const std::vector<Contai
     return "";
 }
 
-std::string ExtractFirstSymbolTypeOrAccessor(const std::vector<Symbol>& syms,
-                                             const SymbolTable& symbolTable)
+std::string ExtractFirstSymbolTypeOrAccessor(const std::vector<Symbol>& syms, const SymbolTable& symbolTable)
 {
     for (const auto& sym : syms)
     {

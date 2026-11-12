@@ -1,8 +1,7 @@
-#include "analysis/resolution/InlayTypeDeduction.h"
-
 #include "analysis/index/ReturnSiteFacts.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
+#include "analysis/resolution/InlayTypeDeduction.h"
 #include "analysis/types/TypeSanitization.h"
 
 #include <string>

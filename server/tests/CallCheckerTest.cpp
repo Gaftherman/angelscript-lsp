@@ -227,7 +227,8 @@ TEST_CASE("CallChecker - A global declared in another file is not a candidate")
 
     SemanticAnalyzer analyzer(nullptr);
     const auto diagnostics = analyzer.Analyze(request);
-    if (tree) ts_tree_delete(tree);
+    if (tree)
+        ts_tree_delete(tree);
 
     CHECK_FALSE(HasCode(diagnostics, "as-err-call-argument-count"));
 }

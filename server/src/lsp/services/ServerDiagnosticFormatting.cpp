@@ -1,4 +1,5 @@
 #include "lsp/services/ServerDiagnosticFormatting.h"
+
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "lsp/services/ServerAnalysisTypes.h"
 
@@ -24,8 +25,8 @@ lsp::DiagnosticSeverity ToProtocolSeverity(analysis::DiagnosticSeverity severity
     return lsp::DiagnosticSeverity::Error;
 }
 
-std::string FormatPrefixedDiagnosticMessage(analysis::DiagnosticSeverity severity,
-                                            std::string_view displayCode, std::string_view rawMessage)
+std::string FormatPrefixedDiagnosticMessage(analysis::DiagnosticSeverity severity, std::string_view displayCode,
+                                            std::string_view rawMessage)
 {
     if (displayCode.empty() || rawMessage.starts_with("["))
     {

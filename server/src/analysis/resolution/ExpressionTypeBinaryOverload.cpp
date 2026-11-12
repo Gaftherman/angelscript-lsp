@@ -1,6 +1,5 @@
-#include "analysis/resolution/ExpressionTypeBinary.h"
-
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ExpressionTypeBinary.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
@@ -198,8 +197,8 @@ std::string ResolveBinaryOverload(std::string_view op, const std::string& leftTy
     return SelectBestBinaryOverload(forwardMatch, reverseMatch);
 }
 
-std::string EvaluateBinaryResultType(std::string_view op, const std::string& leftType,
-                                     const std::string& rightType, const ExpressionTypeContext& ctx)
+std::string EvaluateBinaryResultType(std::string_view op, const std::string& leftType, const std::string& rightType,
+                                     const ExpressionTypeContext& ctx)
 {
     if (IsBooleanBinaryOp(op))
     {

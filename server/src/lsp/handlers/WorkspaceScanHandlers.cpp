@@ -11,12 +11,12 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp
 {
@@ -205,15 +205,15 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
         ReanalyseOnExit reanalyseOnExit{[this, &stopToken]()
                                         {
-                                             if (!IsPredefinedReady())
-                                             {
-                                                 SetPredefinedReady(true);
-                                             }
-                                             SetWorkspaceScanComplete(true);
-                                             if (!stopToken.stop_requested())
-                                             {
-                                                 ScheduleOpenDocumentsForReanalysis();
-                                             }
+                                            if (!IsPredefinedReady())
+                                            {
+                                                SetPredefinedReady(true);
+                                            }
+                                            SetWorkspaceScanComplete(true);
+                                            if (!stopToken.stop_requested())
+                                            {
+                                                ScheduleOpenDocumentsForReanalysis();
+                                            }
                                         }};
 
         WorkspaceFilesWalkResult walkResult;

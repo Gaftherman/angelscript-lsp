@@ -110,7 +110,7 @@ TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
 
         TSTree* tree = parser.Parse(source);
         NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         for (auto& diagnostic : analyzer.Analyze(request))

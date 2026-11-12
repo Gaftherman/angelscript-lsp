@@ -45,8 +45,7 @@ std::optional<std::string> ResolveIdentifierDefaultValue(std::string_view name, 
             return std::string(parser::UnquoteStringView(def->defaultValue));
         }
     }
-    auto candidates =
-        analysis::FindSymbolsInScope(name, nodeStartByte, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
+    auto candidates = analysis::FindSymbolsInScope(name, nodeStartByte, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
     for (const auto& sym : candidates)
     {
         if (sym.type == SymbolType::Variable && !sym.GetVariable().defaultValue.empty())
@@ -128,8 +127,7 @@ std::string DeduceLocalDefinitionHoverType(const LocalDefinition& def, IndexedBy
     return !inferred.empty() ? inferred : def.typeName;
 }
 
-std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange,
-                                     const ExpressionTypeContext& ctx)
+std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, const ExpressionTypeContext& ctx)
 {
     if (ctx.nodeIndex)
     {

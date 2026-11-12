@@ -50,12 +50,11 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
     analysis::SymbolTable staging;
     auto parsed = ParseAndCollectSymbols(request, staging, syntaxCache);
     const auto* index = parsed.syntax ? &parsed.syntax->index : nullptr;
-    auto scopes = (m_localScopeCollector && index)
-                      ? m_localScopeCollector->CollectScopesFromIndex(*index, request.text)
-                      : nullptr;
-    auto calls = scopes ? analysis::CollectCallsFromScopeTree(*scopes)
-                        : (index ? analysis::CollectCallsFromIndex(*index, request.text)
-                                 : std::vector<analysis::CallSite>{});
+    auto scopes = (m_localScopeCollector && index) ? m_localScopeCollector->CollectScopesFromIndex(*index, request.text)
+                                                   : nullptr;
+    auto calls =
+        scopes ? analysis::CollectCallsFromScopeTree(*scopes)
+               : (index ? analysis::CollectCallsFromIndex(*index, request.text) : std::vector<analysis::CallSite>{});
 
     std::lock_guard lock(m_closureMutex);
     if (!IsClosedRevisionCurrentLocked(uriStr, revision) || GetDocumentStore().IsOpen(uriStr))

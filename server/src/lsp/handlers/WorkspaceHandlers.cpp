@@ -1,14 +1,14 @@
-#include "lsp/handlers/WorkspaceConfigHelpers.h"
 #include "lsp/Server.h"
+#include "lsp/handlers/WorkspaceConfigHelpers.h"
 
 #include <algorithm>
 #include <cctype>
 #include <mutex>
+#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp
 {

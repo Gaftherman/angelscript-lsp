@@ -147,8 +147,8 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
         TSTree* tree = parser.Parse(source);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         const auto diagnostics = analyzer.Analyze(request);
@@ -160,9 +160,9 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         }
 
         if (tree)
-    {
-        ts_tree_delete(tree);
-    }
+        {
+            ts_tree_delete(tree);
+        }
         return counts;
     };
 
@@ -202,8 +202,8 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
         TSTree* tree = parser.Parse(source);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         for (const auto& diag : analyzer.Analyze(request))
@@ -211,9 +211,9 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
             ++asScript[std::string(diag.code)];
         }
         if (tree)
-    {
-        ts_tree_delete(tree);
-    }
+        {
+            ts_tree_delete(tree);
+        }
     }
 
     {
@@ -221,8 +221,8 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
         TSTree* tree = parser.Parse(source);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         for (const auto& diag : analyzer.Analyze(request))
@@ -230,9 +230,9 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
             MESSAGE("    surviving: L" << diag.range.start.line + 1 << " [" << diag.code << "] " << diag.message);
         }
         if (tree)
-    {
-        ts_tree_delete(tree);
-    }
+        {
+            ts_tree_delete(tree);
+        }
     }
 
     MESSAGE("  diagnostics when treated as a stub: " << std::accumulate(asStub.begin(), asStub.end(), size_t{0},

@@ -1,4 +1,5 @@
 #include "lsp/Server.h"
+
 #include "lsp/pipeline/LspSessionCoordinator.h"
 #include "lsp/state/WorkspaceStateStore.h"
 

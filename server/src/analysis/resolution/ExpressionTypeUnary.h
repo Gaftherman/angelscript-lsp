@@ -16,9 +16,8 @@ namespace angel_lsp::analysis
  * @param[in] symbolTable Symbol table to query.
  * @return True if targetName refers to a function.
  */
-[[nodiscard]] bool IsFunctionHandleTargetName(std::string_view targetName,
-                                             const std::vector<Symbol>& inScopeSymbols,
-                                             const SymbolTable& symbolTable);
+[[nodiscard]] bool IsFunctionHandleTargetName(std::string_view targetName, const std::vector<Symbol>& inScopeSymbols,
+                                              const SymbolTable& symbolTable);
 
 /**
  * @brief Resolves the resulting type of a unary minus expression.

@@ -448,6 +448,4 @@ bool IsListConstructor(const Symbol& sym)
     return IsListConstructorSignature(sym.GetFunction());
 }
 
-
-
 } // namespace angel_lsp::analysis

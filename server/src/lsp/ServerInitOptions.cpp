@@ -1,19 +1,17 @@
-#include "lsp/ServerCapabilities.h"
-
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "lsp/Server.h"
+#include "lsp/ServerCapabilities.h"
 #include "utils/IncludeResolver.h"
-#include "utils/MultiFileLogger.h"
 #include "utils/Utils.h"
 
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp
 {
@@ -64,9 +62,7 @@ static std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, cons
     return std::nullopt;
 }
 
-void ExtractInitialWorkspaceRoots(WorkspaceStateStore& workspaceStore,
-                                  const angel_lsp::config::ServerConfig& config,
-                                  std::mutex& runtimeConfigMutex,
+void ExtractInitialWorkspaceRoots(WorkspaceStateStore& workspaceStore, std::mutex& runtimeConfigMutex,
                                   const lsp::requests::Initialize::Params& params)
 {
     std::lock_guard<std::mutex> lock(runtimeConfigMutex);
@@ -103,13 +99,6 @@ void ExtractInitialWorkspaceRoots(WorkspaceStateStore& workspaceStore,
             roots.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(root));
         }
     }
-
-#if defined(_DEBUG) || !defined(NDEBUG)
-    if (config.info.enableFileLogging && !roots.empty())
-    {
-        angel_lsp::utils::MultiFileLogger::Instance().Initialize(roots.front());
-    }
-#endif
 
     workspaceStore.SetWorkspaceRoots(std::move(roots));
 }
@@ -200,8 +189,8 @@ static void LogNonDefaultEngineProperties(const config::EngineProperties& engine
     }
 }
 
-void BuildDiagnosticSeverityOverrides(DiagnosticsPipeline* pipeline,
-                                     const angel_lsp::config::ServerConfig& config, utils::LspLogger* logger)
+void BuildDiagnosticSeverityOverrides(DiagnosticsPipeline* pipeline, const angel_lsp::config::ServerConfig& config,
+                                      utils::LspLogger* logger)
 {
     ankerl::unordered_dense::map<std::string, angel_lsp::analysis::DiagnosticSeverity, angel_lsp::TransparentStringHash,
                                  std::equal_to<>>

@@ -61,9 +61,8 @@ std::string ResolveScopedIndexedPropertyType(std::string_view scopeName, std::st
     {
         return "";
     }
-    return FindIndexedGetterType(
-        FindPropertyAccessors(std::string(scopeName), std::string(name), symbolTable, false),
-        &symbolTable, indexArgType);
+    return FindIndexedGetterType(FindPropertyAccessors(std::string(scopeName), std::string(name), symbolTable, false),
+                                 &symbolTable, indexArgType);
 }
 
 std::string ResolveBareIndexedPropertyType(std::string_view name, std::string_view enclosingClass,
@@ -81,9 +80,9 @@ std::string ResolveBareIndexedPropertyType(std::string_view name, std::string_vi
     }
     if (!enclosingClass.empty())
     {
-        if (std::string hit =
-                FindIndexedGetterType(FindPropertyAccessors(std::string(enclosingClass), std::string(name), symbolTable, false),
-                                      &symbolTable, indexArgType);
+        if (std::string hit = FindIndexedGetterType(
+                FindPropertyAccessors(std::string(enclosingClass), std::string(name), symbolTable, false), &symbolTable,
+                indexArgType);
             !hit.empty())
         {
             return hit;

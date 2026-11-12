@@ -15,8 +15,7 @@ namespace angel_lsp::analysis
  * @param[in] templateText Template argument list spelling, if present.
  * @return Cleaned instantiated type name, or empty string.
  */
-[[nodiscard]] std::string ResolveConstructCallType(std::string_view typeText,
-                                                   std::string_view templateText = "");
+[[nodiscard]] std::string ResolveConstructCallType(std::string_view typeText, std::string_view templateText = "");
 
 /**
  * @brief Resolves cast expression type from the target type operand spelling.

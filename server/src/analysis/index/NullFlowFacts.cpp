@@ -1,9 +1,9 @@
 #include "analysis/index/NullFlowFacts.h"
 
+#include "analysis/index/CallArgumentFacts.h"
 #include "analysis/index/NullFlowFactsInternal.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/index/TypeExtraction.h"
-#include "analysis/index/CallArgumentFacts.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/ScopedNameUtils.h"

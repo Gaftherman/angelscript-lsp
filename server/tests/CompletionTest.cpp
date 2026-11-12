@@ -55,7 +55,7 @@ struct TestEnvironment
             request.typeConfig = &types;
             request.sourceCode = sourceCode;
             NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+            request.nodeIndex = &nodeIndex;
             request.scopeRoot = rootScope;
             // The caller still owns this tree exclusively, which is what makes the write-back
             // sound - see TypeConversionChecker.h on mutableScopeRoot.

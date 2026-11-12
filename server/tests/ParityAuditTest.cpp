@@ -408,8 +408,8 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
         request.excludedLineRanges = std::move(scan.excluded);
         request.unsupportedDirectives = std::move(scan.unsupported);
         TSTree* tree = parser.Parse(source);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         auto ours = collectorDiagnostics;
@@ -447,7 +447,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
         }
 
         if (tree)
-        ts_tree_delete(tree);
+            ts_tree_delete(tree);
 
         if (current.realAccepts)
         {

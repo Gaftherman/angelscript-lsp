@@ -22,8 +22,8 @@ lsp::DiagnosticSeverity ToProtocolSeverity(analysis::DiagnosticSeverity severity
  * @param[in] rawMessage Original diagnostic message.
  * @return Prefixed message string.
  */
-std::string FormatPrefixedDiagnosticMessage(analysis::DiagnosticSeverity severity,
-                                            std::string_view displayCode, std::string_view rawMessage);
+std::string FormatPrefixedDiagnosticMessage(analysis::DiagnosticSeverity severity, std::string_view displayCode,
+                                            std::string_view rawMessage);
 
 /**
  * @brief Resolves a VS Code settings URI for a diagnostic code so the code renders as a clickable link.

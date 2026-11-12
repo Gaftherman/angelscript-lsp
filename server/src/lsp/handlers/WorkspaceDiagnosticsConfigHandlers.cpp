@@ -1,5 +1,5 @@
-#include "lsp/handlers/WorkspaceConfigHelpers.h"
 #include "lsp/Server.h"
+#include "lsp/handlers/WorkspaceConfigHelpers.h"
 
 #include <string>
 #include <string_view>

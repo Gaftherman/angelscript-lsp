@@ -46,9 +46,9 @@ struct PreprocessorFeatures
  * @return Sorted non-overlapping list of excluded line ranges.
  * @note Preserves newlines across blanked regions to keep line numbering synchronized.
  */
-std::vector<ExcludedLineRange>
-FindExcludedLineRanges(std::string_view sourceCode, const TransparentStringSet& definedWords = {},
-                       const PreprocessorFeatures& features = {});
+std::vector<ExcludedLineRange> FindExcludedLineRanges(std::string_view sourceCode,
+                                                      const TransparentStringSet& definedWords = {},
+                                                      const PreprocessorFeatures& features = {});
 
 /**
  * @brief What is wrong with a directive, which decides what the reader is told.
@@ -104,8 +104,7 @@ struct PreprocessorScan
  * @param[in] reportPragma Whether a surviving `#pragma` counts as unsupported. A stock host rejects
  *        every one - with no callback registered the add-on substitutes a failure and fails the
  */
-PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
-                                  const TransparentStringSet& definedWords = {},
+PreprocessorScan ScanPreprocessor(std::string_view sourceCode, const TransparentStringSet& definedWords = {},
                                   const PreprocessorFeatures& features = {}, bool reportPragma = false);
 
 /**

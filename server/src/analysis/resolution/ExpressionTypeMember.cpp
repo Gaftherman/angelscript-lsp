@@ -16,8 +16,7 @@
 namespace angel_lsp::analysis
 {
 
-std::vector<std::string> OrderMemberPropertySearchHierarchy(const std::string& cleanObj,
-                                                            const SymbolTable& symbolTable)
+std::vector<std::string> OrderMemberPropertySearchHierarchy(const std::string& cleanObj, const SymbolTable& symbolTable)
 {
     auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
     if (hierarchy.empty() && !cleanObj.empty())
@@ -56,7 +55,7 @@ static bool IsNonEnumSymbol(const Symbol& s)
 }
 
 std::vector<Symbol> FindMemberSymbolsInType(const std::string& typeName, const std::string& memName,
-                                           const SymbolTable& symbolTable)
+                                            const SymbolTable& symbolTable)
 {
     auto found = symbolTable.FindMemberSymbols(typeName, memName);
     const bool hasInstance = std::any_of(found.begin(), found.end(), IsNonEnumSymbol);
@@ -220,10 +219,8 @@ std::vector<Symbol> CollectMemberMethodCandidates(const std::string& ownerType, 
     return candidates;
 }
 
-std::string ResolveMemberPropertyType(std::string_view objType,
-                                      std::string_view fallbackObjName,
-                                      std::string_view memName,
-                                      const SymbolTable& symbolTable)
+std::string ResolveMemberPropertyType(std::string_view objType, std::string_view fallbackObjName,
+                                      std::string_view memName, const SymbolTable& symbolTable)
 {
     if (ExpressionTypeCache::IsPoisonType(objType))
     {

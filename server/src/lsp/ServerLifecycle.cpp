@@ -10,10 +10,10 @@
 #include <chrono>
 #include <exception>
 #include <memory>
+#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <thread>
 #include <utility>
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp
 {

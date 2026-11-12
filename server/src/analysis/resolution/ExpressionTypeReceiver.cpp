@@ -1,6 +1,5 @@
-#include "analysis/resolution/ExpressionTypeResolver.h"
-
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/types/TypeSanitization.h"
@@ -211,8 +210,7 @@ static std::string ResolveReceiverTypeUncached(IndexedByteRange objRange, std::s
     std::string effectiveHostClass = GetEffectiveHostClass(ctx.virtualHostClass, ctx.fileUri);
     if (effectiveHostClass.empty())
     {
-        effectiveHostClass =
-            InferHostClassFromEnclosingMixin(objRange, ctx.nodeIndex, sourceCode, symbolTable);
+        effectiveHostClass = InferHostClassFromEnclosingMixin(objRange, ctx.nodeIndex, sourceCode, symbolTable);
     }
     const std::string_view arrayTypeName =
         ctx.arrayTypeName.empty() ? symbolTable.GetDefaultArrayType() : ctx.arrayTypeName;
@@ -238,8 +236,8 @@ static std::string ResolveReceiverTypeUncached(IndexedByteRange objRange, std::s
     }
 
     if (auto delRes = ResolveDelegatePropertyReceiver(
-            {objRange, std::string(objText), effectiveHostClass, sourceCode, arrayTypeName, ctx.nodeIndex},
-            symbolTable, ctx);
+            {objRange, std::string(objText), effectiveHostClass, sourceCode, arrayTypeName, ctx.nodeIndex}, symbolTable,
+            ctx);
         !delRes.empty())
     {
         return delRes;

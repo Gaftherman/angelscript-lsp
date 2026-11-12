@@ -1,6 +1,5 @@
-#include "analysis/resolution/InlayCalleeResolutionInternal.h"
-
 #include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/InlayCalleeResolutionInternal.h"
 #include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"

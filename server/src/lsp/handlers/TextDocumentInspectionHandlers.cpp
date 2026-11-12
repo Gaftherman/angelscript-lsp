@@ -8,11 +8,11 @@
 #include "utils/Utils.h"
 
 #include <memory>
+#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp
 {

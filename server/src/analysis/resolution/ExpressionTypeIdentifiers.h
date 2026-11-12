@@ -27,8 +27,7 @@ namespace angel_lsp::analysis
  * @param[in] symbolTable Symbol table to query.
  * @return Qualified enum type name, or empty string.
  */
-[[nodiscard]] std::string ResolveScopedEnumMember(std::string_view whole,
-                                                  const std::vector<Symbol>& scopeSymbols,
+[[nodiscard]] std::string ResolveScopedEnumMember(std::string_view whole, const std::vector<Symbol>& scopeSymbols,
                                                   const SymbolTable& symbolTable);
 
 /**
@@ -61,9 +60,9 @@ namespace angel_lsp::analysis
  * @return Matching member symbols or property accessors, if found.
  */
 [[nodiscard]] std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(std::string_view name,
-                                                                        const std::vector<ContainerInfo>& containers,
-                                                                        const SymbolTable& symbolTable,
-                                                                        ExpressionTypeCache* cache);
+                                                                         const std::vector<ContainerInfo>& containers,
+                                                                         const SymbolTable& symbolTable,
+                                                                         ExpressionTypeCache* cache);
 
 /**
  * @brief Resolves identifier type from a host class hierarchy for mixins or virtual documents.
@@ -84,8 +83,7 @@ namespace angel_lsp::analysis
  * @param[in] containers Enclosing container declarations.
  * @return Cleaned class/interface type name, or empty string.
  */
-[[nodiscard]] std::string ResolveThisType(std::string_view hostClass,
-                                          const std::vector<ContainerInfo>& containers);
+[[nodiscard]] std::string ResolveThisType(std::string_view hostClass, const std::vector<ContainerInfo>& containers);
 
 /**
  * @brief Extracts type from resolved candidate symbols (variable, property, or accessor).

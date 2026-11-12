@@ -145,8 +145,7 @@ namespace angel_lsp::analysis
  * @param[in] ctx Semantic expression context.
  * @return Deduced concrete type name, or empty string if unresolved.
  */
-[[nodiscard]] std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange,
-                                                   const ExpressionTypeContext& ctx);
+[[nodiscard]] std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, const ExpressionTypeContext& ctx);
 
 /**
  * @brief Appends visible methods from enclosing class and interface hierarchies to candidate symbol vector.

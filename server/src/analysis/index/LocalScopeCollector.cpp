@@ -3,12 +3,13 @@
 #include "analysis/index/CallArgumentFacts.h"
 #include "analysis/index/ReferenceReceiverIndex.h"
 #include "analysis/index/TypeExtraction.h"
-#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "parser/QueryRegistry.h"
 #include "parser/SyntaxTree.h"
 #include "parser/queries/BuiltQueries.h"
@@ -195,7 +196,7 @@ static LocalScopeCollector::DocumentContext BuildDocumentContext(const NodeIndex
 }
 
 std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromIndex(const NodeIndex& nodeIndex,
-                                                                  const std::string& sourceCode) const
+                                                                   const std::string& sourceCode) const
 {
     return CollectScopesFromTree(nodeIndex.Root(), sourceCode, &nodeIndex);
 }
@@ -556,7 +557,7 @@ static bool IsValidParameterCapture(ScopeKind kind, TSSymbol enclosingSym, TSSym
 static bool IsDisallowedVariableType(std::string_view typeName)
 {
     const std::string baseType = CleanBaseType(typeName);
-    return IsReservedKeyword(baseType) && !IsPrimitiveTypeName(baseType) && baseType != "auto";
+    return parser::keywords::IsReserved(baseType) && !parser::primitives::IsPrimitive(baseType) && baseType != "auto";
 }
 
 /**

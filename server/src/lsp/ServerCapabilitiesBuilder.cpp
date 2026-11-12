@@ -1,16 +1,15 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
-#include "lsp/ServerCapabilities.h"
 #include "lsp/Server.h"
+#include "lsp/ServerCapabilities.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <vector>
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp
 {
 
-void NegotiateClientCapabilities(LspSessionCoordinator& sessionCoordinator,
-                                const lsp::ClientCapabilities& capabilities)
+void NegotiateClientCapabilities(LspSessionCoordinator& sessionCoordinator, const lsp::ClientCapabilities& capabilities)
 {
     utils::PositionEncoding positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
     if (capabilities.general.has_value() && capabilities.general->positionEncodings.has_value())
@@ -257,7 +256,7 @@ static void ConfigureWorkspaceCapabilities(const angel_lsp::config::ServerConfig
 }
 
 lsp::ServerCapabilities BuildServerCapabilities(const angel_lsp::config::ServerConfig& config,
-                                               utils::PositionEncoding enc, bool usePullDiagnostics)
+                                                utils::PositionEncoding enc, bool usePullDiagnostics)
 {
     lsp::ServerCapabilities caps;
     caps.positionEncoding = (enc == angel_lsp::utils::PositionEncoding::Utf8) ? lsp::PositionEncodingKind::UTF8

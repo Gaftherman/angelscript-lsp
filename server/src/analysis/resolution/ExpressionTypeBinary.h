@@ -25,9 +25,9 @@ namespace angel_lsp::analysis
  * @return Promoted type name, or empty string.
  */
 [[nodiscard]] std::string ResolveBinaryPrimitivePromotion(std::string_view op, const std::string& cleanLeft,
-                                                           const std::string& cleanRight,
-                                                           bool disableIntegerDivision = false,
-                                                           const SymbolTable* symbolTable = nullptr);
+                                                          const std::string& cleanRight,
+                                                          bool disableIntegerDivision = false,
+                                                          const SymbolTable* symbolTable = nullptr);
 
 /**
  * @brief Resolves user-defined operator overloads for a binary expression.
@@ -49,6 +49,6 @@ namespace angel_lsp::analysis
  * @return Resulting expression type name.
  */
 [[nodiscard]] std::string EvaluateBinaryResultType(std::string_view op, const std::string& leftType,
-                                                    const std::string& rightType, const ExpressionTypeContext& ctx);
+                                                   const std::string& rightType, const ExpressionTypeContext& ctx);
 
 } // namespace angel_lsp::analysis

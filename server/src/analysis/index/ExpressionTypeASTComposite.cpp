@@ -1,5 +1,4 @@
 #include "analysis/index/ExpressionTypeASTInternal.h"
-
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/ExpressionTypeBinary.h"
 #include "analysis/resolution/ExpressionTypeMember.h"

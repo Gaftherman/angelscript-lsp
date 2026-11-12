@@ -109,7 +109,7 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
         request.scopeRoot = std::move(scopeRoot);
         request.sourceCode = code;
         NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);
@@ -166,7 +166,7 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
         request.scopeRoot = std::move(scopeRoot);
         request.sourceCode = code;
         NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        request.nodeIndex = &nodeIndex;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);

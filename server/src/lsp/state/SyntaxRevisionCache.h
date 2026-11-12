@@ -17,8 +17,7 @@ namespace angel_lsp
 struct ParsedDocumentSyntax
 {
     explicit ParsedDocumentSyntax(parser::TreePtr parsed, std::string_view source = {})
-        : tree(std::move(parsed)),
-          index(parser::GetRootNode(tree), analysis::NodeIndexOptions{.source = source})
+        : tree(std::move(parsed)), index(parser::GetRootNode(tree), analysis::NodeIndexOptions{.source = source})
     {
     }
 

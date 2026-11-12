@@ -27,8 +27,8 @@ std::string ResolveReceiverTypeName(IndexedByteRange objectRange, const Expressi
                                     std::string_view virtualHostClass, const config::ServerConfig* config)
 {
     const config::EngineRuleConfig* engineRules = config ? &config->engineRules : nullptr;
-    ReceiverTypeContext recvCtx{ctx.scope, virtualHostClass, ctx.uri, ctx.symbolTable.GetDefaultArrayType(), nullptr,
-                                engineRules};
+    ReceiverTypeContext recvCtx{ctx.scope, virtualHostClass, ctx.uri, ctx.symbolTable.GetDefaultArrayType(),
+                                nullptr,   engineRules};
     recvCtx.nodeIndex = ctx.nodeIndex;
     std::string receiverTypeName = analysis::ResolveReceiverType(objectRange, ctx.sourceCode, ctx.symbolTable, recvCtx);
     if (!receiverTypeName.empty() && config && !config->types.arrayTypeName.empty())

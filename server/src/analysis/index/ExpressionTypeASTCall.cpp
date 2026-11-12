@@ -1,5 +1,4 @@
 #include "analysis/index/ExpressionTypeASTInternal.h"
-
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
@@ -38,8 +37,8 @@ static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std:
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
     std::string fallbackObj = GetTrimmedNodeText(objNode, ctx.sourceCode);
 
-    return ResolveMemberCallReturn(
-        MemberCallResolutionRequest{objType, memName, fallbackObj, ctx.arrayTypeName}, argTypes, ctx.symbolTable);
+    return ResolveMemberCallReturn(MemberCallResolutionRequest{objType, memName, fallbackObj, ctx.arrayTypeName},
+                                   argTypes, ctx.symbolTable);
 }
 
 /**

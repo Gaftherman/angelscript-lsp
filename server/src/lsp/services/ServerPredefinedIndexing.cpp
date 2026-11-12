@@ -59,8 +59,7 @@ void Server::CommitPredefinedIndex(const std::string& uri, const std::string& co
     }
 }
 
-static uint64_t
-ComputeDefinedWordsHash(const std::shared_ptr<const TransparentStringSet>& defsSnapshot)
+static uint64_t ComputeDefinedWordsHash(const std::shared_ptr<const TransparentStringSet>& defsSnapshot)
 {
     uint64_t definesHash = 0;
     if (defsSnapshot)

@@ -29,8 +29,8 @@ inline std::vector<ContainerInfo> ResolveEnclosingContainers(TSNode exprNode, st
 {
     if (nodeIndex && !ts_node_is_null(exprNode))
     {
-        return GetEnclosingContainers(
-            IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)}, *nodeIndex, sourceCode);
+        return GetEnclosingContainers(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
+                                      *nodeIndex, sourceCode);
     }
     return {};
 }

@@ -1,6 +1,5 @@
-#include "analysis/resolution/ExpressionTypeResolver.h"
-
 #include "analysis/index/DeclarationSiteFacts.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/types/TypeSanitization.h"
 #include "utils/Constants.h"
 

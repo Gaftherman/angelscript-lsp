@@ -478,8 +478,7 @@ static void ProcessDirectiveHit(PreprocessorScanContext& ctx, const DirectiveHit
     }
 }
 
-PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
-                                  const TransparentStringSet& definedWords,
+PreprocessorScan ScanPreprocessor(std::string_view sourceCode, const TransparentStringSet& definedWords,
                                   const PreprocessorFeatures& features, bool reportPragma)
 {
     PreprocessorScan scan;

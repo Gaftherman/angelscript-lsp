@@ -50,8 +50,8 @@ inline std::string ResolveExpressionType(TSNode node, const ExpressionTypeContex
     return ResolveExpressionType(range, localCtx);
 }
 
-inline std::string ResolveExpressionType(TSNode node, const Scope* scope,
-                                         const SymbolTable& table, std::string_view sourceCode)
+inline std::string ResolveExpressionType(TSNode node, const Scope* scope, const SymbolTable& table,
+                                         std::string_view sourceCode)
 {
     if (ts_node_is_null(node))
     {
@@ -60,8 +60,8 @@ inline std::string ResolveExpressionType(TSNode node, const Scope* scope,
     return ResolveExpressionType(node, ExpressionTypeContext(scope, table, sourceCode));
 }
 
-inline std::vector<Symbol> FindSymbolsInScope(std::string_view name, TSNode node,
-                                              std::string_view sourceCode, const SymbolTable& symbolTable)
+inline std::vector<Symbol> FindSymbolsInScope(std::string_view name, TSNode node, std::string_view sourceCode,
+                                              const SymbolTable& symbolTable)
 {
     return FindSymbolsInScope(name, ts_node_start_byte(node), sourceCode, symbolTable);
 }
@@ -1030,7 +1030,8 @@ class TestDocument
             {
                 analysis::IndexedByteRange objRange{ts_node_start_byte(objNode), ts_node_end_byte(objNode)};
                 std::string objType = analysis::ResolveExpressionType(
-                    objRange, analysis::ExpressionTypeContext(scope, m_symbolTable, m_sourceCode, m_uri, m_nodeIndex.get()));
+                    objRange,
+                    analysis::ExpressionTypeContext(scope, m_symbolTable, m_sourceCode, m_uri, m_nodeIndex.get()));
                 std::string cleanObj = analysis::CleanBaseType(objType);
                 std::string memName(parser::NodeText(memNode, m_sourceCode));
                 while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front())))
@@ -1091,8 +1092,8 @@ class TestDocument
             }
         }
 
-        auto funcSymbols = analysis::FindSymbolsInScope(
-            calleeText, ts_node_start_byte(funcNode), m_sourceCode, m_symbolTable, m_nodeIndex.get());
+        auto funcSymbols = analysis::FindSymbolsInScope(calleeText, ts_node_start_byte(funcNode), m_sourceCode,
+                                                        m_symbolTable, m_nodeIndex.get());
         std::vector<analysis::Symbol> candidates;
         for (const auto& s : funcSymbols)
         {
@@ -1198,8 +1199,8 @@ class TestDocument
         if (nodeText.empty())
             return std::nullopt;
 
-        auto syms = analysis::FindSymbolsInScope(
-            nodeText, ts_node_start_byte(node), m_sourceCode, m_symbolTable, m_nodeIndex.get());
+        auto syms = analysis::FindSymbolsInScope(nodeText, ts_node_start_byte(node), m_sourceCode, m_symbolTable,
+                                                 m_nodeIndex.get());
         if (!syms.empty())
         {
             std::string target = syms[0].qualifiedName;
@@ -1263,8 +1264,8 @@ class TestDocument
         if (name.empty())
             return std::nullopt;
 
-        auto syms = analysis::FindSymbolsInScope(
-            name, ts_node_start_byte(node), m_sourceCode, m_symbolTable, m_nodeIndex.get());
+        auto syms = analysis::FindSymbolsInScope(name, ts_node_start_byte(node), m_sourceCode, m_symbolTable,
+                                                 m_nodeIndex.get());
         if (!syms.empty())
         {
             std::string text = analysis::FormatFunctionDeclaration(syms[0], false);

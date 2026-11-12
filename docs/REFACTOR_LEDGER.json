@@ -3284,6 +3284,23 @@
         "NamespaceUsageFactsTest",
         "NamespaceCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M27-LOCALSCOPE-RESOLUTION-DECOUPLE",
+      "phase": "M27",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/SemanticHelpers.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CleanCandidateIdentifier; IsValidIdentifierOrQualified; IsReservedKeyword/IsPrimitiveTypeName wrappers used by LocalScopeCollector",
+      "whatItDidAndWhyInThatFile": "String-view candidate identifier cleaning and validation helpers were located in SemanticHelpers.cpp in Layer 2 analysis resolution alongside keyword and primitive wrapper checks.",
+      "whyChangedOrDeleted": "Pass-1 LocalScopeCollector no longer includes analysis/resolution: identifier helpers moved to utils and keyword/primitive checks use parser::keywords::IsReserved and parser::primitives::IsPrimitive.",
+      "replacedByCanonicalFile": "server/src/utils/ScopedNameUtils.h",
+      "replacedByCanonicalSymbol": "CleanCandidateIdentifier",
+      "ramOrCpuImpact": "Pure string_view operations in Layer 1 eliminate cross-layer analysis/resolution includes in pass 1 with zero allocations.",
+      "verifiedByTests": [
+        "LocalScopeCollectorTest",
+        "ReferencesTest"
+      ]
     }
   ]
 }

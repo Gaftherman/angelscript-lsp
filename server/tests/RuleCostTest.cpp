@@ -132,7 +132,7 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
         request.scopeRoot = scopes[index];
         request.sourceCode = samples[index].sourceCode;
         NodeIndex nodeIndex(ts_tree_root_node(trees[index]));
-    request.nodeIndex = &nodeIndex;
+        request.nodeIndex = &nodeIndex;
         return request;
     };
 

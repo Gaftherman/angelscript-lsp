@@ -71,16 +71,16 @@ struct SvenTestContext
         request.scopeRoot = scopes.CollectScopes(scriptCode, parser);
         request.sourceCode = scriptCode;
         TSTree* tree = parser.Parse(scriptCode);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        request.nodeIndex = &nodeIndex;
         request.engineRules = engineRules;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);
         if (tree)
-    {
-        ts_tree_delete(tree);
-    }
+        {
+            ts_tree_delete(tree);
+        }
         return diags;
     }
 

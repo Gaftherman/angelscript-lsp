@@ -168,8 +168,8 @@ Server::CollectScopesAndCalls(const AnalyzeDocumentRequest& req, const ParseAndC
     std::vector<analysis::CallSite> calls;
     if (!parsed.closed.indexedSyntax)
     {
-        calls = scopes ? analysis::CollectCallsFromScopeTree(*scopes)
-                       : analysis::CollectCallsFromIndex(index, req.text);
+        calls =
+            scopes ? analysis::CollectCallsFromScopeTree(*scopes) : analysis::CollectCallsFromIndex(index, req.text);
     }
     return {std::move(scopes), std::move(calls)};
 }

@@ -57,7 +57,8 @@ std::string DeduceTypeAtLastExpression(const std::string& code)
                             TSPoint pt = ts_node_start_point(expr);
                             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
                             IndexedByteRange exprRange{ts_node_start_byte(expr), ts_node_end_byte(expr)};
-                            ExpressionTypeContext exprCtx{innerScope ? innerScope : scopeRoot.get(), table, code, fileUri};
+                            ExpressionTypeContext exprCtx{innerScope ? innerScope : scopeRoot.get(), table, code,
+                                                          fileUri};
                             exprCtx.nodeIndex = &nodeIndex;
                             result = ResolveExpressionType(exprRange, exprCtx);
                         }
@@ -67,7 +68,8 @@ std::string DeduceTypeAtLastExpression(const std::string& code)
                             TSPoint pt = ts_node_start_point(expr);
                             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
                             IndexedByteRange exprRange{ts_node_start_byte(expr), ts_node_end_byte(expr)};
-                            ExpressionTypeContext exprCtx{innerScope ? innerScope : scopeRoot.get(), table, code, fileUri};
+                            ExpressionTypeContext exprCtx{innerScope ? innerScope : scopeRoot.get(), table, code,
+                                                          fileUri};
                             exprCtx.nodeIndex = &nodeIndex;
                             result = ResolveExpressionType(exprRange, exprCtx);
                         }

@@ -53,9 +53,8 @@ void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
 /**
  * @brief Collects candidate member methods along the type inheritance hierarchy.
  */
-[[nodiscard]] std::vector<Symbol> CollectMemberMethodCandidates(const std::string& ownerType,
-                                                                const std::string& memName,
-                                                                const SymbolTable& symbolTable);
+[[nodiscard]] std::vector<Symbol>
+CollectMemberMethodCandidates(const std::string& ownerType, const std::string& memName, const SymbolTable& symbolTable);
 
 /**
  * @brief Resolves member property type from object type and member name.
@@ -65,9 +64,7 @@ void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
  * @param[in] symbolTable Symbol table to query.
  * @return Resolved member type, or empty string.
  */
-[[nodiscard]] std::string ResolveMemberPropertyType(std::string_view objType,
-                                                    std::string_view fallbackObjName,
-                                                    std::string_view memName,
-                                                    const SymbolTable& symbolTable);
+[[nodiscard]] std::string ResolveMemberPropertyType(std::string_view objType, std::string_view fallbackObjName,
+                                                    std::string_view memName, const SymbolTable& symbolTable);
 
 } // namespace angel_lsp::analysis

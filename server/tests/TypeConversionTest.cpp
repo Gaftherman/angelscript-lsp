@@ -67,7 +67,7 @@ struct ConversionEnvironment
         request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
         request.sourceCode = sourceCode;
         NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+        request.nodeIndex = &nodeIndex;
         request.enableTypeConversionChecks = enabled;
 
         SemanticAnalyzer analyzer(nullptr);
@@ -650,7 +650,7 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
             NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+            request.nodeIndex = &nodeIndex;
 
             SemanticAnalyzer analyzer(nullptr);
             std::vector<Diagnostic> diagnostics;
@@ -1679,7 +1679,7 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
             NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+            request.nodeIndex = &nodeIndex;
 
             SemanticAnalyzer analyzer(nullptr);
             std::vector<Diagnostic> diagnostics;
@@ -1826,7 +1826,7 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
             NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
+            request.nodeIndex = &nodeIndex;
 
             SemanticAnalyzer analyzer(nullptr);
             std::vector<Diagnostic> diagnostics;

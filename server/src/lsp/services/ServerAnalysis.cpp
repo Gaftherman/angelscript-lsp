@@ -40,8 +40,7 @@ ankerl::unordered_dense::set<std::string> Server::ComputeModuleClosureUris(const
 }
 
 angel_lsp::analysis::SemanticAnalysisRequest
-Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
-                             const analysis::NodeIndex* nodeIndex,
+Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const analysis::NodeIndex* nodeIndex,
                              const utils::PreprocessorScan& preprocessing,
                              const angel_lsp::analysis::SymbolTable* customSymbolTable) const
 {
@@ -77,16 +76,15 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     return request;
 }
 
-std::vector<angel_lsp::analysis::Diagnostic> Server::ReplaceSymbolsFromTree(const std::string& uriStr,
-                                                                            const std::string& text,
-                                                                            const parser::TreePtr* tree,
-                                                                            bool* outInterfaceChanged,
-                                                                            const analysis::NodeIndex* index)
+std::vector<angel_lsp::analysis::Diagnostic>
+Server::ReplaceSymbolsFromTree(const std::string& uriStr, const std::string& text, const parser::TreePtr* tree,
+                               bool* outInterfaceChanged, const analysis::NodeIndex* index)
 {
     angel_lsp::analysis::SymbolTable staging;
     const analysis::SymbolCollectRequest request{uriStr, text, m_i18n.get()};
-    auto diagnostics = index ? m_symbolCollector->CollectSymbolsWithIndex(request, *index, staging)
-                             : m_symbolCollector->CollectSymbolsWithTree(request, tree ? tree->get() : nullptr, staging);
+    auto diagnostics = index
+                           ? m_symbolCollector->CollectSymbolsWithIndex(request, *index, staging)
+                           : m_symbolCollector->CollectSymbolsWithTree(request, tree ? tree->get() : nullptr, staging);
     if ((index && index->HasSyntaxErrors()) || (tree && parser::TreeHasError(*tree)))
     {
         m_symbolTable.RetainLastKnownGoodTypes(uriStr, staging);

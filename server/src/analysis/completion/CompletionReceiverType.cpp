@@ -290,8 +290,7 @@ bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* i
         return true;
     }
 
-    std::string_view memberPrefix =
-        (*dotCol + 1 < prefix.size()) ? std::string_view(prefix).substr(*dotCol + 1) : "";
+    std::string_view memberPrefix = (*dotCol + 1 < prefix.size()) ? std::string_view(prefix).substr(*dotCol + 1) : "";
     PopulateHierarchicalMembers(rawTypeName, memberPrefix, collector);
     return true;
 }

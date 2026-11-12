@@ -64,8 +64,8 @@ static std::string_view ExtractLineFromSource(std::string_view source, uint32_t 
  * @param[out] outEndByte Optional output end byte.
  * @return Token text or empty string if not an identifier.
  */
-static std::string GetNodeTextAt(std::string_view sourceCode, TargetPosition position,
-                                 uint32_t* outStartByte = nullptr, uint32_t* outEndByte = nullptr)
+static std::string GetNodeTextAt(std::string_view sourceCode, TargetPosition position, uint32_t* outStartByte = nullptr,
+                                 uint32_t* outEndByte = nullptr)
 {
     if (sourceCode.empty())
     {
@@ -185,8 +185,6 @@ bool IsValidIdentifier(std::string_view name)
     return true;
 }
 
-
-
 /**
  * @brief Searches for a local definition matching name and line spanning scope ancestors.
  * @param[in] innerScope Innermost scope.
@@ -300,10 +298,6 @@ static bool HasClassMemberSymbol(const std::vector<Symbol>& syms)
     return false;
 }
 
-
-
-
-
 /**
  * @brief Assign target from container kind.
  * @param[in] sym Tree-sitter grammar symbol.
@@ -407,8 +401,6 @@ static void ResolveGlobalFallbackTarget(const std::string& nodeText, const Resol
             }
         });
 }
-
-
 
 /**
  * @brief Matches an appropriate function signature from candidate symbols based on call constraints.
@@ -750,7 +742,7 @@ static void CaptureCallDeclaration(TargetDescriptor& target, const ResolveTarget
  * @return GlobalScopeQualifier structure.
  */
 static GlobalScopeQualifier GetGlobalScopeQualifierNoAst(std::string_view sourceCode, uint32_t identStartByte,
-                                                                 uint32_t identEndByte) noexcept
+                                                         uint32_t identEndByte) noexcept
 {
     GlobalScopeQualifier gsq{};
     size_t chainStart = identStartByte;
@@ -1140,8 +1132,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
     uint32_t identStartByte = UINT32_MAX;
     uint32_t identEndByte = UINT32_MAX;
-    std::string nodeText = GetNodeTextAt(request.sourceCode, request.position,
-                                         &identStartByte, &identEndByte);
+    std::string nodeText = GetNodeTextAt(request.sourceCode, request.position, &identStartByte, &identEndByte);
     if (nodeText.empty() || identStartByte == UINT32_MAX || !IsValidIdentifier(nodeText))
     {
         return std::nullopt;
@@ -1270,8 +1261,8 @@ static void CollectScopeReferences(const analysis::Scope* scope, const TargetDes
 {
     for (const auto& ref : scope->references)
     {
-        printf("DEBUG CollectScopeReferences ref='%s' line=%u col=%u inDeclRanges=%d\n",
-               std::string(ref.name).c_str(), ref.startLine, ref.startCharacter,
+        printf("DEBUG CollectScopeReferences ref='%s' line=%u col=%u inDeclRanges=%d\n", std::string(ref.name).c_str(),
+               ref.startLine, ref.startCharacter,
                (int)collector.declRanges.contains({target.localUri, ref.startLine, ref.startCharacter}));
         if (ref.name != target.name || ref.isMemberAccess)
         {

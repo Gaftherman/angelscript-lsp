@@ -91,8 +91,8 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     parser::TreePtr tree = parser::MakeTreePtr(m_parser->Parse(analysisText));
     ReplaceSymbolsFromTree(req.uriStr, analysisText, &tree);
     CommitPredefinedIndex(req.uriStr, analysisText, parser::CopyTree(tree));
-    GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
-                                                                       std::move(tree), req.clientUri});
+    GetDocumentStore().OpenDocument(
+        DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version, std::move(tree), req.clientUri});
 
     ScheduleAnalysisImmediate(ScheduleAnalysisRequest{
         .uriStr = req.uriStr,

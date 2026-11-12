@@ -28,8 +28,7 @@ namespace angel_lsp::analysis
  * @param[in] indexArgType Inferred type of the index argument.
  * @return Resolved return type of the indexed getter, or empty string.
  */
-[[nodiscard]] std::string ResolveMemberIndexedPropertyType(std::string_view recType,
-                                                           std::string_view memName,
+[[nodiscard]] std::string ResolveMemberIndexedPropertyType(std::string_view recType, std::string_view memName,
                                                            const SymbolTable& symbolTable,
                                                            std::string_view indexArgType = "");
 
@@ -41,8 +40,7 @@ namespace angel_lsp::analysis
  * @param[in] indexArgType Inferred type of the index argument.
  * @return Resolved return type of the indexed getter, or empty string.
  */
-[[nodiscard]] std::string ResolveScopedIndexedPropertyType(std::string_view scopeName,
-                                                           std::string_view name,
+[[nodiscard]] std::string ResolveScopedIndexedPropertyType(std::string_view scopeName, std::string_view name,
                                                            const SymbolTable& symbolTable,
                                                            std::string_view indexArgType = "");
 
@@ -54,8 +52,7 @@ namespace angel_lsp::analysis
  * @param[in] indexArgType Inferred type of the index argument.
  * @return Resolved return type of the indexed getter, or empty string.
  */
-[[nodiscard]] std::string ResolveBareIndexedPropertyType(std::string_view name,
-                                                         std::string_view enclosingClass,
+[[nodiscard]] std::string ResolveBareIndexedPropertyType(std::string_view name, std::string_view enclosingClass,
                                                          const SymbolTable& symbolTable,
                                                          std::string_view indexArgType = "");
 

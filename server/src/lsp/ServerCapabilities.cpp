@@ -1,18 +1,29 @@
-#include "i18n/i18n.h"
 #include "lsp/ServerCapabilities.h"
+
+#include "i18n/i18n.h"
 #include "lsp/Server.h"
+#include "utils/MultiFileLogger.h"
 
 #include <memory>
+#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <utility>
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp
 {
 
 lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::requests::Initialize::Params&& params)
 {
-    ExtractInitialWorkspaceRoots(*m_workspaceStore, m_config, m_runtimeConfigMutex, params);
+    ExtractInitialWorkspaceRoots(*m_workspaceStore, m_runtimeConfigMutex, params);
+#if defined(_DEBUG) || !defined(NDEBUG)
+    if (m_config.info.enableFileLogging)
+    {
+        if (const auto roots = m_workspaceStore->GetWorkspaceRoots(); !roots.empty())
+        {
+            angel_lsp::utils::MultiFileLogger::Instance().Initialize(roots.front());
+        }
+    }
+#endif
     ApplyEngineInitializationOptions(*this, params.initializationOptions);
 
     m_i18n = std::make_unique<angel_lsp::i18n::I18n>(

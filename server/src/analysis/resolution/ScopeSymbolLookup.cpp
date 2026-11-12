@@ -619,8 +619,7 @@ bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms)
     return false;
 }
 
-std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOffset,
-                                          const ExpressionTypeContext& ctx)
+std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOffset, const ExpressionTypeContext& ctx)
 {
     if (name.empty() || name.ends_with(')') || name.find('(') != std::string_view::npos ||
         name.find('=') != std::string_view::npos || name.find('{') != std::string_view::npos ||
@@ -651,6 +650,5 @@ std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOf
 
     return std::nullopt;
 }
-
 
 } // namespace angel_lsp::analysis

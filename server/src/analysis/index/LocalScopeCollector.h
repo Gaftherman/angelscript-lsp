@@ -55,8 +55,7 @@ class LocalScopeCollector
      * @param sourceCode Full text of the document.
      * @return The document's root Scope, or nullptr on failure.
      */
-    std::unique_ptr<Scope> CollectScopesFromIndex(const NodeIndex& nodeIndex,
-                                                  const std::string& sourceCode) const;
+    std::unique_ptr<Scope> CollectScopesFromIndex(const NodeIndex& nodeIndex, const std::string& sourceCode) const;
 
     struct ByteSpan
     {

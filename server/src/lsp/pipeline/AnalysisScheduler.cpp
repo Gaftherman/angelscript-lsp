@@ -1,4 +1,5 @@
 #include "lsp/pipeline/AnalysisScheduler.h"
+
 #include "parser/SyntaxTree.h"
 
 #include <chrono>

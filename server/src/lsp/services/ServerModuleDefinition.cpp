@@ -1,4 +1,5 @@
 #include "lsp/services/ServerModuleDefinition.h"
+
 #include "lsp/Server.h"
 #include "lsp/services/ServerModuleUtils.h"
 #include "utils/IncludeResolver.h"
@@ -106,9 +107,9 @@ static bool PopulateModuleEntryClosure(Server& server, const std::string& entry,
 }
 
 std::optional<ModuleView> ResolveModuleDefinition(Server& server,
-                                                 const config::ServerConfig::ModuleDefinition& definition,
-                                                 const std::vector<ModuleView>& resolved,
-                                                 const std::vector<std::string>& workspaceFiles)
+                                                  const config::ServerConfig::ModuleDefinition& definition,
+                                                  const std::vector<ModuleView>& resolved,
+                                                  const std::vector<std::string>& workspaceFiles)
 {
     if (definition.name.empty() || (definition.entry.empty() && definition.folder.empty()))
     {

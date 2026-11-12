@@ -154,8 +154,7 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     UpdateSavedDocumentCaches(uriStr, text, prepared.preprocessing->excluded);
 
     bool interfaceChanged = false;
-    auto diagnostics =
-        ReplaceSymbolsFromTree(uriStr, prepared.text, &syntax.tree, &interfaceChanged, &syntax.index);
+    auto diagnostics = ReplaceSymbolsFromTree(uriStr, prepared.text, &syntax.tree, &interfaceChanged, &syntax.index);
 
     const auto bindingRevision =
         savedDocument && savedDocument->text == text
