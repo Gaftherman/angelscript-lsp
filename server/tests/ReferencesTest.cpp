@@ -1046,15 +1046,10 @@ TEST_CASE("References - A local target retains the scope revision it resolved ag
     REQUIRE(target->kind == TargetKind::Local);
 
     workspace.scopeIndex.ClearDocument(env.uri);
-    const auto occurrences = CollectOccurrences(
-        MakeOccurrencesRequest(*target, env.uri, source, workspace.symbolTable, workspace.scopeIndex));
-    MESSAGE("env.uri='", env.uri, "' target.localUri='", target->localUri, "'");
-    MESSAGE("target localDef startLine=", target->localDef.startLine, " startCol=", target->localDef.startCharacter,
-            " uri='", target->localUri, "'");
-    for (const auto& o : occurrences)
-    {
-        MESSAGE("occurrence line=", o.range.startLine, " col=", o.range.startCharacter);
-    }
+    auto occurrencesRequest =
+        MakeOccurrencesRequest(*target, env.uri, source, workspace.symbolTable, workspace.scopeIndex);
+    occurrencesRequest.includeDeclaration = false;
+    const auto occurrences = CollectOccurrences(occurrencesRequest);
     REQUIRE(occurrences.size() == 1);
     CHECK(occurrences.front().range.startLine == 2);
     CHECK(occurrences.front().range.startCharacter == 4);
