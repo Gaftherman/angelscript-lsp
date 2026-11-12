@@ -1261,9 +1261,6 @@ static void CollectScopeReferences(const analysis::Scope* scope, const TargetDes
 {
     for (const auto& ref : scope->references)
     {
-        printf("DEBUG CollectScopeReferences ref='%s' line=%u col=%u inDeclRanges=%d\n", std::string(ref.name).c_str(),
-               ref.startLine, ref.startCharacter,
-               (int)collector.declRanges.contains({target.localUri, ref.startLine, ref.startCharacter}));
         if (ref.name != target.name || ref.isMemberAccess)
         {
             continue;
