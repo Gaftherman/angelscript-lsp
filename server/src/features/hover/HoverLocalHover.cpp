@@ -114,8 +114,8 @@ std::optional<lsp::Hover> TryHoverNamedArgument(const HoverQueryContext& ctx)
 
     analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.uri,
                                             ctx.request.nodeIndex);
-    const std::vector<analysis::Symbol> candidates = analysis::ResolveNamedArgCalleeCandidates(
-        ctx.site.namedArgCallRange, exprCtx, ctx.vctx.hostClass, ctx.request.config);
+    const std::vector<analysis::Symbol> candidates =
+        analysis::ResolveNamedArgCalleeCandidates(ctx.site.namedArgCallRange, exprCtx, ctx.request.config);
     lsp::MarkupContent content{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
                                analysis::FormatNamedArgHover(candidates, ctx.nodeText, ctx.request.i18n)};
     if (content.value.empty())

@@ -43,27 +43,6 @@ struct BreakpointLocationsParams
 };
 
 /**
- * @brief Identifies virtual mixin methods and their backing source declarations for LSP navigation.
- */
-struct VirtualMixinTarget
-{
-    std::string hostClass;
-    std::string mixinName;
-};
-
-/**
- * @brief Source location and document URI of a symbol defined within an expanded mixin block.
- */
-struct MixinSymbolLocation
-{
-    std::string fileUri;
-    uint32_t startLine{0};
-    uint32_t endLine{0};
-    std::string resolvedBaseClass;
-    bool found{false};
-};
-
-/**
  * @brief Snapshot of computed semantic token data and revision tracking for delta computations.
  */
 struct SemanticTokensSnapshot

@@ -64,11 +64,7 @@ std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
 
     std::vector<analysis::ContainerInfo> containers;
     std::string_view className;
-    if (ctx.vctx.isVirtual && !ctx.vctx.hostClass.empty())
-    {
-        className = ctx.vctx.hostClass;
-    }
-    else if (ctx.request.nodeIndex)
+    if (ctx.request.nodeIndex)
     {
         containers =
             ctx.request.nodeIndex->CollectEnclosingContainers(ctx.site.targetStartByte, ctx.request.sourceCode);

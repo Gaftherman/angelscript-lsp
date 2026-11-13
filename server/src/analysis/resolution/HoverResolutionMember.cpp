@@ -22,10 +22,9 @@ namespace angel_lsp::analysis
 {
 std::optional<HoverCandidateSymbols> ResolveMemberAccess(IndexedByteRange receiverRange, std::string_view memberName,
                                                          const ExpressionTypeContext& exprCtx,
-                                                         std::string_view virtualHostClass,
                                                          const config::ServerConfig* config)
 {
-    std::string receiverTypeName = ResolveReceiverTypeName(receiverRange, exprCtx, virtualHostClass, config);
+    std::string receiverTypeName = ResolveReceiverTypeName(receiverRange, exprCtx, config);
     if (receiverTypeName.empty())
     {
         return std::nullopt;

@@ -1,12 +1,12 @@
 #pragma once
 
 #include "analysis/diagnostics/Diagnostics.h"
+#include "analysis/index/MixinSourceIndex.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/ExpressionTypeCache.h"
-#include "analysis/types/VirtualMixinContext.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "utils/PreprocessorRegions.h"
@@ -108,7 +108,7 @@ struct SemanticAnalysisRequest
     /**
      * @brief Optional memoization cache for resolved mixin ASTs across class checks.
      */
-    mutable rules::MixinFileCache* mixinCache = nullptr;
+    mutable MixinFileCache* mixinCache = nullptr;
 
     /**
      * @brief Kill-switch for the conversion rules (see TypeConversionChecker.h).

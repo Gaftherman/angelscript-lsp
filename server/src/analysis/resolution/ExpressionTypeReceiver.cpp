@@ -140,19 +140,6 @@ static std::string ResolveReceiverInGlobalOrShort(std::string_view objText, cons
     return "";
 }
 
-static std::string GetEffectiveHostClass(std::string_view virtualHostClass, std::string_view fileUri)
-{
-    if (!virtualHostClass.empty())
-    {
-        return std::string(virtualHostClass);
-    }
-    if (fileUri.starts_with("angelscript-virtual:") || fileUri.starts_with("angelscript-virtual://"))
-    {
-        return SymbolTable::ExtractVirtualHostClass(fileUri);
-    }
-    return "";
-}
-
 static std::string ResolveReceiverScope(const Scope* scope, std::string_view objText, uint32_t refByte,
                                         const ExpressionTypeContext* exprCtx, std::string_view arrayTypeName)
 {
@@ -211,11 +198,8 @@ static std::string ResolveReceiverTypeUncached(IndexedByteRange objRange, std::s
         return "";
     }
 
-    std::string effectiveHostClass = GetEffectiveHostClass(ctx.virtualHostClass, ctx.fileUri);
-    if (effectiveHostClass.empty())
-    {
-        effectiveHostClass = InferHostClassFromEnclosingMixin(objRange, ctx.nodeIndex, sourceCode, symbolTable);
-    }
+    const std::string effectiveHostClass =
+        InferHostClassFromEnclosingMixin(objRange, ctx.nodeIndex, sourceCode, symbolTable);
     const std::string_view arrayTypeName =
         ctx.arrayTypeName.empty() ? symbolTable.GetDefaultArrayType() : ctx.arrayTypeName;
 

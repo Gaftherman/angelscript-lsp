@@ -45,7 +45,6 @@ AngelLSP is engineered under a strict unidirectional 4-layer dependency model en
 - **`analysis/types/TypeSanitization.h`**: Zero-allocation type modifier helpers (`StripLeadingConst`, `StripTrailingDecorationsView`, `CleanBaseType`).
 - **`analysis/types/TypeExtraction.h`**: Extraction of return types, parameter types, and variable types from Tree-Sitter nodes.
 - **`analysis/types/EngineProfiles.h`**: Configurable predefined engine profiles (Vanilla AngelScript, Sven-Co-op, etc.).
-- **`analysis/types/VirtualMixinContext.h`**: Virtual document mapping and line tracking for AngelScript mixin expansions.
 
 ### Sub-Layer 2.3 (Diagnostics): Diagnostics & Suppressions
 - **`analysis/diagnostics/Diagnostics.h`**: Diagnostic representation (`DiagnosticSeverity`, `SourceRange`, `DiagnosticRelatedInformation`).

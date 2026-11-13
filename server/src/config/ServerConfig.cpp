@@ -294,9 +294,7 @@ void PrintFeatureFlagsHelp()
         << "  --enable-type-hierarchy[=true|false]    Enable/disable type hierarchy (default: true)\n"
         << "  --disable-type-hierarchy                Disable type hierarchy\n"
         << "  --enable-linked-editing[=true|false]    Enable/disable linked editing of locals (default: true)\n"
-        << "  --disable-linked-editing                Disable linked editing\n"
-        << "  --enable-virtual-mixin-documents[=true|false] Enable/disable virtual mixin documents (default: false)\n"
-        << "  --disable-virtual-mixin-documents       Disable virtual mixin documents\n\n";
+        << "  --disable-linked-editing                Disable linked editing\n\n";
 }
 
 void PrintOptionsHelp()
@@ -441,8 +439,6 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
     {"--enable-formatting", "", "--disable-formatting", "", &FeatureFlags::enableFormatting},
     {"--enable-on-type-formatting", "--enable-ontypeformatting", "--disable-on-type-formatting",
      "--disable-ontypeformatting", &FeatureFlags::enableOnTypeFormatting},
-    {"--enable-virtual-mixin-documents", "--enable-virtualmixindocuments", "--disable-virtual-mixin-documents",
-     "--disable-virtualmixindocuments", &FeatureFlags::enableVirtualMixinDocuments},
     {"--inlay-hints-enable-tooltip", "--enable-inlay-hints-tooltip", "--disable-inlay-hints-tooltip",
      "--no-inlay-hints-enable-tooltip", &FeatureFlags::inlayHintsEnableTooltip},
     {"--inlay-hints-enable-location", "--enable-inlay-hints-location", "--disable-inlay-hints-location",
@@ -472,8 +468,6 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
      &FeatureFlags::codeLensShowOnEnums},
     {"--codelens-zero-references", "--enable-codelens-zero-references", "--disable-codelens-zero-references",
      "--no-codelens-zero-references", &FeatureFlags::codeLensShowZeroReferences},
-    {"--codelens-mixin-expansion", "--enable-codelens-mixin-expansion", "--disable-codelens-mixin-expansion",
-     "--no-codelens-mixin-expansion", &FeatureFlags::codeLensShowMixinExpansion},
     {"--completion-complete-function-parens", "--enable-completion-function-parens",
      "--disable-completion-function-parens", "--no-completion-complete-function-parens",
      &FeatureFlags::completionCompleteFunctionParens},

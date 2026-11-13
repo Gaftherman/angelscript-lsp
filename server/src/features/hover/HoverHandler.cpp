@@ -3,7 +3,6 @@
 #include "analysis/documentation/HoverMarkdown.h"
 #include "analysis/index/HoverFacts.h"
 #include "analysis/index/ScopeTree.h"
-#include "analysis/types/VirtualMixinContext.h"
 #include "features/hover/HoverInternal.h"
 #include "utils/LspLogger.h"
 #include "utils/MultiFileLogger.h"
@@ -95,14 +94,12 @@ static HoverQueryContext BuildHoverQueryContext(const HoverRequest& request, Hov
                                                 const analysis::IndexedHoverSite& site, std::string_view nodeText,
                                                 const lsp::Range& range)
 {
-    analysis::VirtualMixinContext vctx = analysis::ResolveVirtualMixinContext(request.uri, request.symbolTable);
-    auto rootScope = request.scopeIndex.GetRoot(analysis::ResolvePhysicalUri(vctx, request.uri));
-    uint32_t queryLine = analysis::ResolvePhysicalLine(vctx, request.position.line);
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const uint32_t queryLine = request.position.line;
     const analysis::Scope* scope =
         rootScope ? analysis::FindInnermostScope(rootScope.get(), queryLine, request.position.character) : nullptr;
 
-    return HoverQueryContext{request,   profiler, site, nodeText, range, std::move(vctx), std::move(rootScope),
-                             queryLine, scope};
+    return HoverQueryContext{request, profiler, site, nodeText, range, std::move(rootScope), queryLine, scope};
 }
 
 std::optional<lsp::Hover> GetHover(const HoverRequest& request)

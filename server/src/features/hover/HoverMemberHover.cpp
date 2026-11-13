@@ -21,8 +21,7 @@ std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
 
     analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.uri,
                                             ctx.request.nodeIndex);
-    auto res = analysis::ResolveMemberAccess(ctx.site.receiverRange, ctx.nodeText, exprCtx, ctx.vctx.hostClass,
-                                             ctx.request.config);
+    auto res = analysis::ResolveMemberAccess(ctx.site.receiverRange, ctx.nodeText, exprCtx, ctx.request.config);
     if (!res)
     {
         ctx.profiler.symMs += symTimer.ElapsedMs();

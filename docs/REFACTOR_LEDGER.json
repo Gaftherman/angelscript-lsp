@@ -1014,22 +1014,6 @@
       ]
     },
     {
-      "id": "REF-M6-CODELENS-VIRTUAL-URI",
-      "phase": "M6",
-      "action": "UNIFY_FUNCTIONS",
-      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
-      "deletedLineRange": "779-810",
-      "originalSymbolOrCode": "HandleVirtualUri scheme prefix manual parsing",
-      "whatItDidAndWhyInThatFile": "Duplicated virtual URI parsing logic in Layer 3 feature handler.",
-      "whyChangedOrDeleted": "Reused canonical SymbolTable::ParseVirtualMixinUri with UrlDecode and zero std::string in Layer 3.",
-      "replacedByCanonicalFile": "server/src/analysis/index/SymbolTable.h",
-      "replacedByCanonicalSymbol": "ParseVirtualMixinUri",
-      "ramOrCpuImpact": "Zero extra heap allocations; operates on string_view components.",
-      "verifiedByTests": [
-        "CodeLensTest"
-      ]
-    },
-    {
       "id": "REF-M6-CODELENS-HELPERS-L2",
       "phase": "M6",
       "action": "UNIFY_FUNCTIONS",
@@ -3316,6 +3300,23 @@
       "ramOrCpuImpact": "Removes one pointer from every analysis request; no behavioural change.",
       "verifiedByTests": [
         "IterationBudgetHarnessTest"
+      ]
+    },
+    {
+      "id": "REF-M27-VIRTUAL-MIXIN-DOCUMENTS-REMOVED",
+      "phase": "M27",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/types/VirtualMixinContext.h",
+      "deletedLineRange": "whole-file",
+      "originalSymbolOrCode": "Virtual mixin documents: VirtualMixinContext, SymbolTable::ParseVirtualMixinUri/ExtractVirtual*, MapVirtualMixinLocation, TryResolveVirtualMixin, VirtualMixinHandlers, code lens mixin expansion",
+      "whatItDidAndWhyInThatFile": "Generated synthetic angelscript-virtual:// documents that expanded a mixin into its host class, and remapped lines between them and the physical file.",
+      "whyChangedOrDeleted": "The feature is removed: mixin members are still resolved in the host through the normal symbol table, so no document, URI scheme, command or line mapping is needed.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/DefinitionResolutionUtils.cpp",
+      "replacedByCanonicalSymbol": "MapSymbolLocation",
+      "ramOrCpuImpact": "Removes the per-document virtual text, the extra parse and the virtual host fields threaded through hover and receiver resolution.",
+      "verifiedByTests": [
+        "CodeLensTest",
+        "ServerHarnessTest"
       ]
     }
   ]

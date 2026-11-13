@@ -25,7 +25,6 @@ A diferencia de los enfoques basados en ejecutar scripts dentro de un entorno ho
 - **Navegación precisa**: Ir a definición, declaración, definición de tipo e implementación con soporte de sobrecargas (`Ctrl+F12`), y jerarquías bidireccionales de llamadas y tipos.
 - **Hover y autocompletado inteligentes**: Tooltips de documentación con aislamiento de sobrecargas en puntos de llamada, representación de docstrings Doxygen (`@brief`, `@param`, `@return`), resolución de constructores, contratos de lambdas (`(anonymous function) -> NombreFuncdef`) y sugerencias de miembros conscientes del ámbito (`.`, `::`).
 - **Interfaz interactiva y atenuación de regiones inactivas**: Elemento en la barra de estado ("AngelScript IntelliSense") con selector de stub activo, atenuación automática de bloques del preprocesador inactivos (`#if / #else / #endif`) y pistas de parámetros (inlay hints) con navegación `Ctrl+Click`.
-- **Documentos virtuales de mixins**: Inspección de documentos sintéticos (`angelscript-virtual://`) que permite visualización en línea y validación de miembros en el ámbito del host.
 - **Inspección de rutas de activos**: Las cadenas que coinciden con rutas de archivos o activos se comprueban en el espacio de trabajo y rutas de búsqueda para existencia y métricas en hover.
 - **Dialecto del motor e integración con el host**: Resolución de `#include` sin extensión al estilo Sven Co-op, stubs predefinidos del host (`.as.predefined`) y flags configurables del preprocesador (`#if`, `#define`).
 - **Motor nativo Clang-Format**: Soporte completo para [Clang-Format Style Options](https://clang.llvm.org/docs/ClangFormatStyleOptions.html) mediante archivos `.clang-format`, `_clang-format` o `.as-clang-format` (incluyendo presets `BasedOnStyle` como `LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`, secciones multilenguaje `Language: AngelScript` / `Cpp`, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks/Functions/If/Loops`, `ReflowComments` y `// clang-format off/on`).
@@ -71,9 +70,6 @@ Recomendado para paquetes de mapas con múltiples scripts en Sven Co-op (ej. `ma
     }
   ],
 
-  // Habilitar inspección de documentos virtuales de mixins (angelscript-virtual://)
-  "angelscript.enableVirtualMixinDocuments": true,
-
   // Stub de host predefinido activo
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
@@ -93,7 +89,6 @@ Recomendado cuando el árbol de scripts se compila desde un archivo de registro 
       "entry": "${workspaceFolder}/maps/ins2/ins2_register.as"
     }
   ],
-  "angelscript.enableVirtualMixinDocuments": true,
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
 ```
@@ -161,9 +156,6 @@ Todos los comandos pueden ejecutarse desde la Paleta de comandos (`Ctrl+Shift+P`
 | `angelscript.setModuleEntryPoint` | **AngelScript: Definir como punto de entrada del módulo** | Acción del menú contextual en archivos `.as` para configurar el punto de entrada. |
 | `angelscript.setModuleFolder` | **AngelScript: Definir como carpeta del módulo** | Acción del menú contextual en carpetas para configurar pertenencia del módulo. |
 | `angelscript.formatPredefinedStub` | **AngelScript: Formatear stub predefinido** | Acción del menú contextual en archivos `.predefined` para formatear encabezados. |
-| `angelscript.viewMixinExpansion` | **AngelScript: Ver expansión de mixin** | Abre el documento virtual sintetizado (`angelscript-virtual://`). |
-| `angelscript.peekMixinInline` | **AngelScript: Inspeccionar mixin en línea** | Abre una vista de inspección en línea para ver la clase mixin expandida. |
-| `angelscript.openPhysicalSource` | **AngelScript: Abrir archivo físico** | Navega desde el documento virtual al archivo físico original. |
 
 ---
 
@@ -234,7 +226,6 @@ El aislamiento de capas es estrictamente validado por `server/scripts/check-laye
 | `angelscript.predefined.active` | `""` | Stub activo a cargar. Usa `"all"` para fusionar todos los stubs. |
 | `angelscript.predefinedFiles` | `[]` | Lista explícita de archivos de stubs (`.as.predefined`). |
 | `angelscript.exclude` | `["**/.git/**", "**/build/**", "**/node_modules/**"]` | Patrones glob excluidos del análisis. |
-| `angelscript.enableVirtualMixinDocuments` | `false` | Habilita proveedores de documentos virtuales (`angelscript-virtual://`) para mixins. |
 
 #### 3. Inlay Hints
 | Configuración | Por defecto | Descripción |

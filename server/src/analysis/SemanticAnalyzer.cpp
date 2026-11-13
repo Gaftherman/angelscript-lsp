@@ -156,8 +156,7 @@ SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const Sem
     return breakdown;
 }
 
-static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx,
-                                    rules::MixinFileCache* mixinCache = nullptr)
+static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx, MixinFileCache* mixinCache = nullptr)
 {
     switch (sym.type)
     {
@@ -193,8 +192,8 @@ static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx,
 
 void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, DiagnosticContext& ctx) const
 {
-    rules::MixinFileCache localMixinCache;
-    rules::MixinFileCache* effectiveMixinCache = ctx.request.mixinCache ? ctx.request.mixinCache : &localMixinCache;
+    MixinFileCache localMixinCache;
+    MixinFileCache* effectiveMixinCache = ctx.request.mixinCache ? ctx.request.mixinCache : &localMixinCache;
     symbolTable.ForEachSymbolInFile(
         ctx.request.fileUri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)

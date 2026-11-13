@@ -95,9 +95,6 @@ static void RegisterWorkspaceActionHandlers(Server& server, lsp::MessageHandler&
         [&server](lsp::requests::Workspace_TextDocumentContent::Params&& req)
         { return server.HandleRequestsWorkspace_TextDocumentContent(std::move(req)); });
 
-    handler.add("angelscript/virtualDocumentContent", [&server](lsp::json::Value&& params)
-                { return server.HandleRequestsVirtualDocumentContent(std::move(params)); });
-
     handler.add<lsp::requests::Workspace_Symbol>([&server](lsp::requests::Workspace_Symbol::Params&& req)
                                                  { return server.HandleRequestsWorkspace_Symbol(std::move(req)); });
 

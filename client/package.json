@@ -250,21 +250,6 @@
         "category": "%command.selectPredefined.category%"
       },
       {
-        "command": "angelscript.viewMixinExpansion",
-        "title": "%command.viewMixinExpansion.title%",
-        "category": "%command.selectPredefined.category%"
-      },
-      {
-        "command": "angelscript.peekMixinInline",
-        "title": "%command.peekMixinInline.title%",
-        "category": "%command.selectPredefined.category%"
-      },
-      {
-        "command": "angelscript.openPhysicalSource",
-        "title": "%command.openPhysicalSource.title%",
-        "category": "%command.selectPredefined.category%"
-      },
-      {
         "command": "angelscript.clearLocalState",
         "title": "%command.clearLocalState.title%",
         "category": "%command.selectPredefined.category%"
@@ -306,14 +291,6 @@
         {
           "command": "angelscript.setModuleFolder",
           "when": "false"
-        },
-        {
-          "command": "angelscript.openPhysicalSource",
-          "when": "false"
-        },
-        {
-          "command": "angelscript.peekMixinInline",
-          "when": "false"
         }
       ],
       "editor/context": [
@@ -321,11 +298,6 @@
           "command": "angelscript.formatPredefinedStub",
           "when": "resourceExtname == .predefined",
           "group": "angelscript@1"
-        },
-        {
-          "command": "angelscript.viewMixinExpansion",
-          "when": "editorLangId == angelscript",
-          "group": "angelscript@2"
         }
       ]
     },
@@ -602,12 +574,6 @@
             },
             "default": [],
             "markdownDescription": "%config.arrayLikeTypes.description%"
-          },
-          "angelscript.enableVirtualMixinDocuments": {
-            "type": "boolean",
-            "default": false,
-            "scope": "resource",
-            "markdownDescription": "%angelscript.enableVirtualMixinDocuments.description%"
           }
         }
       },
@@ -953,12 +919,6 @@
             "default": true,
             "scope": "resource",
             "markdownDescription": "%config.codeLens.showZeroReferences.description%"
-          },
-          "angelscript.codeLens.showMixinExpansion": {
-            "type": "boolean",
-            "default": false,
-            "scope": "resource",
-            "markdownDescription": "%config.codeLens.showMixinExpansion.description%"
           }
         }
       },

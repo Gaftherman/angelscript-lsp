@@ -474,8 +474,6 @@ struct Symbol
     std::string containerName;
     std::string qualifiedName;
     std::string fileUri;
-    std::string virtualFileUri;        ///< Synthetic URI when virtual mixin documents are enabled (e.g.
-                                       ///< angelscript-virtual://<host_class>/<mixin>.as).
     std::vector<std::string> metadata; ///< CScriptBuilder metadata strings attached to this symbol.
 
     std::variant<std::monostate, FunctionSignature, VariableSignature, EnumSignature, ClassSignature,

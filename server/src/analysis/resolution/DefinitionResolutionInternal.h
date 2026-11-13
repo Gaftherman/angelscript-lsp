@@ -70,12 +70,4 @@ void DisambiguateCandidateContainers(std::vector<Symbol>& symbols, const Scope* 
  */
 [[nodiscard]] std::vector<Symbol> TryResolveDelegateProperty(std::string_view nodeText, const DefinitionQuery& query);
 
-/**
- * @brief Resolves virtual mixin document identifiers to host class symbols.
- * @param[in] nodeText Identifier text at query position.
- * @param[in] query Definition query context.
- * @return Resolved host symbol definitions or empty vector.
- */
-[[nodiscard]] std::vector<Symbol> TryResolveVirtualMixin(std::string_view nodeText, const DefinitionQuery& query);
-
 } // namespace angel_lsp::analysis

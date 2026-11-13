@@ -63,7 +63,6 @@ struct ExpressionTypeContext
 struct ReceiverTypeContext
 {
     const Scope* scope = nullptr;
-    std::string_view virtualHostClass = {};
     std::string_view fileUri = {};
     std::string_view arrayTypeName = {};
     ExpressionTypeCache* cache = nullptr;

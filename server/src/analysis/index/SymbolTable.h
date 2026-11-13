@@ -176,73 +176,6 @@ class SymbolTable
         return m_stringType;
     }
 
-    void SetVirtualMixinDocumentsEnabled(bool enabled);
-
-    /**
-     * @brief Checks if virtual mixin documents generation is currently enabled.
-     */
-    [[nodiscard]] bool IsVirtualMixinDocumentsEnabled() const;
-
-    /**
-     * @brief Number of header lines generated in a virtual mixin document (lines 0..2).
-     */
-    static constexpr uint32_t kVirtualMixinHeaderLineCount = 3;
-
-    /**
-     * @brief Maps a virtual mixin document line number to the physical mixin declaration line number.
-     * @param virtualLine 0-indexed line number in the virtual mixin document.
-     * @param mixinStartLine 0-indexed line number where the mixin declaration begins in the physical file.
-     * @return 0-indexed line number in the physical file.
-     */
-    [[nodiscard]] static constexpr uint32_t VirtualToPhysicalLine(uint32_t virtualLine,
-                                                                  uint32_t mixinStartLine) noexcept
-    {
-        return (virtualLine >= kVirtualMixinHeaderLineCount)
-                   ? (mixinStartLine + (virtualLine - kVirtualMixinHeaderLineCount))
-                   : mixinStartLine;
-    }
-
-    /**
-     * @brief Maps a physical mixin source line number to the virtual mixin document line number.
-     * @param physicalLine 0-indexed line number in the physical file.
-     * @param mixinStartLine 0-indexed line number where the mixin declaration begins in the physical file.
-     * @return 0-indexed line number in the virtual mixin document.
-     */
-    [[nodiscard]] static constexpr uint32_t PhysicalToVirtualLine(uint32_t physicalLine,
-                                                                  uint32_t mixinStartLine) noexcept
-    {
-        return (physicalLine >= mixinStartLine) ? (kVirtualMixinHeaderLineCount + (physicalLine - mixinStartLine))
-                                                : kVirtualMixinHeaderLineCount;
-    }
-
-    /**
-     * @brief Constructs a virtual mixin URI for a host class and mixin name (e.g.
-     *        angelscript-virtual://<host>/<mixin>.as).
-     */
-    [[nodiscard]] static std::string BuildVirtualMixinUri(std::string_view hostClass, std::string_view mixinName);
-
-    /**
-     * @brief Extracts the host class from a virtual mixin URI (e.g. "Rifle" from
-     *        angelscript-virtual://Rifle/WeaponMixin.as).
-     */
-    [[nodiscard]] static std::string ExtractVirtualHostClass(std::string_view uri);
-
-    /**
-     * @brief Extracts the mixin name from a virtual mixin URI (e.g. "WeaponMixin" from
-     *        angelscript-virtual://Rifle/WeaponMixin.as).
-     */
-    [[nodiscard]] static std::string ExtractVirtualMixinName(std::string_view uri);
-
-    /**
-     * @brief Parses an angelscript-virtual URI into host class and mixin name components without heap allocation.
-     * @param[in] uri Virtual document URI string.
-     * @param[out] hostClass Extracted host class component string view.
-     * @param[out] mixinPart Extracted mixin component string view.
-     * @return True if the URI was successfully parsed as a virtual mixin URI; false otherwise.
-     */
-    [[nodiscard]] static bool ParseVirtualMixinUri(std::string_view uri, std::string_view& hostClass,
-                                                   std::string_view& mixinPart) noexcept;
-
     /**
      * @brief Returns true if the symbol table holds any symbols collected from fileUri.
      */
@@ -609,7 +542,6 @@ class SymbolTable
     mutable uint64_t m_globalTypesVersion = 0;
     void EnsureGlobalTypesLocked() const;
 
-    bool m_virtualMixinDocumentsEnabled = false;
     /**
      * @brief Number of mixin classes currently stored in the table. Guarded by m_mutex.
      */

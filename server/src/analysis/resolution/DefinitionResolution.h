@@ -66,7 +66,7 @@ struct DefinitionTargetResult
 [[nodiscard]] const LocalReference* FindReferenceAt(const Scope* scope, uint32_t line, uint32_t character) noexcept;
 
 /**
- * @brief Mapped location target including destination URI and range for virtual documents.
+ * @brief Mapped location target including destination URI and range.
  */
 struct MappedLocationTarget
 {
@@ -75,14 +75,12 @@ struct MappedLocationTarget
 };
 
 /**
- * @brief Maps a symbol's physical location to virtual line coordinates if querying a virtual mixin document.
+ * @brief Resolves the destination URI and source range of a symbol's declaration.
  * @param[in] sym Target symbol.
- * @param[in] requestUri Document URI being queried.
- * @param[in] symbolTable Symbol table containing mixin symbols.
- * @return Mapped target URI and source range.
+ * @param[in] requestUri Document URI being queried; used when the symbol has no file URI.
+ * @return Mapped target URI and source range, preferring the symbol's full range.
  */
-[[nodiscard]] MappedLocationTarget MapVirtualMixinLocation(const Symbol& sym, std::string_view requestUri,
-                                                           const SymbolTable& symbolTable);
+[[nodiscard]] MappedLocationTarget MapSymbolLocation(const Symbol& sym, std::string_view requestUri);
 
 /**
  * @brief Resolves definition targets for the symbol at the queried position.

@@ -23,7 +23,7 @@ namespace angel_lsp::features
  */
 static lsp::Location MakeLocation(const analysis::Symbol& sym, const analysis::DefinitionQuery& query)
 {
-    const auto mapped = analysis::MapVirtualMixinLocation(sym, query.uri, query.symbolTable);
+    const auto mapped = analysis::MapSymbolLocation(sym, query.uri);
     return lsp::Location{common::ParseOrConvertUri(mapped.targetUri), common::ToLspRange(mapped.range)};
 }
 

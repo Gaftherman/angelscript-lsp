@@ -48,9 +48,6 @@ Recommended for Sven Co-op map script folders (e.g. `maps/hcas`):
     }
   ],
 
-  // Enable virtual mixin document inspection (angelscript-virtual://)
-  "angelscript.enableVirtualMixinDocuments": true,
-
   // Active predefined host stub
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
@@ -70,7 +67,6 @@ Recommended when compiling a script tree starting from a registration entry poin
       "entry": "${workspaceFolder}/maps/ins2/ins2_register.as"
     }
   ],
-  "angelscript.enableVirtualMixinDocuments": true,
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
 ```
@@ -128,9 +124,6 @@ All commands can be triggered via the Command Palette (`Ctrl+Shift+P` / `Cmd+Shi
 | `angelscript.setModuleEntryPoint` | **AngelScript: Set as Module Entry Point** | Explorer context menu item on `.as` files to configure module entry point. |
 | `angelscript.setModuleFolder` | **AngelScript: Set as Module Folder** | Explorer context menu item on folders to configure folder-based module ownership. |
 | `angelscript.formatPredefinedStub` | **AngelScript: Format Predefined Stub Header** | Explorer context menu item on `.predefined` files to format host API headers. |
-| `angelscript.viewMixinExpansion` | **AngelScript: View Mixin Expansion** | Opens the synthesized virtual document (`angelscript-virtual://`) for a mixin class. |
-| `angelscript.peekMixinInline` | **AngelScript: Peek Mixin Inline** | Opens an inline peek view showing the expanded mixin implementation. |
-| `angelscript.openPhysicalSource` | **AngelScript: Open Physical Source** | Navigates from a virtual mixin document back to the physical source code file. |
 
 ---
 
@@ -139,7 +132,6 @@ All commands can be triggered via the Command Palette (`Ctrl+Shift+P` / `Cmd+Shi
 - **Interactive Status Bar Item**: The "AngelScript IntelliSense" status item in the status bar displays server status and the active predefined stub name. Clicking it launches the interactive status menu or stub selector. Configurable alignment via `angelscript.statusBar.alignment` (`"left"` or `"right"`).
 - **Inactive Preprocessor Region Dimming**: Blocks excluded by `#if / #else / #endif` preprocessor directives are automatically dimmed in the editor with configurable opacity (`angelscript.dimInactiveRegions` and `angelscript.inactiveRegionOpacity`).
 - **Inlay Hints with Navigation**: Parameter name inlay hints display inline argument names. `Ctrl+Click` on any parameter hint navigates directly to the formal parameter definition. Supports omitted default argument hints (`nameAndValue`, `declaration`, `off`) and suppression when argument text matches parameter name.
-- **Virtual Mixin Documents (`angelscript-virtual://`)**: Synthetic virtual document provider that expands AngelScript mixin classes within their target class scope for inline peek, navigation, and member validation.
 - **Asset Path Probing**: String literals that resemble file or asset paths are probed against the workspace and asset directories (`angelscript.hover.assetSearchPaths`), displaying file existence, file size, and metrics on hover.
 - **Flow-Sensitive Null Checks**: Intraprocedural diagnostics (`as-warn-possible-null-dereference`) warning on unchecked handles or handles used after null assignment.
 - **Precise Hover & Navigation**: Overload-isolated documentation tooltips at call sites, Doxygen docstrings (`@brief`, `@param`, `@return`), constructor resolution, lambda signatures, Go to Definition (`F12`), and Go to Implementation (`Ctrl+F12`).
@@ -206,7 +198,6 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.predefinedExtension` | `".as.predefined"` | Filename suffix that marks a file found in the workspace as a predefined stub. This is a suffix, not a path - use `#angelscript.predefinedFiles` to load a specific file. |
 | `angelscript.define` | `[]` | Words `#if` treats as defined, matching the words the host application passes to `CScriptBuilder::DefineWord`. A `#if WORD` whose word is not listed here is excluded from compilation, exactly as it is by the real preprocessor, and no diagnostics are reported inside it. A predefined stub can declare the same words with `#define WORD`, which is usually the better place for them: the stub already describes the host's engine setup and travels with it. |
 | `angelscript.arrayLikeTypes` | `[]` | Names of template types whose initializer list is a plain repeat of their element type, the way `array<T>`'s is. The engine's default array type is always included.  This is shorthand. The general mechanism is a `/// @listpattern {repeat T}` tag on the class in your `.as.predefined` stub, copied from the type's own `asBEHAVE_LIST_FACTORY` registration — that also expresses patterns this setting cannot, such as `dictionary`'s `{repeat {string, ?}}`. Use this setting when you cannot edit the stub.  Either way it has to be stated rather than detected: `array<T>` and `optional<T>` are declared identically in a stub, and the compiler accepts `array<int> a = {1};` while rejecting `optional<int> o = {1};`. |
-| `angelscript.enableVirtualMixinDocuments` | `false` | Enables experimental virtual text documents for mixin classes (angelscript-virtual://). When disabled, high-performance symbol synthesis is used. |
 
 #### 3. Inlay Hints Configuration
 
@@ -280,7 +271,6 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.codeLens.showOnPropertiesAndVariables` | `true` | Show reference CodeLens above global and member variable declarations. |
 | `angelscript.codeLens.showOnEnums` | `true` | Show reference CodeLens above enum declarations. |
 | `angelscript.codeLens.showZeroReferences` | `true` | Show reference CodeLens even when a symbol has 0 references. |
-| `angelscript.codeLens.showMixinExpansion` | `false` | Show CodeLens link to expand or inspect mixin classes included by a class (default: false). |
 
 #### 6. Semantic Diagnostics & Analysis Configuration
 

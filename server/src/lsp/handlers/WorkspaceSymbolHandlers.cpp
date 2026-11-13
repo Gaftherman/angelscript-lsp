@@ -17,14 +17,6 @@ Server::HandleRequestsWorkspace_TextDocumentContent(lsp::requests::Workspace_Tex
 {
     const std::string requested = req.uri.toString();
     static constexpr std::string_view k_scheme = "angelscript-predefined:";
-    static constexpr std::string_view k_virtual_scheme = "angelscript-virtual:";
-
-    if (requested.starts_with(k_virtual_scheme))
-    {
-        lsp::TextDocumentContentResult result;
-        result.text = GenerateVirtualMixinDocument(requested);
-        return result;
-    }
 
     if (!requested.starts_with(k_scheme))
     {

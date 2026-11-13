@@ -24,11 +24,10 @@ namespace angel_lsp::analysis
 {
 
 std::string ResolveReceiverTypeName(IndexedByteRange objectRange, const ExpressionTypeContext& ctx,
-                                    std::string_view virtualHostClass, const config::ServerConfig* config)
+                                    const config::ServerConfig* config)
 {
     const config::EngineRuleConfig* engineRules = config ? &config->engineRules : nullptr;
-    ReceiverTypeContext recvCtx{ctx.scope, virtualHostClass, ctx.uri, ctx.symbolTable.GetDefaultArrayType(),
-                                nullptr,   engineRules};
+    ReceiverTypeContext recvCtx{ctx.scope, ctx.uri, ctx.symbolTable.GetDefaultArrayType(), nullptr, engineRules};
     recvCtx.nodeIndex = ctx.nodeIndex;
     std::string receiverTypeName = analysis::ResolveReceiverType(objectRange, ctx.sourceCode, ctx.symbolTable, recvCtx);
     if (!receiverTypeName.empty() && config && !config->types.arrayTypeName.empty())
@@ -85,7 +84,6 @@ std::vector<Symbol> CollectReceiverMemberSymbols(std::string_view receiverTypeNa
 }
 
 std::vector<Symbol> ResolveNamedArgCalleeCandidates(IndexedByteRange callRange, const ExpressionTypeContext& ctx,
-                                                    std::string_view virtualHostClass,
                                                     const config::ServerConfig* config)
 {
     if (!ctx.nodeIndex)
@@ -101,8 +99,7 @@ std::vector<Symbol> ResolveNamedArgCalleeCandidates(IndexedByteRange callRange, 
 
     if (site->isMemberCall)
     {
-        std::string receiverTypeName =
-            ResolveReceiverTypeName(site->objectOperand.bytes, ctx, virtualHostClass, config);
+        std::string receiverTypeName = ResolveReceiverTypeName(site->objectOperand.bytes, ctx, config);
         return CollectReceiverMemberSymbols(receiverTypeName, site->calleeName, ctx.symbolTable);
     }
 

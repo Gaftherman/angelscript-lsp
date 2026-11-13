@@ -4,7 +4,6 @@
 #include "analysis/resolution/DefinitionResolution.h"
 #include "analysis/resolution/DefinitionResolutionInternal.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
-#include "analysis/types/VirtualMixinContext.h"
 #include "config/EngineRuleConfig.h"
 #include "utils/ScopedNameUtils.h"
 
@@ -235,38 +234,6 @@ std::vector<Symbol> TryResolveDelegateProperty(std::string_view nodeText, const 
     if (!baseClass.empty())
     {
         return query.symbolTable.FindSymbols(baseClass);
-    }
-    return {};
-}
-
-std::vector<Symbol> TryResolveVirtualMixin(std::string_view nodeText, const DefinitionQuery& query)
-{
-    auto vCtx = ResolveVirtualMixinContext(query.uri, query.symbolTable);
-    if (!vCtx.isVirtual)
-    {
-        return {};
-    }
-    if (const auto found = query.symbolTable.FindMemberSymbolPtr(vCtx.hostClass, nodeText))
-    {
-        if (!found->empty())
-        {
-            return *found;
-        }
-    }
-    auto hierarchy = GetInheritedTypeHierarchy(vCtx.hostClass, query.symbolTable);
-    for (const auto& base : hierarchy)
-    {
-        if (const auto found = query.symbolTable.FindMemberSymbolPtr(base, nodeText))
-        {
-            if (!found->empty())
-            {
-                return *found;
-            }
-        }
-    }
-    if (nodeText == "this" || IsBaseClassDelegateProperty(nodeText, query.symbolTable, query.engineRules))
-    {
-        return query.symbolTable.FindSymbols(vCtx.hostClass);
     }
     return {};
 }

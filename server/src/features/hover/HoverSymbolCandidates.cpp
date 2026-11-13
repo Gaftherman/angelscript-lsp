@@ -175,7 +175,6 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
     analysis::VirtualHostSymbolQuery vquery{
         .targetRange = {ctx.site.targetStartByte, ctx.site.targetEndByte},
         .nodeText = ctx.nodeText,
-        .virtualHostClass = ctx.vctx.isVirtual ? std::string_view(ctx.vctx.hostClass) : std::string_view{},
         .sourceCode = ctx.request.sourceCode,
         .fileUri = ctx.request.uri,
         .nodeIndex = ctx.request.nodeIndex,

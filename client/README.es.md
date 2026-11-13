@@ -48,9 +48,6 @@ Recomendado para paquetes de scripts de mapas en Sven Co-op (ej. `maps/hcas`):
     }
   ],
 
-  // Habilitar inspección de documentos virtuales de mixins (angelscript-virtual://)
-  "angelscript.enableVirtualMixinDocuments": true,
-
   // Stub de host predefinido activo
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
@@ -70,7 +67,6 @@ Recomendado cuando el árbol de scripts se compila desde un archivo de registro 
       "entry": "${workspaceFolder}/maps/ins2/ins2_register.as"
     }
   ],
-  "angelscript.enableVirtualMixinDocuments": true,
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
 ```
@@ -128,9 +124,6 @@ Todos los comandos pueden ejecutarse desde la Paleta de comandos (`Ctrl+Shift+P`
 | `angelscript.setModuleEntryPoint` | **AngelScript: Definir como punto de entrada del módulo** | Opción del menú contextual en archivos `.as` para definir el punto de entrada del módulo. |
 | `angelscript.setModuleFolder` | **AngelScript: Definir como carpeta del módulo** | Opción del menú contextual en carpetas para definir la pertenencia de un módulo por directorio. |
 | `angelscript.formatPredefinedStub` | **AngelScript: Formatear stub predefinido** | Opción del menú contextual en archivos `.predefined` para formatear encabezados de API del host. |
-| `angelscript.viewMixinExpansion` | **AngelScript: Ver expansión de mixin** | Abre el documento virtual sintetizado (`angelscript-virtual://`) para una clase mixin. |
-| `angelscript.peekMixinInline` | **AngelScript: Inspeccionar mixin en línea** | Abre una vista de inspección en línea (peek) mostrando la implementación expandida del mixin. |
-| `angelscript.openPhysicalSource` | **AngelScript: Abrir archivo físico** | Navega desde un documento virtual de mixin de vuelta al archivo de código físico original. |
 
 ---
 
@@ -139,7 +132,6 @@ Todos los comandos pueden ejecutarse desde la Paleta de comandos (`Ctrl+Shift+P`
 - **Barra de estado interactiva**: El elemento "AngelScript IntelliSense" en la barra de estado muestra el estado del servidor y el nombre del stub predefinido activo. Al hacer clic se abre el menú de estado interactivo o el selector de stubs. Alineación configurable con `angelscript.statusBar.alignment` (`"left"` o `"right"`).
 - **Atenuación de regiones inactivas del preprocesador**: Los bloques excluidos por directivas `#if / #else / #endif` se atenúan visualmente de forma automática en el editor con opacidad configurable (`angelscript.dimInactiveRegions` y `angelscript.inactiveRegionOpacity`).
 - **Inlay Hints con navegación**: Muestra nombres de argumentos en línea. Al presionar `Ctrl+Click` sobre cualquier pista de parámetro se navega directamente a la definición del parámetro formal. Soporta argumentos omitidos por defecto (`nameAndValue`, `declaration`, `off`) y supresión cuando el argumento coincide con el parámetro.
-- **Documentos virtuales de mixins (`angelscript-virtual://`)**: Proveedor de documentos virtuales que expande clases mixin dentro del ámbito de la clase destino para inspección en línea, navegación y validación de miembros.
 - **Inspección de rutas de activos**: Las cadenas que representan rutas de archivos o activos se comprueban en el espacio de trabajo y rutas de búsqueda (`angelscript.hover.assetSearchPaths`), mostrando existencia en disco, tamaño y métricas al hacer hover.
 - **Comprobación de nulos sensible al flujo**: Diagnósticos intraprocedimentales (`as-warn-possible-null-dereference`) que advierten sobre handles no verificados o usados tras asignación a `null`.
 - **Hover y navegación precisos**: Tooltips de documentación aislados por sobrecarga, renderizado de docstrings Doxygen (`@brief`, `@param`, `@return`), resolución de constructores, contratos de lambdas, Ir a definición (`F12`) e Ir a implementación (`Ctrl+F12`).
@@ -206,7 +198,6 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.predefinedExtension` | `".as.predefined"` | Sufijo de nombre de archivo que marca un archivo encontrado en el espacio de trabajo como un stub predefinido. Esto es un sufijo, no una ruta - use `#angelscript.predefinedFiles` para cargar un archivo específico. |
 | `angelscript.define` | `[]` | Palabras que `#if` considera definidas, coincidentes con las palabras que la aplicación host pasa a `CScriptBuilder::DefineWord`. Un `#if WORD` cuya palabra no esté listada aquí se excluye de la compilación, exactamente como lo hace el preprocesador real, y no se reportan diagnósticos en su interior. Un stub predefinido puede declarar las mismas palabras con `#define WORD`, que usualmente es el mejor lugar para ellas: el stub ya describe la configuración del motor del host y viaja con él. |
 | `angelscript.arrayLikeTypes` | `[]` | Nombres de tipos de plantilla cuya lista de inicializadores es una simple repetición de su tipo de elemento, tal como ocurre con `array<T>`. El tipo array predeterminado del motor siempre está incluido.  Esto es una forma abreviada. El mecanismo general es una etiqueta `/// @listpattern {repeat T}` en la clase dentro de su stub `.as.predefined`, copiada del propio registro `asBEHAVE_LIST_FACTORY` del tipo — eso también expresa patrones que esta configuración no puede, como `{repeat {string, ?}}` de `dictionary`. Use esta configuración cuando no pueda editar el stub.  De cualquier manera, tiene que indicarse en lugar de detectarse: `array<T>` y `optional<T>` se declaran de forma idéntica en un stub, y el compilador acepta `array<int> a = {1};` mientras rechaza `optional<int> o = {1};`. |
-| `angelscript.enableVirtualMixinDocuments` | `false` | Habilita documentos de texto virtuales experimentales para clases mixin (angelscript-virtual://). Cuando está desactivado, se utiliza la síntesis de símbolos de alto rendimiento. |
 
 #### 3. Configuración de Inlay Hints
 
@@ -280,7 +271,6 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.codeLens.showOnPropertiesAndVariables` | `true` | Muestra CodeLens de referencias sobre declaraciones de variables globales y miembros. |
 | `angelscript.codeLens.showOnEnums` | `true` | Muestra CodeLens de referencias sobre declaraciones de enumeraciones. |
 | `angelscript.codeLens.showZeroReferences` | `true` | Muestra CodeLens de referencias incluso cuando un símbolo tiene 0 referencias. |
-| `angelscript.codeLens.showMixinExpansion` | `false` | Muestra enlace de CodeLens para expandir o inspeccionar clases mixin incluidas por una clase (por defecto: false). |
 
 #### 6. Configuración de diagnósticos semánticos y análisis
 

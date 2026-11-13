@@ -7090,7 +7090,6 @@ TEST_CASE("Server - Symlinked module entry and active predefined with workspaceF
 
     config::ServerConfig serverConfig;
     serverConfig.implicitIncludeExtension = true;
-    serverConfig.features.enableVirtualMixinDocuments = true;
     serverConfig.activePredefined = "${workspaceFolder}/maps/ins2/sven.as.predefined";
     serverConfig.modules = {
         {.name = "MapInit", .entry = "${workspaceFolder}/maps/ins2/ins2_register.as", .folder = ""}};

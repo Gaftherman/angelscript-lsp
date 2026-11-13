@@ -194,7 +194,6 @@ class Server
     HandleRequestsWorkspace_ExecuteCommand(lsp::requests::Workspace_ExecuteCommand::Params&& params);
     lsp::requests::Workspace_TextDocumentContent::Result
     HandleRequestsWorkspace_TextDocumentContent(lsp::requests::Workspace_TextDocumentContent::Params&& req);
-    lsp::json::Value HandleRequestsVirtualDocumentContent(lsp::json::Value&& params);
     lsp::requests::Workspace_Symbol::Result
     HandleRequestsWorkspace_Symbol(lsp::requests::Workspace_Symbol::Params&& req);
     lsp::requests::TextDocument_LinkedEditingRange::Result
@@ -305,8 +304,8 @@ class Server
         m_lastSavedInterfaceHash;
     SyntaxRevisionCache m_workerSyntax;   ///< Accessed only by the scheduler callback.
     SyntaxRevisionCache m_protocolSyntax; ///< Accessed only on the LSP message loop.
-    analysis::rules::MixinFileCache m_workerMixinCache;
-    analysis::rules::MixinFileCache m_serverMixinCache;
+    analysis::MixinFileCache m_workerMixinCache;
+    analysis::MixinFileCache m_serverMixinCache;
     std::atomic<bool> m_clearWorkerMixinCache{false};
     mutable std::mutex m_publishedForModulesMutex;
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> m_publishedForModules;
@@ -407,7 +406,6 @@ class Server
                                  uint64_t closedRevision, const std::optional<std::string>& previousResultId);
     [[nodiscard]] std::optional<uint64_t> ClosedDiagnosticRevision(std::string_view uriStr,
                                                                    const std::string* source) const;
-    std::string GenerateVirtualMixinDocument(std::string_view uri);
     void DidSavePredefinedFile(std::string_view uriStr, std::string_view text);
     void ReanalyzeDependentsOnSave(std::string_view uriStr);
     void ReanalyzeClosedModuleDependents(std::string_view savedUriStr, const ModuleClaim& savedClaim,
@@ -434,7 +432,6 @@ class Server
     void ReplaceDeletedPredefinedStub(parser::AngelScriptParser& parser);
     void RefreshOpenDocumentIncludes();
     static std::string CanonicalPathFromUri(std::string_view uriStr);
-    std::shared_ptr<const document::Document> ResolveVirtualDocument(std::string_view key, std::string_view uriStr);
     std::optional<OpenDocument> LookupPreindexedFallback(std::string_view key);
     [[nodiscard]] std::optional<std::string> OccurrenceModuleFor(std::string_view uri) const;
     features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);

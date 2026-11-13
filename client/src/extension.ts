@@ -4,8 +4,8 @@ import * as fs from 'fs';
 import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
     Disposable, RelativePattern, ConfigurationTarget, QuickPickItem, QuickPickItemKind, Uri, l10n,
-    TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
-    CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location,
+    TextEditorDecorationType, Range, TextEditor, WorkspaceEdit,
+    Position, Location,
     languages, LanguageStatusItem, LanguageStatusSeverity,
     debug, CompletionItem, CompletionItemKind
 } from 'vscode';
@@ -144,15 +144,6 @@ const SWITCH_ACTIVE_MODULE_COMMAND = 'angelscript.switchActiveModule';
 
 /** @brief Command that gathers a predefined stub's scattered namespaces into one block each. */
 const FORMAT_STUB_COMMAND = 'angelscript.formatPredefinedStub';
-
-/** @brief Command that opens a synthesized virtual mixin document beside the active editor. */
-const VIEW_MIXIN_EXPANSION_COMMAND = 'angelscript.viewMixinExpansion';
-
-/** @brief Command that peeks a mixin inline at its declaration site. */
-const PEEK_MIXIN_INLINE_COMMAND = 'angelscript.peekMixinInline';
-
-/** @brief Command that jumps from a synthesized virtual mixin document to the physical source. */
-const OPEN_PHYSICAL_SOURCE_COMMAND = 'angelscript.openPhysicalSource';
 
 /** @brief Command that disables a configurable diagnostic rule in workspace settings. */
 const DISABLE_DIAGNOSTIC_COMMAND = 'angelscript.disableDiagnostic';
@@ -1292,11 +1283,6 @@ export function buildServerArgs(): string[] {
         }
     }
 
-    const enableVirtualMixin = config.get<boolean>('enableVirtualMixinDocuments', false);
-    if (enableVirtualMixin) {
-        args.push('--enable-virtual-mixin-documents=true');
-    }
-
     if (config.get<boolean>('completion.smartTypeRanking', true) === false) {
         args.push('--disable-completion-smart-ranking');
     }
@@ -1374,10 +1360,6 @@ export function buildServerArgs(): string[] {
 
     if (config.get<boolean>('codeLens.showZeroReferences', true) === false) {
         args.push('--disable-codelens-zero-references');
-    }
-
-    if (config.get<boolean>('codeLens.showMixinExpansion', false) === true) {
-        args.push('--codelens-mixin-expansion');
     }
 
     if (config.get<boolean>('hover.stringLiteralLength', true) === false) {
@@ -1509,8 +1491,7 @@ async function startClient(context: ExtensionContext): Promise<void> {
     const clientOptions: LanguageClientOptions = {
         documentSelector: [
             { scheme: 'file', language: 'angelscript' },
-            { scheme: 'file', language: 'angelscript-predefined' },
-            { scheme: 'angelscript-virtual', language: 'angelscript' }
+            { scheme: 'file', language: 'angelscript-predefined' }
         ],
         // No `configurationSection` here on purpose. It installs a second configuration listener
         // inside the LanguageClient, and that one fired against a client this extension was already
@@ -1593,31 +1574,6 @@ async function startClient(context: ExtensionContext): Promise<void> {
 
 
 /**
- * @brief Provides read-only text content for synthesized virtual mixin documents.
- *
- * Requests virtual document content from the language server via the custom
- * JSON-RPC method `angelscript/virtualDocumentContent`.
- */
-export class VirtualMixinContentProvider implements TextDocumentContentProvider {
-    async provideTextDocumentContent(uri: Uri, _token?: CancellationToken): Promise<string> {
-        const clientInstance = activeClient();
-        if (!clientInstance) {
-            return '// Language server is not running.';
-        }
-
-        try {
-            const response = await clientInstance.sendRequest<{ content: string }>(
-                'angelscript/virtualDocumentContent',
-                { uri: uri.toString() }
-            );
-            return response?.content ?? '// Virtual mixin document content is unavailable.';
-        } catch (error) {
-            return `// Failed to retrieve virtual mixin document: ${error instanceof Error ? error.message : String(error)}`;
-        }
-    }
-}
-
-/**
  * @brief Activates the AngelScript Language Client extension interface handlers.
  * @param context The extension context provided by VS Code.
  */
@@ -1668,15 +1624,6 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand(FORMAT_STUB_COMMAND, (resource?: Uri) => formatPredefinedStub(resource)));
-
-        context.subscriptions.push(
-            commands.registerCommand(VIEW_MIXIN_EXPANSION_COMMAND, (args?: { hostClass?: string; mixinName?: string; hostUri?: string; line?: number; character?: number; targetUri?: string; targetLine?: number; targetCharacter?: number }) => viewMixinExpansion(args)));
-
-        context.subscriptions.push(
-            commands.registerCommand(PEEK_MIXIN_INLINE_COMMAND, (args?: { hostClass?: string; mixinName?: string; hostUri?: string; line?: number; character?: number; targetUri?: string; targetLine?: number; targetCharacter?: number }) => viewMixinExpansion(args)));
-
-        context.subscriptions.push(
-            commands.registerCommand(OPEN_PHYSICAL_SOURCE_COMMAND, (args?: { fileUri?: string; line?: number; character?: number }) => openPhysicalSource(args)));
 
         context.subscriptions.push(
             commands.registerCommand(DISABLE_DIAGNOSTIC_COMMAND, async (args?: { settingKey?: string }) => {
@@ -1744,9 +1691,6 @@ export async function activate(context: ExtensionContext) {
             commands.registerCommand(CONFIGURE_HOST_ENVIRONMENT_COMMAND, () => configureHostEnvironment()));
     });
 
-    const virtualMixinProvider = new VirtualMixinContentProvider();
-    context.subscriptions.push(
-        workspace.registerTextDocumentContentProvider('angelscript-virtual', virtualMixinProvider));
     context.subscriptions.push(
         workspace.registerTextDocumentContentProvider('builtin', {
             provideTextDocumentContent(uri: Uri): string {
@@ -2906,83 +2850,6 @@ export async function switchActiveModule(): Promise<void> {
         updateLanguageStatus();
         void window.showInformationMessage(l10n.t('Isolated active module: {0}', selected.module.name));
     }
-}
-
-/**
- * @brief Opens the physical source file at a specified line and character position.
- * @param args Target file URI, line (0-indexed) and character (0-indexed).
- */
-export async function openPhysicalSource(args?: { fileUri?: string; line?: number; character?: number }): Promise<void> {
-    if (!args?.fileUri) {
-        return;
-    }
-    const uri = Uri.parse(args.fileUri);
-    const doc = await workspace.openTextDocument(uri);
-    const line = Math.max(0, args.line ?? 0);
-    const character = Math.max(0, args.character ?? 0);
-    const pos = new Position(line, character);
-    const editor = await window.showTextDocument(doc, { preview: false });
-    editor.selection = new Selection(pos, pos);
-    editor.revealRange(new Range(pos, pos), TextEditorRevealType.InCenter);
-}
-
-/**
- * @brief Opens the inline peek widget or synthesized virtual mixin document beside the active editor.
- * @param args The target host class, mixin name, and optional source locations.
- */
-export async function viewMixinExpansion(args?: {
-    hostClass?: string;
-    mixinName?: string;
-    hostUri?: string;
-    line?: number;
-    character?: number;
-    targetUri?: string;
-    targetLine?: number;
-    targetCharacter?: number;
-}): Promise<void> {
-    let hostClass = args?.hostClass;
-    let mixinName = args?.mixinName;
-    if (!hostClass || !mixinName) {
-        hostClass = await window.showInputBox({
-            prompt: l10n.t('Enter host class name'),
-            placeHolder: l10n.t('e.g. MyPlayer')
-        });
-        if (!hostClass) {
-            return;
-        }
-        mixinName = await window.showInputBox({
-            prompt: l10n.t('Enter mixin name'),
-            placeHolder: l10n.t('e.g. HealthMixin')
-        });
-        if (!mixinName) {
-            return;
-        }
-    }
-
-    if (args?.targetUri) {
-        try {
-            const originUri = args.hostUri
-                ? (args.hostUri.startsWith('file:') || args.hostUri.includes('://') ? Uri.parse(args.hostUri) : Uri.file(args.hostUri))
-                : window.activeTextEditor?.document.uri;
-            const targetUri = args.targetUri.startsWith('file:') || args.targetUri.includes('://')
-                ? Uri.parse(args.targetUri)
-                : Uri.file(args.targetUri);
-
-            if (originUri && targetUri) {
-                const originPos = new Position(args.line ?? 0, args.character ?? 0);
-                const targetPos = new Position(args.targetLine ?? 0, args.targetCharacter ?? 0);
-                const targetLoc = new Location(targetUri, targetPos);
-                await commands.executeCommand('editor.action.peekLocations', originUri, originPos, [targetLoc], 'peek');
-                return;
-            }
-        } catch {
-            // Fall back to opening virtual document beside if peek is unsupported or headless
-        }
-    }
-
-    const uri = Uri.parse(`angelscript-virtual://${hostClass}/${mixinName}.as`);
-    const doc = await workspace.openTextDocument(uri);
-    await window.showTextDocument(doc, { preview: true, viewColumn: ViewColumn.Beside });
 }
 
 /**

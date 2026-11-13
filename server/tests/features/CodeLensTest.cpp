@@ -246,135 +246,6 @@ TEST_CASE("CodeLens - Deduplicates mixin methods and aggregates references acros
     }
 }
 
-TEST_CASE("CodeLens - Provides virtual document header lens to jump to physical source")
-{
-    AngelScriptParser parser;
-    SymbolCollector symbolCollector{nullptr};
-    SymbolTable symbolTable;
-    ScopeIndex scopeIndex;
-
-    const std::string mixinUri = "file:///mixin.as";
-    const std::string mixinCode = "mixin class WeaponMixin {\n"
-                                  "    void Deploy() {}\n"
-                                  "}\n";
-
-    symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
-
-    const std::string virtualUri = "angelscript-virtual://Rifle/WeaponMixin.as";
-    const std::string virtualCode = "// synthesized virtual document\n";
-
-    CodeLensRequest req{virtualUri, virtualCode, symbolTable, scopeIndex};
-    const auto lenses = GetCodeLenses(req);
-    REQUIRE(lenses.has_value());
-    REQUIRE(!lenses->empty());
-
-    const auto& lens = (*lenses)[0];
-    CHECK(lens.range.start.line == 0);
-    REQUIRE(lens.command.has_value());
-    CHECK(lens.command->command == "angelscript.openPhysicalSource");
-    CHECK(lens.command->title.find("Jump to physical source in") != std::string::npos);
-}
-
-TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusions")
-{
-    AngelScriptParser parser;
-    SymbolCollector symbolCollector{nullptr};
-    SymbolTable symbolTable;
-    ScopeIndex scopeIndex;
-
-    const std::string mixinUri = "file:///mixin.as";
-    const std::string mixinCode = "mixin class WeaponMixin {\n"
-                                  "    void Deploy() {}\n"
-                                  "}\n";
-
-    const std::string hostUri = "file:///rifle.as";
-    const std::string hostCode = "class Rifle : WeaponMixin {\n"
-                                 "    void Fire() {}\n"
-                                 "}\n";
-
-    TSTree* hostTree = parser.Parse(hostCode);
-    symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
-    symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
-    LocalScopeCollector scopeCollector{nullptr};
-    auto hostScope = scopeCollector.CollectScopes(hostCode, parser);
-    if (hostScope)
-    {
-        scopeIndex.SetScopeTree(hostUri, std::move(hostScope));
-    }
-    config::ServerConfig cfg;
-    cfg.features.codeLensShowMixinExpansion = true;
-    CodeLensRequest req{hostUri, hostCode, symbolTable, scopeIndex, nullptr, ".as.predefined", nullptr, nullptr, &cfg};
-    const auto lenses = GetCodeLenses(req);
-    REQUIRE(lenses.has_value());
-
-    bool foundMixinLens = false;
-    for (const auto& lens : *lenses)
-    {
-        if (lens.command.has_value() && lens.command->command == "angelscript.viewMixinExpansion")
-        {
-            foundMixinLens = true;
-            CHECK(lens.command->title == "View Mixin Expansion: WeaponMixin");
-        }
-    }
-    CHECK(foundMixinLens);
-
-    if (hostTree)
-    {
-        ts_tree_delete(hostTree);
-    }
-}
-
-TEST_CASE("CodeLens - Mixin expansion lens resolves exact line on multiline class header")
-{
-    AngelScriptParser parser;
-    SymbolCollector symbolCollector{nullptr};
-    SymbolTable symbolTable;
-    analysis::ScopeIndex scopeIndex;
-
-    const std::string mixinUri = "file:///multiline_mixin.as";
-    const std::string mixinCode = "mixin class WeaponMixin {\n"
-                                  "    void Deploy() {}\n"
-                                  "}\n";
-
-    const std::string hostUri = "file:///multiline_rifle.as";
-    const std::string hostCode = "class Rifle :\n"
-                                 "    WeaponMixin {\n"
-                                 "    void Fire() {}\n"
-                                 "}\n";
-
-    TSTree* hostTree = parser.Parse(hostCode);
-    symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
-    symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
-    LocalScopeCollector scopeCollector{nullptr};
-    auto hostScope = scopeCollector.CollectScopes(hostCode, parser);
-    if (hostScope)
-    {
-        scopeIndex.SetScopeTree(hostUri, std::move(hostScope));
-    }
-    config::ServerConfig cfg;
-    cfg.features.codeLensShowMixinExpansion = true;
-    CodeLensRequest req{hostUri, hostCode, symbolTable, scopeIndex, nullptr, ".as.predefined", nullptr, nullptr, &cfg};
-    const auto lenses = GetCodeLenses(req);
-    REQUIRE(lenses.has_value());
-
-    bool foundMixinLens = false;
-    for (const auto& lens : *lenses)
-    {
-        if (lens.command.has_value() && lens.command->command == "angelscript.viewMixinExpansion")
-        {
-            foundMixinLens = true;
-            CHECK(lens.command->title == "View Mixin Expansion: WeaponMixin");
-            CHECK(lens.range.start.line == 1u);
-        }
-    }
-    CHECK(foundMixinLens);
-
-    if (hostTree)
-    {
-        ts_tree_delete(hostTree);
-    }
-}
-
 TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling classes")
 {
     AngelScriptParser parser;
@@ -1281,7 +1152,7 @@ TEST_CASE("CodeLens - Reference counting for namespace variables accessed in sam
     CHECK(foundVarLens);
 }
 
-TEST_CASE("CodeLens - Spanish localized titles for references, implementations, and mixin expansion")
+TEST_CASE("CodeLens - Spanish localized titles for references and implementations")
 {
     i18n::I18n i18nEs("es");
     const std::string mixinName = test::GenerateRandomSymbolName("WeaponMixin");
@@ -1301,31 +1172,23 @@ TEST_CASE("CodeLens - Spanish localized titles for references, implementations, 
                        implClass + " : " + ifaceName + " { void Fire() {} }\n";
 
     config::ServerConfig cfg;
-    cfg.features.codeLensShowMixinExpansion = true;
     CodeLensFixture fixture(code);
     const auto lenses = fixture.GetLenses(nullptr, &i18nEs, &cfg);
     REQUIRE(lenses.has_value());
 
-    bool foundMixinExpansion = false;
     bool foundImplementation = false;
     for (const auto& lens : *lenses)
     {
         if (lens.command.has_value())
         {
-            if (lens.command->command == "angelscript.viewMixinExpansion")
-            {
-                foundMixinExpansion = true;
-                CHECK(lens.command->title == "Ver expansión del mixin: " + mixinName);
-            }
-            else if (lens.command->title.find("implementación") != std::string::npos ||
-                     lens.command->title.find("implementaciones") != std::string::npos)
+            if (lens.command->title.find("implementación") != std::string::npos ||
+                lens.command->title.find("implementaciones") != std::string::npos)
             {
                 foundImplementation = true;
                 CHECK(lens.command->title == "1 implementación");
             }
         }
     }
-    CHECK(foundMixinExpansion);
     CHECK(foundImplementation);
 }
 

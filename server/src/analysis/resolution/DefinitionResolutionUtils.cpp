@@ -29,45 +29,8 @@ const LocalReference* FindReferenceAt(const Scope* scope, uint32_t line, uint32_
     return nullptr;
 }
 
-MappedLocationTarget MapVirtualMixinLocation(const Symbol& sym, std::string_view requestUri,
-                                             const SymbolTable& symbolTable)
+MappedLocationTarget MapSymbolLocation(const Symbol& sym, std::string_view requestUri)
 {
-    if (requestUri.starts_with("angelscript-virtual:") || requestUri.starts_with("angelscript-virtual://"))
-    {
-        const std::string mixinPart = SymbolTable::ExtractVirtualMixinName(requestUri);
-        const Symbol* mSym = nullptr;
-        if (const auto cand = symbolTable.FindSymbolsPtr(mixinPart))
-        {
-            for (const auto& c : *cand)
-            {
-                if (c.type == SymbolType::Class)
-                {
-                    mSym = &c;
-                    break;
-                }
-            }
-        }
-        if (!mSym)
-        {
-            auto sCand = symbolTable.FindTypeSymbolsByShortName(utils::LastScopeSegment(mixinPart));
-            for (const auto& c : sCand)
-            {
-                if (c.type == SymbolType::Class)
-                {
-                    mSym = &c;
-                    break;
-                }
-            }
-        }
-        if (mSym && sym.fileUri == mSym->fileUri)
-        {
-            uint32_t mappedStartLine = SymbolTable::PhysicalToVirtualLine(sym.startLine, mSym->startLine);
-            uint32_t lineDiff = sym.endLine >= sym.startLine ? (sym.endLine - sym.startLine) : 0;
-            uint32_t mappedEndLine = mappedStartLine + lineDiff;
-            return MappedLocationTarget{
-                requestUri, SourceRange{mappedStartLine, sym.startCharacter, mappedEndLine, sym.endCharacter}};
-        }
-    }
     const bool hasFullRange = sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0;
     const SourceRange range =
         hasFullRange ? sym.fullRange : SourceRange{sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter};

@@ -742,7 +742,6 @@ std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const AnalysisS
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         snapshot->m_version = m_version;
-        snapshot->m_virtualMixinDocumentsEnabled = m_virtualMixinDocumentsEnabled;
         snapshot->m_mixinClassCount = m_mixinClassCount;
         snapshot->m_classesWithSynthesizedMixins = m_classesWithSynthesizedMixins;
         snapshot->m_defaultArrayType = m_defaultArrayType;
@@ -1049,10 +1048,6 @@ void SymbolTable::SynthesizeSingleMixinMemberLocked(const std::string& hostQName
     synth.qualifiedName = synthKey;
     synth.fileUri = mSym.fileUri;
     synth.isSynthesized = true;
-    if (m_virtualMixinDocumentsEnabled)
-    {
-        synth.virtualFileUri = BuildVirtualMixinUri(hostQName, mixinName);
-    }
     if (synth.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(synth.signature))
     {
         synth.GetFunction().displaySignature.clear();
@@ -1159,109 +1154,6 @@ void SymbolTable::ResolveIncludedMixins()
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     ResolveIncludedMixinsLocked();
     ++m_version;
-}
-
-void SymbolTable::SetVirtualMixinDocumentsEnabled(bool enabled)
-{
-    std::unique_lock<std::shared_mutex> lock(m_mutex);
-    m_virtualMixinDocumentsEnabled = enabled;
-}
-
-bool SymbolTable::IsVirtualMixinDocumentsEnabled() const
-{
-    std::shared_lock<std::shared_mutex> lock(m_mutex);
-    return m_virtualMixinDocumentsEnabled;
-}
-
-std::string SymbolTable::BuildVirtualMixinUri(std::string_view hostClass, std::string_view mixinName)
-{
-    std::string mixinClean(mixinName);
-    if (mixinClean.ends_with(".as"))
-    {
-        return fmt::format("angelscript-virtual://{}/{}", hostClass, mixinClean);
-    }
-    return fmt::format("angelscript-virtual://{}/{}.as", hostClass, mixinClean);
-}
-
-/**
- * @brief Parses an angelscript-virtual URI into host class and mixin name components without heap allocation.
- * @param[in] uri Virtual document URI string.
- * @param[out] hostClass Extracted host class component string view.
- * @param[out] mixinPart Extracted mixin component string view.
- * @return True if the URI was successfully parsed as a virtual mixin URI; false otherwise.
- */
-bool SymbolTable::ParseVirtualMixinUri(std::string_view uri, std::string_view& hostClass,
-                                       std::string_view& mixinPart) noexcept
-{
-    hostClass = {};
-    mixinPart = {};
-    const auto colonPos = uri.find(':');
-    if (colonPos == std::string_view::npos)
-    {
-        return false;
-    }
-
-    const std::string_view scheme = uri.substr(0, colonPos);
-    if (scheme != "angelscript-virtual")
-    {
-        return false;
-    }
-
-    std::string_view rest = uri.substr(colonPos + 1);
-    while (!rest.empty() && rest.front() == '/')
-    {
-        rest.remove_prefix(1);
-    }
-
-    const auto slashPos = rest.find('/');
-    if (slashPos != std::string_view::npos)
-    {
-        hostClass = rest.substr(0, slashPos);
-        mixinPart = rest.substr(slashPos + 1);
-    }
-    else
-    {
-        mixinPart = rest;
-    }
-
-    if (mixinPart.ends_with(".as"))
-    {
-        mixinPart.remove_suffix(3);
-    }
-
-    return true;
-}
-
-/**
- * @brief Extracts the host class identifier from an angelscript-virtual URI.
- * @param[in] uri Virtual document URI string.
- * @return Extracted host class name, or empty string if not a virtual URI.
- */
-std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
-{
-    std::string_view hostClass{};
-    std::string_view mixinPart{};
-    if (ParseVirtualMixinUri(uri, hostClass, mixinPart))
-    {
-        return utils::UrlDecode(hostClass);
-    }
-    return {};
-}
-
-/**
- * @brief Extracts the mixin class name from an angelscript-virtual URI.
- * @param[in] uri Virtual document URI string.
- * @return Extracted mixin class name, or empty string if not a virtual URI.
- */
-std::string SymbolTable::ExtractVirtualMixinName(std::string_view uri)
-{
-    std::string_view hostClass{};
-    std::string_view mixinPart{};
-    if (ParseVirtualMixinUri(uri, hostClass, mixinPart))
-    {
-        return utils::UrlDecode(mixinPart);
-    }
-    return {};
 }
 
 bool SymbolTable::HasDocumentSymbols(const std::string& fileUri) const

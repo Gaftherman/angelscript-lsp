@@ -157,10 +157,6 @@ static void UpdateCodeLensFeatureConfig(const lsp::LSPObject& section, config::S
     {
         cfg.features.codeLensShowZeroReferences = *showZero;
     }
-    if (auto showMixin = FindSectionBool(section, clObj, "showMixinExpansion", "codeLens"); showMixin.has_value())
-    {
-        cfg.features.codeLensShowMixinExpansion = *showMixin;
-    }
 }
 
 static void UpdateMetadataFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
@@ -205,12 +201,6 @@ void UpdateFeatureConfiguration(Server& server, const lsp::LSPObject& section)
         featObj = &featVal->object();
     }
     auto& config = server.GetMutableConfig();
-    if (auto vmd = FindSectionBool(section, featObj, "enableVirtualMixinDocuments", "features"); vmd.has_value())
-    {
-        config.features.enableVirtualMixinDocuments = *vmd;
-        server.GetMutableSymbolTable().SetVirtualMixinDocumentsEnabled(config.features.enableVirtualMixinDocuments);
-        server.GetMutableSymbolTable().SetConfiguredTypes(config.types.arrayTypeName, config.types.stringTypeName);
-    }
     if (auto ih = FindSectionBool(section, featObj, "inlayHints", "features"); ih.has_value())
     {
         config.features.enableInlayHints = *ih;

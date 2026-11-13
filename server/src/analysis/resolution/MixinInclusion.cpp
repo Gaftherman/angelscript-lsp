@@ -7,7 +7,6 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
-#include <filesystem>
 
 namespace angel_lsp::analysis
 {
@@ -79,56 +78,6 @@ CollectCompatibleClasses(std::span<const Symbol> symGroup, const Symbol& sym, Ac
     return compatibleClasses;
 }
 
-std::vector<std::string> CollectClassIncludedMixins(const Symbol& classSym, const SymbolTable& table)
-{
-    if (!std::holds_alternative<ClassSignature>(classSym.signature))
-    {
-        return {};
-    }
-    const auto& sig = classSym.GetClass();
-    if (sig.modifiers.isMixin)
-    {
-        return {};
-    }
-
-    std::vector<std::string> includedMixins = sig.includedMixins;
-    for (const auto& b : sig.bases)
-    {
-        std::string_view clean = CleanBaseTypeView(b);
-        if (!clean.empty() && IsMixinClass(clean, table))
-        {
-            if (std::find(includedMixins.begin(), includedMixins.end(), clean) == includedMixins.end())
-            {
-                includedMixins.emplace_back(clean);
-            }
-        }
-    }
-    return includedMixins;
-}
-
-std::optional<Symbol> FindMixinSymbol(std::string_view mixinName, const SymbolTable& symbolTable)
-{
-    if (auto symsPtr = symbolTable.FindSymbolsPtr(mixinName))
-    {
-        for (const auto& c : *symsPtr)
-        {
-            if (c.type == SymbolType::Class && c.GetClass().modifiers.isMixin)
-            {
-                return c;
-            }
-        }
-    }
-    const std::string_view shortName = utils::LastScopeSegment(mixinName);
-    for (const auto& c : symbolTable.FindTypeSymbolsByShortName(shortName))
-    {
-        if (c.type == SymbolType::Class && c.GetClass().modifiers.isMixin)
-        {
-            return c;
-        }
-    }
-    return std::nullopt;
-}
-
 std::optional<SourceRange> FindTypeReferenceRange(const Scope& root, std::string_view name, uint32_t firstLine,
                                                   uint32_t lastLine)
 {
@@ -169,19 +118,4 @@ std::optional<SourceRange> FindTypeReferenceRange(const Scope& root, std::string
     return bestMatch;
 }
 
-std::string FormatViewMixinExpansionTitle(std::string_view mixinName, const i18n::I18n* i18n)
-{
-    return i18n::FormatMessage(i18n, "codelens.view-mixin-expansion", "View Mixin Expansion: {}", mixinName);
-}
-
-std::string FormatJumpToPhysicalSourceTitle(std::string_view fileUri, const i18n::I18n* i18n)
-{
-    std::string physicalPath = utils::UriToPath(fileUri);
-    std::string filename = std::filesystem::path(physicalPath).filename().string();
-    if (filename.empty())
-    {
-        filename = std::string(fileUri);
-    }
-    return i18n::FormatMessage(i18n, "codelens.jump-to-physical-source", "Jump to physical source in {}", filename);
-}
 } // namespace angel_lsp::analysis

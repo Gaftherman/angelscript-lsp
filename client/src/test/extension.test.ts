@@ -7,9 +7,6 @@ import * as os from 'os';
 import {
     buildServerArgs,
     portableStubPath,
-    VirtualMixinContentProvider,
-    openPhysicalSource,
-    viewMixinExpansion,
     resolveServerBinary,
     getConfigurationTarget,
     getActivePredefinedStub,
@@ -168,18 +165,6 @@ suite('buildServerArgs', () => {
         const args = await withSetting('diagnosticSeverity', { 'as-err-undefined-identifier': 'warning' }, buildServerArgs);
         assert.ok(args.includes('--diagnostic-severity=as-err-undefined-identifier=warning'),
                   `expected the override in ${args.join(' ')}`);
-    });
-
-    test('enableVirtualMixinDocuments forwards --enable-virtual-mixin-documents=true when enabled', async () => {
-        const args = await withSetting('enableVirtualMixinDocuments', true, buildServerArgs);
-        assert.ok(args.includes('--enable-virtual-mixin-documents=true'),
-                  `expected --enable-virtual-mixin-documents=true in ${args.join(' ')}`);
-    });
-
-    test('enableVirtualMixinDocuments does not forward flag when disabled', async () => {
-        const args = await withSetting('enableVirtualMixinDocuments', false, buildServerArgs);
-        assert.ok(!args.some(arg => arg.includes('virtual-mixin')),
-                  `unexpected virtual-mixin flag in ${args.join(' ')}`);
     });
 
     test('inlayHints.suppressWhenArgumentMatchesName forwards disable flag when disabled', async () => {
@@ -552,31 +537,6 @@ suite('activation timings', () => {
         assert.ok(inProcess < 500,
                   `activation spent ${inProcess}ms before the server was spawned: ` +
                   JSON.stringify(timings));
-    });
-});
-
-suite('VirtualMixinContentProvider', () => {
-    test('instantiates and provides fallback message when client is inactive', async () => {
-        const provider = new VirtualMixinContentProvider();
-        const dummyUri = Uri.parse('angelscript-virtual://TestHost/TestMixin.as');
-        const content = await provider.provideTextDocumentContent(dummyUri);
-        assert.ok(typeof content === 'string');
-        assert.ok(content.length > 0);
-    });
-});
-
-suite('Mixin Commands', () => {
-    test('openPhysicalSource returns cleanly when no fileUri provided', async () => {
-        await assert.doesNotReject(async () => {
-            await openPhysicalSource(undefined);
-            await openPhysicalSource({});
-        });
-    });
-
-    test('viewMixinExpansion opens virtual document beside', async () => {
-        await assert.doesNotReject(async () => {
-            await viewMixinExpansion({ hostClass: 'TestHost', mixinName: 'TestMixin' });
-        });
     });
 });
 

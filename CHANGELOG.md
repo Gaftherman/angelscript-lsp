@@ -2,6 +2,16 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [Unreleased]
+
+### Removed
+
+- Virtual Mixin Documents: the synthetic `angelscript-virtual://` documents, the `angelscript.viewMixinExpansion`, `angelscript.peekMixinInline` and `angelscript.openPhysicalSource` commands, the `angelscript.enableVirtualMixinDocuments` and `angelscript.codeLens.showMixinExpansion` settings, the matching `--enable-virtual-mixin-documents` and `--codelens-mixin-expansion` server flags, and the `angelscript/virtualDocumentContent` request. Mixin members are still resolved in their host class through the normal symbol table.
+
+### Fixed
+
+- The 300 MB peak-memory ceiling test (`Massive Workspace Stress`) now runs as its own `ctest` entry (`angel_lsp_stress_memory`), so it measures only its own process instead of the RSS accumulated by the rest of the suite on Linux and macOS.
+
 ## [1.1.7] - 2026-10-31
 
 ### Official 1.1.7 Release: Empty-Parentheses Variables, Workspace Module Isolation & UI Status, GitHub Issues (#3, #4, #7, #8, #9) & Unified Feature Parity Harness

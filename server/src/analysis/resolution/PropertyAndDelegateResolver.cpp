@@ -167,13 +167,8 @@ bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbo
 }
 
 static std::string FindEnclosingClassOrHost(IndexedByteRange targetRange, std::string_view sourceCode,
-                                            const SymbolTable& symbolTable, std::string_view virtualHostClass,
-                                            const NodeIndex* nodeIndex)
+                                            const SymbolTable& symbolTable, const NodeIndex* nodeIndex)
 {
-    if (!virtualHostClass.empty())
-    {
-        return std::string(virtualHostClass);
-    }
     std::string hostClass =
         nodeIndex ? InferHostClassFromEnclosingMixin(targetRange, *nodeIndex, sourceCode, symbolTable) : "";
     if (!hostClass.empty())
@@ -196,8 +191,7 @@ static std::string FindEnclosingClassOrHost(IndexedByteRange targetRange, std::s
 
 std::string ResolveDelegateTargetBaseClass(const DelegateTargetClassRequest& req)
 {
-    std::string targetClass =
-        FindEnclosingClassOrHost(req.targetRange, req.sourceCode, req.symbolTable, req.virtualHostClass, req.nodeIndex);
+    std::string targetClass = FindEnclosingClassOrHost(req.targetRange, req.sourceCode, req.symbolTable, req.nodeIndex);
     if (targetClass.empty())
     {
         return "";
@@ -221,8 +215,8 @@ std::string ResolveDelegatePropertyReceiver(const DelegatePropertyReceiverContex
     {
         return "";
     }
-    std::string baseClass = ResolveDelegateTargetBaseClass(
-        {dctx.objRange, dctx.nodeIndex, dctx.sourceCode, symbolTable, dctx.effectiveHostClass, ctx.engineRules});
+    std::string baseClass =
+        ResolveDelegateTargetBaseClass({dctx.objRange, dctx.nodeIndex, dctx.sourceCode, symbolTable, ctx.engineRules});
     if (!baseClass.empty())
     {
         return MemberOwnerType(baseClass, dctx.arrayTypeName);

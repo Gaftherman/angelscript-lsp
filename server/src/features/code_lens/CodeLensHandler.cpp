@@ -19,92 +19,6 @@
 
 namespace angel_lsp::features
 {
-static std::optional<std::vector<lsp::CodeLens>> HandleVirtualUri(const CodeLensRequest& request)
-{
-    std::string_view hostClass;
-    std::string_view mixinPart;
-    if (!analysis::SymbolTable::ParseVirtualMixinUri(request.uri, hostClass, mixinPart))
-    {
-        return std::nullopt;
-    }
-
-    auto mixinSym = analysis::FindMixinSymbol(utils::UrlDecode(mixinPart), request.symbolTable);
-    if (!mixinSym || mixinSym->fileUri.empty())
-    {
-        return std::nullopt;
-    }
-
-    lsp::CodeLens lens;
-    lens.range = lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}};
-    lsp::Command cmd;
-    cmd.title = analysis::FormatJumpToPhysicalSourceTitle(mixinSym->fileUri, request.i18n);
-    cmd.command = "angelscript.openPhysicalSource";
-
-    lsp::json::Array args;
-    lsp::json::Object argObj;
-    argObj["fileUri"] = MakeJsonString(mixinSym->fileUri);
-    argObj["line"] = static_cast<lsp::json::Integer>(mixinSym->startLine);
-    argObj["character"] = static_cast<lsp::json::Integer>(mixinSym->startCharacter);
-    args.push_back(lsp::json::Value(std::move(argObj)));
-    cmd.arguments = std::move(args);
-
-    lens.command = std::move(cmd);
-    return std::vector<lsp::CodeLens>{std::move(lens)};
-}
-
-static void AppendMixinExpansionLenses(const analysis::Symbol& sym, const CodeLensRequest& request,
-                                       std::vector<lsp::CodeLens>& lenses)
-{
-    const auto includedMixins = analysis::CollectClassIncludedMixins(sym, request.symbolTable);
-    if (includedMixins.empty())
-    {
-        return;
-    }
-
-    const auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const uint32_t maxLine = std::max(sym.startLine, sym.endLine);
-
-    for (const auto& mixinName : includedMixins)
-    {
-        lsp::Range range{lsp::Position{sym.startLine, sym.startCharacter},
-                         lsp::Position{sym.startLine, sym.endCharacter}};
-        if (rootScope)
-        {
-            if (auto matched = analysis::FindTypeReferenceRange(*rootScope, mixinName, sym.startLine, maxLine))
-            {
-                range = lsp::Range{lsp::Position{matched->startLine, matched->startCharacter},
-                                   lsp::Position{matched->endLine, matched->endCharacter}};
-            }
-        }
-
-        lsp::CodeLens mixinLens;
-        mixinLens.range = range;
-        lsp::Command mixinCmd;
-        mixinCmd.title = analysis::FormatViewMixinExpansionTitle(mixinName, request.i18n);
-        mixinCmd.command = "angelscript.viewMixinExpansion";
-
-        lsp::json::Array args;
-        lsp::json::Object argObj;
-        argObj["hostClass"] = MakeJsonString(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
-        argObj["mixinName"] = MakeJsonString(mixinName);
-        argObj["hostUri"] = MakeJsonString(request.uri);
-        argObj["line"] = lsp::json::Value(static_cast<lsp::json::Integer>(range.start.line));
-        argObj["character"] = lsp::json::Value(static_cast<lsp::json::Integer>(range.start.character));
-
-        if (auto mixinSym = analysis::FindMixinSymbol(mixinName, request.symbolTable))
-        {
-            argObj["targetUri"] = MakeJsonString(mixinSym->fileUri);
-            argObj["targetLine"] = lsp::json::Value(static_cast<lsp::json::Integer>(mixinSym->startLine));
-            argObj["targetCharacter"] = lsp::json::Value(static_cast<lsp::json::Integer>(mixinSym->startCharacter));
-        }
-
-        args.push_back(lsp::json::Value(std::move(argObj)));
-        mixinCmd.arguments = std::move(args);
-        mixinLens.command = std::move(mixinCmd);
-        lenses.push_back(std::move(mixinLens));
-    }
-}
-
 static void AppendReferenceLens(const analysis::SourceRange& key, const analysis::Symbol& sym,
                                 const AssembledLensContext& ctx, std::vector<lsp::CodeLens>& lenses)
 {
@@ -177,10 +91,6 @@ static void AppendLensesForGroup(const analysis::SourceRange& key, const std::ve
     else if (sym.type == analysis::SymbolType::Class)
     {
         AppendReferenceLens(key, sym, ctx, lenses);
-        if (ctx.request.config && ctx.request.config->features.codeLensShowMixinExpansion)
-        {
-            AppendMixinExpansionLenses(sym, ctx.request, lenses);
-        }
     }
     else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
     {
@@ -238,11 +148,6 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
     if (request.logger && request.logger->IsDebugEnabled())
     {
         request.logger->LogDebug(fmt::format("[CodeLens] Computing code lenses for URI: {}", request.uri));
-    }
-
-    if (auto virtualLenses = HandleVirtualUri(request))
-    {
-        return virtualLenses;
     }
 
     if (request.sourceCode.empty())

@@ -5,7 +5,6 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/VirtualMixinContext.h"
 #include "config/ServerConfig.h"
 #include "features/hover/HoverHandler.h"
 #include "i18n/i18n.h"
@@ -58,9 +57,8 @@ struct HoverQueryContext
     const analysis::IndexedHoverSite& site;             ///< Pass-1 facts about the hovered node.
     std::string_view nodeText{};                        ///< Hovered node text, a view into the source.
     lsp::Range range{};                                 ///< Range of the hovered node.
-    analysis::VirtualMixinContext vctx{};               ///< Virtual mixin document context, if any.
-    std::shared_ptr<const analysis::Scope> rootScope{}; ///< Root scope of the physical document.
-    uint32_t queryLine = 0;                             ///< Request line mapped to the physical document.
+    std::shared_ptr<const analysis::Scope> rootScope{}; ///< Root scope of the hovered document.
+    uint32_t queryLine = 0;                             ///< Request line in the hovered document.
     const analysis::Scope* scope = nullptr;             ///< Innermost scope at the request position.
 };
 

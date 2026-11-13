@@ -237,7 +237,7 @@ std::vector<analysis::Diagnostic> Server::RunDocumentSemantics(angel_lsp::analys
     baseReq.diagnostics = &diagnosticConfig;
     baseReq.engineProperties = &engineProperties;
 
-    analysis::rules::MixinFileCache inlineCache;
+    analysis::MixinFileCache inlineCache;
     baseReq.mixinCache = fromScheduler ? &m_workerMixinCache : &inlineCache;
     auto diagnostics = m_semanticAnalyzer->Analyze(baseReq);
     outCheckMs = checkTimer.ElapsedMs();

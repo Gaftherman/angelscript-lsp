@@ -58,12 +58,10 @@ namespace angel_lsp::analysis
  * @brief Resolves the qualified receiver type name for an object expression node.
  * @param[in] objectRange Byte range of the receiver object expression.
  * @param[in] ctx Semantic expression context.
- * @param[in] virtualHostClass Host class name when inside a virtual mixin; empty otherwise.
  * @param[in] config Server configuration supplying engine rules and the array type name; may be null.
  * @return Fully qualified receiver type name, or empty string if unresolved.
  */
 [[nodiscard]] std::string ResolveReceiverTypeName(IndexedByteRange objectRange, const ExpressionTypeContext& ctx,
-                                                  std::string_view virtualHostClass,
                                                   const config::ServerConfig* config);
 
 /**
@@ -81,13 +79,11 @@ namespace angel_lsp::analysis
  * @brief Resolves candidate callee function symbols for a call expression enclosing a named argument label.
  * @param[in] callRange Byte range of the enclosing call expression.
  * @param[in] ctx Semantic expression context.
- * @param[in] virtualHostClass Virtual mixin host class name; empty otherwise.
  * @param[in] config Server configuration forwarded to receiver resolution; may be null.
  * @return Candidate callee symbols matching the call target.
  */
 [[nodiscard]] std::vector<Symbol> ResolveNamedArgCalleeCandidates(IndexedByteRange callRange,
                                                                   const ExpressionTypeContext& ctx,
-                                                                  std::string_view virtualHostClass,
                                                                   const config::ServerConfig* config);
 
 /**
@@ -191,13 +187,13 @@ struct HoverCandidateSymbols
  * @param[in] receiverRange Byte range of the receiver object expression.
  * @param[in] memberName Target member identifier name.
  * @param[in] exprCtx Semantic expression context for receiver type deduction.
- * @param[in] virtualHostClass Virtual mixin host class name; empty otherwise.
  * @param[in] config Optional server configuration supplying property accessor modes and engine rules.
  * @return Resolved member access result if candidates match; std::nullopt otherwise.
  */
-[[nodiscard]] std::optional<HoverCandidateSymbols>
-ResolveMemberAccess(IndexedByteRange receiverRange, std::string_view memberName, const ExpressionTypeContext& exprCtx,
-                    std::string_view virtualHostClass, const config::ServerConfig* config);
+[[nodiscard]] std::optional<HoverCandidateSymbols> ResolveMemberAccess(IndexedByteRange receiverRange,
+                                                                       std::string_view memberName,
+                                                                       const ExpressionTypeContext& exprCtx,
+                                                                       const config::ServerConfig* config);
 
 /**
  * @brief Resolves deduced type for an auto variable declaration and renders the hover markdown.
@@ -238,7 +234,6 @@ struct VirtualHostSymbolQuery
 {
     IndexedByteRange targetRange{};       ///< Byte range of target symbol.
     std::string_view nodeText{};          ///< Member identifier text.
-    std::string_view virtualHostClass{};  ///< Host class name from virtual URI context.
     std::string_view sourceCode{};        ///< Document source text.
     std::string_view fileUri{};           ///< Document file URI.
     const NodeIndex* nodeIndex = nullptr; ///< Document node index.

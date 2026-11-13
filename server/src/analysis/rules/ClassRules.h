@@ -7,7 +7,6 @@
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/Symbol.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/VirtualMixinContext.h"
 #include "document/Document.h"
 
 #include <ankerl/unordered_dense.h>

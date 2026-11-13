@@ -83,14 +83,12 @@ static void MergeHostSymbols(std::vector<Symbol>& symbols, std::vector<Symbol> h
 
 void AppendVirtualHostSymbols(const VirtualHostSymbolQuery& query, HoverCandidateSymbols& candidates)
 {
-    std::string inferredHost;
-    std::string_view hostClass = query.virtualHostClass;
-    if (hostClass.empty() && query.nodeIndex)
+    if (!query.nodeIndex)
     {
-        inferredHost =
-            InferHostClassFromEnclosingMixin(query.targetRange, *query.nodeIndex, query.sourceCode, query.symbolTable);
-        hostClass = inferredHost;
+        return;
     }
+    const std::string hostClass =
+        InferHostClassFromEnclosingMixin(query.targetRange, *query.nodeIndex, query.sourceCode, query.symbolTable);
     if (hostClass.empty())
     {
         return;
@@ -127,7 +125,7 @@ std::string TryHoverDelegateProperty(const VirtualHostSymbolQuery& query, const 
         return "";
     }
     std::string baseClass = ResolveDelegateTargetBaseClass(
-        {query.targetRange, query.nodeIndex, query.sourceCode, query.symbolTable, query.virtualHostClass, engineRules});
+        {query.targetRange, query.nodeIndex, query.sourceCode, query.symbolTable, engineRules});
     if (!baseClass.empty())
     {
         std::string result;

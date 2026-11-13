@@ -74,14 +74,9 @@ static std::string ResolveParenthesizedExpr(TSNode exprNode, const ExpressionTyp
  */
 static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    const bool isVirtual = ctx.uri.starts_with("angelscript-virtual:") || ctx.uri.starts_with("angelscript-virtual://");
-    std::string hostClass = isVirtual ? SymbolTable::ExtractVirtualHostClass(ctx.uri) : "";
-    if (hostClass.empty())
-    {
-        hostClass =
-            InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
-                                             ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable);
-    }
+    const std::string hostClass =
+        InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
+                                         ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable);
     auto containers = ResolveEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
     return ResolveThisType(hostClass, containers);
 }
@@ -135,7 +130,7 @@ static std::vector<Symbol> ResolveIdentifierSymbols(const std::string& name, TSN
 }
 
 /**
- * @brief Host class fallback resolution for identifiers in mixin classes and virtual documents.
+ * @brief Host class fallback resolution for identifiers in mixin classes.
  * @param[in] name Identifier name.
  * @param[in] exprNode AST syntax node.
  * @param[in] ctx Semantic expression typing context.
@@ -144,17 +139,9 @@ static std::vector<Symbol> ResolveIdentifierSymbols(const std::string& name, TSN
 static std::string ResolveIdentifierHostFallback(const std::string& name, TSNode exprNode,
                                                  const ExpressionTypeContext& ctx)
 {
-    std::string hostClass;
-    if (ctx.uri.starts_with("angelscript-virtual:") || ctx.uri.starts_with("angelscript-virtual://"))
-    {
-        hostClass = SymbolTable::ExtractVirtualHostClass(ctx.uri);
-    }
-    else
-    {
-        hostClass =
-            InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
-                                             ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable);
-    }
+    const std::string hostClass =
+        InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
+                                         ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable);
     return ResolveIdentifierHostFallbackFromHierarchy(name, hostClass, ctx.symbolTable, ctx.cache);
 }
 
@@ -172,11 +159,9 @@ static std::string ResolveIdentifierDelegateProperty(std::string_view name, TSNo
     {
         return "";
     }
-    const bool isVirtual = ctx.uri.starts_with("angelscript-virtual:") || ctx.uri.starts_with("angelscript-virtual://");
-    std::string hostClass = isVirtual ? SymbolTable::ExtractVirtualHostClass(ctx.uri) : "";
     std::string baseClass =
         ResolveDelegateTargetBaseClass({IndexedByteRange{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode)},
-                                        ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable, hostClass, nullptr});
+                                        ctx.nodeIndex, ctx.sourceCode, ctx.symbolTable, nullptr});
     if (!baseClass.empty())
     {
         return MemberOwnerType(baseClass, ctx.arrayTypeName);

@@ -240,12 +240,7 @@ static void ConfigureWorkspaceCapabilities(const angel_lsp::config::ServerConfig
     workspaceOpts.fileOperations = fileOps;
 
     lsp::TextDocumentContentOptions contentOpts;
-    lsp::Array<lsp::String> schemes{"angelscript-predefined"};
-    if (config.features.enableVirtualMixinDocuments)
-    {
-        schemes.push_back("angelscript-virtual");
-    }
-    contentOpts.schemes = schemes;
+    contentOpts.schemes = lsp::Array<lsp::String>{"angelscript-predefined"};
     workspaceOpts.textDocumentContent = contentOpts;
 
     caps.workspace = workspaceOpts;

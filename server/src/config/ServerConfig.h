@@ -61,10 +61,8 @@ struct FeatureFlags
     bool codeLensShowOnPropertiesAndVariables = true;
     bool codeLensShowOnEnums = true;
     bool codeLensShowZeroReferences = true;
-    bool codeLensShowMixinExpansion = false;
     bool enableOnTypeFormatting = false;
     bool enablePullDiagnostics = false;
-    bool enableVirtualMixinDocuments = false;
     bool inlayHintsEnableTooltip = true;
     bool inlayHintsEnableLocation = true;
     bool inlayHintsParameters = true;

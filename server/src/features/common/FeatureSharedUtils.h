@@ -76,8 +76,7 @@ template <typename T>
  */
 [[nodiscard]] inline lsp::DocumentUri ParseOrConvertUri(std::string_view uriStr)
 {
-    if (uriStr.find("://") != std::string_view::npos || uriStr.starts_with("angelscript-predefined:") ||
-        uriStr.starts_with("angelscript-virtual:"))
+    if (uriStr.find("://") != std::string_view::npos || uriStr.starts_with("angelscript-predefined:"))
     {
         return lsp::DocumentUri::parse(uriStr);
     }

@@ -25,7 +25,6 @@ Unlike approaches that rely on running scripts inside an embedded host runtime o
 - **Precision Navigation**: Overload-aware Go to Definition, Declaration, Type Definition, Implementation (`Ctrl+F12`), and bi-directional Call & Type Hierarchies.
 - **Intelligent Hover & Completion**: Overload-isolated documentation tooltips at call sites, Doxygen docstring rendering (`@brief`, `@param`, `@return`), constructor resolution, lambda contract resolution (`(anonymous function) -> FuncdefName`), and scope-aware member completions (`.`, `::`).
 - **Interactive UI & Inactive Region Dimming**: Status bar item ("AngelScript IntelliSense") with active stub switcher, automatic dimming of inactive preprocessor code blocks (`#if / #else / #endif`), and parameter inlay hints with `Ctrl+Click` navigation.
-- **Virtual Mixin Documents**: Synthetic document inspection (`angelscript-virtual://`) enabling inline peek and host-scoped member validation.
 - **Asset Path Probing**: String literals matching asset or script file paths are probed against the workspace and asset directories for existence and metrics on hover.
 - **Engine Dialect & Host Integration**: Sven Co-op extensionless `#include` resolution, predefined host stubs (`.as.predefined`), and configurable preprocessor flags (`#if`, `#define`).
 - **Native Clang-Format Engine**: Full LLVM [Clang-Format Style Options](https://clang.llvm.org/docs/ClangFormatStyleOptions.html) support via `.clang-format`, `_clang-format`, or `.as-clang-format` (including `BasedOnStyle` presets `LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`, multi-language `Language: AngelScript` / `Cpp` sections, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks/Functions/If/Loops`, `ReflowComments`, and `// clang-format off/on`).
@@ -71,9 +70,6 @@ Recommended for Sven Co-op multi-script packages (e.g. `maps/hcas`):
     }
   ],
 
-  // Enable virtual mixin document inspection (angelscript-virtual://)
-  "angelscript.enableVirtualMixinDocuments": true,
-
   // Active predefined host stub
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
@@ -93,7 +89,6 @@ Recommended when a script tree is compiled starting from a specific registration
       "entry": "${workspaceFolder}/maps/ins2/ins2_register.as"
     }
   ],
-  "angelscript.enableVirtualMixinDocuments": true,
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
 ```
@@ -161,9 +156,6 @@ All commands can be invoked from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shif
 | `angelscript.setModuleEntryPoint` | **AngelScript: Set as Module Entry Point** | Context menu action on `.as` files to configure module entry point. |
 | `angelscript.setModuleFolder` | **AngelScript: Set as Module Folder** | Context menu action on folders to configure folder module ownership. |
 | `angelscript.formatPredefinedStub` | **AngelScript: Format Predefined Stub Header** | Context menu action on `.predefined` files to format API headers. |
-| `angelscript.viewMixinExpansion` | **AngelScript: View Mixin Expansion** | Opens the synthesized virtual document (`angelscript-virtual://`). |
-| `angelscript.peekMixinInline` | **AngelScript: Peek Mixin Inline** | Opens an inline peek view showing the expanded mixin implementation. |
-| `angelscript.openPhysicalSource` | **AngelScript: Open Physical Source** | Navigates from a virtual mixin document to the physical source file. |
 
 ---
 
@@ -234,7 +226,6 @@ Layer isolation is strictly enforced by `server/scripts/check-layer-includes.py`
 | `angelscript.predefined.active` | `""` | The active stub to load when multiple are present. Set to `"all"` to merge all stubs. |
 | `angelscript.predefinedFiles` | `[]` | Explicit list of predefined host API stub files (`.as.predefined`). |
 | `angelscript.exclude` | `["**/.git/**", "**/build/**", "**/node_modules/**"]` | Glob patterns excluded from workspace scanning. |
-| `angelscript.enableVirtualMixinDocuments` | `false` | Enables virtual document providers (`angelscript-virtual://`) for mixins. |
 
 #### 3. Inlay Hints
 | Setting | Default | Description |

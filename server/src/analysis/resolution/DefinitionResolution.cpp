@@ -92,12 +92,6 @@ DefinitionTargetResult ResolveDefinitionTarget(const DefinitionQuery& query)
 
     std::string_view nodeText = query.identifier;
 
-    result.symbols = TryResolveVirtualMixin(nodeText, query);
-    if (!result.symbols.empty())
-    {
-        return result;
-    }
-
     result.symbols = TryResolveThisKeyword(nodeText, query);
     if (!result.symbols.empty())
     {

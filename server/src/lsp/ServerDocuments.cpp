@@ -103,20 +103,6 @@ std::shared_ptr<const std::string> Server::FindDocumentText(std::string_view uri
     return nullptr;
 }
 
-std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(std::string_view key, std::string_view uriStr)
-{
-    const std::string_view targetUri = key.starts_with("angelscript-virtual:") ? std::string_view(key) : uriStr;
-    std::string text = GenerateVirtualMixinDocument(targetUri);
-    if (text.empty())
-    {
-        return nullptr;
-    }
-    parser::TreePtr tree = m_parser ? m_parser->ParseTree(text) : parser::MakeTreePtr(nullptr);
-    const std::string keyCopy(key);
-    GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{keyCopy, text, 0, std::move(tree), keyCopy});
-    return GetDocumentStore().GetDocument(key);
-}
-
 std::optional<OpenDocument> Server::LookupPreindexedFallback(std::string_view key)
 {
     if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
@@ -149,18 +135,7 @@ std::optional<OpenDocument> Server::LookupOpenDocument(std::string_view uriStr)
     auto doc = GetDocumentStore().GetDocument(key);
     if (!doc)
     {
-        if (key.starts_with("angelscript-virtual:") || uriStr.starts_with("angelscript-virtual:"))
-        {
-            doc = ResolveVirtualDocument(key, uriStr);
-            if (!doc)
-            {
-                return std::nullopt;
-            }
-        }
-        else
-        {
-            return LookupPreindexedFallback(key);
-        }
+        return LookupPreindexedFallback(key);
     }
 
     const std::string* textPtr = doc ? &doc->text : nullptr;

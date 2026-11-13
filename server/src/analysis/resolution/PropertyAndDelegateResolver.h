@@ -18,7 +18,6 @@ struct DelegateTargetClassRequest
     const NodeIndex* nodeIndex = nullptr;
     std::string_view sourceCode{};
     const SymbolTable& symbolTable;
-    std::string_view virtualHostClass = {};
     const config::EngineRuleConfig* engineRules = nullptr;
 };
 
