@@ -4,6 +4,7 @@
  */
 
 #include "analysis/code_action/CodeActionInternal.h"
+#include "utils/TransparentHash.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -87,7 +88,7 @@ static std::vector<TypoCandidate> RankTypoSuggestions(std::string_view typed,
     const std::string typedFolded = FoldCase(typed);
     const size_t limit = SuggestionLimit(typed.size());
     std::vector<TypoCandidate> ranked;
-    ankerl::unordered_dense::set<std::string> seen;
+    TransparentStringSet seen;
 
     for (const auto& candidate : candidates)
     {

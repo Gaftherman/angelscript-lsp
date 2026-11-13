@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/Symbol.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
 #include <cstddef>
@@ -61,7 +62,7 @@ struct RecoveredDeclarationSnippet
  * @return Vector of extracted declaration snippets ready for isolated parsing.
  */
 [[nodiscard]] std::vector<RecoveredDeclarationSnippet>
-FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_dense::set<std::string>& knownSymbols);
+FindSwallowedDeclarations(std::string_view sourceCode, const TransparentStringSet& knownSymbols);
 
 /**
  * @brief Offsets symbol line and column ranges by the snippet's origin in the parent document.

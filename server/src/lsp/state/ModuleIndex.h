@@ -21,8 +21,8 @@ struct ModuleView
     std::string name;
     std::string entryPath;
     std::string folderPath;
-    ankerl::unordered_dense::set<std::string> memberPaths;
-    ankerl::unordered_dense::set<std::string> closurePaths;
+    TransparentStringSet memberPaths;
+    TransparentStringSet closurePaths;
     bool isImplicitEntryPoint = false;
 };
 

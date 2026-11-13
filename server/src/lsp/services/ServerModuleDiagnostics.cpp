@@ -3,6 +3,7 @@
 #include "lsp/services/ServerModuleUtils.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PreprocessorRegions.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -109,7 +110,7 @@ void Server::AnalyzeConfiguredModules()
 
 void Server::WithdrawStaleModuleDiagnostics()
 {
-    ankerl::unordered_dense::set<std::string> stale;
+    TransparentStringSet stale;
 
     {
         std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
@@ -168,7 +169,7 @@ std::string Server::ReadClosedDocumentContent(std::string_view uriStr)
 }
 
 void Server::ReanalyzeClosedModuleDependents(std::string_view savedUriStr, const ModuleClaim& savedClaim,
-                                             const ankerl::unordered_dense::set<std::string>& closureSet)
+                                             const TransparentStringSet& closureSet)
 {
     std::vector<std::string> closedToReanalyze;
     {

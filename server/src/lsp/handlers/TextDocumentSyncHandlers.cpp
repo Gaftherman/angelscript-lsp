@@ -4,6 +4,7 @@
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 
+#include <filesystem>
 #include <fstream>
 #include <spdlog/fmt/fmt.h>
 #include <sstream>
@@ -153,7 +154,7 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
     });
 }
 
-bool Server::RestoreClosedModuleFile(const std::string& uriStr, const std::string& path)
+bool Server::RestoreClosedModuleFile(std::string_view uriStr, std::string_view path)
 {
     if (path.empty())
     {
@@ -184,7 +185,7 @@ bool Server::RestoreClosedModuleFile(const std::string& uriStr, const std::strin
 
     LogInfo(fmt::format("[File Read] Reading closed module file from disk: {}", path));
     utils::HighResTimer readTimer;
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
     if (file.is_open())
     {
         std::ostringstream ss;

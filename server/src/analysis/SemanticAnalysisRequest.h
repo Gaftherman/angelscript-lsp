@@ -76,7 +76,7 @@ struct SemanticAnalysisRequest
      * @brief Every file in the same module as this one, this one included, keyed as URIs.
      *        AngelScript compiles a module out of several sections, and a name declared twice across
      */
-    ankerl::unordered_dense::set<std::string> moduleFileUris;
+    TransparentStringSet moduleFileUris;
     const i18n::I18n* i18n = nullptr;
     const config::TypeConfig* typeConfig = nullptr;
     const ankerl::unordered_dense::map<std::string, DiagnosticSeverity, TransparentStringHash, std::equal_to<>>*
@@ -418,7 +418,7 @@ struct SemanticAnalysisRequest
      */
     bool IsRegisteredSymbol(std::string_view name) const
     {
-        return typeConfig && typeConfig->registeredSymbols.contains(std::string(name));
+        return typeConfig && typeConfig->registeredSymbols.contains(name);
     }
 
     /**

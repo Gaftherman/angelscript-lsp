@@ -3,6 +3,7 @@
 #include "document/Document.h"
 #include "parser/SyntaxTree.h"
 #include "utils/PreprocessorRegions.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
 #include <atomic>
@@ -12,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -129,7 +131,7 @@ class AnalysisScheduler
      * @param force True to bypass deduplication.
      * @param tree Copied or newly parsed TSTree.
      */
-    void Schedule(const std::string& uriStr, std::string text, bool force, parser::TreePtr tree);
+    void Schedule(std::string_view uriStr, std::string text, bool force, parser::TreePtr tree);
 
     /**
      * @brief Enqueues a document for analysis without debounce delay.
@@ -144,40 +146,40 @@ class AnalysisScheduler
      * @param force True to bypass deduplication.
      * @param tree Copied or newly parsed TSTree.
      */
-    void ScheduleImmediate(const std::string& uriStr, std::string text, bool force, parser::TreePtr tree);
+    void ScheduleImmediate(std::string_view uriStr, std::string text, bool force, parser::TreePtr tree);
 
     /**
      * @brief Cancels pending analysis and marks document as saved on message loop.
      * @param uriStr Document URI key.
      * @param version Document saved version (-1 if unknown).
      */
-    void MarkSaved(const std::string& uriStr, int version = -1);
+    void MarkSaved(std::string_view uriStr, int version = -1);
 
     /**
      * @brief Cancels any pending or active analysis for the given document URI.
      * @param uriStr Document URI key.
      */
-    void Cancel(const std::string& uriStr);
+    void Cancel(std::string_view uriStr);
 
     /**
      * @brief Checks if analysis was cancelled for a document URI.
      * @param uriStr Document URI key.
      * @return True if cancelled.
      */
-    [[nodiscard]] bool IsCancelled(const std::string& uriStr) const;
+    [[nodiscard]] bool IsCancelled(std::string_view uriStr) const;
 
     /**
      * @brief Checks and sets peer debounce status for a document.
      * @param uriStr Document URI key.
      * @return True if should debounce.
      */
-    bool ShouldDebouncePeer(const std::string& uriStr);
+    bool ShouldDebouncePeer(std::string_view uriStr);
 
     /**
      * @brief Clears peer debounce timestamp for a document.
      * @param uriStr Document URI key.
      */
-    void ClearPeerDebounce(const std::string& uriStr);
+    void ClearPeerDebounce(std::string_view uriStr);
 
     /**
      * @brief Flushes the queue and signals worker to stop.
@@ -222,19 +224,21 @@ class AnalysisScheduler
 
     uint64_t m_revision = 0;
 
-    ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_pending;
-    ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_inFlight;
+    ankerl::unordered_dense::map<std::string, PendingAnalysisEntry, TransparentStringHash, std::equal_to<>> m_pending;
+    ankerl::unordered_dense::map<std::string, PendingAnalysisEntry, TransparentStringHash, std::equal_to<>> m_inFlight;
 
-    ankerl::unordered_dense::set<std::string> m_savedUris;
-    ankerl::unordered_dense::map<std::string, int> m_savedVersions;
-    ankerl::unordered_dense::set<std::string> m_cancelledUris;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> m_savedUris;
+    ankerl::unordered_dense::map<std::string, int, TransparentStringHash, std::equal_to<>> m_savedVersions;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> m_cancelledUris;
 
     std::string m_currentlyAnalyzingUri;
     std::string m_currentlyAnalyzingText;
     AnalysisMetadata m_currentlyAnalyzing;
 
     std::mutex m_peerMutex;
-    ankerl::unordered_dense::map<std::string, std::chrono::steady_clock::time_point> m_peerTimestamps;
+    ankerl::unordered_dense::map<std::string, std::chrono::steady_clock::time_point, TransparentStringHash,
+                                 std::equal_to<>>
+        m_peerTimestamps;
     static constexpr auto k_peerDebounceWindow = std::chrono::milliseconds(500);
 };
 } // namespace angel_lsp

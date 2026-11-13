@@ -1,5 +1,6 @@
 #include "utils/WorkspaceScan.h"
 
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <ankerl/unordered_dense.h>
@@ -9,8 +10,7 @@ namespace angel_lsp::utils
 constexpr int k_maxScanDepth = 32;
 
 static bool ShouldSkipEntry(const std::filesystem::directory_entry& entry, const std::vector<std::string>& excludeGlobs,
-                            ankerl::unordered_dense::set<std::string>& visitedSymlinks,
-                            std::filesystem::recursive_directory_iterator& scan)
+                            TransparentStringSet& visitedSymlinks, std::filesystem::recursive_directory_iterator& scan)
 {
     if (scan.depth() > k_maxScanDepth)
     {
@@ -47,7 +47,7 @@ bool ForEachWorkspaceFile(const std::vector<std::string>& roots, const std::vect
                           const std::function<void(const std::filesystem::directory_entry&)>& onFile)
 {
     const auto stopped = [&shouldStop]() { return shouldStop && shouldStop(); };
-    ankerl::unordered_dense::set<std::string> visitedSymlinks;
+    TransparentStringSet visitedSymlinks;
 
     for (const auto& root : roots)
     {

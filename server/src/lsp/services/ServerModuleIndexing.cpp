@@ -183,7 +183,7 @@ size_t Server::IndexModuleClosure(std::string_view openUriStr, SyntaxRevisionCac
 
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        if (GetDocumentStore().IsOpen(openUriStr) || !m_closureDocuments.contains(std::string(openUriStr)))
+        if (GetDocumentStore().IsOpen(openUriStr) || !m_closureDocuments.contains(openUriStr))
         {
             m_openDocumentClosures[std::string(openUriStr)] = std::move(indexed);
         }

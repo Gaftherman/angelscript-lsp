@@ -53,7 +53,7 @@ void Server::HandleNotificationsWorkspace_DidChangeWorkspaceFolders(
     RestartWorkspaceScan();
 }
 
-bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string& uriStr, bool isPredefined,
+bool Server::HandleWatchedFileDeleted(std::string_view path, std::string_view uriStr, bool isPredefined,
                                       bool& stubSelectionInvalidated)
 {
     if (isPredefined)
@@ -74,7 +74,7 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
         }
         if (!owner && !uriStr.empty() && m_predefinedManager.HasStub(uriStr))
         {
-            owner = uriStr;
+            owner = std::string(uriStr);
         }
 
         if (owner)
@@ -87,7 +87,7 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
         return false;
     }
 
-    const std::string targetUri = !uriStr.empty() ? uriStr : UriFromPath(path);
+    const std::string targetUri = !uriStr.empty() ? std::string(uriStr) : UriFromPath(path);
     bool wasPublished = false;
     {
         std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
@@ -106,7 +106,7 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
     return GetIncludeGraph().RemoveFile(path);
 }
 
-void Server::ReindexTrackedClosureFile(const std::string& path, angel_lsp::parser::AngelScriptParser& parser)
+void Server::ReindexTrackedClosureFile(std::string_view path, angel_lsp::parser::AngelScriptParser& parser)
 {
     const auto uri = UriFromPath(path);
     std::string previous;
@@ -135,7 +135,7 @@ void Server::ReindexTrackedClosureFile(const std::string& path, angel_lsp::parse
     }
 }
 
-bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined,
+bool Server::HandleWatchedFileChanged(std::string_view path, bool isPredefined,
                                       angel_lsp::parser::AngelScriptParser& parser)
 {
     if (isPredefined)
@@ -152,7 +152,7 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
 
     LogInfo(fmt::format("[File Read] Reading modified watched file: {}", path));
     utils::HighResTimer readTimer;
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
     if (!file.is_open())
     {
         return false;
@@ -162,7 +162,7 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
     LogInfo(fmt::format("[File Read] Finished reading watched file: {} in {} ({} bytes)", path,
                         utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
     GetIncludeGraph().UpdateFile(
-        utils::WorkspaceIncludeGraph::UpdateFileRequest{path,
+        utils::WorkspaceIncludeGraph::UpdateFileRequest{std::string(path),
                                                         content,
                                                         *SearchDirectories(),
                                                         IncludeAllowedRoots(),

@@ -383,7 +383,7 @@ void ScopeIndex::SetScopeTree(const std::string& fileUri, std::shared_ptr<const 
     AddCallUses(entry->first, *entry->second.root);
 }
 
-void ScopeIndex::ClearDocument(const std::string& fileUri)
+void ScopeIndex::ClearDocument(std::string_view fileUri)
 {
     std::unique_lock lock(m_mutex);
     const auto entry = m_roots.find(fileUri);

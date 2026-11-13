@@ -15,7 +15,7 @@
 namespace angel_lsp
 {
 
-lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text)
+lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(std::string_view uriStr, const std::string& text)
 {
     const auto docHandle = GetDocumentStore().GetDocument(uriStr);
     const auto syntax = docHandle && docHandle->tree
@@ -42,7 +42,8 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     tokens.resultId = resultId;
     {
         std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
-        m_semanticTokensCache[uriStr] = SemanticTokensSnapshot{resultId, tokens.data, hasError, currentVersion};
+        m_semanticTokensCache.insert_or_assign(std::string(uriStr),
+                                               SemanticTokensSnapshot{resultId, tokens.data, hasError, currentVersion});
     }
 
     return tokens;
@@ -116,7 +117,7 @@ std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const s
     return GetDocumentStore().GetDocument(key);
 }
 
-std::optional<OpenDocument> Server::LookupPreindexedFallback(const std::string& key)
+std::optional<OpenDocument> Server::LookupPreindexedFallback(std::string_view key)
 {
     if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
     {
@@ -127,7 +128,7 @@ std::optional<OpenDocument> Server::LookupPreindexedFallback(const std::string& 
         }
         if (preindexed)
         {
-            return OpenDocument{key, &preindexed->text, preindexed, nullptr};
+            return OpenDocument{std::string(key), &preindexed->text, preindexed, nullptr};
         }
         return std::nullopt;
     }
@@ -135,7 +136,7 @@ std::optional<OpenDocument> Server::LookupPreindexedFallback(const std::string& 
     {
         if (auto wsDoc = m_workspaceStore->GetPreindexedDocument(key))
         {
-            return OpenDocument{key, &wsDoc->text, wsDoc, nullptr};
+            return OpenDocument{std::string(key), &wsDoc->text, wsDoc, nullptr};
         }
     }
     return std::nullopt;

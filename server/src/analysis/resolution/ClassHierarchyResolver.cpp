@@ -7,6 +7,7 @@
 #include "analysis/types/TypeSanitization.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/TransparentHash.h"
 
 #include <algorithm>
 #include <vector>
@@ -90,8 +91,8 @@ std::vector<Symbol> FindHierarchyTypeSymbols(const std::string& curType, const S
     return {};
 }
 
-void EnqueueClassBases(const Symbol& sym, const SymbolTable& symbolTable,
-                       ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& queue)
+void EnqueueClassBases(const Symbol& sym, const SymbolTable& symbolTable, TransparentStringSet& visited,
+                       std::vector<std::string>& queue)
 {
     const auto& cls = sym.GetClass();
     std::vector<HierarchyClassifiedBase> bases;
@@ -119,8 +120,7 @@ void EnqueueClassBases(const Symbol& sym, const SymbolTable& symbolTable,
     }
 }
 
-void EnqueueInterfaceBases(const Symbol& sym, ankerl::unordered_dense::set<std::string>& visited,
-                           std::vector<std::string>& queue)
+void EnqueueInterfaceBases(const Symbol& sym, TransparentStringSet& visited, std::vector<std::string>& queue)
 {
     const auto& iface = sym.GetInterface();
     for (const auto& base : iface.inheritedInterfaces)
@@ -157,7 +157,7 @@ std::vector<std::string> GetInheritedTypeHierarchy(std::string_view className, c
         }
     }
 
-    ankerl::unordered_dense::set<std::string> visited;
+    TransparentStringSet visited;
     std::vector<std::string> queue;
 
     visited.insert(rootType);
@@ -287,7 +287,7 @@ static bool TryApplyCachedMixinHierarchy(std::string_view containerClass, std::v
     {
         return false;
     }
-    auto cachedIt = cache->expandedMixinHierarchies.find(std::string(containerClass));
+    auto cachedIt = cache->expandedMixinHierarchies.find(containerClass);
     if (cachedIt == cache->expandedMixinHierarchies.end())
     {
         return false;
@@ -422,7 +422,7 @@ std::vector<Symbol> FindOverriddenBaseMethodSymbols(std::string_view containerCl
     };
 
     const bool hasLinkedOptions = options.HasActiveOptions();
-    ankerl::unordered_dense::set<std::string> visitedOwners;
+    TransparentStringSet visitedOwners;
     for (const auto& ancestor : hierarchy)
     {
         if (ancestor != containerClass && visitedOwners.insert(ancestor).second)
@@ -477,8 +477,7 @@ bool HierarchyIsFullyVisible(std::string_view typeName, const SymbolTable& symbo
 }
 
 void TraverseAncestorsAndInterfaces(const std::string& rootType, const SymbolTable& symbolTable,
-                                    ankerl::unordered_dense::set<std::string>& visited,
-                                    std::vector<std::string>& related)
+                                    TransparentStringSet& visited, std::vector<std::string>& related)
 {
     std::vector<std::string> queue;
     visited.insert(rootType);
@@ -531,7 +530,7 @@ void TraverseAncestorsAndInterfaces(const std::string& rootType, const SymbolTab
  * @param[in,out] related Destination vector accumulating all discovered derived class names.
  */
 void TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, const SymbolTable& symbolTable,
-                            ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& related)
+                            TransparentStringSet& visited, std::vector<std::string>& related)
 {
     const auto ruleIndex = symbolTable.GetRuleIndex();
     if (!ruleIndex)
@@ -578,7 +577,7 @@ std::vector<std::string> GetAllRelatedClasses(std::string_view className, const 
         return related;
     }
 
-    ankerl::unordered_dense::set<std::string> visited;
+    TransparentStringSet visited;
     TraverseAncestorsAndInterfaces(rootType, symbolTable, visited, related);
 
     const std::vector<std::string> frontier(related.begin(), related.end());
@@ -602,7 +601,7 @@ std::vector<std::string> GetDerivedClasses(std::string_view className, const Sym
         return derivedClasses;
     }
 
-    ankerl::unordered_dense::set<std::string> visited;
+    TransparentStringSet visited;
     visited.insert(rootType);
 
     const auto ruleIndex = symbolTable.GetRuleIndex();
@@ -648,8 +647,7 @@ std::vector<std::string> GetDerivedClasses(std::string_view className, const Sym
     return derivedClasses;
 }
 
-void AddClassAndShortName(std::string_view c, ankerl::unordered_dense::set<std::string>& visited,
-                          std::vector<std::string>& result)
+void AddClassAndShortName(std::string_view c, TransparentStringSet& visited, std::vector<std::string>& result)
 {
     if (c.empty() || !visited.insert(std::string(c)).second)
     {
@@ -774,7 +772,7 @@ void ExpandMixinFromSymbolTable(const MixinExpansionContext& ctx)
 }
 
 void ExpandMixinHostsAndSiblings(std::string_view cleanClass, const SymbolTable& symbolTable,
-                                 ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& result)
+                                 TransparentStringSet& visited, std::vector<std::string>& result)
 {
     MixinExpansionContext ctx{cleanClass, symbolTable, visited, result};
     if (const auto ruleIndex = symbolTable.GetRuleIndex())
@@ -788,8 +786,7 @@ void ExpandMixinHostsAndSiblings(std::string_view cleanClass, const SymbolTable&
 }
 
 void CollectPrivateCompatibleClasses(std::string_view cleanClass, const SymbolTable& symbolTable,
-                                     ankerl::unordered_dense::set<std::string>& visited,
-                                     std::vector<std::string>& result)
+                                     TransparentStringSet& visited, std::vector<std::string>& result)
 {
     AddClassAndShortName(cleanClass, visited, result);
     if (!utils::ContainsScopeSeparator(cleanClass))
@@ -815,7 +812,7 @@ std::vector<std::string> GetCompatibleMemberClasses(std::string_view className, 
         return result;
     }
 
-    ankerl::unordered_dense::set<std::string> visited;
+    TransparentStringSet visited;
     if (access == AccessModifier::Private)
     {
         CollectPrivateCompatibleClasses(cleanClass, symbolTable, visited, result);

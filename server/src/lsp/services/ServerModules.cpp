@@ -137,7 +137,7 @@ ModuleClaim Server::ClaimFor(std::string_view normalizedPath) const
 
     for (const auto& view : m_modules)
     {
-        if (view.closurePaths.contains(std::string(normalizedPath)))
+        if (view.closurePaths.contains(normalizedPath))
         {
             candidates.push_back(ModuleCandidate{&view, 2, 0});
         }

@@ -4,6 +4,7 @@
  */
 
 #include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 namespace angel_lsp::analysis::code_action
@@ -91,7 +92,7 @@ std::optional<ExtractMethodStatements> FindSelectedStatements(const CodeActionQu
 std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope)
 {
     std::vector<VarInfo> inputParams;
-    ankerl::unordered_dense::set<std::string> seenInputs;
+    TransparentStringSet seenInputs;
 
     if (!fnScope)
     {

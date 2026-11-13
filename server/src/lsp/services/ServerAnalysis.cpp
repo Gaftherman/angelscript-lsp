@@ -6,6 +6,7 @@
 #include "utils/Constants.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Timer.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -15,9 +16,9 @@
 
 namespace angel_lsp
 {
-ankerl::unordered_dense::set<std::string> Server::ComputeModuleClosureUris(std::string_view uriStr) const
+TransparentStringSet Server::ComputeModuleClosureUris(std::string_view uriStr) const
 {
-    ankerl::unordered_dense::set<std::string> moduleFileUris;
+    TransparentStringSet moduleFileUris;
     moduleFileUris.insert(std::string(uriStr));
     const std::string ownPath = CanonicalPathFromUri(uriStr);
     if (ownPath.empty())

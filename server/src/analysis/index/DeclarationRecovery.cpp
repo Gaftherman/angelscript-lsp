@@ -2,6 +2,7 @@
 
 #include "analysis/index/SymbolTable.h"
 #include "parser/Keywords.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <cctype>
@@ -360,8 +361,8 @@ static RecoveredDeclarationSnippet CreateSwallowedSnippet(std::string_view sourc
     };
 }
 
-std::vector<RecoveredDeclarationSnippet>
-FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_dense::set<std::string>& knownSymbols)
+std::vector<RecoveredDeclarationSnippet> FindSwallowedDeclarations(std::string_view sourceCode,
+                                                                   const TransparentStringSet& knownSymbols)
 {
     std::vector<RecoveredDeclarationSnippet> results;
     size_t pos = 0;
@@ -402,7 +403,7 @@ FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_d
             const size_t declEnd = FindBalancedDeclarationEnd(sourceCode, pos, kw);
             if (declEnd != std::string_view::npos && declEnd > pos)
             {
-                if (!knownSymbols.contains(std::string(name)))
+                if (!knownSymbols.contains(name))
                 {
                     results.push_back(CreateSwallowedSnippet(sourceCode, pos, declEnd, kw, name));
                 }

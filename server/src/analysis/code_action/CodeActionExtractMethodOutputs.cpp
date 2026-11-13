@@ -4,6 +4,7 @@
  */
 
 #include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 namespace angel_lsp::analysis::code_action
@@ -118,10 +119,8 @@ static bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis:
                                      ctx.stmts.selection.statementsRange.endCharacter);
 }
 
-static void CollectMutatedOutputs(const MethodOutputContext& ctx,
-                                  const ankerl::unordered_dense::set<std::string>& mutatedVars,
-                                  ankerl::unordered_dense::set<std::string>& seenOutputs,
-                                  std::vector<VarInfo>& outputVars)
+static void CollectMutatedOutputs(const MethodOutputContext& ctx, const TransparentStringSet& mutatedVars,
+                                  TransparentStringSet& seenOutputs, std::vector<VarInfo>& outputVars)
 {
     for (const auto& mName : mutatedVars)
     {
@@ -136,8 +135,7 @@ static void CollectMutatedOutputs(const MethodOutputContext& ctx,
 }
 
 static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
-                                                ankerl::unordered_dense::set<std::string>& seenOutputs,
-                                                std::vector<VarInfo>& outputVars)
+                                                TransparentStringSet& seenOutputs, std::vector<VarInfo>& outputVars)
 {
     if (!fnScope)
     {
@@ -174,10 +172,9 @@ static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& s
     }
 }
 
-ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const ExtractMethodStatements& stmts,
-                                                                  std::string_view sourceCode)
+TransparentStringSet CollectMutatedVariables(const ExtractMethodStatements& stmts, std::string_view sourceCode)
 {
-    ankerl::unordered_dense::set<std::string> mutatedVars;
+    TransparentStringSet mutatedVars;
     for (const auto& r : stmts.selection.mutatedNames)
     {
         mutatedVars.insert(std::string(utils::SliceSource(sourceCode, r.startByte, r.endByte)));
@@ -186,11 +183,10 @@ ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const ExtractM
 }
 
 std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
-                                          const ankerl::unordered_dense::set<std::string>& mutatedVars,
-                                          const analysis::Scope* stmtScope)
+                                          const TransparentStringSet& mutatedVars, const analysis::Scope* stmtScope)
 {
     std::vector<VarInfo> outputVars;
-    ankerl::unordered_dense::set<std::string> seenOutputs;
+    TransparentStringSet seenOutputs;
 
     if (fnScope)
     {

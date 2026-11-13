@@ -11,6 +11,7 @@
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "utils/TransparentHash.h"
 
 #include <algorithm>
 #include <chrono>
@@ -2372,7 +2373,7 @@ TEST_CASE("TypeConversion - SEC-03 Recursion Depth Guard & Cycle Breaker")
     CHECK(canConvertImplicitly(typeA, typeA));
 
     // Direct cycle detection
-    ankerl::unordered_dense::set<std::string> visited;
+    angel_lsp::TransparentStringSet visited;
     visited.insert(nameA + "->" + nameB);
     CHECK_FALSE(canConvertImplicitly(typeA, typeB, 0, visited));
 

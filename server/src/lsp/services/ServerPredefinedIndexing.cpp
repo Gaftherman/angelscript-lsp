@@ -50,8 +50,8 @@ static std::optional<std::string> ReadPredefinedFile(std::string_view normPath, 
 
 void Server::CommitPredefinedIndex(std::string_view uri, std::string_view content, parser::TreePtr tree)
 {
-    m_scopeIndex.ClearDocument(std::string(uri));
-    m_callGraph.ClearDocument(std::string(uri));
+    m_scopeIndex.ClearDocument(uri);
+    m_callGraph.ClearDocument(uri);
     auto preindexedDoc = std::make_shared<const document::Document>(
         document::DocumentSnapshot{std::string(uri), std::string(content), 0, 1}, std::move(tree));
     m_predefinedManager.SetPreindexedDocument(uri, preindexedDoc);

@@ -8,6 +8,7 @@
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "utils/TransparentHash.h"
 
 #include <string>
 #include <string_view>
@@ -85,7 +86,7 @@ struct FreeLookupContext
     std::string_view predefinedExtension;
     const SymbolTable& table;
     const rules::RuleIndex& index;
-    const ankerl::unordered_dense::set<std::string>& moduleFileUris;
+    const TransparentStringSet& moduleFileUris;
     const NodeIndex* nodeIndex = nullptr;
 };
 

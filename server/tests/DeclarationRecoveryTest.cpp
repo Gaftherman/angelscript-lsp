@@ -8,6 +8,7 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/SyntaxTree.h"
 #include "spdlog/fmt/fmt.h"
+#include "utils/TransparentHash.h"
 
 #include <doctest/doctest.h>
 
@@ -227,7 +228,7 @@ TEST_SUITE("DeclarationRecovery")
                                                      "}}\n",
                                                      clsName, memberName, listMethod, memberName);
 
-        ankerl::unordered_dense::set<std::string> knownSymbols;
+        angel_lsp::TransparentStringSet knownSymbols;
         // Case 1: Class is already known (e.g. from Pass 1) -> its entire body must be skipped
         knownSymbols.insert(clsName);
         auto recoveredKnown = FindSwallowedDeclarations(brokenScript, knownSymbols);
@@ -260,7 +261,7 @@ TEST_SUITE("DeclarationRecovery")
                                                "}}\n",
                                                typeName, funcName, typeName, opFunc, opFunc);
 
-        ankerl::unordered_dense::set<std::string> knownSymbols;
+        angel_lsp::TransparentStringSet knownSymbols;
         auto recovered = FindSwallowedDeclarations(script, knownSymbols);
 
         bool foundFunc = false;

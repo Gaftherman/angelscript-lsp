@@ -5,6 +5,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -156,7 +157,7 @@ std::vector<std::pair<std::string, rules::RuleIndexPartial>>
 SymbolTable::BuildAffectedPartialsLocked(const std::vector<std::string>& affectedFiles,
                                          const std::string& excludeUri) const
 {
-    ankerl::unordered_dense::set<std::string> uniqueAffected;
+    TransparentStringSet uniqueAffected;
     for (const auto& affectedUri : affectedFiles)
     {
         if (affectedUri != excludeUri && !affectedUri.empty())
@@ -449,7 +450,7 @@ void SymbolTable::ReplaceDocumentSymbols(const std::string& fileUri, SymbolTable
 }
 
 static bool ShouldRetainSymbol(const Symbol& sym, const std::string& fileUri,
-                               const ankerl::unordered_dense::set<std::string>& stagingTypeNames)
+                               const TransparentStringSet& stagingTypeNames)
 {
     if (sym.fileUri != fileUri)
         return false;
@@ -472,7 +473,7 @@ void SymbolTable::RetainLastKnownGoodTypes(const std::string& fileUri, SymbolTab
     if (fileEntry == m_keysByFile.end())
         return;
 
-    ankerl::unordered_dense::set<std::string> stagingTypeNames;
+    TransparentStringSet stagingTypeNames;
     staging.ForEachSymbolInFile(
         fileUri,
         [&stagingTypeNames]([[maybe_unused]] const std::string& key, const std::vector<Symbol>& syms)
@@ -515,7 +516,7 @@ bool SymbolTable::IsFileAllowedForSnapshot(std::string_view fileUri, const Snaps
     {
         return true;
     }
-    if (ctx.allowedModuleFileUris.contains(std::string(fileUri)))
+    if (ctx.allowedModuleFileUris.contains(fileUri))
     {
         return true;
     }
@@ -785,10 +786,9 @@ std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const AnalysisS
     return snapshot;
 }
 
-std::unique_ptr<SymbolTable>
-SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
-                                    const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris,
-                                    std::string_view predefinedExtension) const
+std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
+                                                                 const TransparentStringSet* allowedModuleFileUris,
+                                                                 std::string_view predefinedExtension) const
 {
     return CreateAnalysisSnapshot(AnalysisSnapshotRequest{
         .uriStr = uriStr,
@@ -887,11 +887,10 @@ bool SymbolTable::IsMixinClassLocked(const std::string& cleanName) const
     return false;
 }
 
-ankerl::unordered_dense::set<std::string>
-SymbolTable::UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>& classKeys,
-                                                  std::vector<std::string>* outAffectedFiles)
+TransparentStringSet SymbolTable::UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>& classKeys,
+                                                                       std::vector<std::string>* outAffectedFiles)
 {
-    ankerl::unordered_dense::set<std::string> neededMixins;
+    TransparentStringSet neededMixins;
 
     for (const auto& key : classKeys)
     {
@@ -929,8 +928,7 @@ SymbolTable::UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>
     return neededMixins;
 }
 
-void SymbolTable::CleanSynthesizedMembersForClassLocked(const Symbol& sym,
-                                                        ankerl::unordered_dense::set<std::string>& fileKeys)
+void SymbolTable::CleanSynthesizedMembersForClassLocked(const Symbol& sym, TransparentStringSet& fileKeys)
 {
     const std::string hostQName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
     std::vector<std::string> keysToClean;
@@ -991,7 +989,7 @@ void SymbolTable::CleanSynthesizedSymbolsForClassesLocked(const std::vector<std:
 }
 
 ankerl::unordered_dense::map<std::string, std::vector<Symbol>>
-SymbolTable::CollectMixinMemberFunctionsLocked(const ankerl::unordered_dense::set<std::string>& neededMixins) const
+SymbolTable::CollectMixinMemberFunctionsLocked(const TransparentStringSet& neededMixins) const
 {
     ankerl::unordered_dense::map<std::string, std::vector<Symbol>> mixinMembers;
     for (const auto& [k, bucket] : m_symbols)
@@ -1637,7 +1635,7 @@ std::vector<std::string> SymbolTable::GetIndexedFileUris() const
     return uris;
 }
 
-bool SymbolTable::ContainsOnlyFiles(const ankerl::unordered_dense::set<std::string>& allowedFileUris,
+bool SymbolTable::ContainsOnlyFiles(const TransparentStringSet& allowedFileUris,
                                     std::string_view predefinedExtension) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);

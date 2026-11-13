@@ -147,8 +147,8 @@ bool Server::UnloadPredefinedUri(std::string_view uriStr)
     const bool unloaded = m_predefinedManager.UnloadUri(uriStr, &path);
 
     m_symbolTable.ClearDocumentSymbols(std::string(uriStr));
-    m_scopeIndex.ClearDocument(std::string(uriStr));
-    m_callGraph.ClearDocument(std::string(uriStr));
+    m_scopeIndex.ClearDocument(uriStr);
+    m_callGraph.ClearDocument(uriStr);
 
     if (!path.empty())
     {

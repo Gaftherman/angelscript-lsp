@@ -5,6 +5,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/TransparentHash.h"
 
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
@@ -1454,12 +1455,11 @@ static bool IsInTargetHierarchy(std::string_view cleanEnc, std::string_view clea
  * @return True if implicit member access is a valid match.
  */
 static bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                      const ankerl::unordered_dense::set<std::string>& relatedSet,
-                                      const OccurrenceScanContext& ctx)
+                                      const TransparentStringSet& relatedSet, const OccurrenceScanContext& ctx)
 {
     std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
     if (encClass.empty() ||
-        (!relatedSet.contains(encClass) && !relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)))))
+        (!relatedSet.contains(encClass) && !relatedSet.contains(analysis::LastScopeSegment(encClass))))
     {
         return false;
     }
@@ -1510,7 +1510,7 @@ static bool ShouldIncludeClassDecl(std::string_view clsName, std::string_view de
  * @param[out] allDeclRanges Set of all declaration coordinate tuples.
  * @param[in,out] collector Occurrence accumulator.
  */
-static void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::string>& relatedSet,
+static void CollectClassMemberDeclarations(const TransparentStringSet& relatedSet,
                                            const CollectOccurrencesRequest& request,
                                            std::set<std::tuple<std::string, uint32_t, uint32_t>>& allDeclRanges,
                                            OccurrenceCollector& collector)
@@ -1552,8 +1552,7 @@ static void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<st
  * @return True if reference is a match.
  */
 static bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                        const ankerl::unordered_dense::set<std::string>& relatedSet,
-                                        const OccurrenceScanContext& ctx)
+                                        const TransparentStringSet& relatedSet, const OccurrenceScanContext& ctx)
 {
     if (ref.isMemberAccess)
     {
@@ -1565,8 +1564,8 @@ static bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, con
         if (ctx.fileUri != ctx.request.currentUri)
         {
             std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-            return !encClass.empty() && (relatedSet.contains(encClass) ||
-                                         relatedSet.contains(std::string(analysis::LastScopeSegment(encClass))));
+            return !encClass.empty() &&
+                   (relatedSet.contains(encClass) || relatedSet.contains(analysis::LastScopeSegment(encClass)));
         }
         return false;
     }
@@ -1598,8 +1597,7 @@ static bool IsUnboundSearchCandidate(const Scope& root, const LocalReference& re
  * @param[in] relatedSet Set of related class names.
  * @param[in,out] ctx Occurrence scan context.
  */
-static void ScanDocumentForClassMember(const analysis::Scope* root,
-                                       const ankerl::unordered_dense::set<std::string>& relatedSet,
+static void ScanDocumentForClassMember(const analysis::Scope* root, const TransparentStringSet& relatedSet,
                                        OccurrenceScanContext& ctx)
 {
     if (!root)
@@ -1622,8 +1620,8 @@ static void ScanDocumentForClassMember(const analysis::Scope* root,
                 ctx.request.target.access == analysis::AccessModifier::Protected)
             {
                 std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-                if (encClass.empty() || (!relatedSet.contains(encClass) &&
-                                         !relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)))))
+                if (encClass.empty() ||
+                    (!relatedSet.contains(encClass) && !relatedSet.contains(analysis::LastScopeSegment(encClass))))
                 {
                     continue;
                 }
@@ -1651,8 +1649,7 @@ static void ScanDocumentForClassMember(const analysis::Scope* root,
  */
 static void CollectClassMemberOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
-    ankerl::unordered_dense::set<std::string> relatedSet(request.target.relatedClasses.begin(),
-                                                         request.target.relatedClasses.end());
+    TransparentStringSet relatedSet(request.target.relatedClasses.begin(), request.target.relatedClasses.end());
     if (!request.target.declaringClass.empty())
     {
         relatedSet.insert(request.target.declaringClass);

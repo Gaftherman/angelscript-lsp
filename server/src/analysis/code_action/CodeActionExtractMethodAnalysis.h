@@ -3,6 +3,7 @@
 #include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/code_action/CodeActionTypes.h"
 #include "analysis/index/ExtractMethodFacts.h"
+#include "utils/TransparentHash.h"
 
 namespace angel_lsp::analysis::code_action
 {
@@ -65,12 +66,10 @@ std::optional<ExtractMethodStatements> FindSelectedStatements(const CodeActionQu
 
 std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope);
 
-ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const ExtractMethodStatements& stmts,
-                                                                  std::string_view sourceCode);
+TransparentStringSet CollectMutatedVariables(const ExtractMethodStatements& stmts, std::string_view sourceCode);
 
 std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
-                                          const ankerl::unordered_dense::set<std::string>& mutatedVars,
-                                          const analysis::Scope* stmtScope);
+                                          const TransparentStringSet& mutatedVars, const analysis::Scope* stmtScope);
 
 /**
  * @brief Deduces method signature and call-site plan for extracted statements.

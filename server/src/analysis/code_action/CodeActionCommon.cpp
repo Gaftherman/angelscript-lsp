@@ -1,6 +1,7 @@
 #include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "i18n/i18n.h"
+#include "utils/TransparentHash.h"
 
 #include <algorithm>
 
@@ -159,7 +160,7 @@ std::string FoldCase(std::string_view text)
     return folded;
 }
 
-void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_dense::set<std::string>& refs)
+void CollectAllReferences(const analysis::Scope* rootScope, TransparentStringSet& refs)
 {
     if (!rootScope)
     {

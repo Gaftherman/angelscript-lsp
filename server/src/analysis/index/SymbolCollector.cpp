@@ -12,6 +12,7 @@
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -557,7 +558,7 @@ void SymbolCollector::DispatchDeclaration(TSNode node, IndexedDeclarationKind ki
 
 void SymbolCollector::RecoverSwallowedDeclarations(SymbolCollectContext& sCtx)
 {
-    ankerl::unordered_dense::set<std::string> knownNames;
+    TransparentStringSet knownNames;
     knownNames.reserve(sCtx.collectedSymbols.size());
     for (const auto& sym : sCtx.collectedSymbols)
     {
@@ -1662,7 +1663,7 @@ void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolColle
  */
 void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollectContext& sCtx) const
 {
-    ankerl::unordered_dense::set<std::string> seenModifiers;
+    TransparentStringSet seenModifiers;
     TSTreeCursor cursor = ts_tree_cursor_new(declNode);
     if (ts_tree_cursor_goto_first_child(&cursor))
     {

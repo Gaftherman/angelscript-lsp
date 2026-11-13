@@ -449,7 +449,7 @@ class ScopeIndex
     /**
      * @brief Discards the scope tree for fileUri, if any.
      */
-    void ClearDocument(const std::string& fileUri);
+    void ClearDocument(std::string_view fileUri);
 
     /**
      * @brief Returns a snapshot of the root scope for fileUri, or nullptr if none is recorded.

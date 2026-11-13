@@ -199,7 +199,7 @@ void BuildDiagnosticSeverityOverrides(DiagnosticsPipeline* pipeline, const angel
     for (const auto& [code, severityName] : config.diagnosticSeverities)
     {
         const auto selector = angel_lsp::analysis::NormalizeDiagnosticSelector(code);
-        if (selector != code && config.diagnosticSeverities.contains(std::string(selector)))
+        if (selector != code && config.diagnosticSeverities.contains(selector))
         {
             continue;
         }

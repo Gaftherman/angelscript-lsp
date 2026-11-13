@@ -415,7 +415,7 @@ struct TypeConfig
      */
     std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> arrayLikeTemplates;
 
-    std::unordered_set<std::string> registeredSymbols;
+    TransparentStringSet registeredSymbols;
 };
 
 /**
@@ -583,7 +583,7 @@ struct ServerConfig
      * @brief Per-rule diagnostic severity overrides, keyed by diagnostic code.
      *        Values are the LSP severity names ("error", "warning", "information", "hint"). Kept as
      */
-    std::unordered_map<std::string, std::string> diagnosticSeverities;
+    std::unordered_map<std::string, std::string, TransparentStringHash, std::equal_to<>> diagnosticSeverities;
 };
 
 /**

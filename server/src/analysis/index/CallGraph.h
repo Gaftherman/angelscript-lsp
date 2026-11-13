@@ -91,7 +91,7 @@ class CallGraphIndex
      * @brief Discards all calls recorded for the specified document URI.
      * @param[in] fileUri URI of the document to clear.
      */
-    void ClearDocument(const std::string& fileUri);
+    void ClearDocument(std::string_view fileUri);
 
     /**
      * @brief Finds every call to a given bare name across every indexed document.
@@ -108,16 +108,17 @@ class CallGraphIndex
     [[nodiscard]] std::vector<DocumentCalls> FindCallsFrom(std::string_view callerQualifiedName) const;
 
   private:
-    void ClearDocumentLocked(const std::string& fileUri);
+    void ClearDocumentLocked(std::string_view fileUri);
 
-    using StringDocumentCalls = ankerl::unordered_dense::map<std::string, std::vector<CallSite>>;
+    using StringDocumentCalls =
+        ankerl::unordered_dense::map<std::string, std::vector<CallSite>, TransparentStringHash, std::equal_to<>>;
     using InvertedIndex =
         ankerl::unordered_dense::map<std::string, StringDocumentCalls, TransparentStringHash, std::equal_to<>>;
 
     [[nodiscard]] std::vector<DocumentCalls> FindCallsInIndex(const InvertedIndex& index, std::string_view name) const;
 
     mutable std::shared_mutex m_mutex;
-    ankerl::unordered_dense::map<std::string, std::vector<CallSite>> m_byDocument;
+    StringDocumentCalls m_byDocument;
     InvertedIndex m_byCallee;
     InvertedIndex m_byCaller;
 };

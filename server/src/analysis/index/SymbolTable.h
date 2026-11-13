@@ -99,7 +99,7 @@ class SymbolTable
     {
         const std::string& uriStr;
         const SymbolTable* staging = nullptr; ///< Optional replacement for the already published document.
-        const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris = nullptr;
+        const TransparentStringSet* allowedModuleFileUris = nullptr;
         std::string_view predefinedExtension = {};
         const SymbolTable* predefinedBase = nullptr;
     };
@@ -108,7 +108,7 @@ class SymbolTable
 
     [[nodiscard]] std::unique_ptr<SymbolTable>
     CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
-                           const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris = nullptr,
+                           const TransparentStringSet* allowedModuleFileUris = nullptr,
                            std::string_view predefinedExtension = {}) const;
 
     /**
@@ -439,8 +439,7 @@ class SymbolTable
      * @param predefinedExtension Extension for predefined files to ignore.
      * @return True if no non-predefined indexed file lies outside allowedFileUris.
      */
-    bool ContainsOnlyFiles(const ankerl::unordered_dense::set<std::string>& allowedFileUris,
-                           std::string_view predefinedExtension) const;
+    bool ContainsOnlyFiles(const TransparentStringSet& allowedFileUris, std::string_view predefinedExtension) const;
 
     /**
      * @brief Counter bumped on every mutation, so a derived index can tell it is still current.
@@ -533,7 +532,7 @@ class SymbolTable
      * @brief Collects mixin member functions for needed mixin names. Caller holds write lock.
      */
     ankerl::unordered_dense::map<std::string, std::vector<Symbol>>
-    CollectMixinMemberFunctionsLocked(const ankerl::unordered_dense::set<std::string>& neededMixins) const;
+    CollectMixinMemberFunctionsLocked(const TransparentStringSet& neededMixins) const;
 
     /**
      * @brief Checks whether a synthesized member conflicts with an existing member. Caller holds write lock.
@@ -561,7 +560,7 @@ class SymbolTable
     /**
      * @brief Cleans up synthesized members belonging to a single class. Caller holds write lock.
      */
-    void CleanSynthesizedMembersForClassLocked(const Symbol& sym, ankerl::unordered_dense::set<std::string>& fileKeys);
+    void CleanSynthesizedMembersForClassLocked(const Symbol& sym, TransparentStringSet& fileKeys);
 
     /**
      * @brief Inserts symbols into buckets and tracks classes/mixins. Caller holds write lock.
@@ -572,9 +571,8 @@ class SymbolTable
     /**
      * @brief Updates included mixins on class signatures and collects needed mixin names. Caller holds write lock.
      */
-    ankerl::unordered_dense::set<std::string>
-    UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>& classKeys,
-                                         std::vector<std::string>* outAffectedFiles);
+    TransparentStringSet UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>& classKeys,
+                                                              std::vector<std::string>* outAffectedFiles);
 
     mutable std::shared_mutex m_mutex;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>, TransparentStringHash,
@@ -584,8 +582,7 @@ class SymbolTable
     /**
      * @brief Bucket keys touched by each document, so a per-file walk need not scan the rest.
      */
-    ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::set<std::string>, TransparentStringHash,
-                                 std::equal_to<>>
+    ankerl::unordered_dense::map<std::string, TransparentStringSet, TransparentStringHash, std::equal_to<>>
         m_keysByFile;
 
     uint64_t m_version = 0;
@@ -620,7 +617,7 @@ class SymbolTable
     /**
      * @brief Set of class qualified names that currently have synthesized mixin members. Guarded by m_mutex.
      */
-    ankerl::unordered_dense::set<std::string> m_classesWithSynthesizedMixins;
+    TransparentStringSet m_classesWithSynthesizedMixins;
     std::string m_defaultArrayType = "array";
     std::string m_stringType = "string";
     std::string m_predefinedFileExtension{angel_lsp::constants::k_defaultPredefinedExt};
@@ -629,7 +626,7 @@ class SymbolTable
 
     struct SnapshotFilterContext
     {
-        const ankerl::unordered_dense::set<std::string>& allowedModuleFileUris;
+        const TransparentStringSet& allowedModuleFileUris;
         std::string_view targetUri;
         std::string_view predefinedExtension;
     };

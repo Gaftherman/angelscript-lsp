@@ -14,6 +14,7 @@
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
 #include "utils/Timer.h"
+#include "utils/TransparentHash.h"
 
 #include <chrono>
 #include <cstdint>
@@ -324,7 +325,7 @@ struct OpenDocument
 struct RenameContext
 {
     OpenDocument doc;
-    std::unordered_set<std::string> predefinedUris;
+    TransparentStringSet predefinedUris;
     lsp::Position decodedPosition;
 };
 

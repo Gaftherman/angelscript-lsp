@@ -254,7 +254,7 @@ void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const
     }
 }
 
-void Server::EncodeRangesIn(const std::string& uri, std::vector<lsp::Range>& ranges) const
+void Server::EncodeRangesIn(std::string_view uri, std::vector<lsp::Range>& ranges) const
 {
     if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
     {

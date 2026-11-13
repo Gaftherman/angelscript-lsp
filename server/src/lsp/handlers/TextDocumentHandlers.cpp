@@ -144,7 +144,7 @@ void Server::RegisterTextDocumentHandlers()
     RegisterFormattingAndSymbolHandlers(*this, *m_messageHandler);
 }
 
-std::optional<uint64_t> Server::ClosedDiagnosticRevision(const std::string& uriStr, const std::string* source) const
+std::optional<uint64_t> Server::ClosedDiagnosticRevision(std::string_view uriStr, const std::string* source) const
 {
     std::lock_guard lock(m_closureMutex);
     const auto entry = m_closureDocuments.find(uriStr);
@@ -156,7 +156,7 @@ std::optional<uint64_t> Server::ClosedDiagnosticRevision(const std::string& uriS
 }
 
 std::optional<lsp::requests::TextDocument_Diagnostic::Result>
-Server::TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
+Server::TryGetCachedDiagnosticReport(std::string_view uriStr, size_t currentHash, int currentVersion,
                                      uint64_t closedRevision, const std::optional<std::string>& previousResultId)
 {
     std::unique_lock closureLock(m_closureMutex, std::defer_lock);

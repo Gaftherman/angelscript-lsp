@@ -9,6 +9,7 @@
 #include "parser/GrammarNames.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -85,7 +86,7 @@ std::string FoldCase(std::string_view text);
  * @param[in] rootScope Root of scope subtree.
  * @param[out] refs Destination reference name set.
  */
-void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_dense::set<std::string>& refs);
+void CollectAllReferences(const analysis::Scope* rootScope, TransparentStringSet& refs);
 
 /**
  * @brief Candidate name with an associated edit distance for typo and include suggestions.
@@ -276,7 +277,7 @@ struct IncludeRefCheckContext
 {
     std::string currentUri;
     const analysis::SymbolTable& table;
-    const ankerl::unordered_dense::set<std::string>& docReferences;
+    const TransparentStringSet& docReferences;
     std::span<const std::string> allowedRoots;
 };
 

@@ -6,6 +6,7 @@
 #include "analysis/code_action/CodeActionClassMutation.h"
 
 #include "analysis/code_action/CodeActionInternal.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <ankerl/unordered_dense.h>
@@ -21,9 +22,9 @@ namespace angel_lsp::analysis::code_action
  * @param[in] context Mutation check context.
  * @return Set of member field names for the active class.
  */
-static ankerl::unordered_dense::set<std::string> CollectClassFields(const ClassMutationContext& context)
+static TransparentStringSet CollectClassFields(const ClassMutationContext& context)
 {
-    ankerl::unordered_dense::set<std::string> classFields;
+    TransparentStringSet classFields;
     if (const auto ruleIndex = context.table.GetRuleIndex())
     {
         const auto& cm = ruleIndex->Members(context.className);
@@ -60,14 +61,13 @@ static ankerl::unordered_dense::set<std::string> CollectClassFields(const ClassM
  * @param[in] varName Variable name to resolve.
  * @return True if target refers to a class field or outer variable.
  */
-static bool IsFieldOrOuterVar(const ClassMutationContext& context,
-                              const ankerl::unordered_dense::set<std::string>& classFields, uint32_t line,
-                              std::string_view varName)
+static bool IsFieldOrOuterVar(const ClassMutationContext& context, const TransparentStringSet& classFields,
+                              uint32_t line, std::string_view varName)
 {
     const analysis::Scope* inner = FindScopeByLineOrRoot(context.scope, line);
     const analysis::LocalDefinition* localDef = analysis::ResolveInScope(inner, varName);
 
-    bool isField = classFields.contains(std::string(varName));
+    bool isField = classFields.contains(varName);
     if (localDef)
     {
         if (localDef->kind == analysis::LocalDefinitionKind::Field)
@@ -93,8 +93,7 @@ static bool IsFieldOrOuterVar(const ClassMutationContext& context,
  * @param[in] site Pre-indexed candidate mutation site.
  * @return True if the site mutates class fields or calls a non-const method on this.
  */
-static bool SiteMutatesClassState(const ClassMutationContext& context,
-                                  const ankerl::unordered_dense::set<std::string>& classFields,
+static bool SiteMutatesClassState(const ClassMutationContext& context, const TransparentStringSet& classFields,
                                   const analysis::IndexedMutationSite& site)
 {
     const std::string_view name = utils::SliceSource(context.sourceCode, site.name.startByte, site.name.endByte);
@@ -103,7 +102,7 @@ static bool SiteMutatesClassState(const ClassMutationContext& context,
     case analysis::MutationSiteKind::NamedTarget:
         return IsFieldOrOuterVar(context, classFields, site.line, name);
     case analysis::MutationSiteKind::ThisMember:
-        return classFields.contains(std::string(name));
+        return classFields.contains(name);
     case analysis::MutationSiteKind::ThisCall:
     {
         if (name.empty())

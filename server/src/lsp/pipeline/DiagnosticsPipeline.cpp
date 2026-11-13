@@ -55,7 +55,7 @@ void DiagnosticsPipeline::ScheduleImmediate(ScheduleRequest request)
     }
 }
 
-void DiagnosticsPipeline::MarkSaved(const std::string& uriStr, int version)
+void DiagnosticsPipeline::MarkSaved(std::string_view uriStr, int version)
 {
     if (m_scheduler)
     {
@@ -63,7 +63,7 @@ void DiagnosticsPipeline::MarkSaved(const std::string& uriStr, int version)
     }
 }
 
-void DiagnosticsPipeline::Cancel(const std::string& uriStr)
+void DiagnosticsPipeline::Cancel(std::string_view uriStr)
 {
     if (m_scheduler)
     {
@@ -71,7 +71,7 @@ void DiagnosticsPipeline::Cancel(const std::string& uriStr)
     }
 }
 
-bool DiagnosticsPipeline::IsCancelled(const std::string& uriStr) const
+bool DiagnosticsPipeline::IsCancelled(std::string_view uriStr) const
 {
     if (m_scheduler)
     {
@@ -80,7 +80,7 @@ bool DiagnosticsPipeline::IsCancelled(const std::string& uriStr) const
     return false;
 }
 
-bool DiagnosticsPipeline::ShouldDebouncePeer(const std::string& uriStr)
+bool DiagnosticsPipeline::ShouldDebouncePeer(std::string_view uriStr)
 {
     if (m_scheduler)
     {
@@ -89,7 +89,7 @@ bool DiagnosticsPipeline::ShouldDebouncePeer(const std::string& uriStr)
     return false;
 }
 
-void DiagnosticsPipeline::ClearPeerDebounce(const std::string& uriStr)
+void DiagnosticsPipeline::ClearPeerDebounce(std::string_view uriStr)
 {
     if (m_scheduler)
     {
@@ -113,13 +113,13 @@ void DiagnosticsPipeline::StopScheduler()
     }
 }
 
-void DiagnosticsPipeline::CacheDiagnosticsSnapshot(const std::string& uri, DiagnosticsSnapshot snapshot)
+void DiagnosticsPipeline::CacheDiagnosticsSnapshot(std::string_view uri, DiagnosticsSnapshot snapshot)
 {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
-    m_diagnosticsCache[uri] = std::move(snapshot);
+    m_diagnosticsCache.insert_or_assign(std::string(uri), std::move(snapshot));
 }
 
-std::optional<DiagnosticsSnapshot> DiagnosticsPipeline::GetCachedSnapshot(const std::string& uri) const
+std::optional<DiagnosticsSnapshot> DiagnosticsPipeline::GetCachedSnapshot(std::string_view uri) const
 {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
     const auto it = m_diagnosticsCache.find(uri);
@@ -130,10 +130,13 @@ std::optional<DiagnosticsSnapshot> DiagnosticsPipeline::GetCachedSnapshot(const 
     return std::nullopt;
 }
 
-void DiagnosticsPipeline::InvalidateDiagnostics(const std::string& uri)
+void DiagnosticsPipeline::InvalidateDiagnostics(std::string_view uri)
 {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
-    m_diagnosticsCache.erase(uri);
+    if (const auto it = m_diagnosticsCache.find(uri); it != m_diagnosticsCache.end())
+    {
+        m_diagnosticsCache.erase(it);
+    }
 }
 
 void DiagnosticsPipeline::ClearAllDiagnostics()

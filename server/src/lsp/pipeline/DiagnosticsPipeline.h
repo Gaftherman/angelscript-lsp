@@ -2,6 +2,7 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "lsp/pipeline/AnalysisScheduler.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
 #include <chrono>
@@ -61,6 +62,9 @@ struct DiagnosticsSnapshot
 class DiagnosticsPipeline
 {
   public:
+    /** @brief URI-keyed snapshot cache; transparent hashing lets callers probe with a `std::string_view`. */
+    using DiagnosticsCache =
+        ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot, TransparentStringHash, std::equal_to<>>;
     /**
      * @brief Constructs DiagnosticsPipeline without an attached scheduler.
      */
@@ -121,33 +125,33 @@ class DiagnosticsPipeline
      * @param[in] uriStr Document URI key.
      * @param[in] version Document saved version (-1 if unknown).
      */
-    void MarkSaved(const std::string& uriStr, int version = -1);
+    void MarkSaved(std::string_view uriStr, int version = -1);
 
     /**
      * @brief Cancels any pending or active analysis for the given document URI.
      * @param[in] uriStr Document URI key.
      */
-    void Cancel(const std::string& uriStr);
+    void Cancel(std::string_view uriStr);
 
     /**
      * @brief Checks if analysis was cancelled for a document URI.
      * @param[in] uriStr Document URI key.
      * @return True if cancelled.
      */
-    [[nodiscard]] bool IsCancelled(const std::string& uriStr) const;
+    [[nodiscard]] bool IsCancelled(std::string_view uriStr) const;
 
     /**
      * @brief Checks and sets peer debounce status for a document.
      * @param[in] uriStr Document URI key.
      * @return True if should debounce.
      */
-    bool ShouldDebouncePeer(const std::string& uriStr);
+    bool ShouldDebouncePeer(std::string_view uriStr);
 
     /**
      * @brief Clears peer debounce timestamp for a document.
      * @param[in] uriStr Document URI key.
      */
-    void ClearPeerDebounce(const std::string& uriStr);
+    void ClearPeerDebounce(std::string_view uriStr);
 
     /**
      * @brief Waits until all scheduled and executing analysis tasks have completed.
@@ -164,14 +168,14 @@ class DiagnosticsPipeline
      * @param[in] uri Document canonical URI.
      * @param[in] snapshot Diagnostics snapshot to store.
      */
-    void CacheDiagnosticsSnapshot(const std::string& uri, DiagnosticsSnapshot snapshot);
+    void CacheDiagnosticsSnapshot(std::string_view uri, DiagnosticsSnapshot snapshot);
 
     /**
      * @brief Retrieves the cached diagnostics snapshot for a document.
      * @param[in] uri Document canonical URI.
      * @return Cached snapshot, or std::nullopt if not present.
      */
-    [[nodiscard]] std::optional<DiagnosticsSnapshot> GetCachedSnapshot(const std::string& uri) const;
+    [[nodiscard]] std::optional<DiagnosticsSnapshot> GetCachedSnapshot(std::string_view uri) const;
 
     /**
      * @brief Checks if background scheduler has pending tasks beyond active analysis.
@@ -186,7 +190,7 @@ class DiagnosticsPipeline
      * @brief Retrieves a thread-safe copy of all currently cached diagnostics snapshots.
      * @return Map of document URI to cached diagnostics snapshot.
      */
-    [[nodiscard]] ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot> GetAllCachedSnapshots() const
+    [[nodiscard]] DiagnosticsCache GetAllCachedSnapshots() const
     {
         std::lock_guard<std::mutex> lock(m_cacheMutex);
         return m_diagnosticsCache;
@@ -196,7 +200,7 @@ class DiagnosticsPipeline
      * @brief Removes the cached diagnostics for a document (e.g. on document close).
      * @param[in] uri Document canonical URI.
      */
-    void InvalidateDiagnostics(const std::string& uri);
+    void InvalidateDiagnostics(std::string_view uri);
 
     /**
      * @brief Clears all cached diagnostic snapshots.
@@ -228,7 +232,7 @@ class DiagnosticsPipeline
     /**
      * @brief Direct mutable reference to diagnostics cache map for Server delegation.
      */
-    [[nodiscard]] ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot>& GetCacheRef() noexcept
+    [[nodiscard]] DiagnosticsCache& GetCacheRef() noexcept
     {
         return m_diagnosticsCache;
     }
@@ -255,7 +259,7 @@ class DiagnosticsPipeline
     AnalysisScheduler* m_scheduler = nullptr;
     std::unique_ptr<AnalysisScheduler> m_ownedScheduler;
     mutable std::mutex m_cacheMutex;
-    ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot> m_diagnosticsCache;
+    DiagnosticsCache m_diagnosticsCache;
     std::atomic<uint64_t> m_diagnosticsRevision{0};
     ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity, TransparentStringHash, std::equal_to<>>
         m_diagnosticSeverities;

@@ -1,6 +1,7 @@
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include "utils/MultiFileLogger.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 #include "utils/WorkspaceScan.h"
 
@@ -285,7 +286,7 @@ void WorkspaceIncludeGraph::UpdateFile(const std::string& filePath, std::string_
     UpdateFile(UpdateFileRequest{filePath, sourceCode, searchDirectories, {}, {}});
 }
 
-bool WorkspaceIncludeGraph::RemoveFile(const std::string& filePath)
+bool WorkspaceIncludeGraph::RemoveFile(std::string_view filePath)
 {
     const std::string normalized = IncludeResolver::NormalizePath(filePath);
 
@@ -323,7 +324,7 @@ std::vector<std::string> WorkspaceIncludeGraph::GetFilesIncluding(const std::str
 /**
  * @brief Collects all reachable reverse dependencies starting from direct includers.
  */
-static ankerl::unordered_dense::set<std::string>
+static TransparentStringSet
 CollectReachableDependents(const std::string& startNode,
                            const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includedBy)
 {
@@ -331,7 +332,7 @@ CollectReachableDependents(const std::string& startNode,
     if (direct == includedBy.end() || direct->second.empty())
         return {};
 
-    ankerl::unordered_dense::set<std::string> reachable;
+    TransparentStringSet reachable;
     std::vector<std::string> queue;
     for (const auto& inc : direct->second)
     {
@@ -353,11 +354,11 @@ CollectReachableDependents(const std::string& startNode,
     return reachable;
 }
 
-static ankerl::unordered_dense::set<std::string>
+static TransparentStringSet
 CollectReachableIncludes(const std::string& root,
                          const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includes)
 {
-    ankerl::unordered_dense::set<std::string> reachable;
+    TransparentStringSet reachable;
     std::vector<std::string> queue;
     reachable.insert(root);
     queue.push_back(root);
@@ -381,7 +382,7 @@ CollectReachableIncludes(const std::string& root,
  * @brief Performs topological sorting via Kahn's algorithm over a reachable dependency subgraph.
  */
 static std::vector<std::string>
-SortReachableTopological(const ankerl::unordered_dense::set<std::string>& reachable,
+SortReachableTopological(const TransparentStringSet& reachable,
                          const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includes,
                          const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includedBy)
 {
@@ -467,7 +468,7 @@ std::vector<std::string> WorkspaceIncludeGraph::GetModuleClosure(std::string_vie
 
     // Pass 1 - ascend. Everything that (transitively) includes this file belongs to its module,
     // and the ones nothing includes are the module's entry points.
-    ankerl::unordered_dense::set<std::string> ascended;
+    TransparentStringSet ascended;
     std::vector<std::string> roots;
     std::vector<std::string> queue{normalized};
     ascended.insert(normalized);
@@ -498,7 +499,7 @@ std::vector<std::string> WorkspaceIncludeGraph::GetModuleClosure(std::string_vie
 
     // Pass 2 - descend. From each root, everything reachable through forward edges is part of
     // the same module.
-    ankerl::unordered_dense::set<std::string> closure;
+    TransparentStringSet closure;
     std::vector<std::string> descendQueue;
 
     for (const auto& root : roots)

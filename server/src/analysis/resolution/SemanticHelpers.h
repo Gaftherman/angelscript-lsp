@@ -312,7 +312,7 @@ template <typename RefLike, typename TargetLike>
     {
         return true;
     }
-    return typeConfig.registeredSymbols.contains(std::string(typeName));
+    return typeConfig.registeredSymbols.contains(typeName);
 }
 
 /**

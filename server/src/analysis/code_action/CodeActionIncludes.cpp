@@ -1,4 +1,5 @@
 #include "analysis/code_action/CodeActionInternal.h"
+#include "utils/TransparentHash.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -15,9 +16,9 @@ namespace angel_lsp::analysis::code_action
  * @param[in] table Symbol table.
  * @return Set of known document URIs.
  */
-static ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const analysis::SymbolTable& table)
+static TransparentStringSet CollectIndexedFileUris(const analysis::SymbolTable& table)
 {
-    ankerl::unordered_dense::set<std::string> indexedUris;
+    TransparentStringSet indexedUris;
     table.ForEachSymbol(
         [&indexedUris]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
@@ -41,7 +42,7 @@ static ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const an
  * @return Ranked candidates list sorted by edit distance.
  */
 static std::vector<TypoCandidate> RankIncludeCandidates(const std::string& includerPath, const std::string& rawPath,
-                                                        const ankerl::unordered_dense::set<std::string>& indexedUris,
+                                                        const TransparentStringSet& indexedUris,
                                                         const std::string& currentUri)
 {
     const std::string typedName = std::filesystem::path(rawPath).filename().generic_string();
@@ -53,7 +54,7 @@ static std::vector<TypoCandidate> RankIncludeCandidates(const std::string& inclu
     const std::string typedFolded = FoldCase(typedName);
     const size_t limit = SuggestionLimit(typedName.size());
     std::vector<TypoCandidate> ranked;
-    ankerl::unordered_dense::set<std::string> seen;
+    TransparentStringSet seen;
 
     for (const std::string& candidateUri : indexedUris)
     {
@@ -282,13 +283,13 @@ void TryAddSortAndCleanIncludesAction(const CodeActionQuery& query, std::vector<
     const size_t firstLine = includes.front().line;
     const size_t lastLine = includes.back().line;
 
-    ankerl::unordered_dense::set<std::string> docReferences;
+    TransparentStringSet docReferences;
     auto rootScope = query.scopeIndex.GetRoot(query.uri);
     CollectAllReferences(rootScope.get(), docReferences);
 
     std::vector<std::string> angledIncludes;
     std::vector<std::string> quotedIncludes;
-    ankerl::unordered_dense::set<std::string> seen;
+    TransparentStringSet seen;
     const IncludeRefCheckContext refCtx{std::string(query.uri), query.symbolTable, docReferences, query.allowedRoots};
 
     for (const auto& inc : includes)

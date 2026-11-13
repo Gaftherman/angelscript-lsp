@@ -1,6 +1,7 @@
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
+#include "utils/TransparentHash.h"
 
 #include <algorithm>
 #include <doctest/doctest.h>
@@ -301,7 +302,7 @@ TEST_CASE("SymbolTable - Published document snapshots keep module boundaries")
     table.AddSymbol(MakeSymbol(SymbolType::Class, "PeerType", peer));
     table.AddSymbol(MakeSymbol(SymbolType::Class, "ForeignType", foreign));
 
-    const ankerl::unordered_dense::set<std::string> module{own, peer};
+    const angel_lsp::TransparentStringSet module{own, peer};
     const auto snapshot = table.CreateAnalysisSnapshot({.uriStr = own, .allowedModuleFileUris = &module});
     REQUIRE(snapshot);
     const auto functions = snapshot->FindSymbols(name);

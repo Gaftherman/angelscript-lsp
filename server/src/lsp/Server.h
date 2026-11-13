@@ -29,6 +29,7 @@
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
 #include "utils/Timer.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
@@ -100,7 +101,7 @@ class Server
     [[nodiscard]] std::string EngineProfile() const;
     [[nodiscard]] std::vector<utils::ExcludedLineRange> ExcludedLineRanges(std::string_view text) const;
     [[nodiscard]] std::shared_ptr<const TransparentStringSet> DefinedWords() const;
-    bool SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words);
+    bool SetDefinedWordsFrom(std::string_view source, std::vector<std::string> words);
     [[nodiscard]] std::vector<std::string> IncludableFiles() const;
     [[nodiscard]] std::string_view ImplicitIncludeExtension() const noexcept;
     void SetOnBeforeCommitHook(OnBeforeCommitHook hook);
@@ -123,13 +124,13 @@ class Server
     [[nodiscard]] std::shared_ptr<const std::string> FindDocumentText(std::string_view uri) const;
     static std::string UriFromPath(std::string_view path);
     template <typename ResultT, typename FeatureFn>
-    ResultT ExecuteOnOpenDocument(const std::string& uriStr, bool featureEnabled, FeatureFn&& fn);
+    ResultT ExecuteOnOpenDocument(std::string_view uriStr, bool featureEnabled, FeatureFn&& fn);
     template <typename ResultT, typename FeatureFn>
-    ResultT ExecuteAtDocumentPosition(const std::string& uriStr, const lsp::Position& rawPos, bool featureEnabled,
+    ResultT ExecuteAtDocumentPosition(std::string_view uriStr, const lsp::Position& rawPos, bool featureEnabled,
                                       FeatureFn&& fn);
     template <typename FeatureFn>
     lsp::requests::TextDocument_Definition::Result
-    DispatchDefinitionQuery(const std::string& uriStr, const lsp::Position& position, FeatureFn&& fn);
+    DispatchDefinitionQuery(std::string_view uriStr, const lsp::Position& position, FeatureFn&& fn);
     template <typename ItemT> void EncodeItemRanges(ItemT& item) const;
     void EncodeIn(std::string_view text, lsp::Range& range) const;
     void EncodeIn(std::string_view text, lsp::Hover& hover) const;
@@ -145,7 +146,7 @@ class Server
     void EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols) const;
     void EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const;
     void EncodeAcrossDocuments(std::vector<lsp::CodeAction>& actions) const;
-    void EncodeRangesIn(const std::string& uri, std::vector<lsp::Range>& ranges) const;
+    void EncodeRangesIn(std::string_view uri, std::vector<lsp::Range>& ranges) const;
 
     void LogInfo(std::string_view message) const;
     void LogWarning(std::string_view message) const;
@@ -308,11 +309,11 @@ class Server
     analysis::rules::MixinFileCache m_serverMixinCache;
     std::atomic<bool> m_clearWorkerMixinCache{false};
     mutable std::mutex m_publishedForModulesMutex;
-    ankerl::unordered_dense::set<std::string> m_publishedForModules;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> m_publishedForModules;
     std::vector<ModuleView> m_modules;
     std::vector<std::string> m_discoveredPredefined;
     std::string m_effectivePredefined;
-    ankerl::unordered_dense::set<std::string> m_predefinedTransitiveIncludes;
+    TransparentStringSet m_predefinedTransitiveIncludes;
     std::string m_workspaceProgressToken;
     unsigned m_workspaceProgressCounter = 0;
 
@@ -326,7 +327,7 @@ class Server
     void EndWorkspaceProgress(const std::string& message);
     [[nodiscard]] int GetDocumentVersion(std::string_view uriStr) const;
     void ClearMixinCaches();
-    PreparedAnalysisSource PrepareAnalysisSource(const std::string& uriStr, const std::string& text) const;
+    PreparedAnalysisSource PrepareAnalysisSource(std::string_view uriStr, std::string_view text) const;
     [[nodiscard]] ModuleClaim ClaimFor(std::string_view normalizedPath) const;
     void AnalyzeConfiguredModules();
     [[nodiscard]] bool IsOpenElsewhere(std::string_view uriStr) const;
@@ -335,19 +336,18 @@ class Server
     void IndexConfiguredModules(parser::AngelScriptParser& parser);
     void SyncModuleIndexSymbols();
     void PurgeUnusedClosureFiles();
-    [[nodiscard]] ankerl::unordered_dense::set<std::string> CollectWantedClosurePaths() const;
-    [[nodiscard]] std::vector<std::string>
-    CollectStaleClosureUris(const ankerl::unordered_dense::set<std::string>& wantedPaths) const;
+    [[nodiscard]] TransparentStringSet CollectWantedClosurePaths() const;
+    [[nodiscard]] std::vector<std::string> CollectStaleClosureUris(const TransparentStringSet& wantedPaths) const;
     void CollectSharedSymbolsElsewhere(
         const ModuleView& owning,
         ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& outShared) const;
     [[nodiscard]] std::optional<analysis::SemanticAnalysisRequest::ModuleContext>
     ModuleContextFor(std::string_view uriStr) const;
     void RestartWorkspaceScan();
-    lsp::SemanticTokens ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text);
-    void UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text,
+    lsp::SemanticTokens ComputeAndCacheSemanticTokens(std::string_view uriStr, const std::string& text);
+    void UpdateSavedDocumentCaches(std::string_view uriStr, std::string_view text,
                                    const std::vector<utils::ExcludedLineRange>& excluded);
-    void HandleSavedInterfaceChange(const std::string& uriStr, bool interfaceChanged);
+    void HandleSavedInterfaceChange(std::string_view uriStr, bool interfaceChanged);
     void StartWorkspaceScan();
     void ReadWorkspaceFiles(const utils::StopFlag& stopToken);
     void RecoverFromScanFailure(const std::string& err);
@@ -403,18 +403,18 @@ class Server
                                                        std::span<const analysis::Diagnostic> diagnostics,
                                                        std::span<const utils::ExcludedLineRange> excluded) const;
     [[nodiscard]] std::optional<lsp::requests::TextDocument_Diagnostic::Result>
-    TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
+    TryGetCachedDiagnosticReport(std::string_view uriStr, size_t currentHash, int currentVersion,
                                  uint64_t closedRevision, const std::optional<std::string>& previousResultId);
-    [[nodiscard]] std::optional<uint64_t> ClosedDiagnosticRevision(const std::string& uriStr,
+    [[nodiscard]] std::optional<uint64_t> ClosedDiagnosticRevision(std::string_view uriStr,
                                                                    const std::string* source) const;
     std::string GenerateVirtualMixinDocument(std::string_view uri);
     void DidSavePredefinedFile(const std::string& uriStr, const std::string& text);
-    void ReanalyzeDependentsOnSave(const std::string& uriStr);
+    void ReanalyzeDependentsOnSave(std::string_view uriStr);
     void ReanalyzeClosedModuleDependents(std::string_view savedUriStr, const ModuleClaim& savedClaim,
-                                         const ankerl::unordered_dense::set<std::string>& closureSet);
+                                         const TransparentStringSet& closureSet);
     std::string ReadClosedDocumentContent(std::string_view uriStr);
     void DidOpenPredefinedFile(const DidOpenPredefinedRequest& req);
-    bool RestoreClosedModuleFile(const std::string& uriStr, const std::string& path);
+    bool RestoreClosedModuleFile(std::string_view uriStr, std::string_view path);
     lsp::requests::Workspace_ExecuteCommand::Result
     ExecuteFormatPredefinedStub(const std::optional<lsp::Array<lsp::LSPAny>>& args);
     lsp::requests::Workspace_ExecuteCommand::Result ExecuteListPredefinedStubs() const;
@@ -428,26 +428,26 @@ class Server
     void BuildIncludeGraphAndModules(const std::vector<std::string>& allScriptFiles,
                                      const std::vector<std::string>& roots, const utils::StopFlag& stopToken,
                                      parser::AngelScriptParser& parser);
-    bool HandleWatchedFileDeleted(const std::string& path, const std::string& uriStr, bool isPredefined,
+    bool HandleWatchedFileDeleted(std::string_view path, std::string_view uriStr, bool isPredefined,
                                   bool& stubSelectionInvalidated);
-    bool HandleWatchedFileChanged(const std::string& path, bool isPredefined, parser::AngelScriptParser& parser);
+    bool HandleWatchedFileChanged(std::string_view path, bool isPredefined, parser::AngelScriptParser& parser);
     void ReplaceDeletedPredefinedStub(parser::AngelScriptParser& parser);
     void RefreshOpenDocumentIncludes();
     static std::string CanonicalPathFromUri(std::string_view uriStr);
     std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, std::string_view uriStr);
-    std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
-    [[nodiscard]] std::optional<std::string> OccurrenceModuleFor(const std::string& uri) const;
+    std::optional<OpenDocument> LookupPreindexedFallback(std::string_view key);
+    [[nodiscard]] std::optional<std::string> OccurrenceModuleFor(std::string_view uri) const;
     features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);
-    std::optional<RenameContext> SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos);
+    std::optional<RenameContext> SetupRenameContext(std::string_view uriStr, const lsp::Position& rawPos);
     void InvalidateCreatedClosureFiles(const std::vector<std::string>& createdPaths);
     void ReanalyseOpenDocuments();
     std::vector<std::string> ComputeModuleClosure(std::string_view openPath) const;
-    ankerl::unordered_dense::set<std::string> ComputeModuleClosureUris(std::string_view uriStr) const;
+    TransparentStringSet ComputeModuleClosureUris(std::string_view uriStr) const;
     size_t IndexModuleClosure(std::string_view openUriStr, SyntaxRevisionCache* syntaxCache = nullptr);
     void ReleaseModuleClosure(std::string_view openUriStr);
     void IndexClosureFile(std::string_view path, parser::AngelScriptParser& parser,
                           SyntaxRevisionCache* syntaxCache = nullptr);
-    void ReindexTrackedClosureFile(const std::string& path, angel_lsp::parser::AngelScriptParser& parser);
+    void ReindexTrackedClosureFile(std::string_view path, angel_lsp::parser::AngelScriptParser& parser);
     void WithdrawClosedSnapshot(std::string_view uriStr);
     void PurgeClosureFile(std::string_view uriStr);
     void AppendIncludeDiagnostics(std::string_view uriStr, std::string_view text,
@@ -615,7 +615,7 @@ inline const analysis::CallGraphIndex& Server::GetCallGraph() const noexcept
 }
 
 template <typename ResultT, typename FeatureFn>
-ResultT Server::ExecuteOnOpenDocument(const std::string& uriStr, bool featureEnabled, FeatureFn&& fn)
+ResultT Server::ExecuteOnOpenDocument(std::string_view uriStr, bool featureEnabled, FeatureFn&& fn)
 {
     if (!featureEnabled)
     {
@@ -630,7 +630,7 @@ ResultT Server::ExecuteOnOpenDocument(const std::string& uriStr, bool featureEna
 }
 
 template <typename ResultT, typename FeatureFn>
-ResultT Server::ExecuteAtDocumentPosition(const std::string& uriStr, const lsp::Position& rawPos, bool featureEnabled,
+ResultT Server::ExecuteAtDocumentPosition(std::string_view uriStr, const lsp::Position& rawPos, bool featureEnabled,
                                           FeatureFn&& fn)
 {
     if (!featureEnabled)

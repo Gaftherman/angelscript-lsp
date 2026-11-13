@@ -1,6 +1,7 @@
 #include "lsp/Server.h"
 #include "lsp/services/ServerModuleUtils.h"
 #include "utils/IncludeResolver.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -13,7 +14,7 @@
 
 namespace angel_lsp
 {
-static void AppendFilteredMembers(const ankerl::unordered_dense::set<std::string>& members, std::string_view openPath,
+static void AppendFilteredMembers(const TransparentStringSet& members, std::string_view openPath,
                                   std::vector<std::string>& outClosure)
 {
     for (const auto& member : members)
@@ -94,9 +95,9 @@ std::vector<std::string> Server::ComputeModuleClosure(std::string_view openPath)
     return closure;
 }
 
-ankerl::unordered_dense::set<std::string> Server::CollectWantedClosurePaths() const
+TransparentStringSet Server::CollectWantedClosurePaths() const
 {
-    ankerl::unordered_dense::set<std::string> wantedCanonicalPaths;
+    TransparentStringSet wantedCanonicalPaths;
 
     for (const auto& openUri : GetDocumentStore().GetOpenUris())
     {
@@ -134,8 +135,7 @@ ankerl::unordered_dense::set<std::string> Server::CollectWantedClosurePaths() co
     return wantedCanonicalPaths;
 }
 
-std::vector<std::string>
-Server::CollectStaleClosureUris(const ankerl::unordered_dense::set<std::string>& wantedPaths) const
+std::vector<std::string> Server::CollectStaleClosureUris(const TransparentStringSet& wantedPaths) const
 {
     std::vector<std::string> toPurge;
     std::lock_guard<std::mutex> lock(m_closureMutex);
@@ -215,7 +215,7 @@ void Server::ReleaseModuleClosure(std::string_view openUriStr)
     std::vector<std::string> toPurge;
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        const auto closure = m_openDocumentClosures.find(std::string(openUriStr));
+        const auto closure = m_openDocumentClosures.find(openUriStr);
         if (closure == m_openDocumentClosures.end())
         {
             return;

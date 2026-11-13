@@ -15,7 +15,7 @@
 
 namespace angel_lsp
 {
-PreparedAnalysisSource Server::PrepareAnalysisSource(const std::string& uriStr, const std::string& text) const
+PreparedAnalysisSource Server::PrepareAnalysisSource(std::string_view uriStr, std::string_view text) const
 {
     if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
     {
@@ -31,9 +31,9 @@ PreparedAnalysisSource Server::PrepareAnalysisSource(const std::string& uriStr, 
     if (scan.excluded.empty() && scan.unsupported.empty())
     {
         static const auto empty = std::make_shared<const utils::PreprocessorScan>();
-        return {text, empty};
+        return {std::string(text), empty};
     }
-    auto parsed = scan.excluded.empty() ? text : utils::BlankExcludedLines(text, scan.excluded);
+    auto parsed = scan.excluded.empty() ? std::string(text) : utils::BlankExcludedLines(text, scan.excluded);
     return {std::move(parsed), std::make_shared<const utils::PreprocessorScan>(std::move(scan))};
 }
 

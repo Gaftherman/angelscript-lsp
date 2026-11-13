@@ -222,7 +222,7 @@ std::vector<CallSite> CollectCallsFromScopeTree(const Scope& rootScope)
     return calls;
 }
 
-void CallGraphIndex::ClearDocumentLocked(const std::string& fileUri)
+void CallGraphIndex::ClearDocumentLocked(std::string_view fileUri)
 {
     const auto docIt = m_byDocument.find(fileUri);
     if (docIt == m_byDocument.end())
@@ -233,7 +233,10 @@ void CallGraphIndex::ClearDocumentLocked(const std::string& fileUri)
     {
         if (const auto it = m_byCallee.find(call.callee); it != m_byCallee.end())
         {
-            it->second.erase(fileUri);
+            if (const auto doc = it->second.find(fileUri); doc != it->second.end())
+            {
+                it->second.erase(doc);
+            }
             if (it->second.empty())
             {
                 m_byCallee.erase(it);
@@ -241,7 +244,10 @@ void CallGraphIndex::ClearDocumentLocked(const std::string& fileUri)
         }
         if (const auto it = m_byCaller.find(call.caller); it != m_byCaller.end())
         {
-            it->second.erase(fileUri);
+            if (const auto doc = it->second.find(fileUri); doc != it->second.end())
+            {
+                it->second.erase(doc);
+            }
             if (it->second.empty())
             {
                 m_byCaller.erase(it);
@@ -267,7 +273,7 @@ void CallGraphIndex::SetDocumentCalls(const std::string& fileUri, std::vector<Ca
     m_byDocument[fileUri] = std::move(calls);
 }
 
-void CallGraphIndex::ClearDocument(const std::string& fileUri)
+void CallGraphIndex::ClearDocument(std::string_view fileUri)
 {
     std::unique_lock lock(m_mutex);
     ClearDocumentLocked(fileUri);

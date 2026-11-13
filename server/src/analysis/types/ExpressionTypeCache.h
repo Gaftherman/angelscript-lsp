@@ -1,6 +1,7 @@
 #pragma once
 
 #include "utils/Constants.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
@@ -118,7 +119,8 @@ struct ExpressionTypeCache
     /**
      * @brief Map of mixin type names to their expanded host class hierarchies.
      */
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>> expandedMixinHierarchies;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        expandedMixinHierarchies;
 
     /**
      * @brief Map of receiver AST node byte spans ((startByte << 32) | endByte) to resolved receiver types.

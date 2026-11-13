@@ -1,5 +1,7 @@
 #include "analysis/types/TypeConversionValues.h"
 
+#include "utils/TransparentHash.h"
+
 namespace angel_lsp::analysis
 {
 
@@ -19,7 +21,7 @@ std::string SingleArgumentType(const std::vector<ParameterInformation>& paramete
 namespace TypeConversionChecker
 {
 bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, size_t depth,
-                             ankerl::unordered_dense::set<std::string>& visitedEdges)
+                             TransparentStringSet& visitedEdges)
 {
     if (depth >= MAX_CONVERSION_DEPTH)
     {
@@ -34,7 +36,7 @@ bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, siz
 }
 
 bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t depth,
-                          ankerl::unordered_dense::set<std::string>& visitedEdges)
+                          TransparentStringSet& visitedEdges)
 {
     if (depth >= MAX_CONVERSION_DEPTH)
     {

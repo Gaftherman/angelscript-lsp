@@ -3,6 +3,7 @@
 #include "parser/SyntaxTree.h"
 #include "utils/IncludeResolver.h"
 #include "utils/Timer.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -51,7 +52,7 @@ void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string&
     }
 }
 
-void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
+void Server::ReanalyzeDependentsOnSave(std::string_view uriStr)
 {
     const std::string savedPath = CanonicalPathFromUri(uriStr);
     const ModuleClaim savedClaim = !savedPath.empty() ? ClaimFor(savedPath) : ModuleClaim{};
@@ -60,7 +61,7 @@ void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
     {
         closureFiles = GetIncludeGraph().GetModuleClosure(savedPath);
     }
-    ankerl::unordered_dense::set<std::string> closureSet(closureFiles.begin(), closureFiles.end());
+    TransparentStringSet closureSet(closureFiles.begin(), closureFiles.end());
 
     for (const auto& [openUri, openText] : GetDocumentStore().GetSnapshot())
     {
@@ -178,7 +179,7 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     HandleSavedInterfaceChange(uriStr, interfaceChanged);
 }
 
-void Server::UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text,
+void Server::UpdateSavedDocumentCaches(std::string_view uriStr, std::string_view text,
                                        const std::vector<utils::ExcludedLineRange>& excluded)
 {
     {
@@ -201,7 +202,7 @@ void Server::UpdateSavedDocumentCaches(const std::string& uriStr, const std::str
     IndexModuleClosure(uriStr);
 }
 
-void Server::HandleSavedInterfaceChange(const std::string& uriStr, bool interfaceChanged)
+void Server::HandleSavedInterfaceChange(std::string_view uriStr, bool interfaceChanged)
 {
     if (!m_modules.empty())
     {

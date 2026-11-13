@@ -12,7 +12,7 @@
 namespace angel_lsp
 {
 
-std::optional<RenameContext> Server::SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos)
+std::optional<RenameContext> Server::SetupRenameContext(std::string_view uriStr, const lsp::Position& rawPos)
 {
     if (!m_config.features.enableRename)
     {
@@ -25,7 +25,7 @@ std::optional<RenameContext> Server::SetupRenameContext(const std::string& uriSt
     }
 
     const auto loadedUris = m_predefinedManager.GetLoadedUris();
-    return RenameContext{*doc, std::unordered_set<std::string>(loadedUris.begin(), loadedUris.end()),
+    return RenameContext{*doc, TransparentStringSet(loadedUris.begin(), loadedUris.end()),
                          codec::Decode(*doc->text, GetPositionEncoding(), rawPos)};
 }
 
@@ -38,13 +38,11 @@ Server::HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_Pre
         return lsp::Null{};
     }
 
-    features::PrepareRenameRequest pr{ctx->doc.uri,
-                                      *ctx->doc.text,
-                                      ctx->decodedPosition,
-                                      m_symbolTable,
-                                      m_scopeIndex,
-                                      [&uris = ctx->predefinedUris](std::string_view uri) { return uris.contains(std::string(uri)); },
-                                      m_logger.get()};
+    features::PrepareRenameRequest pr{
+        ctx->doc.uri,         *ctx->doc.text,
+        ctx->decodedPosition, m_symbolTable,
+        m_scopeIndex,         [&uris = ctx->predefinedUris](std::string_view uri) { return uris.contains(uri); },
+        m_logger.get()};
     auto prep = features::PrepareRename(pr);
     if (prep.has_value())
     {
@@ -69,8 +67,7 @@ Server::HandleRequestsTextDocument_Rename(lsp::requests::TextDocument_Rename::Pa
                                req.newName,
                                m_symbolTable,
                                m_scopeIndex,
-                               [&uris = ctx->predefinedUris](std::string_view uri)
-                               { return uris.contains(std::string(uri)); },
+                               [&uris = ctx->predefinedUris](std::string_view uri) { return uris.contains(uri); },
                                m_logger.get()};
     auto edit = features::Rename(rr);
     if (edit.has_value())

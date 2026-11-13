@@ -160,9 +160,22 @@ void AnalysisScheduler::Schedule(ScheduleRequest request)
     m_cv.notify_one();
 }
 
-void AnalysisScheduler::Schedule(const std::string& uriStr, std::string text, bool force, parser::TreePtr tree)
+/**
+ * @brief Erases `key` from a transparently hashed container without building a `std::string`.
+ * @param[in,out] container Map or set keyed by `std::string` with `TransparentStringHash`.
+ * @param[in] key Key to remove; absent keys are ignored.
+ */
+template <typename Container> static void EraseByView(Container& container, std::string_view key)
 {
-    Schedule(ScheduleRequest{uriStr, std::move(text), force, std::move(tree), -1, 0, 0});
+    if (const auto it = container.find(key); it != container.end())
+    {
+        container.erase(it);
+    }
+}
+
+void AnalysisScheduler::Schedule(std::string_view uriStr, std::string text, bool force, parser::TreePtr tree)
+{
+    Schedule(ScheduleRequest{std::string(uriStr), std::move(text), force, std::move(tree), -1, 0, 0});
 }
 
 void AnalysisScheduler::ScheduleImmediate(ScheduleRequest request)
@@ -172,20 +185,20 @@ void AnalysisScheduler::ScheduleImmediate(ScheduleRequest request)
     m_cv.notify_one();
 }
 
-void AnalysisScheduler::ScheduleImmediate(const std::string& uriStr, std::string text, bool force, parser::TreePtr tree)
+void AnalysisScheduler::ScheduleImmediate(std::string_view uriStr, std::string text, bool force, parser::TreePtr tree)
 {
-    ScheduleImmediate(ScheduleRequest{uriStr, std::move(text), force, std::move(tree), -1, 0, 0});
+    ScheduleImmediate(ScheduleRequest{std::string(uriStr), std::move(text), force, std::move(tree), -1, 0, 0});
 }
 
-void AnalysisScheduler::MarkSaved(const std::string& uriStr, int version)
+void AnalysisScheduler::MarkSaved(std::string_view uriStr, int version)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_pending.erase(uriStr);
-    m_inFlight.erase(uriStr);
-    m_savedUris.insert(uriStr);
+    EraseByView(m_pending, uriStr);
+    EraseByView(m_inFlight, uriStr);
+    m_savedUris.emplace(uriStr);
     if (version >= 0)
     {
-        m_savedVersions[uriStr] = version;
+        m_savedVersions.insert_or_assign(std::string(uriStr), version);
     }
     if (m_currentlyAnalyzingUri == uriStr && (version < 0 || m_currentlyAnalyzing.version <= version))
     {
@@ -194,15 +207,15 @@ void AnalysisScheduler::MarkSaved(const std::string& uriStr, int version)
     UpdateActiveTasksLocked();
 }
 
-void AnalysisScheduler::Cancel(const std::string& uriStr)
+void AnalysisScheduler::Cancel(std::string_view uriStr)
 {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_pending.erase(uriStr);
-        m_inFlight.erase(uriStr);
-        m_savedUris.erase(uriStr);
-        m_savedVersions.erase(uriStr);
-        m_cancelledUris.insert(uriStr);
+        EraseByView(m_pending, uriStr);
+        EraseByView(m_inFlight, uriStr);
+        EraseByView(m_savedUris, uriStr);
+        EraseByView(m_savedVersions, uriStr);
+        m_cancelledUris.emplace(uriStr);
         if (m_currentlyAnalyzingUri == uriStr)
         {
             m_cancelCurrentAnalysis = true;
@@ -211,13 +224,13 @@ void AnalysisScheduler::Cancel(const std::string& uriStr)
     }
 }
 
-bool AnalysisScheduler::IsCancelled(const std::string& uriStr) const
+bool AnalysisScheduler::IsCancelled(std::string_view uriStr) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_cancelledUris.contains(uriStr);
 }
 
-bool AnalysisScheduler::ShouldDebouncePeer(const std::string& uriStr)
+bool AnalysisScheduler::ShouldDebouncePeer(std::string_view uriStr)
 {
     std::lock_guard<std::mutex> lock(m_peerMutex);
     const auto now = std::chrono::steady_clock::now();
@@ -228,13 +241,13 @@ bool AnalysisScheduler::ShouldDebouncePeer(const std::string& uriStr)
             return true;
         }
     }
-    m_peerTimestamps[uriStr] = now;
+    m_peerTimestamps.insert_or_assign(std::string(uriStr), now);
     return false;
 }
 
-void AnalysisScheduler::ClearPeerDebounce(const std::string& uriStr)
+void AnalysisScheduler::ClearPeerDebounce(std::string_view uriStr)
 {
     std::lock_guard<std::mutex> lock(m_peerMutex);
-    m_peerTimestamps.erase(uriStr);
+    EraseByView(m_peerTimestamps, uriStr);
 }
 } // namespace angel_lsp

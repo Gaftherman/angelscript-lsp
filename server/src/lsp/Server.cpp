@@ -34,7 +34,7 @@ std::shared_ptr<const TransparentStringSet> Server::DefinedWords() const
     return m_workspaceStore->GetDefinedWords();
 }
 
-bool Server::SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words)
+bool Server::SetDefinedWordsFrom(std::string_view source, std::vector<std::string> words)
 {
     return m_workspaceStore->SetDefinedWordsFrom(source, std::move(words));
 }

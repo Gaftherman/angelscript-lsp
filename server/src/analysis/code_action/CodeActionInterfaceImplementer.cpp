@@ -10,6 +10,7 @@
 #include "analysis/types/TypeSanitization.h"
 #include "config/ServerConfig.h"
 #include "parser/Primitives.h"
+#include "utils/TransparentHash.h"
 
 #include <cstdint>
 #include <span>
@@ -150,7 +151,7 @@ void TryAddImplementInterfaceFixes(const CodeActionQuery& query, std::vector<Cod
 
                 const auto missing = analysis::FindMissingInterfaceMethods(clsSym, query.symbolTable);
                 ankerl::unordered_dense::map<std::string, std::vector<analysis::Symbol>> byInterface;
-                ankerl::unordered_dense::set<std::string> blocked;
+                TransparentStringSet blocked;
                 for (const auto& entry : missing)
                 {
                     if (!entry.canOverride)

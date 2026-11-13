@@ -20,7 +20,7 @@
 namespace angel_lsp
 {
 
-std::optional<std::string> Server::OccurrenceModuleFor(const std::string& uri) const
+std::optional<std::string> Server::OccurrenceModuleFor(std::string_view uri) const
 {
     if (m_modules.empty())
     {
@@ -78,7 +78,7 @@ features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& do
 
 template <typename FeatureFn>
 lsp::requests::TextDocument_Definition::Result
-Server::DispatchDefinitionQuery(const std::string& uriStr, const lsp::Position& position, FeatureFn&& fn)
+Server::DispatchDefinitionQuery(std::string_view uriStr, const lsp::Position& position, FeatureFn&& fn)
 {
     if (!m_config.features.enableDefinition)
     {

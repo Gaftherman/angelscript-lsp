@@ -45,7 +45,7 @@ struct MixinExpansionContext
 {
     std::string_view cleanClass;
     const SymbolTable& symbolTable;
-    ankerl::unordered_dense::set<std::string>& visited;
+    TransparentStringSet& visited;
     std::vector<std::string>& result;
 };
 

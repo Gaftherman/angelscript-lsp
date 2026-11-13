@@ -151,7 +151,7 @@ class WorkspaceIncludeGraph
      * @param[in] filePath Path of the removed file; need not be normalized.
      * @return True if the graph had an entry for it.
      */
-    bool RemoveFile(const std::string& filePath);
+    bool RemoveFile(std::string_view filePath);
 
     /**
      * @brief Whether the graph has an entry for the given file.

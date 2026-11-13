@@ -26,7 +26,7 @@ void ModuleIndex::UpdateFile(std::string_view filePath, std::string_view content
 void ModuleIndex::RemoveFile(std::string_view filePath)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_includeGraph.RemoveFile(std::string(filePath));
+    m_includeGraph.RemoveFile(filePath);
 }
 
 std::vector<std::string> ModuleIndex::GetModuleClosure(std::string_view filePath) const
