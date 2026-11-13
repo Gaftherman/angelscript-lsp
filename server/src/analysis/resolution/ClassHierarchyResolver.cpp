@@ -446,7 +446,7 @@ std::vector<Symbol> FindOverriddenBaseMethodSymbols(std::string_view containerCl
     return result;
 }
 
-bool HierarchyIsFullyVisible(const std::string& typeName, const SymbolTable& symbolTable)
+bool HierarchyIsFullyVisible(std::string_view typeName, const SymbolTable& symbolTable)
 {
     for (const auto& ancestor : GetInheritedTypeHierarchy(typeName, symbolTable))
     {
@@ -569,7 +569,7 @@ void TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, con
     }
 }
 
-std::vector<std::string> GetAllRelatedClasses(const std::string& className, const SymbolTable& symbolTable)
+std::vector<std::string> GetAllRelatedClasses(std::string_view className, const SymbolTable& symbolTable)
 {
     std::vector<std::string> related;
     const std::string rootType = CleanBaseType(className);
@@ -593,7 +593,7 @@ std::vector<std::string> GetAllRelatedClasses(const std::string& className, cons
  * @param[in] symbolTable Symbol table containing class definitions and inheritance relations.
  * @return Vector of class names inheriting from className.
  */
-std::vector<std::string> GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable)
+std::vector<std::string> GetDerivedClasses(std::string_view className, const SymbolTable& symbolTable)
 {
     std::vector<std::string> derivedClasses;
     std::string rootType = CleanBaseType(className);
@@ -648,14 +648,14 @@ std::vector<std::string> GetDerivedClasses(const std::string& className, const S
     return derivedClasses;
 }
 
-void AddClassAndShortName(const std::string& c, ankerl::unordered_dense::set<std::string>& visited,
+void AddClassAndShortName(std::string_view c, ankerl::unordered_dense::set<std::string>& visited,
                           std::vector<std::string>& result)
 {
-    if (c.empty() || !visited.insert(c).second)
+    if (c.empty() || !visited.insert(std::string(c)).second)
     {
         return;
     }
-    result.push_back(c);
+    result.emplace_back(c);
     const std::string_view shortName = utils::LastScopeSegment(c);
     if (shortName != c)
     {
@@ -666,7 +666,7 @@ void AddClassAndShortName(const std::string& c, ankerl::unordered_dense::set<std
     }
 }
 
-bool HasNonPrivateMember(const std::string& typeName, const std::string& memberName, const SymbolTable& symbolTable)
+bool HasNonPrivateMember(std::string_view typeName, std::string_view memberName, const SymbolTable& symbolTable)
 {
     const auto syms = symbolTable.FindMemberSymbolPtr(typeName, memberName);
     if (!syms)
@@ -692,10 +692,10 @@ bool HasNonPrivateMember(const std::string& typeName, const std::string& memberN
     return false;
 }
 
-std::string FindDeclaringRootClass(const std::string& cleanClass, const std::string& memberName,
+std::string FindDeclaringRootClass(std::string_view cleanClass, std::string_view memberName,
                                    const SymbolTable& symbolTable)
 {
-    std::string rootClass = cleanClass;
+    std::string rootClass(cleanClass);
     const auto hierarchy = GetInheritedTypeHierarchy(cleanClass, symbolTable);
     for (size_t i = 1; i < hierarchy.size(); ++i)
     {
@@ -712,7 +712,7 @@ void ExpandMixinFromRuleIndex(const rules::RuleIndex& ruleIndex, const MixinExpa
     auto it = ruleIndex.hostClassesByMixin.find(ctx.cleanClass);
     if (it == ruleIndex.hostClassesByMixin.end() && utils::ContainsScopeSeparator(ctx.cleanClass))
     {
-        it = ruleIndex.hostClassesByMixin.find(std::string(LastScopeSegment(ctx.cleanClass)));
+        it = ruleIndex.hostClassesByMixin.find(LastScopeSegment(ctx.cleanClass));
     }
     if (it == ruleIndex.hostClassesByMixin.end())
     {
@@ -773,7 +773,7 @@ void ExpandMixinFromSymbolTable(const MixinExpansionContext& ctx)
         });
 }
 
-void ExpandMixinHostsAndSiblings(const std::string& cleanClass, const SymbolTable& symbolTable,
+void ExpandMixinHostsAndSiblings(std::string_view cleanClass, const SymbolTable& symbolTable,
                                  ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& result)
 {
     MixinExpansionContext ctx{cleanClass, symbolTable, visited, result};
@@ -787,7 +787,7 @@ void ExpandMixinHostsAndSiblings(const std::string& cleanClass, const SymbolTabl
     }
 }
 
-void CollectPrivateCompatibleClasses(const std::string& cleanClass, const SymbolTable& symbolTable,
+void CollectPrivateCompatibleClasses(std::string_view cleanClass, const SymbolTable& symbolTable,
                                      ankerl::unordered_dense::set<std::string>& visited,
                                      std::vector<std::string>& result)
 {
@@ -805,7 +805,7 @@ void CollectPrivateCompatibleClasses(const std::string& cleanClass, const Symbol
     ExpandMixinHostsAndSiblings(cleanClass, symbolTable, visited, result);
 }
 
-std::vector<std::string> GetCompatibleMemberClasses(const std::string& className, const std::string& memberName,
+std::vector<std::string> GetCompatibleMemberClasses(std::string_view className, std::string_view memberName,
                                                     AccessModifier access, const SymbolTable& symbolTable)
 {
     std::vector<std::string> result;
