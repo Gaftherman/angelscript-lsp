@@ -45,9 +45,9 @@ Server::BuildAnalysisRequest(std::string_view uriStr, std::string_view text, con
                              const utils::PreprocessorScan& preprocessing,
                              const angel_lsp::analysis::SymbolTable* customSymbolTable) const
 {
-    angel_lsp::analysis::SemanticAnalysisRequest request{customSymbolTable ? *customSymbolTable : m_symbolTable, std::string(uriStr),
-                                                         std::string(m_config.info.predefinedFileExtension),
-                                                         m_i18n.get()};
+    angel_lsp::analysis::SemanticAnalysisRequest request{
+        customSymbolTable ? *customSymbolTable : m_symbolTable, std::string(uriStr),
+        std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
 
     request.typeConfig = &m_config.types;
     request.engineProperties = &m_config.engine;
@@ -96,7 +96,8 @@ Server::ReplaceSymbolsFromTree(std::string_view uriStr, std::string_view text, c
         uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(std::string(uriStr));
         {
             std::lock_guard<std::mutex> lock(m_closureMutex);
-            if (const auto it = m_lastSavedInterfaceHash.find(std::string(uriStr)); it != m_lastSavedInterfaceHash.end())
+            if (const auto it = m_lastSavedInterfaceHash.find(std::string(uriStr));
+                it != m_lastSavedInterfaceHash.end())
             {
                 oldHash = it->second;
             }

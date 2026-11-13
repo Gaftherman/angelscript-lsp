@@ -75,8 +75,8 @@ const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(std::string_view ur
                                                              std::unique_ptr<analysis::SymbolTable>& outSnapshot) const
 {
     const auto moduleUris = ComputeModuleClosureUris(uriStr);
-    const bool sameInterface =
-        !staging || m_symbolTable.ComputeDocumentInterfaceHash(std::string(uriStr)) == staging->ComputeDocumentInterfaceHash(std::string(uriStr));
+    const bool sameInterface = !staging || m_symbolTable.ComputeDocumentInterfaceHash(std::string(uriStr)) ==
+                                               staging->ComputeDocumentInterfaceHash(std::string(uriStr));
     if (sameInterface && (moduleUris.empty() || m_config.modules.empty() ||
                           m_symbolTable.ContainsOnlyFiles(moduleUris, m_config.info.predefinedFileExtension)))
     {

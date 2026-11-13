@@ -121,7 +121,7 @@ class Server
                                  const std::function<void(std::string_view, int&)>& applyInt);
     [[nodiscard]] std::vector<std::string> IncludeAllowedRoots() const;
     [[nodiscard]] std::shared_ptr<const std::string> FindDocumentText(const std::string& uri) const;
-    static std::string UriFromPath(const std::string& path);
+    static std::string UriFromPath(std::string_view path);
     template <typename ResultT, typename FeatureFn>
     ResultT ExecuteOnOpenDocument(const std::string& uriStr, bool featureEnabled, FeatureFn&& fn);
     template <typename ResultT, typename FeatureFn>
@@ -431,7 +431,6 @@ class Server
     void ReplaceDeletedPredefinedStub(parser::AngelScriptParser& parser);
     void RefreshOpenDocumentIncludes();
     static std::string CanonicalPathFromUri(std::string_view uriStr);
-    static std::string UriFromPath(std::string_view path);
     std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, const std::string& uriStr);
     std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
     [[nodiscard]] std::optional<std::string> OccurrenceModuleFor(const std::string& uri) const;
@@ -472,8 +471,7 @@ class Server
     std::vector<analysis::Diagnostic> RunDocumentSemantics(analysis::SemanticAnalysisRequest baseReq,
                                                            double& outCheckMs, bool fromScheduler);
     void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
-    const analysis::SymbolTable* PrepareAnalysisSnapshot(std::string_view uriStr,
-                                                         const analysis::SymbolTable* staging,
+    const analysis::SymbolTable* PrepareAnalysisSnapshot(std::string_view uriStr, const analysis::SymbolTable* staging,
                                                          std::unique_ptr<analysis::SymbolTable>& outSnapshot) const;
     bool IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const;
     void CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vector<analysis::Diagnostic> diags);

@@ -52,8 +52,8 @@ void Server::CommitPredefinedIndex(std::string_view uri, std::string_view conten
 {
     m_scopeIndex.ClearDocument(std::string(uri));
     m_callGraph.ClearDocument(std::string(uri));
-    auto preindexedDoc =
-        std::make_shared<const document::Document>(document::DocumentSnapshot{std::string(uri), std::string(content), 0, 1}, std::move(tree));
+    auto preindexedDoc = std::make_shared<const document::Document>(
+        document::DocumentSnapshot{std::string(uri), std::string(content), 0, 1}, std::move(tree));
     m_predefinedManager.SetPreindexedDocument(uri, preindexedDoc);
     if (m_workspaceStore)
     {
@@ -92,8 +92,7 @@ PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(std::string_view uri,
     return PredefinedIndexTiming{parseMs, symMs, scopeMs};
 }
 
-void Server::ParserPredefined(std::string_view filePath, angel_lsp::parser::AngelScriptParser& parser,
-                              bool forceReload)
+void Server::ParserPredefined(std::string_view filePath, angel_lsp::parser::AngelScriptParser& parser, bool forceReload)
 {
     std::unordered_set<std::string> visited;
     ParserPredefinedInternal(filePath, parser, forceReload, visited);

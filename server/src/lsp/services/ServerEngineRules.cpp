@@ -70,8 +70,7 @@ static std::string TryResolveSiblingRulesForStub(std::string_view stubFilePath)
 }
 
 static std::string ResolveRulesPath(std::string_view configuredPath, std::span<const std::string> workspaceRoots,
-                                    std::string_view effectivePredefined,
-                                    std::span<const std::string> fallbackStubs)
+                                    std::string_view effectivePredefined, std::span<const std::string> fallbackStubs)
 {
     std::error_code ec;
     if (!configuredPath.empty())

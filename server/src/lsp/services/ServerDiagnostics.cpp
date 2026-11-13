@@ -30,9 +30,9 @@ void Server::PublishDiagnostics(std::string_view uriStr,
     });
 }
 
-std::vector<lsp::Diagnostic>
-Server::ToProtocolDiagnostics(std::string_view text, std::span<const angel_lsp::analysis::Diagnostic> diagnostics,
-                              std::span<const utils::ExcludedLineRange> excluded) const
+std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(std::string_view text,
+                                                           std::span<const angel_lsp::analysis::Diagnostic> diagnostics,
+                                                           std::span<const utils::ExcludedLineRange> excluded) const
 {
     std::vector<lsp::Diagnostic> converted;
     converted.reserve(diagnostics.size());
