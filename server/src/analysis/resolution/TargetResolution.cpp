@@ -924,7 +924,7 @@ static bool AssignScopedTargetFromSymbol(const analysis::Symbol& s, std::string_
         (s.type == analysis::SymbolType::Variable && s.containerKind == analysis::ContainerKind::Enum))
     {
         target.kind = TargetKind::EnumMember;
-        target.declaringEnum = FindRealDeclaringEnum(s, std::string(qualifierName), symbolTable);
+        target.declaringEnum = FindRealDeclaringEnum(s, qualifierName, symbolTable);
         target.qualifiedName = s.qualifiedName.empty() ? std::string(scopedText) : s.qualifiedName;
         return true;
     }
@@ -968,9 +968,9 @@ static bool AssignScopedTargetFromSymbol(const analysis::Symbol& s, std::string_
  * @return True if target was resolved.
  */
 static bool TryResolveScopedTargetNoAst(const ResolveTargetRequest& request, uint32_t identStartByte,
-                                        const std::string& nodeText, TargetDescriptor& target)
+                                        std::string_view nodeText, TargetDescriptor& target)
 {
-    std::string qualifierName = ExtractPrecedingQualifier(request.sourceCode, identStartByte);
+    std::string_view qualifierName = ExtractPrecedingQualifier(request.sourceCode, identStartByte);
     if (qualifierName.empty())
     {
         return false;
@@ -1008,12 +1008,12 @@ static bool TryResolveScopedTargetNoAst(const ResolveTargetRequest& request, uin
  * @param[out] target Target descriptor to populate.
  * @return True if target was resolved.
  */
-static bool TryResolveEnumOrScopedTarget(const ResolveTargetRequest& request, const std::string& nodeText,
+static bool TryResolveEnumOrScopedTarget(const ResolveTargetRequest& request, std::string_view nodeText,
                                          uint32_t identStartByte, TargetDescriptor& target)
 {
     request.symbolTable.ForEachSymbolInFile(
         request.uri,
-        [&]([[maybe_unused]] const std::string& qn, const std::vector<analysis::Symbol>& syms)
+        [&]([[maybe_unused]] std::string_view qn, const std::vector<analysis::Symbol>& syms)
         {
             for (const auto& s : syms)
             {
@@ -1054,7 +1054,7 @@ static bool TryResolveEnumOrScopedTarget(const ResolveTargetRequest& request, co
  * @return True if cursor is on an explicit member access expression.
  */
 static bool ResolveExplicitMemberAccessNoAst(const ResolveTargetRequest& request, const Scope* rootScope,
-                                             const std::string& nodeText, TargetDescriptor& target)
+                                             std::string_view nodeText, TargetDescriptor& target)
 {
     if (!rootScope)
     {
@@ -1089,7 +1089,7 @@ static bool ResolveExplicitMemberAccessNoAst(const ResolveTargetRequest& request
  * @param[in] nodeText Symbol identifier name.
  * @param[out] target Target descriptor to populate.
  */
-static void ResolveEnclosingClassMember(const ResolveTargetRequest& request, const std::string& nodeText,
+static void ResolveEnclosingClassMember(const ResolveTargetRequest& request, std::string_view nodeText,
                                         TargetDescriptor& target)
 {
     std::string enclosingClass = GetEnclosingClassName(request.symbolTable, request.uri, request.position.line);
@@ -1116,7 +1116,7 @@ static void ResolveEnclosingClassMember(const ResolveTargetRequest& request, con
  * @param[in] name Symbol name.
  * @return True if symbols or accessors are found.
  */
-static bool HasGlobalSymbolOrAccessor(const SymbolTable& table, const std::string& name)
+static bool HasGlobalSymbolOrAccessor(const SymbolTable& table, std::string_view name)
 {
     return table.FindSymbolsPtr(name) != nullptr || !analysis::FindGlobalPropertyAccessors(name, table).empty();
 }
@@ -1131,7 +1131,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
     uint32_t identStartByte = UINT32_MAX;
     uint32_t identEndByte = UINT32_MAX;
-    std::string nodeText = GetNodeTextAt(request.sourceCode, request.position, &identStartByte, &identEndByte);
+    std::string_view nodeText = GetNodeTextAt(request.sourceCode, request.position, &identStartByte, &identEndByte);
     if (nodeText.empty() || identStartByte == UINT32_MAX || !IsValidIdentifier(nodeText))
     {
         return std::nullopt;
@@ -1141,7 +1141,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
                                              : request.scopeIndex.GetRoot(request.uri);
 
     TargetDescriptor target;
-    target.name = nodeText;
+    target.name = std::string(nodeText);
     if (ResolveTargetFromCall(request, rootScope.get(), target, identStartByte))
     {
         return target;
