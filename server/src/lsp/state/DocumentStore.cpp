@@ -33,7 +33,7 @@ void DocumentStore::LinkDocument(std::string_view uri, std::shared_ptr<const doc
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (!clientUri.empty())
     {
-        m_clientUriByKey[std::string(uri)] = std::string(clientUri);
+        m_clientUriByKey.insert_or_assign(uri, std::string(clientUri));
     }
     const uint64_t gen = m_nextGeneration++;
     if (document)
@@ -42,7 +42,7 @@ void DocumentStore::LinkDocument(std::string_view uri, std::shared_ptr<const doc
         auto docWithVersion = std::make_shared<document::Document>(
             document::DocumentSnapshot{std::string(uri), document->text, version, gen, document->TransformedSource()},
             std::move(treeCopy));
-        m_documents.insert_or_assign(std::string(uri), std::move(docWithVersion));
+        m_documents.insert_or_assign(uri, std::move(docWithVersion));
     }
 }
 
@@ -54,16 +54,18 @@ void DocumentStore::UpdateDocument(std::string_view uri, std::string text, int v
     {
         const uint64_t gen = it->second ? it->second->generation : m_nextGeneration++;
         it->second = std::make_shared<const document::Document>(
-            document::DocumentSnapshot{std::string(uri), std::move(text), version, gen, std::move(transformedSource)},
+            document::DocumentSnapshot{it->second ? it->second->uri : std::string(uri), std::move(text), version, gen,
+                                       std::move(transformedSource)},
             std::move(tree));
     }
     else
     {
         const uint64_t gen = m_nextGeneration++;
         m_documents.insert_or_assign(
-            std::string(uri),
+            uri,
             std::make_shared<const document::Document>(
-                document::DocumentSnapshot{std::string(uri), std::move(text), version, gen, std::move(transformedSource)},
+                document::DocumentSnapshot{std::string(uri), std::move(text), version, gen,
+                                           std::move(transformedSource)},
                 std::move(tree)));
     }
 }
@@ -107,7 +109,7 @@ void DocumentStore::SetVersion(std::string_view uri, int version)
     {
         parser::TreePtr treeCopy = parser::CopyTree(it->second->tree.get());
         it->second = std::make_shared<const document::Document>(
-            document::DocumentSnapshot{std::string(uri), it->second->text, version, it->second->generation,
+            document::DocumentSnapshot{it->second->uri, it->second->text, version, it->second->generation,
                                        it->second->TransformedSource()},
             std::move(treeCopy));
     }
@@ -132,7 +134,7 @@ void DocumentStore::SetTree(std::string_view uri, parser::TreePtr tree)
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         it->second = std::make_shared<const document::Document>(
-            document::DocumentSnapshot{std::string(uri), it->second->text, it->second->version, it->second->generation},
+            document::DocumentSnapshot{it->second->uri, it->second->text, it->second->version, it->second->generation},
             std::move(tree));
     }
 }
@@ -150,7 +152,7 @@ std::string DocumentStore::GetClientUri(std::string_view uri) const
 void DocumentStore::SetClientUri(std::string_view uri, std::string_view clientUri)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
-    m_clientUriByKey[std::string(uri)] = std::string(clientUri);
+    m_clientUriByKey.insert_or_assign(uri, std::string(clientUri));
 }
 
 void DocumentStore::RemoveClientUri(std::string_view uri)

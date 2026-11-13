@@ -14,9 +14,10 @@ void ModuleIndex::UpdateFile(const UpdateFileRequest& request)
 }
 
 void ModuleIndex::UpdateFile(std::string_view filePath, std::string_view content,
-                             const std::vector<std::string>& searchDirectories)
+                             std::span<const std::string> searchDirectories)
 {
-    UpdateFile(UpdateFileRequest{std::string(filePath), content, searchDirectories, {}, {}});
+    UpdateFile(UpdateFileRequest{std::string(filePath), content,
+                                 std::vector<std::string>(searchDirectories.begin(), searchDirectories.end()), {}, {}});
 }
 
 void ModuleIndex::RemoveFile(std::string_view filePath)
@@ -34,7 +35,7 @@ std::vector<std::string> ModuleIndex::GetModuleClosure(std::string_view filePath
 void ModuleIndex::AssociateClosure(std::string_view openUri, std::vector<std::string> closureUris)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_openDocumentClosures[std::string(openUri)] = std::move(closureUris);
+    m_openDocumentClosures.insert_or_assign(openUri, std::move(closureUris));
 }
 
 std::vector<std::string> ModuleIndex::ReleaseClosure(std::string_view openUri)
@@ -75,7 +76,7 @@ std::vector<std::string> ModuleIndex::ReleaseClosure(std::string_view openUri)
 void ModuleIndex::SetClosureDocument(std::string_view uri, std::string content)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_closureDocuments[std::string(uri)] = std::move(content);
+    m_closureDocuments.insert_or_assign(uri, std::move(content));
 }
 
 bool ModuleIndex::HasClosureDocument(std::string_view uri) const
@@ -103,7 +104,7 @@ void ModuleIndex::PurgeClosureDocument(std::string_view uri)
 void ModuleIndex::SetIndexedUri(std::string_view path, std::string_view uri)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_indexedUriByPath[std::string(path)] = std::string(uri);
+    m_indexedUriByPath.insert_or_assign(path, std::string(uri));
 }
 
 std::optional<std::string> ModuleIndex::GetIndexedUri(std::string_view path) const

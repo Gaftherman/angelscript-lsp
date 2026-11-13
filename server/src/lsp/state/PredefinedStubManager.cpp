@@ -15,14 +15,14 @@ void PredefinedStubManager::RegisterStub(std::string_view path, std::string_view
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!path.empty())
     {
-        m_predefinedUriByPath[std::string(path)] = std::string(uri);
+        m_predefinedUriByPath.insert_or_assign(path, std::string(uri));
     }
     if (!canon.empty())
     {
         m_loadedCanonicalPaths.insert(canon);
     }
     m_predefinedUris.insert(std::string(uri));
-    m_predefinedDocuments[std::string(uri)] = std::make_shared<std::string>(std::move(content));
+    m_predefinedDocuments.insert_or_assign(uri, std::make_shared<std::string>(std::move(content)));
 }
 
 bool PredefinedStubManager::HasStub(std::string_view uri) const
@@ -44,14 +44,14 @@ std::optional<std::string> PredefinedStubManager::GetDocumentText(std::string_vi
 void PredefinedStubManager::SetDocumentText(std::string_view uri, std::string content)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_predefinedDocuments[std::string(uri)] = std::make_shared<std::string>(std::move(content));
+    m_predefinedDocuments.insert_or_assign(uri, std::make_shared<std::string>(std::move(content)));
     m_predefinedUris.insert(std::string(uri));
 }
 
 void PredefinedStubManager::SetPreindexedDocument(std::string_view uri, std::shared_ptr<const document::Document> doc)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_preindexedSnapshots[std::string(uri)] = std::move(doc);
+    m_preindexedSnapshots.insert_or_assign(uri, std::move(doc));
     m_predefinedUris.insert(std::string(uri));
 }
 
@@ -89,7 +89,7 @@ void PredefinedStubManager::SetUriForPath(std::string_view path, std::string_vie
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!path.empty())
     {
-        m_predefinedUriByPath[std::string(path)] = std::string(uri);
+        m_predefinedUriByPath.insert_or_assign(path, std::string(uri));
     }
     if (!canon.empty())
     {

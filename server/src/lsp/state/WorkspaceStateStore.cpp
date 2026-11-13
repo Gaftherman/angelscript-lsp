@@ -78,7 +78,7 @@ bool WorkspaceStateStore::SetDefinedWordsFrom(std::string_view source, std::vect
     }
     else
     {
-        m_definedWordsBySource[std::string(source)] = std::move(words);
+        m_definedWordsBySource.insert_or_assign(source, std::move(words));
     }
 
     for (const auto& [_, contributed] : m_definedWordsBySource)
@@ -122,7 +122,7 @@ std::vector<std::string> WorkspaceStateStore::GetAffectedDocuments(std::string_v
 }
 
 std::vector<std::string>
-WorkspaceStateStore::PermittedIncludeDirectories(const std::vector<std::string>& configuredStubPaths) const
+WorkspaceStateStore::PermittedIncludeDirectories(std::span<const std::string> configuredStubPaths) const
 {
     std::vector<std::string> roots;
     {

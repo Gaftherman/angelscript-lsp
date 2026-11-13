@@ -189,7 +189,7 @@ class WorkspaceStateStore
      * @return Vector of permitted directory paths.
      */
     [[nodiscard]] std::vector<std::string>
-    PermittedIncludeDirectories(const std::vector<std::string>& configuredStubPaths) const;
+    PermittedIncludeDirectories(std::span<const std::string> configuredStubPaths) const;
 
     /**
      * @brief Caches a pre-indexed immutable Document snapshot for a URI.

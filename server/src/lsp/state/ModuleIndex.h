@@ -91,7 +91,7 @@ class ModuleIndex
      * @param searchDirectories Search directories for includes.
      */
     void UpdateFile(std::string_view filePath, std::string_view content,
-                    const std::vector<std::string>& searchDirectories);
+                    std::span<const std::string> searchDirectories);
 
     /**
      * @brief Removes a file from the include graph.
