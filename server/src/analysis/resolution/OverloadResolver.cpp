@@ -101,7 +101,8 @@ static std::string FindRejectionReason(const Symbol& sym, std::span<const std::s
     {
         if (AreIncompatibleTemplateTypes(argumentTypes[i], sig.parameters[i].typeName))
         {
-            return "Template arg mismatch: '" + std::string(argumentTypes[i]) + "' vs '" + sig.parameters[i].typeName + "'";
+            return "Template arg mismatch: '" + std::string(argumentTypes[i]) + "' vs '" + sig.parameters[i].typeName +
+                   "'";
         }
     }
     return "Type conversion incompatible";

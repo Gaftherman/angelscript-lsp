@@ -540,8 +540,7 @@ bool MatchesCallArity(const FunctionSignature& sig, uint32_t argCount) noexcept
     return (argCount >= requiredParams) && (isVariadic || argCount <= maxParams);
 }
 
-static FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig,
-                                                   std::span<const std::string> argTypes,
+static FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig, std::span<const std::string> argTypes,
                                                    const SymbolTable& symbolTable)
 {
     const uint32_t argCount = static_cast<uint32_t>(argTypes.size());

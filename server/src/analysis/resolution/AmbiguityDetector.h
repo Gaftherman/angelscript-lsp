@@ -69,12 +69,10 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
  * @param[in] argIsLValue L-value flags.
  * @return EvaluatedCandidate if viable, otherwise std::nullopt.
  */
-std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym,
-                                                    std::span<const std::string_view> argumentTypes,
+std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span<const std::string_view> argumentTypes,
                                                     const SymbolTable& symbolTable,
                                                     const std::vector<bool>& argIsLValue);
-std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym,
-                                                    std::span<const std::string> argumentTypes,
+std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span<const std::string> argumentTypes,
                                                     const SymbolTable& symbolTable,
                                                     const std::vector<bool>& argIsLValue);
 

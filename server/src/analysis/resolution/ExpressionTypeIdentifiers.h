@@ -27,7 +27,7 @@ namespace angel_lsp::analysis
  * @param[in] symbolTable Symbol table to query.
  * @return Qualified enum type name, or empty string.
  */
-[[nodiscard]] std::string ResolveScopedEnumMember(std::string_view whole, const std::vector<Symbol>& scopeSymbols,
+[[nodiscard]] std::string ResolveScopedEnumMember(std::string_view whole, std::span<const Symbol> scopeSymbols,
                                                   const SymbolTable& symbolTable);
 
 /**
@@ -39,8 +39,8 @@ namespace angel_lsp::analysis
  * @return Resolved type name, or empty string.
  */
 [[nodiscard]] std::string ResolveScopedIdentifierType(std::string_view scopedText,
-                                                      const std::vector<Symbol>& wholeScopeSymbols,
-                                                      const std::vector<Symbol>& qualScopeSymbols,
+                                                      std::span<const Symbol> wholeScopeSymbols,
+                                                      std::span<const Symbol> qualScopeSymbols,
                                                       const SymbolTable& symbolTable);
 
 /**
@@ -60,7 +60,7 @@ namespace angel_lsp::analysis
  * @return Matching member symbols or property accessors, if found.
  */
 [[nodiscard]] std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(std::string_view name,
-                                                                         const std::vector<ContainerInfo>& containers,
+                                                                         std::span<const ContainerInfo> containers,
                                                                          const SymbolTable& symbolTable,
                                                                          ExpressionTypeCache* cache);
 
@@ -73,7 +73,7 @@ namespace angel_lsp::analysis
  * @return Inferred type name, or empty string.
  */
 [[nodiscard]] std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name,
-                                                                     const std::string& hostClass,
+                                                                     std::string_view hostClass,
                                                                      const SymbolTable& symbolTable,
                                                                      ExpressionTypeCache* cache);
 
@@ -83,7 +83,7 @@ namespace angel_lsp::analysis
  * @param[in] containers Enclosing container declarations.
  * @return Cleaned class/interface type name, or empty string.
  */
-[[nodiscard]] std::string ResolveThisType(std::string_view hostClass, const std::vector<ContainerInfo>& containers);
+[[nodiscard]] std::string ResolveThisType(std::string_view hostClass, std::span<const ContainerInfo> containers);
 
 /**
  * @brief Extracts type from resolved candidate symbols (variable, property, or accessor).
@@ -91,7 +91,7 @@ namespace angel_lsp::analysis
  * @param[in] symbolTable Symbol table to query.
  * @return Resolved cleaned type string, or empty string.
  */
-[[nodiscard]] std::string ExtractFirstSymbolTypeOrAccessor(const std::vector<Symbol>& syms,
+[[nodiscard]] std::string ExtractFirstSymbolTypeOrAccessor(std::span<const Symbol> syms,
                                                            const SymbolTable& symbolTable);
 
 } // namespace angel_lsp::analysis
