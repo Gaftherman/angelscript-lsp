@@ -22,16 +22,16 @@ std::optional<analysis::Symbol> ResolveOrMatchCandidate(std::vector<analysis::Sy
 {
     analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.uri,
                                             ctx.request.nodeIndex);
-    const auto declaredAtCursor =
-        std::find_if(symbols.begin(), symbols.end(),
-                     [&](const analysis::Symbol& s)
-                     {
-                         const auto& sel = s.selectionRange;
-                         return utils::CaseInsensitiveEquals(s.fileUri, ctx.request.uri) &&
-                                sel.startLine == ctx.queryLine && sel.endLine == ctx.queryLine &&
-                                ctx.request.position.character >= sel.startCharacter &&
-                                ctx.request.position.character <= sel.endCharacter;
-                     });
+    const auto declaredAtCursor = std::find_if(symbols.begin(), symbols.end(),
+                                               [&](const analysis::Symbol& s)
+                                               {
+                                                   const auto& sel = s.selectionRange;
+                                                   return utils::CaseInsensitiveEquals(s.fileUri, ctx.request.uri) &&
+                                                          sel.startLine == ctx.queryLine &&
+                                                          sel.endLine == ctx.queryLine &&
+                                                          ctx.request.position.character >= sel.startCharacter &&
+                                                          ctx.request.position.character <= sel.endCharacter;
+                                               });
     if (declaredAtCursor != symbols.end())
     {
         auto declared = *declaredAtCursor;

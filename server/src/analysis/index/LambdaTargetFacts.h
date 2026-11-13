@@ -63,8 +63,8 @@ struct LambdaParameterSite
  */
 struct LambdaSiteFact
 {
-    IndexedByteRange bytes;                     ///< Byte span of the lambda expression.
-    LambdaTargetFact target;                    ///< Syntactic target context describing where the lambda appears.
+    IndexedByteRange bytes;                      ///< Byte span of the lambda expression.
+    LambdaTargetFact target;                     ///< Syntactic target context describing where the lambda appears.
     std::vector<LambdaParameterSite> parameters; ///< Parameters in declaration order.
 };
 

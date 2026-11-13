@@ -891,8 +891,8 @@ static std::string FindHostClassInContainers(const std::vector<ContainerInfo>& c
 std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex& index,
                                              std::string_view sourceCode, const SymbolTable& symbolTable)
 {
-    return FindHostClassInContainers(
-        index.CollectLookupContainers(targetRange.startByte, targetRange.endByte, 0, sourceCode), symbolTable, nullptr);
+    return FindHostClassInContainers(index.CollectEnclosingContainers(targetRange.startByte, sourceCode), symbolTable,
+                                     nullptr);
 }
 
 std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex* index,
@@ -902,9 +902,8 @@ std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const
     {
         return "";
     }
-    return FindHostClassInContainers(
-        index->CollectLookupContainers(targetRange.startByte, targetRange.endByte, 0, sourceCode), symbolTable,
-        nullptr);
+    return FindHostClassInContainers(index->CollectEnclosingContainers(targetRange.startByte, sourceCode), symbolTable,
+                                     nullptr);
 }
 
 bool IsDestructorSymbol(const Symbol& sym)
