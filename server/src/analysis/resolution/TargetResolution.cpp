@@ -64,8 +64,8 @@ static std::string_view ExtractLineFromSource(std::string_view source, uint32_t 
  * @param[out] outEndByte Optional output end byte.
  * @return Token text or empty string if not an identifier.
  */
-static std::string_view GetNodeTextAt(std::string_view sourceCode, TargetPosition position, uint32_t* outStartByte = nullptr,
-                                      uint32_t* outEndByte = nullptr)
+static std::string_view GetNodeTextAt(std::string_view sourceCode, TargetPosition position,
+                                      uint32_t* outStartByte = nullptr, uint32_t* outEndByte = nullptr)
 {
     if (sourceCode.empty())
     {
@@ -133,8 +133,7 @@ static std::string_view GetNodeTextAt(std::string_view sourceCode, TargetPositio
  * @param[in] line 0-based line number.
  * @return Enclosing class name or empty string if not in a class.
  */
-static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, std::string_view uri,
-                                         uint32_t line)
+static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, std::string_view uri, uint32_t line)
 {
     return symbolTable.FindEnclosingClassName(uri, line);
 }
