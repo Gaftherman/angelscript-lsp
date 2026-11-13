@@ -127,7 +127,7 @@ void CountReferences(std::span<ReferenceCountTarget> targets, const TargetIndexM
  * @param[in] syms List of symbols.
  * @param[in,out] declRanges Output set of declaration coordinates.
  */
-void AddSymbolDeclRanges(const std::vector<Symbol>& syms, DeclRangeSet& declRanges);
+void AddSymbolDeclRanges(std::span<const Symbol> syms, DeclRangeSet& declRanges);
 
 /**
  * @brief Collects all declaration coordinates for a symbol and its compatible class variants.
@@ -138,7 +138,7 @@ void AddSymbolDeclRanges(const std::vector<Symbol>& syms, DeclRangeSet& declRang
  * @return Populated set of declaration coordinate tuples.
  */
 [[nodiscard]] DeclRangeSet CollectAllDeclRanges(
-    std::string_view symName, const std::vector<Symbol>& symGroup,
+    std::string_view symName, std::span<const Symbol> symGroup,
     const ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& compatibleClasses,
     const SymbolTable& symbolTable);
 

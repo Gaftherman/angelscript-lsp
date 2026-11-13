@@ -160,7 +160,7 @@ std::string FormatReferenceCount(size_t refCount, const i18n::I18n* i18n)
                            : i18n::FormatMessage(i18n, "codelens.references", "{} references", refCount);
 }
 
-void AddSymbolDeclRanges(const std::vector<Symbol>& syms, DeclRangeSet& declRanges)
+void AddSymbolDeclRanges(std::span<const Symbol> syms, DeclRangeSet& declRanges)
 {
     for (const auto& s : syms)
     {
@@ -178,21 +178,30 @@ void AddSymbolDeclRanges(const std::vector<Symbol>& syms, DeclRangeSet& declRang
 }
 
 DeclRangeSet CollectAllDeclRanges(
-    std::string_view symName, const std::vector<Symbol>& symGroup,
+    std::string_view symName, std::span<const Symbol> symGroup,
     const ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& compatibleClasses,
     const SymbolTable& symbolTable)
 {
     DeclRangeSet allDeclRanges;
-    AddSymbolDeclRanges(symbolTable.FindSymbols(symName), allDeclRanges);
+    if (const auto syms = symbolTable.FindSymbolsPtr(symName))
+    {
+        AddSymbolDeclRanges(*syms, allDeclRanges);
+    }
     for (const auto& c : compatibleClasses)
     {
-        AddSymbolDeclRanges(symbolTable.FindMemberSymbols(c, symName), allDeclRanges);
+        if (const auto memberSyms = symbolTable.FindMemberSymbolPtr(c, symName))
+        {
+            AddSymbolDeclRanges(*memberSyms, allDeclRanges);
+        }
     }
     for (const auto& s : symGroup)
     {
         if (!s.containerName.empty())
         {
-            AddSymbolDeclRanges(symbolTable.FindMemberSymbols(s.containerName, symName), allDeclRanges);
+            if (const auto memberSyms = symbolTable.FindMemberSymbolPtr(s.containerName, symName))
+            {
+                AddSymbolDeclRanges(*memberSyms, allDeclRanges);
+            }
         }
     }
     AddSymbolDeclRanges(symGroup, allDeclRanges);

@@ -22,7 +22,7 @@ namespace angel_lsp::analysis
  * @param[in] args Parsed argument information.
  * @return Pointer to best matching symbol, or nullptr.
  */
-static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candidateSymbols,
+static const Symbol* MatchConstructorOverload(std::span<const Symbol> candidateSymbols,
                                               const ExpressionTypeContext& ctx,
                                               std::span<const IndexedCallArgument> args)
 {
@@ -61,7 +61,7 @@ static const Symbol* MatchConstructorOverload(const std::vector<Symbol>& candida
 ResolvedCallee ResolveConstructorParameters(std::string_view declaredTypeName, uint32_t declaratorByteOffset,
                                             const ExpressionTypeContext& ctx, std::span<const IndexedCallArgument> args)
 {
-    std::string baseName = CleanBaseType(std::string(declaredTypeName));
+    std::string_view baseName = CleanBaseTypeView(declaredTypeName);
     if (baseName.empty())
     {
         return {};
