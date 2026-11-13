@@ -56,7 +56,7 @@ struct UserConversionMatch
  * @param[in] symbolTable Symbol table for constructor lookup.
  * @return True if converting constructor is available.
  */
-bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable);
+bool HasConvertingConstructor(std::string_view fromType, std::string_view toType, const SymbolTable& symbolTable);
 
 /**
  * @brief Checks if a type defines an implicit conversion method (`opImplConv` or `opImplCast`).
@@ -65,7 +65,7 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
  * @param[in] symbolTable Symbol table for method lookup.
  * @return Conversion match information.
  */
-UserConversionMatch CheckConversionMethod(const std::string& fromType, const std::string& toType,
+UserConversionMatch CheckConversionMethod(std::string_view fromType, std::string_view toType,
                                           const SymbolTable& symbolTable);
 
 /**
@@ -75,7 +75,7 @@ UserConversionMatch CheckConversionMethod(const std::string& fromType, const std
  * @param[in] symbolTable Symbol table for method lookup.
  * @return True if conversion method is available.
  */
-bool HasConversionMethod(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable);
+bool HasConversionMethod(std::string_view fromType, std::string_view toType, const SymbolTable& symbolTable);
 
 /**
  * @brief Checks if a user-defined conversion exists between two types.
@@ -84,7 +84,7 @@ bool HasConversionMethod(const std::string& fromType, const std::string& toType,
  * @param[in] symbolTable Symbol table for resolution.
  * @return Conversion match information.
  */
-UserConversionMatch CheckUserConversion(const std::string& fromType, const std::string& toType,
+UserConversionMatch CheckUserConversion(std::string_view fromType, std::string_view toType,
                                         const SymbolTable& symbolTable);
 
 /**
@@ -94,7 +94,7 @@ UserConversionMatch CheckUserConversion(const std::string& fromType, const std::
  * @param[in] symbolTable Symbol table for resolution.
  * @return True if converting constructor or conversion method exists.
  */
-bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable);
+bool HasUserConversion(std::string_view fromType, std::string_view toType, const SymbolTable& symbolTable);
 
 /**
  * @brief Recursively unwraps typedef aliases to their canonical underlying types.
@@ -110,21 +110,21 @@ std::string UnwrapTypedef(std::string_view typeName, const SymbolTable& symbolTa
  * @param[in] typeName Type name to inspect.
  * @return True if integer type.
  */
-bool IsIntegerType(const std::string& typeName);
+bool IsIntegerType(std::string_view typeName);
 
 /**
  * @brief Checks if a type name corresponds to an unsigned integer primitive.
  * @param[in] typeName Type name to inspect.
  * @return True if unsigned integer type.
  */
-bool IsUnsignedInteger(const std::string& typeName);
+bool IsUnsignedInteger(std::string_view typeName);
 
 /**
  * @brief Checks if a type name corresponds to a floating point primitive.
  * @param[in] typeName Type name to inspect.
  * @return True if floating point type.
  */
-bool IsFloatingPointType(const std::string& typeName);
+bool IsFloatingPointType(std::string_view typeName);
 
 /**
  * @brief Checks whether a target type matches any in an initializer list of candidate types.
@@ -148,7 +148,7 @@ bool CheckWideningTarget(std::string_view from, std::string_view to);
  * @param[in] toType Destination primitive type.
  * @return True if valid widening.
  */
-bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType);
+bool IsPrimitiveWidening(std::string_view fromType, std::string_view toType);
 
 /**
  * @brief Checks whether a conversion is a primitive narrowing conversion.
@@ -156,7 +156,7 @@ bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
  * @param[in] toType Destination primitive type.
  * @return True if valid narrowing.
  */
-bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType);
+bool IsPrimitiveNarrowing(std::string_view fromType, std::string_view toType);
 
 /**
  * @brief Checks whether a type name string carries a const modifier.

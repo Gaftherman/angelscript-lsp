@@ -13,8 +13,8 @@ namespace angel_lsp::analysis
  */
 struct MatchContext
 {
-    std::string cleanArg;
-    std::string cleanParam;
+    std::string_view cleanArg;
+    std::string_view cleanParam;
     bool argIsHandle = false;
     bool argIsConst = false;
     bool paramIsHandle = false;
@@ -41,7 +41,7 @@ struct MatchContext
  * @return Pointer to best matching symbol, or nullptr if none score positively.
  */
 [[nodiscard]] const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates,
-                                                     const std::vector<std::string>& argTypes,
+                                                     std::span<const std::string> argTypes,
                                                      const SymbolTable& symbolTable);
 
 /**

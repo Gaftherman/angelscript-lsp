@@ -84,7 +84,7 @@ static std::string FormatCandidateSignature(const Symbol& sym)
     return res;
 }
 
-static std::string FindRejectionReason(const Symbol& sym, const std::vector<std::string>& argumentTypes)
+static std::string FindRejectionReason(const Symbol& sym, std::span<const std::string_view> argumentTypes)
 {
     if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
     {
@@ -101,7 +101,7 @@ static std::string FindRejectionReason(const Symbol& sym, const std::vector<std:
     {
         if (AreIncompatibleTemplateTypes(argumentTypes[i], sig.parameters[i].typeName))
         {
-            return "Template arg mismatch: '" + argumentTypes[i] + "' vs '" + sig.parameters[i].typeName + "'";
+            return "Template arg mismatch: '" + std::string(argumentTypes[i]) + "' vs '" + sig.parameters[i].typeName + "'";
         }
     }
     return "Type conversion incompatible";
@@ -121,7 +121,7 @@ static void LogOverloadTelemetry(const OverloadLogRequest& req)
         {
             argsStr += ", ";
         }
-        argsStr += req.argumentTypes[i];
+        argsStr.append(req.argumentTypes[i]);
     }
     utils::MultiFileLogger::Instance().LogOverload(utils::MultiFileLogLevel::Info,
                                                    "Resolving '" + fnName + "' with args: (" + argsStr + ")");
@@ -208,7 +208,7 @@ static void PopulateWinner(OverloadMatchResult& result, EvaluatedCandidate cand)
 }
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
-                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
+                                        std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue)
 {
     OverloadMatchResult result;
@@ -266,9 +266,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
     return result;
 }
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
-                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue)
+static std::vector<const Symbol*> CandidatePtrs(const std::vector<Symbol>& candidates)
 {
     std::vector<const Symbol*> ptrs;
     ptrs.reserve(candidates.size());
@@ -276,7 +274,71 @@ OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
     {
         ptrs.push_back(&sym);
     }
-    return ResolveBestOverload(ptrs, argumentTypes, symbolTable, argIsLValue);
+    return ptrs;
+}
+
+static std::vector<std::string_view> ToViews(std::span<const std::string> argumentTypes)
+{
+    std::vector<std::string_view> views;
+    views.reserve(argumentTypes.size());
+    for (const auto& a : argumentTypes)
+    {
+        views.emplace_back(a);
+    }
+    return views;
+}
+
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
+                                        std::initializer_list<std::string_view> argumentTypes,
+                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
+{
+    const std::vector<std::string_view> args(argumentTypes);
+    return ResolveBestOverload(candidates, std::span<const std::string_view>(args), symbolTable, argIsLValue);
+}
+
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
+                                        std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue)
+{
+    const auto views = ToViews(argumentTypes);
+    return ResolveBestOverload(candidates, std::span<const std::string_view>(views), symbolTable, argIsLValue);
+}
+
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
+                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue)
+{
+    return ResolveBestOverload(candidates, std::span<const std::string>(argumentTypes), symbolTable, argIsLValue);
+}
+
+OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                        std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue)
+{
+    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
+}
+
+OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                        std::initializer_list<std::string_view> argumentTypes,
+                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
+{
+    const std::vector<std::string_view> args(argumentTypes);
+    return ResolveBestOverload(CandidatePtrs(candidates), std::span<const std::string_view>(args), symbolTable,
+                               argIsLValue);
+}
+
+OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                        std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue)
+{
+    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
+}
+
+OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue)
+{
+    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
 }
 
 } // namespace angel_lsp::analysis

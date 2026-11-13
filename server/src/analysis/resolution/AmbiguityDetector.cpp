@@ -153,7 +153,7 @@ bool IsArityCompatible(const ArityInfo& arity, uint32_t argCount)
 }
 
 static std::optional<std::vector<ArgumentConversion>>
-EvaluateCandidateConversions(const FunctionSignature& sig, const std::vector<std::string>& argumentTypes,
+EvaluateCandidateConversions(const FunctionSignature& sig, std::span<const std::string_view> argumentTypes,
                              const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
 {
     std::vector<ArgumentConversion> conversions;
@@ -180,7 +180,7 @@ EvaluateCandidateConversions(const FunctionSignature& sig, const std::vector<std
     return conversions;
 }
 
-std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std::vector<std::string>& argumentTypes,
+std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span<const std::string_view> argumentTypes,
                                                     const SymbolTable& symbolTable,
                                                     const std::vector<bool>& argIsLValue)
 {
@@ -210,6 +210,19 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std
     }
 
     return EvaluatedCandidate{&sym, std::move(*conversions), defaultArgs};
+}
+
+std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span<const std::string> argumentTypes,
+                                                    const SymbolTable& symbolTable,
+                                                    const std::vector<bool>& argIsLValue)
+{
+    std::vector<std::string_view> views;
+    views.reserve(argumentTypes.size());
+    for (const auto& a : argumentTypes)
+    {
+        views.emplace_back(a);
+    }
+    return EvaluateCandidate(sym, views, symbolTable, argIsLValue);
 }
 
 bool IsStrictlyBetter(const EvaluatedCandidate& a, const EvaluatedCandidate& b)
@@ -298,7 +311,7 @@ std::vector<EvaluatedCandidate> FilterNonDominatedCandidates(const std::vector<E
 }
 
 bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
-                            const std::vector<std::string>& argumentTypes)
+                            std::span<const std::string_view> argumentTypes)
 {
     if (nonDominated.size() <= 1)
     {
@@ -306,7 +319,7 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
     }
 
     const bool anyArgumentUnknown = std::any_of(argumentTypes.begin(), argumentTypes.end(),
-                                                [](const std::string& argType)
+                                                [](std::string_view argType)
                                                 {
                                                     const std::string_view bare = CleanBaseTypeView(argType);
                                                     return bare.empty() || bare == parser::keywords::Auto ||
@@ -325,6 +338,18 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
         }
     }
     return false;
+}
+
+bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
+                            std::span<const std::string> argumentTypes)
+{
+    std::vector<std::string_view> views;
+    views.reserve(argumentTypes.size());
+    for (const auto& a : argumentTypes)
+    {
+        views.emplace_back(a);
+    }
+    return CheckOverloadAmbiguity(nonDominated, views);
 }
 
 } // namespace angel_lsp::analysis

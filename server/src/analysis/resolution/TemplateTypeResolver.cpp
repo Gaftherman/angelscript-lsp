@@ -235,7 +235,7 @@ std::string FindOpIndexInHierarchy(const std::string& owner, const std::string& 
     {
         if (!indexArgType.empty())
         {
-            auto match = ResolveBestOverload(candidates, {std::string(indexArgType)}, symbolTable);
+            auto match = ResolveBestOverload(candidates, {indexArgType}, symbolTable);
             bestSym = match.bestCandidate;
         }
         if (!bestSym)

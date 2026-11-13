@@ -53,8 +53,8 @@
     "lots": [
       { "id": "C1", "title": "checkers: scope lookup and accessor names", "scope": ["server/src/analysis/checkers"], "status": "done", "before": 85, "after": 69, "commit": "8891ebf1" },
       { "id": "R1", "title": "class hierarchy and scope lookup params", "scope": ["analysis/resolution/ClassHierarchyResolver.*", "analysis/resolution/ScopeSymbolLookup.*"], "status": "done", "before": 136, "after": 119, "commit": "d55c8a85" },
-      { "id": "R2", "title": "target resolution", "scope": ["analysis/resolution/TargetResolution.*"], "status": "done", "before": 101, "after": 68, "commit": "a4b0b6fd" },
-      { "id": "R3", "title": "overloads and conversions", "scope": ["OverloadTypeConversions.*", "ConversionRankingEngine.*", "OverloadResolver.*", "AmbiguityDetector.*"], "status": "active", "before": 121 },
+      { "id": "R2", "title": "target resolution", "scope": ["analysis/resolution/TargetResolution.*"], "status": "done", "before": 101, "after": 67, "commit": "a4b0b6fd" },
+      { "id": "R3", "title": "overloads and conversions", "scope": ["OverloadTypeConversions.*", "ConversionRankingEngine.*", "OverloadResolver.*", "AmbiguityDetector.*"], "status": "active", "before": 95 },
       { "id": "R4", "title": "expression type resolver", "scope": ["analysis/resolution/ExpressionType*"], "status": "pending" },
       { "id": "R5", "title": "templates, callables, properties, mixins, interfaces", "scope": ["TemplateTypeResolver.*", "CallableAndLambdaResolver.*", "PropertyAndDelegateResolver.*", "MixinInclusion.*", "InterfaceImplementation.*"], "status": "pending" },
       { "id": "R6", "title": "hover, inlay and reference resolution", "scope": ["HoverResolution*", "Inlay*", "Reference*"], "status": "pending" },

@@ -30,7 +30,7 @@ static bool StripReferenceSuffix(std::string& s)
 }
 
 static bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBinding& binding,
-                                        const std::string& fromType, std::string_view arrayTypeName = {})
+                                        std::string_view fromType, std::string_view arrayTypeName = {})
 {
     if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
     {
@@ -51,7 +51,7 @@ static bool MatchesConstructorParameter(const FunctionSignature& sig, const Temp
 }
 
 static bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms, const TemplateBinding& binding,
-                                 const std::string& fromType, std::string_view arrayTypeName = {})
+                                 std::string_view fromType, std::string_view arrayTypeName = {})
 {
     if (!syms)
     {
@@ -90,7 +90,7 @@ bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
         std::string_view vb = bArgs[i];
         TrimTypeWhitespace(va);
         TrimTypeWhitespace(vb);
-        if (!IsSameType(std::string(va), std::string(vb)))
+        if (!IsSameType(va, vb))
         {
             return false;
         }
@@ -168,7 +168,7 @@ bool HasHandleModifier(std::string_view typeName)
     return IsHandleTypeView(typeName);
 }
 
-bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+bool HasConvertingConstructor(std::string_view fromType, std::string_view toType, const SymbolTable& symbolTable)
 {
     const std::string cleanTo = NormalizeType(toType, symbolTable.GetDefaultArrayType());
     if (cleanTo.empty() || IsCorePrimitive(cleanTo))
@@ -189,7 +189,7 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
                                                          fromType, defaultArrayType);
 }
 
-UserConversionMatch CheckConversionMethod(const std::string& fromType, const std::string& toType,
+UserConversionMatch CheckConversionMethod(std::string_view fromType, std::string_view toType,
                                           const SymbolTable& symbolTable)
 {
     UserConversionMatch bestMatch;
@@ -244,12 +244,12 @@ UserConversionMatch CheckConversionMethod(const std::string& fromType, const std
     return bestMatch;
 }
 
-bool HasConversionMethod(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+bool HasConversionMethod(std::string_view fromType, std::string_view toType, const SymbolTable& symbolTable)
 {
     return CheckConversionMethod(fromType, toType, symbolTable).viable;
 }
 
-UserConversionMatch CheckUserConversion(const std::string& fromType, const std::string& toType,
+UserConversionMatch CheckUserConversion(std::string_view fromType, std::string_view toType,
                                         const SymbolTable& symbolTable)
 {
     if (fromType.empty() || toType.empty())
@@ -268,7 +268,7 @@ UserConversionMatch CheckUserConversion(const std::string& fromType, const std::
     return UserConversionMatch{};
 }
 
-bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+bool HasUserConversion(std::string_view fromType, std::string_view toType, const SymbolTable& symbolTable)
 {
     return CheckUserConversion(fromType, toType, symbolTable).viable;
 }
@@ -316,19 +316,19 @@ std::string UnwrapTypedef(std::string_view typeName, const SymbolTable& symbolTa
     return rebuilt + ">";
 }
 
-bool IsIntegerType(const std::string& typeName)
+bool IsIntegerType(std::string_view typeName)
 {
     return IsIntegerPrimitive(CleanBaseTypeView(typeName));
 }
 
-bool IsUnsignedInteger(const std::string& typeName)
+bool IsUnsignedInteger(std::string_view typeName)
 {
     const std::string_view normalized = CleanBaseTypeView(typeName);
     return normalized == "uint" || normalized == "uint8" || normalized == "uint16" || normalized == "uint32" ||
            normalized == "uint64";
 }
 
-bool IsFloatingPointType(const std::string& typeName)
+bool IsFloatingPointType(std::string_view typeName)
 {
     return IsFloatingPointPrimitive(CleanBaseTypeView(typeName));
 }
@@ -372,7 +372,7 @@ bool CheckWideningTarget(std::string_view from, std::string_view to)
     return from == "float" && to == "double";
 }
 
-bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
+bool IsPrimitiveWidening(std::string_view fromType, std::string_view toType)
 {
     const std::string_view from = CleanBaseTypeView(fromType);
     const std::string_view to = CleanBaseTypeView(toType);
@@ -385,7 +385,7 @@ bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
     return CheckWideningTarget(from, to);
 }
 
-bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType)
+bool IsPrimitiveNarrowing(std::string_view fromType, std::string_view toType)
 {
     const std::string_view from = CleanBaseTypeView(fromType);
     const std::string_view to = CleanBaseTypeView(toType);
@@ -482,7 +482,7 @@ static bool CheckClassSymbolListSupport(const Symbol& sym, const SymbolTable& sy
     return HasListConstructorMember(sym.qualifiedName, sym.name, symbolTable);
 }
 
-static bool ClassAcceptsInitializerList(const std::string& cleanType, const SymbolTable& symbolTable)
+static bool ClassAcceptsInitializerList(std::string_view cleanType, const SymbolTable& symbolTable)
 {
     const auto toSyms = symbolTable.FindMemberSymbolPtr(cleanType, cleanType);
     if (toSyms)
@@ -531,7 +531,7 @@ bool ParameterAcceptsInitializerList(const ParameterInformation& param, const Sy
         {
             return true;
         }
-        return symbolTable ? ClassAcceptsInitializerList(std::string(*templateName), *symbolTable) : false;
+        return symbolTable ? ClassAcceptsInitializerList(*templateName, *symbolTable) : false;
     }
 
     if (cleanType == effectiveArrayName)

@@ -64,7 +64,7 @@ static bool ParamAcceptsHandleConversion(const ParameterInformation& param, cons
  * @param[in] symbolTable Symbol or grammar symbol.
  * @return Found item if present; std::nullopt otherwise.
  */
-static std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
+static std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(std::string_view argType,
                                                                       const ParameterInformation& param,
                                                                       const SymbolTable& symbolTable)
 {
@@ -400,7 +400,7 @@ static ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContex
                                   static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
 
-    const auto isNamedAndUnresolved = [&ctx](const std::string& typeName)
+    const auto isNamedAndUnresolved = [&ctx](std::string_view typeName)
     {
         if (typeName.empty() || IsCorePrimitive(typeName) || typeName == ctx.stringTypeName)
         {
@@ -471,7 +471,7 @@ static ArgumentConversion AdjustForLValueConstraint(ArgumentConversion conv, boo
     return conv;
 }
 
-ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const ParameterInformation& param,
+ArgumentConversion EvaluateArgumentConversion(std::string_view argType, const ParameterInformation& param,
                                               const SymbolTable& symbolTable, bool argIsLValue)
 {
     if (auto specialScore = EvaluateSpecialArgumentMatch(argType, param, symbolTable))
@@ -513,7 +513,7 @@ ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const 
     return AdjustForLValueConstraint(conv, isMutableRef || IsOutParameter(param), argIsLValue);
 }
 
-int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable,
+int ScoreArgumentMatch(std::string_view argType, const ParameterInformation& param, const SymbolTable& symbolTable,
                        bool argIsLValue)
 {
     return EvaluateArgumentConversion(argType, param, symbolTable, argIsLValue).legacyScore;
@@ -541,7 +541,7 @@ bool MatchesCallArity(const FunctionSignature& sig, uint32_t argCount) noexcept
 }
 
 static FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig,
-                                                   const std::vector<std::string>& argTypes,
+                                                   std::span<const std::string> argTypes,
                                                    const SymbolTable& symbolTable)
 {
     const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
@@ -569,7 +569,7 @@ static FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig,
     return rank;
 }
 
-const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates, const std::vector<std::string>& argTypes,
+const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates, std::span<const std::string> argTypes,
                                        const SymbolTable& symbolTable)
 {
     const Symbol* best = nullptr;

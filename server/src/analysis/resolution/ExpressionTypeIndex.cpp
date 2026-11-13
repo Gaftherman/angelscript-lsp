@@ -34,7 +34,7 @@ std::string FindIndexedGetterType(const std::vector<Symbol>& accessors, const Sy
     }
     if (symbolTable && !indexArgType.empty())
     {
-        auto match = ResolveBestOverload(getters, {std::string(indexArgType)}, *symbolTable);
+        auto match = ResolveBestOverload(getters, {indexArgType}, *symbolTable);
         if (match.bestCandidate)
         {
             return CleanExpressionType(match.bestCandidate->GetFunction().returnType);

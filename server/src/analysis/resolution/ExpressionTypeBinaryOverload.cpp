@@ -66,7 +66,7 @@ static BinaryOverloadResult ResolveBinaryOverloadMatch(const std::string& typeNa
     }
     if (!candidates.empty())
     {
-        auto match = ResolveBestOverload(candidates, {argType}, symbolTable);
+        auto match = ResolveBestOverload(candidates, {std::string_view(argType)}, symbolTable);
         const Symbol* best = match.bestCandidate ? match.bestCandidate : match.priorityCandidate;
         if (best && std::holds_alternative<FunctionSignature>(best->signature))
         {

@@ -304,7 +304,7 @@ class OverloadResolver
  * @param[in] argIsLValue Whether argument is an L-value.
  * @return Formal ArgumentConversion structure.
  */
-ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const ParameterInformation& param,
+ArgumentConversion EvaluateArgumentConversion(std::string_view argType, const ParameterInformation& param,
                                               const SymbolTable& symbolTable, bool argIsLValue = true);
 
 /**
@@ -315,7 +315,7 @@ ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const 
  * @param argIsLValue Optional flag indicating if argument is an L-value.
  * @return Penalty score integer (0 = exact, >= 999 = incompatible).
  */
-int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable,
+int ScoreArgumentMatch(std::string_view argType, const ParameterInformation& param, const SymbolTable& symbolTable,
                        bool argIsLValue = true);
 
 /**
@@ -326,6 +326,18 @@ int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& p
  * @param argIsLValue Optional flags indicating whether each argument expression is an L-value.
  * @return OverloadMatchResult containing the best candidate and match metrics.
  */
+OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                        std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue = {});
+
+OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                        std::initializer_list<std::string_view> argumentTypes,
+                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue = {});
+
+OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                        std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue = {});
+
 OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue = {});
@@ -338,6 +350,18 @@ OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
  * @param argIsLValue Optional flags indicating whether each argument expression is an L-value.
  * @return OverloadMatchResult containing the best candidate and match metrics.
  */
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
+                                        std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue = {});
+
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
+                                        std::initializer_list<std::string_view> argumentTypes,
+                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue = {});
+
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
+                                        std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue = {});
+
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue = {});
@@ -355,7 +379,7 @@ bool HasSameParameterList(const Symbol& left, const Symbol& right);
  */
 bool HasConstModifier(std::string_view typeName);
 
-bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType);
+bool IsPrimitiveWidening(std::string_view fromType, std::string_view toType);
 
 /**
  * @brief Checks whether fromType to toType is a valid primitive narrowing or cross conversion.
@@ -363,7 +387,7 @@ bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
  * @param toType Destination primitive type.
  * @return True if narrowing conversion is valid.
  */
-bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType);
+bool IsPrimitiveNarrowing(std::string_view fromType, std::string_view toType);
 
 /**
  * @brief Checks whether a parameter accepts wildcard types (? or variable arguments).
@@ -388,7 +412,7 @@ struct EvaluatedCandidate
 struct OverloadLogRequest
 {
     std::span<const Symbol* const> candidates;
-    const std::vector<std::string>& argumentTypes;
+    std::span<const std::string_view> argumentTypes;
     const OverloadMatchResult& result;
     const std::vector<EvaluatedCandidate>& evaluated;
 };

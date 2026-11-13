@@ -57,7 +57,9 @@ std::vector<EvaluatedCandidate> FilterNonDominatedCandidates(const std::vector<E
  * @return True if ambiguity exists.
  */
 bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
-                            const std::vector<std::string>& argumentTypes);
+                            std::span<const std::string_view> argumentTypes);
+bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
+                            std::span<const std::string> argumentTypes);
 
 /**
  * @brief Scores and evaluates a candidate symbol against given argument types.
@@ -67,7 +69,12 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
  * @param[in] argIsLValue L-value flags.
  * @return EvaluatedCandidate if viable, otherwise std::nullopt.
  */
-std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std::vector<std::string>& argumentTypes,
+std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym,
+                                                    std::span<const std::string_view> argumentTypes,
+                                                    const SymbolTable& symbolTable,
+                                                    const std::vector<bool>& argIsLValue);
+std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym,
+                                                    std::span<const std::string> argumentTypes,
                                                     const SymbolTable& symbolTable,
                                                     const std::vector<bool>& argIsLValue);
 
