@@ -9,6 +9,7 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "config/ServerConfig.h"
 
+#include <span>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -27,7 +28,7 @@ namespace angel_lsp::analysis
  * @return Best matching symbol if resolution succeeds; std::nullopt otherwise.
  */
 [[nodiscard]] std::optional<Symbol> ResolveCallOverload(uint32_t startByte, uint32_t endByte,
-                                                        const std::vector<Symbol>& candidates,
+                                                        std::span<const Symbol> candidates,
                                                         const ExpressionTypeContext& ctx);
 
 /**

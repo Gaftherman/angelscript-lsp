@@ -41,7 +41,7 @@ bool IsFunctionHandleTargetName(std::string_view targetName, std::span<const Sym
 
 std::string ResolveUnaryMinus(std::string_view operandType)
 {
-    const std::string_view clean = CleanExpressionTypeView(operandType);
+    const std::string_view clean = CleanBaseTypeView(operandType);
     if (clean == "uint" || clean == "uint32")
     {
         return "int";
@@ -75,7 +75,7 @@ std::string ResolveUnaryHandle(bool isFunctionTarget, std::string_view operandTy
     {
         return {};
     }
-    const std::string_view clean = CleanExpressionTypeView(operandType);
+    const std::string_view clean = CleanBaseTypeView(operandType);
     return IsHandleTypeView(clean) ? std::string(clean) : std::string(clean) + "@";
 }
 

@@ -106,7 +106,9 @@ std::string FormatLambdaSignature(uint32_t lambdaStartByte, uint32_t lambdaEndBy
         size_t closeParen = span.find(')', openParen);
         if (openParen != std::string_view::npos && closeParen != std::string_view::npos && closeParen >= openParen)
         {
-            return "(anonymous function) function" + std::string(span.substr(openParen, closeParen - openParen + 1));
+            std::string result = "(anonymous function) function";
+            result.append(span.substr(openParen, closeParen - openParen + 1));
+            return result;
         }
     }
     return "(anonymous function) function()";

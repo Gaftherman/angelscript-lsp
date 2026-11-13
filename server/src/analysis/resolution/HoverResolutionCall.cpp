@@ -47,7 +47,7 @@ std::vector<Symbol> CollectReceiverMemberSymbols(std::string_view receiverTypeNa
                                                  const SymbolTable& symbolTable)
 {
     std::vector<Symbol> memberSymbols;
-    auto hierarchy = analysis::GetInheritedTypeHierarchy(std::string(receiverTypeName), symbolTable);
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, symbolTable);
     for (const auto& typeName : hierarchy)
     {
         std::string qualifiedMember = utils::JoinScopedName(typeName, memberName);
@@ -192,7 +192,7 @@ std::string ResolveConstructorSignature(uint32_t nodeStartByte, uint32_t nodeEnd
     return "";
 }
 
-std::optional<Symbol> ResolveCallOverload(uint32_t startByte, uint32_t endByte, const std::vector<Symbol>& candidates,
+std::optional<Symbol> ResolveCallOverload(uint32_t startByte, uint32_t endByte, std::span<const Symbol> candidates,
                                           const ExpressionTypeContext& ctx)
 {
     if (candidates.empty())

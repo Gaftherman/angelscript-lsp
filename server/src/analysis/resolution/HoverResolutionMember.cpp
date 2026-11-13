@@ -39,7 +39,7 @@ std::optional<HoverCandidateSymbols> ResolveMemberAccess(IndexedByteRange receiv
         const int accessorMode = config ? config->engine.propertyAccessorMode : 2;
         if (accessorMode >= 2)
         {
-            memberSymbols = FindPropertyAccessors(receiverTypeName, std::string(memberName), exprCtx.symbolTable,
+            memberSymbols = FindPropertyAccessors(receiverTypeName, memberName, exprCtx.symbolTable,
                                                   accessorMode == 3);
             accessorPropertyType = PropertyTypeFromAccessors(memberSymbols);
         }
@@ -84,7 +84,14 @@ std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, bool isAuto
         {
             deduced += '@';
         }
-        return "```angelscript\n" + std::string(isAutoHandle ? "auto@" : "auto") + ": " + deduced + "\n```";
+        std::string result;
+        result.reserve(32 + deduced.size());
+        result.append("```angelscript\n");
+        result.append(isAutoHandle ? "auto@" : "auto");
+        result.append(": ");
+        result.append(deduced);
+        result.append("\n```");
+        return result;
     }
     return "";
 }

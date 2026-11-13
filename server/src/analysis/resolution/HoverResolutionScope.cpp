@@ -97,7 +97,7 @@ void AppendEnclosingClassMethods(IndexedByteRange targetRange, std::string_view 
  * @note Passes symbol 0 to CollectLookupContainers: the target is an identifier, so it never matches a
  *       container declaration, the script root or a base-class list, the only cases the symbol selects.
  */
-static std::vector<Symbol> FindSymbolsAtHoverSite(const ScopedSymbolQuery& query, const std::string& name)
+static std::vector<Symbol> FindSymbolsAtHoverSite(const ScopedSymbolQuery& query, std::string_view name)
 {
     if (name.empty())
     {
@@ -126,11 +126,11 @@ static void ResolveScopedMemberFallback(std::string_view scopedPrefix, const Sco
     {
         return;
     }
-    const std::string qualifier(qualifierView);
-    auto qualSyms = FindSymbolsAtHoverSite(query, qualifier);
+    auto qualSyms = FindSymbolsAtHoverSite(query, qualifierView);
     for (const auto& qs : qualSyms)
     {
-        const std::string qName = qs.qualifiedName.empty() ? qs.name : qs.qualifiedName;
+        const std::string_view qName =
+            qs.qualifiedName.empty() ? std::string_view(qs.name) : std::string_view(qs.qualifiedName);
         if (const auto found = query.symbolTable.FindMemberSymbolPtr(qName, query.nodeText))
         {
             symbols.insert(symbols.end(), found->begin(), found->end());
@@ -147,9 +147,9 @@ std::vector<Symbol> CollectHoverScopedSymbols(const ScopedSymbolQuery& query, st
     const IndexedByteRange typeScope = query.site.datatypeScopeRange;
     if (!qualifier.Empty() && qualifier.endByte <= query.sourceCode.size())
     {
-        const std::string scopedPrefix(
-            query.sourceCode.substr(qualifier.startByte, qualifier.endByte - qualifier.startByte));
-        outPathText = query.sourceCode.substr(qualifier.startByte, qualifier.endByte - qualifier.startByte);
+        const std::string_view scopedPrefix =
+            query.sourceCode.substr(qualifier.startByte, qualifier.endByte - qualifier.startByte);
+        outPathText = scopedPrefix;
         symbols = FindSymbolsAtHoverSite(query, scopedPrefix);
         ResolveScopedMemberFallback(scopedPrefix, query, symbols);
         isExplicitlyScoped = utils::ContainsScopeSeparator(scopedPrefix);
@@ -162,13 +162,13 @@ std::vector<Symbol> CollectHoverScopedSymbols(const ScopedSymbolQuery& query, st
             prefix.append(utils::k_scopeSeparator);
         }
         outPathText = query.sourceCode.substr(typeScope.startByte, query.site.targetEndByte - typeScope.startByte);
-        symbols = FindSymbolsAtHoverSite(query, prefix + std::string(query.nodeText));
+        symbols = FindSymbolsAtHoverSite(query, utils::JoinScopedName(prefix, query.nodeText));
         isExplicitlyScoped = true;
     }
 
     if (symbols.empty() && !isExplicitlyScoped)
     {
-        symbols = FindSymbolsAtHoverSite(query, std::string(query.nodeText));
+        symbols = FindSymbolsAtHoverSite(query, query.nodeText);
     }
 
     if (!query.site.enclosingEnumNameRange.Empty())

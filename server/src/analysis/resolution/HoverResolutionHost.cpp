@@ -17,7 +17,7 @@ namespace angel_lsp::analysis
  * @param[in] symbolTable Workspace symbol table.
  * @return Functions (an override hides the base overload with the same parameters), variables and properties.
  */
-static std::vector<Symbol> CollectHierarchyHostSymbols(const std::string& hostClass, std::string_view nodeText,
+static std::vector<Symbol> CollectHierarchyHostSymbols(std::string_view hostClass, std::string_view nodeText,
                                                        const SymbolTable& symbolTable)
 {
     std::vector<Symbol> hostSymbols;
@@ -105,7 +105,7 @@ void AppendVirtualHostSymbols(const VirtualHostSymbolQuery& query, HoverCandidat
         auto hierarchy = GetInheritedTypeHierarchy(hostClass, query.symbolTable);
         for (const auto& typeName : hierarchy)
         {
-            auto accessors = FindPropertyAccessors(typeName, std::string(query.nodeText), query.symbolTable, false);
+            auto accessors = FindPropertyAccessors(typeName, query.nodeText, query.symbolTable, false);
             if (!accessors.empty())
             {
                 hostSymbols = std::move(accessors);
@@ -132,7 +132,14 @@ std::string TryHoverDelegateProperty(const VirtualHostSymbolQuery& query, const 
         {query.targetRange, query.nodeIndex, query.sourceCode, query.symbolTable, query.virtualHostClass, engineRules});
     if (!baseClass.empty())
     {
-        return "```angelscript\n" + baseClass + "@ " + std::string(query.nodeText) + "\n```";
+        std::string result;
+        result.reserve(32 + baseClass.size() + query.nodeText.size());
+        result.append("```angelscript\n");
+        result.append(baseClass);
+        result.append("@ ");
+        result.append(query.nodeText);
+        result.append("\n```");
+        return result;
     }
     return "";
 }

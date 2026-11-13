@@ -326,21 +326,53 @@ int ScoreArgumentMatch(std::string_view argType, const ParameterInformation& par
  * @param argIsLValue Optional flags indicating whether each argument expression is an L-value.
  * @return OverloadMatchResult containing the best candidate and match metrics.
  */
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue = {});
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::initializer_list<std::string_view> argumentTypes,
                                         const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue = {});
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue = {});
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue = {});
+
+inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                               std::span<const std::string_view> argumentTypes,
+                                               const SymbolTable& symbolTable,
+                                               const std::vector<bool>& argIsLValue = {})
+{
+    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argIsLValue);
+}
+
+inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                               std::initializer_list<std::string_view> argumentTypes,
+                                               const SymbolTable& symbolTable,
+                                               const std::vector<bool>& argIsLValue = {})
+{
+    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argIsLValue);
+}
+
+inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                               std::span<const std::string> argumentTypes,
+                                               const SymbolTable& symbolTable,
+                                               const std::vector<bool>& argIsLValue = {})
+{
+    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argIsLValue);
+}
+
+inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                               const std::vector<std::string>& argumentTypes,
+                                               const SymbolTable& symbolTable,
+                                               const std::vector<bool>& argIsLValue = {})
+{
+    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argIsLValue);
+}
 
 /**
  * @brief Selects the optimal function/method symbol from a candidate overload pointer set.

@@ -267,7 +267,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
     return result;
 }
 
-static std::vector<const Symbol*> CandidatePtrs(const std::vector<Symbol>& candidates)
+static std::vector<const Symbol*> CandidatePtrs(std::span<const Symbol> candidates)
 {
     std::vector<const Symbol*> ptrs;
     ptrs.reserve(candidates.size());
@@ -312,14 +312,14 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
     return ResolveBestOverload(candidates, std::span<const std::string>(argumentTypes), symbolTable, argIsLValue);
 }
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue)
 {
     return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
 }
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::initializer_list<std::string_view> argumentTypes,
                                         const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
 {
@@ -328,14 +328,14 @@ OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
                                argIsLValue);
 }
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue)
 {
     return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
 }
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue)
 {
