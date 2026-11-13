@@ -454,8 +454,8 @@ std::optional<Symbol> TryResolveCallableFuncdef(std::string_view name, const Sco
 
 static bool HasListConstructorParam(const ParameterInformation& p)
 {
-    const std::string_view norm =
-        StripTypeDecorationsView(p.baseTypeName.empty() ? std::string_view(p.typeName) : std::string_view(p.baseTypeName));
+    const std::string_view norm = StripTypeDecorationsView(p.baseTypeName.empty() ? std::string_view(p.typeName)
+                                                                                  : std::string_view(p.baseTypeName));
     const bool isInt = (norm == "int" || norm == "uint" || norm == "int64" || norm == "uint64");
     return isInt && (p.isReference || p.modifier == ParameterModifier::In || p.modifier == ParameterModifier::InOut ||
                      p.isInOutRef || IsReferenceTypeView(p.typeName));

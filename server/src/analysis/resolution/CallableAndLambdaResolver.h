@@ -7,8 +7,8 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
 
-#include <span>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -57,8 +57,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, cons
  *         belongs to no indexed lambda, or the lambda has no funcdef target.
  */
 [[nodiscard]] std::string DeduceLambdaParameterType(uint32_t paramLine, uint32_t paramCharacter,
-                                                    std::span<const LambdaSiteFact> lambdas,
-                                                    const SymbolTable& table);
+                                                    std::span<const LambdaSiteFact> lambdas, const SymbolTable& table);
 Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName);
 std::optional<Symbol> TryResolveCallableFuncdef(std::string_view name, const Scope* scope, const SymbolTable& table,
                                                 uint32_t refByte = UINT32_MAX);

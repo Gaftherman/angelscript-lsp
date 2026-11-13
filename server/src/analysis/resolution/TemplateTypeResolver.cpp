@@ -227,8 +227,8 @@ static std::string ApplyTemplateBindingToReturn(std::string_view ret, std::strin
     return CleanExpressionType(substituted);
 }
 
-std::string FindOpIndexInHierarchy(std::string_view owner, std::string_view canonical,
-                                   const SymbolTable& symbolTable, std::string_view indexArgType = "")
+std::string FindOpIndexInHierarchy(std::string_view owner, std::string_view canonical, const SymbolTable& symbolTable,
+                                   std::string_view indexArgType = "")
 {
     auto hierarchy = GetInheritedTypeHierarchy(owner, symbolTable);
     auto candidates = CollectOpIndexCandidates(hierarchy, symbolTable);
