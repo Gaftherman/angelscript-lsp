@@ -43,5 +43,28 @@
   ],
   "active_folder": null,
   "cross_module_impacts": [],
-  "pending_folders": []
+  "pending_folders": [],
+  "string_view_migration": {
+    "rule": "AGENTS.md 4.10, verify_pass2_invariants.py --strict-string-view",
+    "criterion": "Remove avoidable copies: const std::string& params, temporary std::string(...) passed to view APIs, string-keyed lookups. Keep owned results (returned resolved types, composed qualified names, caches) until D1.",
+    "baseline": { "date": "2026-11-12", "total": 2372 },
+    "active_lot": "R1",
+    "protocol": "On start: set active_lot and status=active, record before. On finish: record after and status=done; fill commit once the user commits.",
+    "lots": [
+      { "id": "C1", "title": "checkers: scope lookup and accessor names", "scope": ["server/src/analysis/checkers"], "status": "done", "before": 85, "after": 69, "commit": "8891ebf1" },
+      { "id": "R1", "title": "class hierarchy and scope lookup params", "scope": ["analysis/resolution/ClassHierarchyResolver.*", "analysis/resolution/ScopeSymbolLookup.*"], "status": "active", "before": 136 },
+      { "id": "R2", "title": "target resolution", "scope": ["analysis/resolution/TargetResolution.*"], "status": "pending", "before": 101 },
+      { "id": "R3", "title": "overloads and conversions", "scope": ["OverloadTypeConversions.*", "ConversionRankingEngine.*", "OverloadResolver.*", "AmbiguityDetector.*"], "status": "pending" },
+      { "id": "R4", "title": "expression type resolver", "scope": ["analysis/resolution/ExpressionType*"], "status": "pending" },
+      { "id": "R5", "title": "templates, callables, properties, mixins, interfaces", "scope": ["TemplateTypeResolver.*", "CallableAndLambdaResolver.*", "PropertyAndDelegateResolver.*", "MixinInclusion.*", "InterfaceImplementation.*"], "status": "pending" },
+      { "id": "R6", "title": "hover, inlay and reference resolution", "scope": ["HoverResolution*", "Inlay*", "Reference*"], "status": "pending" },
+      { "id": "R7", "title": "rest of analysis/resolution", "scope": ["analysis/resolution (remaining files)"], "status": "pending" },
+      { "id": "D1", "title": "type-name interning design for owned results", "status": "blocked", "needs": "user decision after R7" },
+      { "id": "L1", "title": "lsp/state", "status": "pending", "before": 430 },
+      { "id": "L2", "title": "lsp/services", "status": "pending", "before": 436 },
+      { "id": "L3", "title": "lsp/handlers", "status": "pending", "before": 346 },
+      { "id": "L4", "title": "lsp/pipeline", "status": "pending", "before": 120 },
+      { "id": "L5", "title": "lsp root (Server.h, ServerDocuments, ServerInitOptions...)", "status": "pending", "before": 156 }
+    ]
+  }
 }
