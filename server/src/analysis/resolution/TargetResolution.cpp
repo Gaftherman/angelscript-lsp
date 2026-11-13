@@ -1334,8 +1334,7 @@ static std::string ResolveNamedIdentifierType(std::string_view name, const analy
 {
     if (name == "this")
     {
-        std::string targetUri = fileUri.empty() ? request.currentUri : std::string(fileUri);
-        return GetEnclosingClassName(request.symbolTable, targetUri, line);
+        return GetEnclosingClassName(request.symbolTable, fileUri.empty() ? request.currentUri : fileUri, line);
     }
     const analysis::LocalDefinition* oDef = analysis::ResolveInScope(scope, name);
     if (oDef && !oDef->typeName.empty())
@@ -1436,7 +1435,7 @@ static bool IsInTargetHierarchy(std::string_view cleanEnc, std::string_view clea
     {
         return true;
     }
-    auto hierarchy = analysis::GetInheritedTypeHierarchy(std::string(cleanEnc), symbolTable);
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanEnc, symbolTable);
     for (const auto& ancestor : hierarchy)
     {
         if (analysis::MatchesDeclOrScope(analysis::CleanBaseType(ancestor), cleanDecl))
@@ -1485,11 +1484,11 @@ static bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const
  * @param[in] symbolTable Global symbol table.
  * @return True if declaration belongs to the target's hierarchy.
  */
-static bool ShouldIncludeClassDecl(const std::string& clsName, const std::string& declaringClass,
+static bool ShouldIncludeClassDecl(std::string_view clsName, std::string_view declaringClass,
                                    const analysis::SymbolTable& symbolTable)
 {
-    std::string cleanCls = analysis::CleanBaseType(clsName);
-    std::string cleanDecl = analysis::CleanBaseType(declaringClass);
+    std::string_view cleanCls = analysis::CleanBaseTypeView(clsName);
+    std::string_view cleanDecl = analysis::CleanBaseTypeView(declaringClass);
     if (cleanCls == cleanDecl || cleanDecl.empty())
     {
         return true;
@@ -1688,7 +1687,7 @@ static void CollectClassMemberOccurrences(const CollectOccurrencesRequest& reque
  * @param[out] allDeclRanges Declaration coordinate tuples.
  * @param[in,out] collector Accumulator.
  */
-static void CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRequest& request,
+static void CollectDeclarations(std::string_view symQuery, const CollectOccurrencesRequest& request,
                                 std::set<std::tuple<std::string, uint32_t, uint32_t>>& allDeclRanges,
                                 OccurrenceCollector& collector)
 {
