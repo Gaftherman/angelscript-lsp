@@ -59,7 +59,7 @@ static std::string CommonCandidateType(std::span<const Symbol> candidates, uint3
     return result;
 }
 
-static std::string ResolveMember(const IndexedReceiverExpression& step, const std::string& receiver,
+static std::string ResolveMember(const IndexedReceiverExpression& step, std::string_view receiver,
                                  const SymbolTable& symbols)
 {
     for (const auto& owner : GetInheritedTypeHierarchy(receiver, symbols))
@@ -96,7 +96,7 @@ static std::string ResolveName(const IndexedReceiverExpression& step, const Scop
 
     if (!scope.GetEnclosingClass().empty())
     {
-        if (auto type = ResolveMember(step, std::string(scope.GetEnclosingClass()), symbols); !type.empty())
+        if (auto type = ResolveMember(step, scope.GetEnclosingClass(), symbols); !type.empty())
         {
             return type;
         }

@@ -47,14 +47,14 @@ bool IsDeclarationOrDefinition(std::string_view fileUri, const LocalReference& r
 static bool IsInTargetHierarchy(std::string_view encClass, const std::vector<Symbol>& group,
                                 const SymbolTable& symbolTable)
 {
-    std::string cleanEnc = CleanBaseType(encClass);
+    std::string_view cleanEnc = CleanBaseTypeView(encClass);
     for (const auto& s : group)
     {
         if (s.containerName.empty())
         {
             continue;
         }
-        std::string cleanDecl = CleanBaseType(s.containerName);
+        std::string_view cleanDecl = CleanBaseTypeView(s.containerName);
         if (MatchesDeclOrScope(cleanEnc, cleanDecl))
         {
             return true;
@@ -62,7 +62,7 @@ static bool IsInTargetHierarchy(std::string_view encClass, const std::vector<Sym
         auto hierarchy = GetInheritedTypeHierarchy(cleanEnc, symbolTable);
         for (const auto& ancestor : hierarchy)
         {
-            if (MatchesDeclOrScope(CleanBaseType(ancestor), cleanDecl))
+            if (MatchesDeclOrScope(CleanBaseTypeView(ancestor), cleanDecl))
             {
                 return true;
             }
