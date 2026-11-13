@@ -16,8 +16,11 @@ void ModuleIndex::UpdateFile(const UpdateFileRequest& request)
 void ModuleIndex::UpdateFile(std::string_view filePath, std::string_view content,
                              std::span<const std::string> searchDirectories)
 {
-    UpdateFile(UpdateFileRequest{std::string(filePath), content,
-                                 std::vector<std::string>(searchDirectories.begin(), searchDirectories.end()), {}, {}});
+    UpdateFile(UpdateFileRequest{std::string(filePath),
+                                 content,
+                                 std::vector<std::string>(searchDirectories.begin(), searchDirectories.end()),
+                                 {},
+                                 {}});
 }
 
 void ModuleIndex::RemoveFile(std::string_view filePath)

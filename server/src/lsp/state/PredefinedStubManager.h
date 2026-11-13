@@ -177,8 +177,7 @@ class PredefinedStubManager
      * @param definesHash Active preprocessor defines hash.
      * @return True if hashes match.
      */
-    [[nodiscard]] bool HasMatchingFingerprint(std::string_view path, uint64_t contentHash,
-                                              uint64_t definesHash) const;
+    [[nodiscard]] bool HasMatchingFingerprint(std::string_view path, uint64_t contentHash, uint64_t definesHash) const;
 
     /**
      * @brief Records content and defines hashes for a stub path.
@@ -201,7 +200,8 @@ class PredefinedStubManager
   private:
     mutable std::mutex m_mutex;
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> m_predefinedUris;
-    ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, std::equal_to<>> m_predefinedUriByPath;
+    ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, std::equal_to<>>
+        m_predefinedUriByPath;
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> m_loadedCanonicalPaths;
     ankerl::unordered_dense::map<std::string, StubFingerprint, TransparentStringHash, std::equal_to<>> m_fingerprints;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<std::string>, TransparentStringHash, std::equal_to<>>

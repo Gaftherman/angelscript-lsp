@@ -61,12 +61,10 @@ void DocumentStore::UpdateDocument(std::string_view uri, std::string text, int v
     else
     {
         const uint64_t gen = m_nextGeneration++;
-        m_documents.insert_or_assign(
-            uri,
-            std::make_shared<const document::Document>(
-                document::DocumentSnapshot{std::string(uri), std::move(text), version, gen,
-                                           std::move(transformedSource)},
-                std::move(tree)));
+        m_documents.insert_or_assign(uri, std::make_shared<const document::Document>(
+                                              document::DocumentSnapshot{std::string(uri), std::move(text), version,
+                                                                         gen, std::move(transformedSource)},
+                                              std::move(tree)));
     }
 }
 
