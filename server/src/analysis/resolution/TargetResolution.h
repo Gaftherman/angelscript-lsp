@@ -93,8 +93,8 @@ bool IsValidIdentifier(std::string_view name);
  */
 struct ResolveTargetRequest
 {
-    std::string uri;
-    std::string sourceCode;
+    std::string_view uri;
+    std::string_view sourceCode;
     TargetPosition position;
     const SymbolTable& symbolTable;
     const ScopeIndex& scopeIndex;
@@ -109,8 +109,8 @@ struct ResolveTargetRequest
 struct CollectOccurrencesRequest
 {
     const TargetDescriptor& target;
-    std::string currentUri;
-    std::string sourceCode;
+    std::string_view currentUri;
+    std::string_view sourceCode;
     const SymbolTable& symbolTable;
     const ScopeIndex& scopeIndex;
     bool includeDeclaration = true;
@@ -132,8 +132,8 @@ inline ResolveTargetRequest MakeTargetRequest(std::string_view uri, std::string_
                                               const ScopeIndex& scopeIndex)
 {
     return ResolveTargetRequest{
-        .uri = std::string(uri),
-        .sourceCode = std::string(sourceCode),
+        .uri = uri,
+        .sourceCode = sourceCode,
         .position = position,
         .symbolTable = symbolTable,
         .scopeIndex = scopeIndex,
@@ -155,8 +155,8 @@ inline CollectOccurrencesRequest MakeOccurrencesRequest(const TargetDescriptor& 
 {
     return CollectOccurrencesRequest{
         .target = target,
-        .currentUri = std::string(uri),
-        .sourceCode = std::string(sourceCode),
+        .currentUri = uri,
+        .sourceCode = sourceCode,
         .symbolTable = symbolTable,
         .scopeIndex = scopeIndex,
     };
@@ -223,11 +223,11 @@ struct OccurrenceCollector
      * @param[in] uri File URI.
      * @param[in] range Target range.
      */
-    void Add(const std::string& uri, const SourceRange& range)
+    void Add(std::string_view uri, const SourceRange& range)
     {
-        if (seen.insert({uri, range.startLine, range.startCharacter}).second)
+        if (seen.insert({std::string(uri), range.startLine, range.startCharacter}).second)
         {
-            results.push_back(OccurrenceLocation{uri, range});
+            results.push_back(OccurrenceLocation{std::string(uri), range});
         }
     }
 
@@ -236,7 +236,7 @@ struct OccurrenceCollector
      * @param[in] uri File URI.
      * @param[in] ref Reference to add.
      */
-    void Add(const std::string& uri, const analysis::LocalReference& ref)
+    void Add(std::string_view uri, const analysis::LocalReference& ref)
     {
         Add(uri, SourceRange{ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter});
     }
@@ -258,7 +258,7 @@ struct SymbolSpan
  */
 struct OccurrenceScanContext
 {
-    std::string fileUri;
+    std::string_view fileUri;
     const CollectOccurrencesRequest& request;
     const std::set<std::tuple<std::string, uint32_t, uint32_t>>& declRanges;
     OccurrenceCollector& collector;
