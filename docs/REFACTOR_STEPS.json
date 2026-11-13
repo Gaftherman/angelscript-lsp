@@ -65,11 +65,11 @@
       { "id": "D1", "title": "type-name interning design for owned results", "status": "superseded", "reason": "strict gate narrowed to avoidable copies; owning storage is allowed" },
       { "id": "L1", "title": "lsp/state", "scope": ["server/src/lsp/state"], "status": "done", "before": 282, "after": 193, "commit": "9d617a60" },
       { "id": "L2", "title": "lsp/services", "status": "done", "before": 436, "after": 218, "commit": "61b668d0" },
-      { "id": "L3", "title": "lsp/handlers", "status": "done", "before": 346, "after": 308 },
-      { "id": "L4", "title": "lsp/pipeline", "status": "done", "before": 120, "after": 74 },
-      { "id": "L5", "title": "lsp root (Server.h, ServerDocuments, ServerInitOptions...)", "status": "done", "before": 156, "after": 100 },
-      { "id": "S1", "title": "avoidable copies sweep and narrowed strict gate", "scope": ["server/src (checked folders)", "server/scripts/verify_pass2_invariants.py"], "status": "done", "before": 1917, "after": 0, "audit_before": 1917, "audit_after": 1818 },
-      { "id": "S2", "title": "completion, code_action and formatting copies", "scope": ["server/src/analysis/completion", "server/src/analysis/code_action", "server/src/analysis/formatting"], "status": "done", "before": 72, "after": 0 }
+      { "id": "L3", "title": "lsp/handlers", "status": "done", "before": 346, "after": 308, "commit": "fabc1c8f" },
+      { "id": "L4", "title": "lsp/pipeline", "status": "done", "before": 120, "after": 74, "commit": "f32e09bd" },
+      { "id": "L5", "title": "lsp root (Server.h, ServerDocuments, ServerInitOptions...)", "status": "done", "before": 156, "after": 100, "commit": "bb280c99" },
+      { "id": "S1", "title": "avoidable copies sweep and narrowed strict gate", "scope": ["server/src (checked folders)", "server/scripts/verify_pass2_invariants.py"], "status": "done", "before": 1917, "after": 0, "audit_before": 1917, "audit_after": 1818, "commit": "e5f511b5" },
+      { "id": "S2", "title": "completion, code_action and formatting copies", "scope": ["server/src/analysis/completion", "server/src/analysis/code_action", "server/src/analysis/formatting"], "status": "done", "before": 72, "after": 0, "commit": "c23d9eae" }
     ]
   }
 }

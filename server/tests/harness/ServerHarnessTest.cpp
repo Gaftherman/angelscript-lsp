@@ -6333,7 +6333,11 @@ TEST_CASE("Server - Inactive regions are published from the worker's prepared so
     const std::string output = stream.Output();
     const auto last = output.rfind("angelscript/inactiveRegions");
     REQUIRE(last != std::string::npos);
-    const auto frame = output.substr(last, output.find("Content-Length:", last) - last);
+    // A JSON object has no key order, so the method name can come after the params. The frame is
+    // whatever lies between the header before the method name and the header after it.
+    const auto frameStart = output.rfind("Content-Length:", last);
+    REQUIRE(frameStart != std::string::npos);
+    const auto frame = output.substr(frameStart, output.find("Content-Length:", last) - frameStart);
     CHECK(frame.find(R"("startLine":1)") != std::string::npos);
     CHECK(frame.find(R"("endLine":3)") != std::string::npos);
 }

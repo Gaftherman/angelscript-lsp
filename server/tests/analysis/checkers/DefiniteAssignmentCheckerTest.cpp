@@ -1,6 +1,7 @@
+#include "analysis/checkers/DefiniteAssignmentChecker.h"
+
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/checkers/DefiniteAssignmentChecker.h"
 #include "analysis/index/DefiniteAssignmentFacts.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/NodeIndex.h"

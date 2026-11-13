@@ -220,8 +220,8 @@ void Server::AppendIncludeDiagnostics(std::string_view uriStr, std::string_view 
                 : nullptr;
 
     const auto allowedRoots = IncludeAllowedRoots();
-    features::DocumentLinkRequest request{std::string(uriStr),
-                                          std::string(text),
+    features::DocumentLinkRequest request{uriStr,
+                                          text,
                                           {.searchDirectories = *searchDirectories,
                                            .allowedRoots = allowedRoots,
                                            .implicitExtension = ImplicitIncludeExtension()},

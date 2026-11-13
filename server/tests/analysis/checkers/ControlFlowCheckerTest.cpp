@@ -1,6 +1,7 @@
+#include "analysis/checkers/ControlFlowChecker.h"
+
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/checkers/ControlFlowChecker.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"

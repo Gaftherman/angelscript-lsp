@@ -866,6 +866,71 @@ TEST_CASE("Definition - External predefined class symbol when user file has call
     CHECK((*def2)[0].uri.toString() == predefUri);
 }
 
+TEST_CASE("Definition - Engine field reached through self from a namespaced class in a predefined stub")
+{
+    // The Sven Co-op shape: the stub declares both the engine entity and the script base class that
+    // exposes it through a get-only `self`; the script class sits in a namespace and assigns the
+    // fields in a chain. Every field must navigate to the stub, not only the methods.
+    const std::string entity = angel_lsp::test::GenerateRandomSymbolName("EngineWeapon");
+    const std::string base = angel_lsp::test::GenerateRandomSymbolName("ScriptWeaponBase");
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("WeaponNs");
+    const std::string cls = angel_lsp::test::GenerateRandomSymbolName("weapon");
+    const std::string predefUri = "file:///predefined/sven.as.predefined";
+    const std::string predefCode = "class " + entity +
+                                   " {\n"
+                                   "    float m_flTimeWeaponIdle;\n"
+                                   "    float m_flNextPrimaryAttack;\n"
+                                   "    float m_flNextSecondaryAttack;\n"
+                                   "    void Reload();\n"
+                                   "}\n"
+                                   "abstract class " +
+                                   base +
+                                   " {\n"
+                                   "    private " +
+                                   entity +
+                                   "@ m_pSelf;\n"
+                                   "    " +
+                                   entity +
+                                   "@ self { get const { return @m_pSelf; } }\n"
+                                   "}\n";
+    const std::string userCode = "namespace " + ns +
+                                 " {\n"
+                                 "class " +
+                                 cls + " : " + base +
+                                 " {\n"
+                                 "    void Think() {\n"
+                                 "        self.m_flTimeWeaponIdle = self.m_flNextSecondaryAttack = 1.0f;\n"
+                                 "        if( self.m_flNextPrimaryAttack > self.m_flTimeWeaponIdle )\n"
+                                 "            self.Reload();\n"
+                                 "    }\n"
+                                 "}\n"
+                                 "}\n";
+
+    TestEnvironment env(userCode, "file:///scripts/main.as");
+    env.AddFile(predefUri, predefCode);
+
+    for (const char* field : {"m_flTimeWeaponIdle", "m_flNextSecondaryAttack", "m_flNextPrimaryAttack"})
+    {
+        const std::string needle = std::string("self.") + field;
+        size_t from = 0;
+        while ((from = userCode.find(needle, from)) != std::string::npos)
+        {
+            const auto pos = FindPos(userCode, field, from);
+            INFO("field " << field << " at offset " << from);
+            auto def = env.DefAt(pos.line, pos.character);
+            REQUIRE(def.has_value());
+            REQUIRE(!def->empty());
+            CHECK((*def)[0].uri.toString() == predefUri);
+            from += needle.size();
+        }
+    }
+    const auto reload = FindPos(userCode, "Reload");
+    auto defReload = env.DefAt(reload.line, reload.character);
+    REQUIRE(defReload.has_value());
+    REQUIRE(!defReload->empty());
+    CHECK((*defReload)[0].uri.toString() == predefUri);
+}
+
 TEST_CASE("Definition - Qualified funcdef shadowed by class method with identical name")
 {
     const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("NsMenu");

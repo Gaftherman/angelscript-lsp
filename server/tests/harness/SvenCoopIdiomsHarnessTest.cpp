@@ -202,4 +202,35 @@ TEST_SUITE("SvenCoopIdiomsHarness")
         fixture.AddVirtualDocument(uri, script);
         fixture.AssertNoDiagnostics(uri);
     }
+
+    TEST_CASE("Engine weapon fields reached through self navigate to the real stub")
+    {
+        // The stub in the repo, not a stand-in: the fields live in CBasePlayerWeapon and `self` is the
+        // get-only property of ScriptBasePlayerWeaponEntity. A class in a namespace that also mixes in
+        // a base class is the shape the INS2 weapon packs use.
+        LspSemanticHarnessFixture fixture;
+        fixture.LoadPredefinedStub("predefined/sven.as.predefined");
+
+        const std::string script = "namespace GeneratedWeapon\n"
+                                   "{\n"
+                                   "    class weapon_generated : ScriptBasePlayerWeaponEntity\n"
+                                   "    {\n"
+                                   "        void Think()\n"
+                                   "        {\n"
+                                   "            self.m_flTimeWeaponIdle = self.m_flNextSecondaryAttack = 1.0f;\n"
+                                   "            if( self.m_flNextPrimaryAttack > self.m_flTimeWeaponIdle )\n"
+                                   "                self.Reload();\n"
+                                   "        }\n"
+                                   "    }\n"
+                                   "}\n";
+
+        const std::string uri = fixture.SandboxUri("scripts/weapon_fields.as");
+        fixture.AddVirtualDocument(uri, script);
+
+        // Columns point inside the member name on lines 6 and 7 (0-based).
+        fixture.AssertDefinitionTarget(uri, 6, 24, "sven.as.predefined", 11941);
+        fixture.AssertDefinitionTarget(uri, 6, 50, "sven.as.predefined", 11933);
+        fixture.AssertDefinitionTarget(uri, 7, 28, "sven.as.predefined", 11929);
+        fixture.AssertDefinitionTarget(uri, 7, 58, "sven.as.predefined", 11941);
+    }
 }
