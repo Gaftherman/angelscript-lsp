@@ -64,19 +64,19 @@ static std::string_view ExtractLineFromSource(std::string_view source, uint32_t 
  * @param[out] outEndByte Optional output end byte.
  * @return Token text or empty string if not an identifier.
  */
-static std::string GetNodeTextAt(std::string_view sourceCode, TargetPosition position, uint32_t* outStartByte = nullptr,
-                                 uint32_t* outEndByte = nullptr)
+static std::string_view GetNodeTextAt(std::string_view sourceCode, TargetPosition position, uint32_t* outStartByte = nullptr,
+                                      uint32_t* outEndByte = nullptr)
 {
     if (sourceCode.empty())
     {
-        return "";
+        return {};
     }
 
     uint32_t lineStartByte = 0;
     std::string_view line = ExtractLineFromSource(sourceCode, position.line, lineStartByte);
     if (line.empty())
     {
-        return "";
+        return {};
     }
 
     size_t col = position.character;
@@ -93,7 +93,7 @@ static std::string GetNodeTextAt(std::string_view sourceCode, TargetPosition pos
         }
         else
         {
-            return "";
+            return {};
         }
     }
 
@@ -110,7 +110,7 @@ static std::string GetNodeTextAt(std::string_view sourceCode, TargetPosition pos
 
     if (startCol >= endCol)
     {
-        return "";
+        return {};
     }
 
     uint32_t startByte = lineStartByte + static_cast<uint32_t>(startCol);
@@ -123,7 +123,7 @@ static std::string GetNodeTextAt(std::string_view sourceCode, TargetPosition pos
     {
         *outEndByte = endByte;
     }
-    return std::string(line.substr(startCol, endCol - startCol));
+    return line.substr(startCol, endCol - startCol);
 }
 
 /**
@@ -133,7 +133,7 @@ static std::string GetNodeTextAt(std::string_view sourceCode, TargetPosition pos
  * @param[in] line 0-based line number.
  * @return Enclosing class name or empty string if not in a class.
  */
-static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri,
+static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, std::string_view uri,
                                          uint32_t line)
 {
     return symbolTable.FindEnclosingClassName(uri, line);
@@ -146,12 +146,12 @@ static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTabl
  * @return Unique list of file URIs.
  */
 static std::vector<std::string> GetAllIndexedFileUris(const analysis::SymbolTable& symbolTable,
-                                                      const std::string& currentUri)
+                                                      std::string_view currentUri)
 {
     std::vector<std::string> uris = symbolTable.GetIndexedFileUris();
     if (!currentUri.empty() && std::find(uris.begin(), uris.end(), currentUri) == uris.end())
     {
-        uris.push_back(currentUri);
+        uris.emplace_back(currentUri);
     }
     return uris;
 }
@@ -176,8 +176,7 @@ bool IsValidIdentifier(std::string_view name)
         }
     }
 
-    std::string nameStr(name);
-    if (analysis::IsReservedKeyword(nameStr) || analysis::IsPrimitiveTypeName(nameStr))
+    if (analysis::IsReservedKeyword(name) || analysis::IsPrimitiveTypeName(name))
     {
         return false;
     }
@@ -194,7 +193,7 @@ bool IsValidIdentifier(std::string_view name)
  * @return Pointer to definition if found, nullptr otherwise.
  */
 static const analysis::LocalDefinition* FindLocalDefinitionAtLine(const analysis::Scope* innerScope,
-                                                                  const std::string& nodeText, uint32_t line,
+                                                                  std::string_view nodeText, uint32_t line,
                                                                   const analysis::Scope*& outDeclScope)
 {
     analysis::ScopeTraversalGuard guard;
@@ -244,7 +243,7 @@ static void PopulateLocalTargetDescriptor(const analysis::LocalDefinition& match
     }
 }
 
-static void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope, const std::string& nodeText,
+static void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope, std::string_view nodeText,
                                const ResolveTargetRequest& request, TargetDescriptor& target,
                                uint32_t identStartByte = UINT32_MAX)
 {
@@ -372,12 +371,12 @@ static bool AssignTargetFromContainerLookup(const analysis::Symbol& sym, const S
  * @param[in] request Resolution request.
  * @param[out] target Target descriptor to populate.
  */
-static void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTargetRequest& request,
+static void ResolveGlobalFallbackTarget(std::string_view nodeText, const ResolveTargetRequest& request,
                                         TargetDescriptor& target)
 {
     request.symbolTable.ForEachSymbolInFile(
         request.uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] std::string_view qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -411,7 +410,7 @@ static void ResolveGlobalFallbackTarget(const std::string& nodeText, const Resol
  * @return Optional matching FunctionSignature.
  */
 static std::optional<analysis::FunctionSignature> MatchFunctionSignature(const std::vector<analysis::Symbol>& symbols,
-                                                                         const std::string& uri, uint32_t line,
+                                                                         std::string_view uri, uint32_t line,
                                                                          const FunctionArgConstraints& callInfo)
 {
     for (const auto& s : symbols)
@@ -582,7 +581,7 @@ static void ResolveTargetSignature(TargetDescriptor& target, const ResolveTarget
     {
         return;
     }
-    const std::string& query = (target.kind == TargetKind::NamespaceSymbol) ? target.qualifiedName : target.name;
+    const std::string_view query = (target.kind == TargetKind::NamespaceSymbol) ? target.qualifiedName : target.name;
     if (auto symsPtr = request.symbolTable.FindSymbolsPtr(query))
     {
         if (auto fn = MatchFunctionSignature(*symsPtr, request.uri, request.position.line, callInfo))
@@ -795,10 +794,10 @@ static GlobalScopeQualifier GetGlobalScopeQualifierNoAst(std::string_view source
  * @param[in] symbolTable Symbol table.
  * @return Declaring enum container name.
  */
-static std::string FindRealDeclaringEnum(const analysis::Symbol& s, const std::string& qualifierName,
+static std::string FindRealDeclaringEnum(const analysis::Symbol& s, std::string_view qualifierName,
                                          const analysis::SymbolTable& symbolTable)
 {
-    std::string declEnum = s.containerName.empty() ? qualifierName : s.containerName;
+    std::string declEnum = s.containerName.empty() ? std::string(qualifierName) : s.containerName;
     auto enumSyms = symbolTable.FindSymbols(declEnum);
     bool isRealEnum = std::any_of(enumSyms.begin(), enumSyms.end(),
                                   [](const auto& es) { return es.type == analysis::SymbolType::Enum; });
@@ -829,7 +828,7 @@ static std::string FindRealDeclaringEnum(const analysis::Symbol& s, const std::s
  * @param[in] identStartByte Start byte of identifier.
  * @return Extracted qualifier string or empty string.
  */
-static std::string ExtractPrecedingQualifier(std::string_view sourceCode, uint32_t identStartByte)
+static std::string_view ExtractPrecedingQualifier(std::string_view sourceCode, uint32_t identStartByte)
 {
     if (identStartByte < 2 || sourceCode[identStartByte - 1] != ':' || sourceCode[identStartByte - 2] != ':')
     {
@@ -860,7 +859,7 @@ static std::string ExtractPrecedingQualifier(std::string_view sourceCode, uint32
     {
         return {};
     }
-    return std::string(sourceCode.substr(pStart, pEnd - pStart));
+    return sourceCode.substr(pStart, pEnd - pStart);
 }
 
 /**
@@ -881,7 +880,7 @@ static std::vector<analysis::Symbol> FindScopedSymbolsWithEnclosing(const Resolv
     std::string encNs;
     request.symbolTable.ForEachSymbolInFile(
         request.uri,
-        [&]([[maybe_unused]] const std::string& qn, const std::vector<analysis::Symbol>& sList)
+        [&]([[maybe_unused]] std::string_view qn, const std::vector<analysis::Symbol>& sList)
         {
             for (const auto& s : sList)
             {
