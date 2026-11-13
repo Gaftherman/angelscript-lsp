@@ -21,7 +21,7 @@ static std::string QualifyReceiver(std::string_view type, std::string_view owner
 
 static std::string CandidateType(const Symbol& symbol, uint32_t argCount, const SymbolTable& symbols)
 {
-    if (argCount == UINT32_MAX && symbol.type == SymbolType::Variable)
+    if (argCount == UINT32_MAX && (symbol.type == SymbolType::Variable || symbol.type == SymbolType::Property))
     {
         return QualifyReceiver(symbol.GetVariable().typeName, symbol.containerName, symbols);
     }

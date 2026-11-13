@@ -27,7 +27,7 @@ namespace angel_lsp::analysis
  * @param[in] typeName Raw expression type name to sanitize.
  * @return Cleaned base type name without qualifiers or decorations.
  */
-std::string CleanExpressionType(std::string_view typeName)
+std::string_view CleanExpressionTypeView(std::string_view typeName)
 {
     typeName = StripLeadingConst(typeName);
     TrimTypeWhitespace(typeName);
@@ -36,7 +36,12 @@ std::string CleanExpressionType(std::string_view typeName)
         typeName.remove_suffix(refLen);
     }
     TrimTypeWhitespace(typeName);
-    return std::string(typeName);
+    return typeName;
+}
+
+std::string CleanExpressionType(std::string_view typeName)
+{
+    return std::string(CleanExpressionTypeView(typeName));
 }
 
 bool IsReservedKeyword(std::string_view name)

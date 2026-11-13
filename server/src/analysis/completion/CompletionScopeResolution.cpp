@@ -30,7 +30,7 @@ namespace angel_lsp::analysis::completion
  * @param[in] qualifier Qualifier type name.
  * @param[in,out] collector Completion collector context.
  */
-static void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCollector& collector)
+static void CollectEnumMembersUnderQualifier(std::string_view qualifier, CompletionCollector& collector)
 {
     const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
     auto enumMatches = collector.request.symbolTable.FindSymbolsPtr(qualifier);
@@ -98,11 +98,11 @@ std::string BuildScopeNamespacePath(const Scope* scope, const CompletionQuery& r
  * @param[in,out] out Target namespace list.
  * @param[in] ns Candidate namespace string.
  */
-static void AppendUniqueNamespace(std::vector<std::string>& out, const std::string& ns)
+static void AppendUniqueNamespace(std::vector<std::string>& out, std::string_view ns)
 {
     if (!ns.empty() && std::find(out.begin(), out.end(), ns) == out.end())
     {
-        out.push_back(ns);
+        out.emplace_back(ns);
     }
 }
 
@@ -198,7 +198,7 @@ static void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, Compl
  * @param[in] ruleIndex Pre-indexed rule information.
  * @param[in,out] collector Completion collector context.
  */
-static void AddContainerMembers(const std::string& container, const std::string& qualifier,
+static void AddContainerMembers(std::string_view container, std::string_view qualifier,
                                 const analysis::rules::RuleIndex* ruleIndex, CompletionCollector& collector)
 {
     const auto& cm = ruleIndex->Members(container);
@@ -230,7 +230,7 @@ static void AddContainerMembers(const std::string& container, const std::string&
     }
 }
 
-static void CollectContainerMembersUnderQualifier(const std::string& qualifier, CompletionCollector& collector)
+static void CollectContainerMembersUnderQualifier(std::string_view qualifier, CompletionCollector& collector)
 {
     const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
     if (!ruleIndex)
@@ -257,11 +257,11 @@ static void CollectContainerMembersUnderQualifier(const std::string& qualifier, 
     }
 }
 
-bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& collector)
+bool TryCompleteScopeResolution(std::string_view prefix, CompletionCollector& collector)
 {
     static const std::regex scopeResolutionRegex(R"(((?:[a-zA-Z_][a-zA-Z0-9_]*::)+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
-    std::smatch scopeMatch;
-    if (!std::regex_search(prefix, scopeMatch, scopeResolutionRegex))
+    std::match_results<std::string_view::const_iterator> scopeMatch;
+    if (!std::regex_search(prefix.begin(), prefix.end(), scopeMatch, scopeResolutionRegex))
     {
         return false;
     }
@@ -275,7 +275,7 @@ bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& 
     return true;
 }
 
-bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector& collector)
+bool TryCompleteTemplateArguments(std::string_view prefix, CompletionCollector& collector)
 {
     if (!IsInsideTemplateArguments(prefix))
     {

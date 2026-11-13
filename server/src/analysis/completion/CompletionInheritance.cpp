@@ -77,7 +77,7 @@ static std::vector<std::string> CollectDirectBases(const analysis::SymbolTable& 
 }
 
 std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& symbolTable,
-                                                   const std::string& initialTypeName)
+                                                   std::string_view initialTypeName)
 {
     if (initialTypeName.empty())
     {
@@ -121,7 +121,7 @@ std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& 
  * @brief Detects if completion was invoked inside a class or interface base inheritance list.
  */
 static std::optional<InheritanceContext> DetectInheritanceContext(const CompletionQuery& request,
-                                                                  const std::string& prefix)
+                                                                  std::string_view prefix)
 {
     const std::string text =
         GetBackwardDeclarationText(request.sourceCode, request.position.line, request.position.character);
@@ -137,8 +137,8 @@ static std::optional<InheritanceContext> DetectInheritanceContext(const Completi
     ctx.declaringClassName = m[2].str();
 
     static const std::regex scopeRegex(R"(((?:[a-zA-Z_][a-zA-Z0-9_]*::)+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
-    std::smatch scopeMatch;
-    if (std::regex_search(prefix, scopeMatch, scopeRegex))
+    std::match_results<std::string_view::const_iterator> scopeMatch;
+    if (std::regex_search(prefix.begin(), prefix.end(), scopeMatch, scopeRegex))
     {
         ctx.qualifier = std::string(utils::StripTrailingScopeSeparator(scopeMatch[1].str()));
     }
@@ -247,7 +247,7 @@ static void CompleteInheritanceNamespaces(CompletionCollector& collector)
     }
 }
 
-bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& collector)
+bool TryCompleteInheritance(std::string_view prefix, CompletionCollector& collector)
 {
     auto ctxOpt = DetectInheritanceContext(collector.request, prefix);
     if (!ctxOpt.has_value())
@@ -268,7 +268,7 @@ bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& coll
     return true;
 }
 
-std::string FindCanonicalBaseContainer(const std::string& canonicalType, const analysis::SymbolTable& symbolTable)
+std::string FindCanonicalBaseContainer(std::string_view canonicalType, const analysis::SymbolTable& symbolTable)
 {
     const std::string owner = analysis::MemberOwnerType(canonicalType, symbolTable.GetDefaultArrayType());
     return symbolTable.QualifyShortTypeName(owner);

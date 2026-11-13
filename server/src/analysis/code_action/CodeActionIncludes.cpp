@@ -41,7 +41,7 @@ static TransparentStringSet CollectIndexedFileUris(const analysis::SymbolTable& 
  * @param[in] currentUri Current document URI.
  * @return Ranked candidates list sorted by edit distance.
  */
-static std::vector<TypoCandidate> RankIncludeCandidates(const std::string& includerPath, const std::string& rawPath,
+static std::vector<TypoCandidate> RankIncludeCandidates(std::string_view includerPath, std::string_view rawPath,
                                                         const TransparentStringSet& indexedUris,
                                                         const std::string& currentUri)
 {

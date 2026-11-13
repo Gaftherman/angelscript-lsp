@@ -10,6 +10,7 @@
 #include "parser/GrammarSymbols.h"
 #include "utils/Utils.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -259,9 +260,16 @@ static void CollectStatements(const NodeIndex& index, std::string_view source, D
                                 gs.symForStatement,    gs.symDoWhileStatement,    gs.symSwitchStatement,
                                 gs.symCaseClause,      gs.symExpressionStatement, gs.symVariableDeclaration,
                                 gs.symReturnStatement, gs.symBreakStatement,      gs.symContinueStatement};
+    // Records slice the call, read, assignment and declarator arrays by the position at which each
+    // record started appending, so they must be built in source order. Building them one node type
+    // at a time and sorting the arrays afterwards moved elements out from under those slices.
+    std::vector<TSNode> nodes;
     for (const TSSymbol sym : symbols)
         for (const TSNode node : index.Nodes(sym))
-            facts.records.push_back(BuildRecord(node, index, source, facts));
+            nodes.push_back(node);
+    std::ranges::sort(nodes, [](TSNode a, TSNode b) { return ts_node_start_byte(a) < ts_node_start_byte(b); });
+    for (const TSNode node : nodes)
+        facts.records.push_back(BuildRecord(node, index, source, facts));
 }
 
 /** @brief Links parent-child hierarchy indices across statement and block records. */
@@ -313,9 +321,6 @@ DefiniteAssignmentFacts BuildDefiniteAssignmentFacts(const NodeIndex& index, std
     CollectStatements(index, source, facts);
     SortBySpan(facts.records);
     SortBySpan(facts.functions);
-    SortBySpan(facts.declarators);
-    SortBySpan(facts.assignments);
-    SortBySpan(facts.calls);
     LinkHierarchy(facts);
     for (auto& fn : facts.functions)
         if (const auto* rec = facts.FindRecord(fn.bodyBytes))

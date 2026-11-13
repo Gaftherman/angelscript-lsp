@@ -69,8 +69,10 @@ static bool IsEnumReferenceQualified(const LocalReference& ref, std::string_view
     return false;
 }
 
-static bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* resolved, DiagnosticContext& ctx)
+static bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* resolved,
+                                     const UndefinedIdentifierContext& uCtx)
 {
+    DiagnosticContext& ctx = uCtx.ctx;
     if (resolved != nullptr && resolved->kind != LocalDefinitionKind::Constant)
     {
         return false;
@@ -93,7 +95,9 @@ static bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefin
                         "as-err-enum-scope-required", ref.name);
         return true;
     }
-    return true;
+    // Without the scope requirement a value is an ordinary name of its own namespace: it is reachable
+    // from that namespace, its children and importers, but not from a sibling or an unrelated one.
+    return IsEnumValueReachable(ref.startByte, ref.name, uCtx.usingNamespaces, ctx);
 }
 
 static bool IsReferenceInSyntaxErrorOrMetadata(const LocalReference& ref, const NodeIndex* nodeIndex)
@@ -119,7 +123,7 @@ static void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierCo
         }
 
         const LocalDefinition* resolved = ResolveInScopeAt(scope, ref.name, ref.startByte);
-        if (CheckEnumScopeDiagnostic(ref, resolved, uCtx.ctx))
+        if (CheckEnumScopeDiagnostic(ref, resolved, uCtx))
         {
             continue;
         }

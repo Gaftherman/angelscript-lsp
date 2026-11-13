@@ -86,7 +86,7 @@ static bool IsMixinIncluded(std::string_view hostClass, std::string_view mixinNa
  * @param[in] collector Completion collector context.
  * @return True if accessible, false if restricted by private/protected visibility.
  */
-static bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, const std::string& typeName,
+static bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, std::string_view typeName,
                                             const CompletionCollector& collector)
 {
     analysis::AccessModifier access = analysis::AccessModifier::Public;
@@ -131,7 +131,7 @@ static bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, const s
  * @param[in] tCtx Template context bundling bindings and args.
  * @param[in,out] collector Completion collector context.
  */
-static void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::string& typeName,
+static void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, std::string_view typeName,
                                           const MemberTemplateContext& tCtx, CompletionCollector& collector)
 {
     if (!IsMemberAccessibleForCompletion(sym, typeName, collector))
@@ -192,7 +192,7 @@ static void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std
  * @param[in] templateArgs Explicit template arguments.
  * @param[in,out] collector Completion collector context.
  */
-static void PopulateMembersForType(const std::string& typeName, const MemberTemplateContext& tCtx,
+static void PopulateMembersForType(std::string_view typeName, const MemberTemplateContext& tCtx,
                                    CompletionCollector& collector)
 {
     const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
@@ -226,7 +226,7 @@ static void PopulateMembersForType(const std::string& typeName, const MemberTemp
     }
 }
 
-bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const std::string& parentType, std::string_view name,
+bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, std::string_view parentType, std::string_view name,
                                std::string_view enclosingClass)
 {
     if (name.empty())
@@ -240,7 +240,7 @@ bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const std::st
         return false;
     }
 
-    std::string searchType = parentType.empty() ? std::string(enclosingClass) : parentType;
+    const std::string_view searchType = parentType.empty() ? std::string_view(enclosingClass) : parentType;
     if (!searchType.empty())
     {
         auto hierarchy = GetInheritedTypeHierarchy(table, searchType);
@@ -271,7 +271,7 @@ bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const std::st
     return false;
 }
 
-void PopulateHierarchicalMembers(const std::string& rawTypeName, std::string_view memberPrefix,
+void PopulateHierarchicalMembers(std::string_view rawTypeName, std::string_view memberPrefix,
                                  CompletionCollector& collector)
 {
     const auto& arrayContainer = collector.request.symbolTable.GetDefaultArrayType();

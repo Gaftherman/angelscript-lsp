@@ -238,7 +238,7 @@ TEST_CASE("CompletionHandler - Resolve attaches the declaration's doc comment")
     item.label = "Spawn";
     item.data = lsp::LSPAny(std::string("Spawn"));
 
-    CompletionResolveRequest request{item, table, [&](const std::string& wanted) -> const std::string*
+    CompletionResolveRequest request{item, table, [&](std::string_view wanted) -> const std::string*
                                      { return wanted == uri ? &code : nullptr; }};
 
     const auto resolved = ResolveCompletionItem(request);
@@ -256,7 +256,7 @@ TEST_CASE("CompletionHandler - Resolve leaves an item it cannot identify alone")
         lsp::CompletionItem item;
         item.label = "while";
 
-        CompletionResolveRequest request{item, table, [](const std::string&) -> const std::string* { return nullptr; }};
+        CompletionResolveRequest request{item, table, [](std::string_view) -> const std::string* { return nullptr; }};
 
         CHECK_FALSE(ResolveCompletionItem(request).documentation.has_value());
     }
@@ -267,7 +267,7 @@ TEST_CASE("CompletionHandler - Resolve leaves an item it cannot identify alone")
         item.label = "Ghost";
         item.data = lsp::LSPAny(std::string("Ghost"));
 
-        CompletionResolveRequest request{item, table, [](const std::string&) -> const std::string* { return nullptr; }};
+        CompletionResolveRequest request{item, table, [](std::string_view) -> const std::string* { return nullptr; }};
 
         CHECK_FALSE(ResolveCompletionItem(request).documentation.has_value());
     }
@@ -287,7 +287,7 @@ TEST_CASE("CompletionHandler - Resolve keeps documentation an item already had")
     item.data = lsp::LSPAny(std::string("Spawn"));
     item.documentation = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), "Already known."};
 
-    CompletionResolveRequest request{item, table, [&](const std::string&) -> const std::string* { return &code; }};
+    CompletionResolveRequest request{item, table, [&](std::string_view) -> const std::string* { return &code; }};
 
     const auto resolved = ResolveCompletionItem(request);
     REQUIRE(resolved.documentation.has_value());
@@ -2792,4 +2792,66 @@ TEST_CASE("Completion - Suggest operator overloads including opCall in class bod
     CHECK(HasItem(items, "opCall"));
     CHECK(HasItem(items, "opIndex"));
     CHECK(HasItem(items, "opAssign"));
+}
+
+TEST_CASE("Completion - Namespace enum values declared in an included file")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("INS2_GL_OPTIONS");
+    const std::string valueNotAimed = angel_lsp::test::GenerateRandomSymbolName("GL_NOTAIMED");
+    const std::string valueAimed = angel_lsp::test::GenerateRandomSymbolName("GL_AIMED");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string hostNs = angel_lsp::test::GenerateRandomSymbolName("INS2_K98K");
+
+    const std::string baseCode = "namespace " + ns + "\n{\nenum " + enumName + "\n{\n    " + valueNotAimed +
+                                 " = 0,\n    " + valueAimed + "\n};\nmixin class " + mixinName +
+                                 "\n{\n    protected int mode;\n}\n}\n";
+    const std::string prefix = valueNotAimed.substr(0, 5);
+    const std::string hostCode = "namespace " + hostNs + "\n{\nclass weapon : " + ns + "::" + mixinName +
+                                 "\n{\n    void Fire()\n    {\n        " + ns + "::" + prefix + "\n    }\n}\n}\n";
+
+    TestEnvironment env(hostCode, /*runAnalyzer=*/true);
+    env.symbolCollector.CollectSymbols("file:///base.as", baseCode, env.parser, env.symbolTable);
+
+    const auto labels = [](const std::vector<lsp::CompletionItem>& items)
+    {
+        std::vector<std::string> result;
+        for (const auto& item : items)
+        {
+            result.push_back(item.label);
+        }
+        return result;
+    };
+    const auto contains = [](const std::vector<std::string>& all, const std::string& label)
+    { return std::find(all.begin(), all.end(), label) != all.end(); };
+
+    // Good: `NS::GL_|` offers the value even though the enum name is omitted.
+    const auto qualified = labels(env.CompleteAt(6, static_cast<uint32_t>(8 + ns.size() + 2 + prefix.size())));
+    CHECK(contains(qualified, valueNotAimed));
+    CHECK(contains(qualified, valueAimed));
+
+    // Bad: a prefix no value shares still lists the namespace's other members unfiltered, never invented ones.
+    CHECK_FALSE(contains(qualified, valueNotAimed + "_missing"));
+}
+
+TEST_CASE("Completion - Namespace enum values inside a comparison in a host class method")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("INS2_GL_OPTIONS");
+    const std::string valueNotAimed = angel_lsp::test::GenerateRandomSymbolName("GL_NOTAIMED");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string hostNs = angel_lsp::test::GenerateRandomSymbolName("INS2_K98K");
+
+    const std::string baseCode = "namespace " + ns + "\n{\nenum " + enumName + "\n{\n    " + valueNotAimed +
+                                 " = 0\n};\nmixin class " + mixinName + "\n{\n    protected int mode;\n}\n}\n";
+    const std::string prefix = valueNotAimed.substr(0, 5);
+    const std::string head = "        if( mode == " + ns + "::" + prefix;
+    const std::string hostCode = "namespace " + hostNs + "\n{\nclass weapon : " + ns + "::" + mixinName +
+                                 "\n{\n    void Fire()\n    {\n" + head + " )\n            return;\n    }\n}\n}\n";
+
+    TestEnvironment env(hostCode, /*runAnalyzer=*/true);
+    env.symbolCollector.CollectSymbols("file:///base.as", baseCode, env.parser, env.symbolTable);
+
+    const auto items = env.CompleteAt(6, static_cast<uint32_t>(head.size()));
+    CHECK(HasItem(items, valueNotAimed));
 }

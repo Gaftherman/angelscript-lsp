@@ -1,5 +1,8 @@
 {
   "completed_folders": [
+    "server/src/analysis/completion",
+    "server/src/analysis/code_action",
+    "server/src/analysis/formatting",
     "server/src/features/selection_range",
     "server/src/features/linked_editing",
     "server/src/features/folding_range",
@@ -65,7 +68,8 @@
       { "id": "L3", "title": "lsp/handlers", "status": "done", "before": 346, "after": 308 },
       { "id": "L4", "title": "lsp/pipeline", "status": "done", "before": 120, "after": 74 },
       { "id": "L5", "title": "lsp root (Server.h, ServerDocuments, ServerInitOptions...)", "status": "done", "before": 156, "after": 100 },
-      { "id": "S1", "title": "avoidable copies sweep and narrowed strict gate", "scope": ["server/src (checked folders)", "server/scripts/verify_pass2_invariants.py"], "status": "done", "before": 1917, "after": 0, "audit_before": 1917, "audit_after": 1818 }
+      { "id": "S1", "title": "avoidable copies sweep and narrowed strict gate", "scope": ["server/src (checked folders)", "server/scripts/verify_pass2_invariants.py"], "status": "done", "before": 1917, "after": 0, "audit_before": 1917, "audit_after": 1818 },
+      { "id": "S2", "title": "completion, code_action and formatting copies", "scope": ["server/src/analysis/completion", "server/src/analysis/code_action", "server/src/analysis/formatting"], "status": "done", "before": 72, "after": 0 }
     ]
   }
 }

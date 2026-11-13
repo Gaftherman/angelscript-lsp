@@ -193,7 +193,7 @@ LexicalContext ContextAtOffset(std::string_view source, size_t offset)
     return LexicalContext::Code;
 }
 
-bool IsAfterCaseLabelColon(const std::string& prefix)
+bool IsAfterCaseLabelColon(std::string_view prefix)
 {
     if (prefix.empty() || prefix.back() != ':')
     {
@@ -205,7 +205,7 @@ bool IsAfterCaseLabelColon(const std::string& prefix)
     }
 
     static const std::regex caseLabelRegex(R"((^|[\s{};])(case\s+[^;]*|default\s*):$)");
-    return std::regex_search(prefix, caseLabelRegex);
+    return std::regex_search(prefix.begin(), prefix.end(), caseLabelRegex);
 }
 
 bool IsInsideTemplateArguments(std::string_view prefix)

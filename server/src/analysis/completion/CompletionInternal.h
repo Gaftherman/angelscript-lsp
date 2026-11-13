@@ -19,7 +19,7 @@ namespace angel_lsp::analysis::completion
  * @param[in] typeName Container type name.
  * @return True if symbol is a constructor or destructor.
  */
-bool IsConstructorOrDestructor(const analysis::Symbol& sym, const std::string& typeName);
+bool IsConstructorOrDestructor(const analysis::Symbol& sym, std::string_view typeName);
 
 /**
  * @brief Formats function signature with substituted template arguments.
@@ -38,7 +38,7 @@ std::string FormatMethodDetail(const analysis::Symbol& sym, const analysis::Temp
  * @return Vector of type names in the hierarchy.
  */
 std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& symbolTable,
-                                                   const std::string& initialTypeName);
+                                                   std::string_view initialTypeName);
 
 /**
  * @brief Extracts the prefix substring of a line up to the cursor character.
@@ -87,7 +87,7 @@ void AddItemIfNew(CompletionCollector& collector, CompletionCandidate candidate)
  * @param[in] params Function parameter list.
  * @return Formatted snippet string.
  */
-std::string CallSnippet(const std::string& name, const std::vector<analysis::ParameterInformation>& params);
+std::string CallSnippet(std::string_view name, const std::vector<analysis::ParameterInformation>& params);
 
 /**
  * @brief Static list of AngelScript VM primitive type names.
@@ -115,7 +115,7 @@ LexicalContext ContextAtOffset(std::string_view source, size_t offset);
  * @param[in] prefix Prefix string.
  * @return True if after case label colon.
  */
-bool IsAfterCaseLabelColon(const std::string& prefix);
+bool IsAfterCaseLabelColon(std::string_view prefix);
 
 /**
  * @brief Checks if prefix places cursor inside an unclosed template bracket `<...>`.
@@ -130,7 +130,7 @@ bool IsInsideTemplateArguments(std::string_view prefix);
  * @param[in] table Global symbol table.
  * @return Call snippet string, or empty.
  */
-std::string CallSnippetForName(const std::string& name, const analysis::SymbolTable& table);
+std::string CallSnippetForName(std::string_view name, const analysis::SymbolTable& table);
 
 /**
  * @brief Generates template insert snippet for a named template class.
@@ -138,7 +138,7 @@ std::string CallSnippetForName(const std::string& name, const analysis::SymbolTa
  * @param[in] table Global symbol table.
  * @return Snippet string, or empty.
  */
-std::string TemplateSnippetForName(const std::string& name, const analysis::SymbolTable& table);
+std::string TemplateSnippetForName(std::string_view name, const analysis::SymbolTable& table);
 
 /**
  * @brief Returns list of AngelScript reserved and contextual keywords.
@@ -187,7 +187,7 @@ std::vector<std::string> CollectVisibleNamespaces(const CompletionQuery& request
  * @param[in,out] collector Completion collector context.
  * @return True if scope resolution completed.
  */
-bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& collector);
+bool TryCompleteScopeResolution(std::string_view prefix, CompletionCollector& collector);
 
 /**
  * @brief Completes type names when cursor is inside template argument brackets `<...>`.
@@ -195,7 +195,7 @@ bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& 
  * @param[in,out] collector Completion collector context.
  * @return True if template arguments completed.
  */
-bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector& collector);
+bool TryCompleteTemplateArguments(std::string_view prefix, CompletionCollector& collector);
 
 /**
  * @brief Retrieves backward declaration text before cursor up to opening brace or semicolon.
@@ -205,7 +205,7 @@ std::string GetBackwardDeclarationText(std::string_view sourceCode, uint32_t lin
 /**
  * @brief Attempts to complete strictly allowed inheritance base classes, interfaces, and namespaces.
  */
-bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& collector);
+bool TryCompleteInheritance(std::string_view prefix, CompletionCollector& collector);
 
 /**
  * @brief Resolves base container type name, handling unqualified template class lookups.
@@ -213,7 +213,7 @@ bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& coll
  * @param[in] symbolTable Global symbol table.
  * @return Fully qualified base container name.
  */
-std::string FindCanonicalBaseContainer(const std::string& canonicalType, const analysis::SymbolTable& symbolTable);
+std::string FindCanonicalBaseContainer(std::string_view canonicalType, const analysis::SymbolTable& symbolTable);
 
 /**
  * @brief Substitutes template type parameters in a type signature.
@@ -272,7 +272,7 @@ std::string ResolveNamedReceiverType(std::string_view nodeText, const Completion
  * @param[in,out] s Offset position before bracket sequence.
  * @return Struct with number of index brackets peeled and last index argument string.
  */
-IndexPeelResult PeelIndexBracketsWithExpr(const std::string& prefix, size_t& s);
+IndexPeelResult PeelIndexBracketsWithExpr(std::string_view prefix, size_t& s);
 
 /**
  * @brief Peels matched call parentheses preceding a member access.
@@ -280,7 +280,7 @@ IndexPeelResult PeelIndexBracketsWithExpr(const std::string& prefix, size_t& s);
  * @param[in,out] s Offset position before parentheses.
  * @return True if parentheses were peeled; false otherwise.
  */
-bool PeelCallParentheses(const std::string& prefix, size_t& s);
+bool PeelCallParentheses(std::string_view prefix, size_t& s);
 
 /**
  * @brief Skips spaces and horizontal tabs backward from a given position.
@@ -288,7 +288,7 @@ bool PeelCallParentheses(const std::string& prefix, size_t& s);
  * @param[in] pos Starting character offset.
  * @return Adjusted offset positioned at the first non-whitespace character or zero.
  */
-size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos);
+size_t SkipInlineWhitespaceBackward(std::string_view text, size_t pos);
 
 /**
  * @brief Skips whitespace and block comments backward from a given position.
@@ -296,7 +296,7 @@ size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos);
  * @param[in] pos Starting character offset.
  * @return Adjusted offset positioned at first non-whitespace, non-comment character.
  */
-size_t SkipWhitespaceAndCommentsBackward(const std::string& text, size_t pos);
+size_t SkipWhitespaceAndCommentsBackward(std::string_view text, size_t pos);
 
 /**
  * @brief Finds the start byte offset of an identifier moving backwards from the specified end position.
@@ -304,7 +304,7 @@ size_t SkipWhitespaceAndCommentsBackward(const std::string& text, size_t pos);
  * @param[in] end Byte offset where backward search begins.
  * @return Starting byte offset of the identifier.
  */
-size_t ExtractIdentifierBackward(const std::string& text, size_t end);
+size_t ExtractIdentifierBackward(std::string_view text, size_t end);
 
 /**
  * @brief Deduces basic literal or identifier type from an index expression string.
@@ -324,7 +324,7 @@ std::string DeduceLiteralOrNamedType(std::string_view expr, const CompletionQuer
  * @param[in] enclosingClass Enclosing class name in current scope, if any.
  * @return True if an indexed getter accessor exists.
  */
-bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const std::string& parentType, std::string_view name,
+bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, std::string_view parentType, std::string_view name,
                                std::string_view enclosingClass = "");
 
 /**
@@ -332,7 +332,7 @@ bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const std::st
  * @param[in] prefix Line text before the cursor.
  * @return Column of the `.`, or std::nullopt when there is none or it belongs to a number literal.
  */
-std::optional<size_t> FindAccessDotCol(const std::string& prefix);
+std::optional<size_t> FindAccessDotCol(std::string_view prefix);
 
 /**
  * @brief Offers the members of a type and of every type it inherits from, with template arguments bound.
@@ -340,7 +340,7 @@ std::optional<size_t> FindAccessDotCol(const std::string& prefix);
  * @param[in] memberPrefix Part of the member name already typed after the dot.
  * @param[in,out] collector Completion collector receiving the members.
  */
-void PopulateHierarchicalMembers(const std::string& rawTypeName, std::string_view memberPrefix,
+void PopulateHierarchicalMembers(std::string_view rawTypeName, std::string_view memberPrefix,
                                  CompletionCollector& collector);
 
 /**
@@ -350,7 +350,7 @@ void PopulateHierarchicalMembers(const std::string& rawTypeName, std::string_vie
  * @param[in,out] collector Completion collector context.
  * @return True if member completion completed.
  */
-bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* innermostScope,
+bool TryCompleteMemberAccess(std::string_view prefix, const analysis::Scope* innermostScope,
                              CompletionCollector& collector);
 
 /**
@@ -435,7 +435,7 @@ bool ExtractCallContext(std::string_view prefix, std::string& outCallee, size_t&
  * @param[in] scope Lexical scope at cursor.
  * @return Resolved parameter type name, or empty string.
  */
-std::string FindCalleeParameterType(const std::string& callee, size_t argIndex, const CompletionQuery& request,
+std::string FindCalleeParameterType(std::string_view callee, size_t argIndex, const CompletionQuery& request,
                                     const analysis::Scope* scope);
 
 /**

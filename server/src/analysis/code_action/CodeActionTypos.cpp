@@ -64,14 +64,14 @@ static std::vector<std::string> CollectTypoCandidates(const CodeActionQuery& que
         }
     }
     query.symbolTable.ForEachSymbol(
-        [&candidates, isType](const std::string& name, const std::vector<analysis::Symbol>& symbols)
+        [&candidates, isType](std::string_view name, const std::vector<analysis::Symbol>& symbols)
         {
             if (isType && std::none_of(symbols.begin(), symbols.end(),
                                        [](const analysis::Symbol& sym) { return IsTypeLikeSymbol(sym.type); }))
             {
                 return;
             }
-            candidates.push_back(name);
+            candidates.emplace_back(name);
         });
     return candidates;
 }

@@ -130,12 +130,12 @@ bool ExtractCallContext(std::string_view prefix, std::string& outCallee, size_t&
  * @return Resolved parameter type name, or empty string.
  */
 static std::vector<analysis::Symbol>
-ResolveMemberCalleeCandidates(const std::string& callee, const CompletionQuery& request, const analysis::Scope* scope)
+ResolveMemberCalleeCandidates(std::string_view callee, const CompletionQuery& request, const analysis::Scope* scope)
 {
     std::vector<analysis::Symbol> candidates;
     size_t dotPos = callee.rfind('.');
-    std::string objText = callee.substr(0, dotPos);
-    std::string memText = callee.substr(dotPos + 1);
+    const std::string_view objText = callee.substr(0, dotPos);
+    const std::string_view memText = callee.substr(dotPos + 1);
     std::string rType = ResolveNamedReceiverType(objText, request, scope);
     if (!rType.empty())
     {
@@ -150,7 +150,7 @@ ResolveMemberCalleeCandidates(const std::string& callee, const CompletionQuery& 
     return candidates;
 }
 
-static std::vector<analysis::Symbol> ResolveUnqualifiedCalleeCandidates(const std::string& callee,
+static std::vector<analysis::Symbol> ResolveUnqualifiedCalleeCandidates(std::string_view callee,
                                                                         const CompletionQuery& request,
                                                                         const analysis::Scope* scope)
 {
@@ -166,7 +166,7 @@ static std::vector<analysis::Symbol> ResolveUnqualifiedCalleeCandidates(const st
     return request.symbolTable.FindSymbols(callee);
 }
 
-std::string FindCalleeParameterType(const std::string& callee, size_t argIndex, const CompletionQuery& request,
+std::string FindCalleeParameterType(std::string_view callee, size_t argIndex, const CompletionQuery& request,
                                     const analysis::Scope* scope)
 {
     auto candidates = (callee.find('.') != std::string::npos)

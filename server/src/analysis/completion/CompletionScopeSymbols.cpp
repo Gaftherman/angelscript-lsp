@@ -47,7 +47,7 @@ void AddEnumConstantCandidate(CompletionCollector& collector, const analysis::Sy
  * @param[in,out] collector Completion collector context.
  * @param[in] prox Symbol proximity tier.
  */
-static void ProcessScopeConstantDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
+static void ProcessScopeConstantDefinition(const analysis::LocalDefinition& def, std::string_view scopeNs,
                                            CompletionCollector& collector, SymbolProximity prox)
 {
     const std::string symbolKey = utils::JoinScopedName(scopeNs, def.name);
@@ -80,7 +80,7 @@ static void ProcessScopeConstantDefinition(const analysis::LocalDefinition& def,
  * @param[in,out] collector Completion collector context.
  * @param[in] prox Symbol proximity tier.
  */
-static void ProcessScopeDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
+static void ProcessScopeDefinition(const analysis::LocalDefinition& def, std::string_view scopeNs,
                                    CompletionCollector& collector, SymbolProximity prox)
 {
     if (def.kind == analysis::LocalDefinitionKind::Constant)
@@ -185,7 +185,7 @@ static void FormatEnclosingMemberItem(const analysis::Symbol& sym, CompletionCol
     }
 }
 
-static void AddAccessorPropertyCandidate(const analysis::Symbol& sym, const std::string& enclosingClassName,
+static void AddAccessorPropertyCandidate(const analysis::Symbol& sym, std::string_view enclosingClassName,
                                          CompletionCollector& collector, SymbolProximity prox)
 {
     const int accessorMode = collector.request.config ? collector.request.config->engine.propertyAccessorMode : 2;
@@ -205,7 +205,7 @@ static void AddAccessorPropertyCandidate(const analysis::Symbol& sym, const std:
     }
 }
 
-static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, const std::string& enclosingClassName,
+static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, std::string_view enclosingClassName,
                                             CompletionCollector& collector)
 {
     if (sym.type == analysis::SymbolType::CallReference)

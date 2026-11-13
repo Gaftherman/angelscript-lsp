@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/checkers/DefiniteAssignmentChecker.h"
+#include "analysis/index/DefiniteAssignmentFacts.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
@@ -418,5 +419,117 @@ TEST_SUITE("DefiniteAssignmentOverloads")
         CHECK(HasUninitializedRead(AnalyzeCode("void Use(int v) { }\n"
                                                "class B { bool Get(int v) { return true; } }\n"
                                                "void main() { B b; int n; b.Get(n); }\n")));
+    }
+}
+
+TEST_SUITE("DefiniteAssignmentStatementOrder")
+{
+    // Every statement record slices the call/read/assignment arrays by the position it started
+    // appending at. When the arrays were sorted after the records were built, an `&out` call and
+    // the read that follows it in a loop body were attributed to the wrong statements, and a
+    // `float x, y;` filled by `Spread(x, y)` was reported at its first use.
+    static const char* const k_spreadStub = "class Util { void Spread(float &out a, float &out b) const { } }\n"
+                                            "Util g_Util;\n"
+                                            "float Scale(float v) { return v; }\n";
+
+    TEST_CASE("Good: an out call inside a loop initialises the variables the next statement reads")
+    {
+        const std::string code = std::string(k_spreadStub) + "void Fire(uint shots)\n"
+                                                             "{\n"
+                                                             "    float x, y;\n"
+                                                             "    for (uint i = 0; i < shots; ++i)\n"
+                                                             "    {\n"
+                                                             "        g_Util.Spread(x, y);\n"
+                                                             "        float dx = Scale(x) + y * 2.0f;\n"
+                                                             "    }\n"
+                                                             "}\n";
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(code)));
+    }
+
+    TEST_CASE("Good: the same shape inside a mixin method")
+    {
+        const std::string code = std::string(k_spreadStub) + "mixin class Shooter\n"
+                                                             "{\n"
+                                                             "    void Fire(uint shots)\n"
+                                                             "    {\n"
+                                                             "        float x, y;\n"
+                                                             "        int tag = 0;\n"
+                                                             "        for (uint i = 0; i < shots; ++i)\n"
+                                                             "        {\n"
+                                                             "            g_Util.Spread(x, y);\n"
+                                                             "            float dx = x + y;\n"
+                                                             "        }\n"
+                                                             "    }\n"
+                                                             "}\n";
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(code)));
+    }
+
+    TEST_CASE("Bad: a read before any out call is still reported")
+    {
+        const std::string code = std::string(k_spreadStub) + "void Fire(uint shots)\n"
+                                                             "{\n"
+                                                             "    float x, y;\n"
+                                                             "    for (uint i = 0; i < shots; ++i)\n"
+                                                             "    {\n"
+                                                             "        float dx = x + y;\n"
+                                                             "        g_Util.Spread(x, y);\n"
+                                                             "    }\n"
+                                                             "}\n";
+        CHECK(HasUninitializedRead(AnalyzeCode(code)));
+    }
+
+    TEST_CASE("Neutral: an out call in one branch does not hide a read in the loop that never ran it")
+    {
+        const std::string code = std::string(k_spreadStub) + "void Fire(bool aim)\n"
+                                                             "{\n"
+                                                             "    float x, y;\n"
+                                                             "    if (aim) { g_Util.Spread(x, y); }\n"
+                                                             "    float dx = Scale(x);\n"
+                                                             "}\n";
+        // AngelScript warns only when NO assignment precedes the read; one in a branch counts.
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(code)));
+    }
+
+    TEST_CASE("Invariant: every fact slice of a record lies inside the record")
+    {
+        const std::string code = std::string(k_spreadStub) +
+                                 "void Fire(uint shots, bool a)\n"
+                                 "{\n"
+                                 "    float x, y;\n"
+                                 "    float z = Scale(1.0f);\n"
+                                 "    for (uint i = 0; i < shots; ++i)\n"
+                                 "    {\n"
+                                 "        g_Util.Spread(x, y);\n"
+                                 "        if (a) { z = Scale(x); } else { z = y; }\n"
+                                 "        float w = Scale(z) + x;\n"
+                                 "        while (w > 0.0f) { w = Scale(w) - 1.0f; }\n"
+                                 "    }\n"
+                                 "    switch (shots) { case 1: z = Scale(y); break; default: break; }\n"
+                                 "}\n";
+        AngelScriptParser parser;
+        TSTree* tree = parser.Parse(code);
+        REQUIRE(tree != nullptr);
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        const DefiniteAssignmentFacts facts = BuildDefiniteAssignmentFacts(nodeIndex, code);
+        REQUIRE(!facts.records.empty());
+        for (const auto& rec : facts.records)
+        {
+            for (const auto& call : facts.CallsOf(rec))
+            {
+                CHECK(call.bytes.startByte >= rec.bytes.startByte);
+                CHECK(call.bytes.endByte <= rec.bytes.endByte);
+            }
+            for (const auto& read : facts.ReadsOf(rec))
+            {
+                CHECK(read.bytes.startByte >= rec.bytes.startByte);
+                CHECK(read.bytes.endByte <= rec.bytes.endByte);
+            }
+            for (const auto& decl : facts.DeclaratorsOf(rec))
+            {
+                CHECK(decl.bytes.startByte >= rec.bytes.startByte);
+                CHECK(decl.bytes.endByte <= rec.bytes.endByte);
+            }
+        }
+        ts_tree_delete(tree);
     }
 }

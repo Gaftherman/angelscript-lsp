@@ -17,7 +17,7 @@ namespace angel_lsp::analysis::formatting
  * @return The formatted text, or the source unchanged when it is already formatted, or when
  *        the file does not parse cleanly enough to be sure of what would move.
  */
-std::string FormatPredefinedStub(const std::string& source, angel_lsp::parser::AngelScriptParser& parser,
+std::string FormatPredefinedStub(std::string_view source, angel_lsp::parser::AngelScriptParser& parser,
                                  const std::string& indent = "\t");
 
 /**

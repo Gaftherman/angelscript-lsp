@@ -29,7 +29,7 @@ static const analysis::Symbol* FindUniqueGlobalFunction(const analysis::SymbolTa
     const analysis::Symbol* target = nullptr;
     size_t globalOverloads = 0;
     table.ForEachSymbol(
-        [&](const std::string& name, const std::vector<analysis::Symbol>& symbols)
+        [&](std::string_view name, const std::vector<analysis::Symbol>& symbols)
         {
             if (name != functionName)
             {

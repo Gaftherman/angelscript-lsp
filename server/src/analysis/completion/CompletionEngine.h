@@ -16,7 +16,7 @@ namespace angel_lsp::analysis::completion
  * @brief Returns a document's text by URI, or nullptr when the host holds none.
  *        The pointer stays valid for as long as the host keeps the text alive; the reader decides that.
  */
-using DocumentTextReader = std::function<const std::string*(const std::string&)>;
+using DocumentTextReader = std::function<const std::string*(std::string_view)>;
 
 /**
  * @brief Computes the completion entries for the cursor in a query, sorted by their sort key.

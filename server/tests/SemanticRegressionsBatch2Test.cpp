@@ -879,6 +879,74 @@ TEST_CASE("Member access on unresolvable auto variable suppresses false positive
     CHECK_FALSE(HasDiagCode(diags, "as-err-member-not-found"));
 }
 
+TEST_CASE("Vector 9 - Handle-of on an array or template keeps the container type in a ternary argument")
+{
+    const std::string funcdefName = GenerateRandomSymbolName("Callback");
+    const std::string holderClass = GenerateRandomSymbolName("Context");
+    const std::string elementType = "string";
+    const std::string argsVar = GenerateRandomSymbolName("args");
+
+    const std::string engine = "class string { }\n"
+                               "class array<T> { uint length() const; void insertLast(const T&in v); }\n";
+    const std::string preamble = "funcdef void " + funcdefName + "(array<" + elementType + ">@ a);\n" + "class " +
+                                 holderClass + " { " + funcdefName + "@ Lambda; }\n";
+
+    // Good: `@arr : null` is an `array<string>@`, which is what the funcdef takes.
+    const std::string good = preamble + "void Run(" + holderClass + "@ ctx)\n{\n    array<" + elementType + "> " +
+                             argsVar + ";\n    ctx.Lambda(" + argsVar + ".length() > 0 ? @" + argsVar +
+                             " : null);\n}\n";
+    const auto goodDiags = AnalyzeSnippetWithPredefined(good, engine);
+    DumpDiags("Vector 9 good", goodDiags);
+    CHECK_FALSE(HasDiagCode(goodDiags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasDiagCode(goodDiags, "as-err-call-no-matching-signature"));
+
+    // Bad: a handle to a different container must still be rejected, so the fix did not just silence it.
+    const std::string bad = preamble + "void Run(" + holderClass + "@ ctx)\n{\n    array<int> " + argsVar +
+                            ";\n    ctx.Lambda(" + argsVar + ".length() > 0 ? @" + argsVar + " : null);\n}\n";
+    const auto badDiags = AnalyzeSnippetWithPredefined(bad, engine);
+    DumpDiags("Vector 9 bad", badDiags);
+    CHECK((HasDiagCode(badDiags, "as-err-no-implicit-conversion") ||
+           HasDiagCode(badDiags, "as-err-call-no-matching-signature")));
+
+    // Neutral: the plain handle-of without a ternary also keeps its type.
+    const std::string neutral = preamble + "void Run(" + holderClass + "@ ctx)\n{\n    array<" + elementType + "> " +
+                                argsVar + ";\n    ctx.Lambda(@" + argsVar + ");\n}\n";
+    const auto neutralDiags = AnalyzeSnippetWithPredefined(neutral, engine);
+    DumpDiags("Vector 9 neutral", neutralDiags);
+    CHECK_FALSE(HasDiagCode(neutralDiags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("Vector 10 - An enum value of another namespace needs its qualifier outside a mixin body")
+{
+    const std::string baseNs = GenerateRandomSymbolName("INS2BASE");
+    const std::string hostNs = GenerateRandomSymbolName("INS2_K98K");
+    const std::string enumName = GenerateRandomSymbolName("GlOptions");
+    const std::string value = GenerateRandomSymbolName("GL_NOTAIMED");
+    const std::string mixinName = GenerateRandomSymbolName("WeaponBase");
+    const std::string hostClass = GenerateRandomSymbolName("weapon");
+
+    const std::string baseCode = "namespace " + baseNs + " {\nenum " + enumName + " { " + value + " = 0, Other }\n" +
+                                 "mixin class " + mixinName + " {\n    protected int mode;\n" +
+                                 "    bool InMixin() { return mode == " + value + "; }\n}\n}\n";
+    const auto hostWith = [&](const std::string& reference, const std::string& preamble = "")
+    {
+        return baseCode + preamble + "namespace " + hostNs + " {\nclass " + hostClass + " : " + baseNs +
+               "::" + mixinName + " {\n    bool Own() { return mode == " + reference + "; }\n}\n}\n";
+    };
+
+    // Good: qualified from another namespace, and unqualified inside the mixin body itself.
+    const auto qualified = AnalyzeSnippetWithPredefined(hostWith(baseNs + "::" + value));
+    CHECK_FALSE(HasDiagCode(qualified, "as-warn-undeclared-identifier"));
+
+    // Bad: the compiler reports `No matching symbol` for the unqualified use in the host's own method.
+    const auto unqualified = AnalyzeSnippetWithPredefined(hostWith(value));
+    CHECK(HasDiagCode(unqualified, "as-warn-undeclared-identifier"));
+
+    // Neutral: `using namespace` makes the unqualified spelling legal again.
+    const auto viaUsing = AnalyzeSnippetWithPredefined(hostWith(value, "using namespace " + baseNs + ";\n"));
+    CHECK_FALSE(HasDiagCode(viaUsing, "as-warn-undeclared-identifier"));
+}
+
 TEST_SUITE_END();
 
 } // namespace angel_lsp::test

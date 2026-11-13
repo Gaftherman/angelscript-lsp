@@ -10,7 +10,7 @@
 namespace angel_lsp::analysis::code_action
 {
 
-static bool IsVariableReferencedAfter(const analysis::Scope* fnScope, const std::string& name, uint32_t line,
+static bool IsVariableReferencedAfter(const analysis::Scope* fnScope, std::string_view name, uint32_t line,
                                       uint32_t col = 0)
 {
     if (!fnScope)
@@ -45,7 +45,7 @@ static bool IsVariableReferencedAfter(const analysis::Scope* fnScope, const std:
     return false;
 }
 
-static const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis::Scope* root, const std::string& name)
+static const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis::Scope* root, std::string_view name)
 {
     if (!root)
     {
@@ -76,7 +76,7 @@ static const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis
     return nullptr;
 }
 
-static const analysis::LocalDefinition* FindVariableDefinition(const MethodOutputContext& ctx, const std::string& name)
+static const analysis::LocalDefinition* FindVariableDefinition(const MethodOutputContext& ctx, std::string_view name)
 {
     if (ctx.stmtScope)
     {

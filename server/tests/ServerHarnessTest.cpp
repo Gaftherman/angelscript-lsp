@@ -7605,3 +7605,100 @@ TEST_CASE("ServerHarness - Sub-header included by root resolves parent types and
     CHECK(publishedSub.find("as-err-undeclared-identifier") == std::string::npos);
     CHECK(publishedSub.find("as-warn-unreferenced-symbol") == std::string::npos);
 }
+
+TEST_CASE("Server - A weapon script written the way the INS2 pack writes it works end to end")
+{
+    // The flow a person follows on a weapon script: open the base file and the weapon, ctrl+click a
+    // field reached through the engine's `self`, ctrl+click a name a mixin takes from its host,
+    // complete a namespaced enum value, and read the warnings. Each step used to fail on its own and
+    // each was found by hand, so the whole sequence is pinned here against the same shape.
+    WorkspaceFixture fixture;
+    const std::string baseSource = "namespace INS2BASE\n{\n"
+                                   "enum GlOptions { GL_NOTAIMED = 0, GL_AIMED }\n"
+                                   "mixin class WeaponBase\n{\n"
+                                   "    protected int WeaponGLMode;\n"
+                                   "    void Fire() { Consume( m_pPlayer ); }\n"
+                                   "}\n}\n"
+                                   "void Consume( int v ) { }\n";
+    const std::string weaponSource = "#include \"base.as\"\n"
+                                     "class EngineWeapon { float idleTime; void Reload() { } }\n"
+                                     "class ScriptBase { EngineWeapon@ self { get const { return null; } } }\n"
+                                     "class Spreader { void Spread( float &out a, float &out b ) const { } }\n"
+                                     "Spreader g_Spreader;\n"
+                                     "namespace INS2_K98K\n{\n"
+                                     "class weapon : ScriptBase, INS2BASE::WeaponBase\n{\n"
+                                     "    private int m_pPlayer { get const { return 0; } }\n"
+                                     "    void Think()\n    {\n"
+                                     "        self.idleTime = 1.0f;\n"
+                                     "        self.Reload();\n"
+                                     "        if( WeaponGLMode == INS2BASE::GL_NOTAIMED )\n            return;\n"
+                                     "        float x, y;\n"
+                                     "        for( uint i = 0; i < 3; ++i )\n        {\n"
+                                     "            g_Spreader.Spread( x, y );\n"
+                                     "            float dx = x + y;\n"
+                                     "        }\n"
+                                     "    }\n}\n}\n";
+    const std::string badSource = "#include \"base.as\"\n"
+                                  "namespace INS2_K98K\n{\n"
+                                  "class other : INS2BASE::WeaponBase\n{\n"
+                                  "    bool Own() { return WeaponGLMode == GL_NOTAIMED; }\n"
+                                  "}\n}\n";
+    fixture.Write("base.as", baseSource);
+    fixture.Write("weapon.as", weaponSource);
+    fixture.Write("bad.as", badSource);
+
+    const auto positionOf = [](const std::string& source, const std::string& needle, size_t inside)
+    {
+        const size_t at = source.find(needle) + inside;
+        const auto line =
+            static_cast<uint32_t>(std::count(source.begin(), source.begin() + static_cast<long>(at), '\n'));
+        const size_t lineStart = source.rfind('\n', at == 0 ? 0 : at - 1);
+        return std::pair{line, static_cast<uint32_t>(at - (lineStart == std::string::npos ? 0 : lineStart + 1))};
+    };
+    const auto request = [&](int id, const char* method, const std::string& uri, std::pair<uint32_t, uint32_t> pos)
+    {
+        return std::string(R"({"jsonrpc":"2.0","id":)") + std::to_string(id) + R"(,"method":")" + method +
+               R"(","params":{"textDocument":{"uri":")" + uri + R"("},"position":{"line":)" +
+               std::to_string(pos.first) + R"(,"character":)" + std::to_string(pos.second) + "}}}";
+    };
+
+    const std::string baseUri = fixture.Uri("base.as");
+    const std::string weaponUri = fixture.Uri("weapon.as");
+    const std::string badUri = fixture.Uri("bad.as");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+    stream.Push(DidOpenMessage(baseUri, baseSource));
+    stream.Push(DidOpenMessage(weaponUri, weaponSource));
+    stream.Push(DidOpenMessage(badUri, badSource));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 3); });
+
+    stream.Push(request(10, "textDocument/definition", weaponUri, positionOf(weaponSource, "self.idleTime", 7)));
+    stream.Push(request(11, "textDocument/definition", weaponUri, positionOf(weaponSource, "self.Reload", 7)));
+    stream.Push(request(12, "textDocument/definition", baseUri, positionOf(baseSource, "m_pPlayer", 3)));
+    stream.Push(
+        request(13, "textDocument/completion", weaponUri, positionOf(weaponSource, "INS2BASE::GL_NOTAIMED", 15)));
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.implicitIncludeExtension = true;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(PublishedFrames(output));
+    const std::string weaponPublished = LastPublishedFor(output, "weapon.as");
+    const std::string badPublished = LastPublishedFor(output, "bad.as");
+
+    // Good: every step of the flow lands where the person expects.
+    CHECK(stream.ResponseFor(10).find("weapon.as") != std::string::npos);
+    CHECK(stream.ResponseFor(11).find("weapon.as") != std::string::npos);
+    CHECK(stream.ResponseFor(12).find("weapon.as") != std::string::npos);
+    CHECK(stream.ResponseFor(13).find("GL_NOTAIMED") != std::string::npos);
+    CHECK(weaponPublished.find("as-warn-uninitialized-variable-read") == std::string::npos);
+    CHECK(weaponPublished.find("as-warn-undeclared-identifier") == std::string::npos);
+
+    // Bad: the same enum value without its qualifier is what the compiler rejects.
+    CHECK(badPublished.find("as-warn-undeclared-identifier") != std::string::npos);
+}

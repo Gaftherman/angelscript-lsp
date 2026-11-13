@@ -47,10 +47,10 @@ static inline std::string FormatRankedSortText(TypeMatchRank rank, std::string_v
  * @param[in] symbolTable Global symbol table.
  * @return TypeMatchRank tier.
  */
-static TypeMatchRank ComputeTypeRank(const CompletionEntry& item, const std::string& expectedType,
+static TypeMatchRank ComputeTypeRank(const CompletionEntry& item, std::string_view expectedType,
                                      const analysis::SymbolTable& symbolTable)
 {
-    std::string cleanExpected = analysis::StripTypeDecorations(expectedType);
+    std::string cleanExpected = analysis::StripTypeDecorations(std::string(expectedType));
     std::string itemType = item.detail.has_value() ? *item.detail : "";
     std::string cleanItem = analysis::StripTypeDecorations(itemType);
 

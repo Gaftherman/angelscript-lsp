@@ -34,7 +34,7 @@ namespace angel_lsp::analysis::completion
  * @param[in] quoteColumn 0-indexed column of opening quote.
  * @return Constructed completion item, or nullopt if invalid.
  */
-static std::optional<CompletionEntry> CreateIncludeCompletionItem(const std::string& candidate,
+static std::optional<CompletionEntry> CreateIncludeCompletionItem(std::string_view candidate,
                                                                   const std::filesystem::path& fromDirectory,
                                                                   const CompletionQuery& request, uint32_t quoteColumn)
 {

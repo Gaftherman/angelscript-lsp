@@ -23,7 +23,7 @@
 namespace angel_lsp::analysis::completion
 {
 
-bool IsConstructorOrDestructor(const analysis::Symbol& sym, const std::string& typeName)
+bool IsConstructorOrDestructor(const analysis::Symbol& sym, std::string_view typeName)
 {
     if (sym.type != analysis::SymbolType::Function)
     {
@@ -168,14 +168,15 @@ void AddItemIfNew(CompletionCollector& collector, CompletionCandidate candidate)
     collector.items.push_back(std::move(item));
 }
 
-std::string CallSnippet(const std::string& name, const std::vector<analysis::ParameterInformation>& params)
+std::string CallSnippet(std::string_view name, const std::vector<analysis::ParameterInformation>& params)
 {
     if (name.empty())
     {
         return {};
     }
 
-    std::string snippet = name + "(";
+    std::string snippet(name);
+    snippet += "(";
     for (size_t i = 0; i < params.size(); ++i)
     {
         if (i > 0)
@@ -246,7 +247,7 @@ std::string TemplateInsertSnippet(const analysis::Symbol& sym)
     return snippet;
 }
 
-std::string CallSnippetForName(const std::string& name, const analysis::SymbolTable& table)
+std::string CallSnippetForName(std::string_view name, const analysis::SymbolTable& table)
 {
     const auto symbols = table.FindSymbolsPtr(name);
     if (!symbols)
@@ -270,7 +271,7 @@ std::string CallSnippetForName(const std::string& name, const analysis::SymbolTa
     return only == nullptr ? std::string{} : CallSnippet(only->name, only->GetFunction().parameters);
 }
 
-std::string TemplateSnippetForName(const std::string& name, const analysis::SymbolTable& table)
+std::string TemplateSnippetForName(std::string_view name, const analysis::SymbolTable& table)
 {
     if (const auto symbols = table.FindSymbolsPtr(name))
     {

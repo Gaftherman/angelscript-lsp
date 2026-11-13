@@ -1098,6 +1098,8 @@ static void ResolveEnclosingClassMember(const ResolveTargetRequest& request, std
         return;
     }
     auto hierarchy = analysis::GetInheritedTypeHierarchy(enclosingClass, request.symbolTable);
+    // A mixin body names members that only its host classes declare, so their hierarchies count too.
+    analysis::ExpandMixinHostHierarchies(enclosingClass, request.symbolTable, hierarchy);
     for (const auto& cls : hierarchy)
     {
         auto syms = request.symbolTable.FindMemberSymbols(cls, nodeText);

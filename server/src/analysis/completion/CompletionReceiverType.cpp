@@ -62,7 +62,7 @@ static std::string FindFunctionReturnType(const analysis::SymbolTable& table, st
     return "";
 }
 
-static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table, const std::string& parentType,
+static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table, std::string_view parentType,
                                              std::string_view memberName)
 {
     if (parentType.empty() || memberName.empty())
@@ -188,7 +188,7 @@ static std::string ResolveReceiverRangeType(IndexedByteRange receiverRange, cons
  * @param[in] innermostScope Lexical scope at cursor.
  * @return Resolved raw type name, or empty string.
  */
-static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t dotCol,
+static std::string ResolveFallbackReceiverType(std::string_view prefix, size_t dotCol,
                                                const CompletionCollector& collector,
                                                const analysis::Scope* innermostScope)
 {
@@ -244,7 +244,7 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
     return rawTypeName;
 }
 
-bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* innermostScope,
+bool TryCompleteMemberAccess(std::string_view prefix, const analysis::Scope* innermostScope,
                              CompletionCollector& collector)
 {
     auto dotCol = FindAccessDotCol(prefix);

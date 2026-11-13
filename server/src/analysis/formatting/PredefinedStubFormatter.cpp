@@ -13,7 +13,7 @@
 namespace angel_lsp::analysis::formatting
 {
 
-static std::string_view Slice(const std::string& source, uint32_t from, uint32_t to)
+static std::string_view Slice(std::string_view source, uint32_t from, uint32_t to)
 {
     if (from > to || to > source.size())
     {
@@ -76,7 +76,7 @@ static std::string TrimTrailingSpaceOnEachLine(std::string_view text)
  * @brief Re-indents a block of text to one level, keeping its internal shape.
  *        Each non-empty line loses whatever leading whitespace it had and gains `indent`. A blank
  */
-static std::string Reindent(std::string_view text, const std::string& indent)
+static std::string Reindent(std::string_view text, std::string_view indent)
 {
     std::string out;
     out.reserve(text.size() + text.size() / 8);
@@ -145,7 +145,7 @@ static std::string_view TrimBlankEdges(std::string_view text)
  * @param[in] source Stub text the byte offsets point into.
  * @param[in,out] plan Plan receiving the slot or the new occurrence.
  */
-static void ProcessNamespaceChild(const IndexedStubDeclaration& decl, std::string_view lead, const std::string& source,
+static void ProcessNamespaceChild(const IndexedStubDeclaration& decl, std::string_view lead, std::string_view source,
                                   FormattingPlan& plan)
 {
     if (!decl.hasNameAndBody)
@@ -175,7 +175,7 @@ static void ProcessNamespaceChild(const IndexedStubDeclaration& decl, std::strin
  * @return Plan of literal slots and namespace groups plus the trailing text.
  */
 static FormattingPlan BuildFormattingPlan(const std::vector<IndexedStubDeclaration>& declarations,
-                                          const std::string& source)
+                                          std::string_view source)
 {
     FormattingPlan plan;
     uint32_t cursor = 0;
@@ -199,7 +199,7 @@ static FormattingPlan BuildFormattingPlan(const std::vector<IndexedStubDeclarati
     return plan;
 }
 
-static void EmitGroup(const Group& group, const std::string& indent, std::string& out)
+static void EmitGroup(const Group& group, std::string_view indent, std::string& out)
 {
     const std::string& firstLead = group.occurrences.front().lead;
     out.append(TrimTrailingSpaceOnEachLine(firstLead));
@@ -229,7 +229,7 @@ static void EmitGroup(const Group& group, const std::string& indent, std::string
     out.append("}");
 }
 
-static std::string EmitFormattedStub(const FormattingPlan& plan, const std::string& indent, size_t initialCapacity)
+static std::string EmitFormattedStub(const FormattingPlan& plan, std::string_view indent, size_t initialCapacity)
 {
     std::string out;
     out.reserve(initialCapacity);
@@ -250,18 +250,18 @@ static std::string EmitFormattedStub(const FormattingPlan& plan, const std::stri
     return out;
 }
 
-std::string FormatPredefinedStub(const std::string& source, angel_lsp::parser::AngelScriptParser& parser,
+std::string FormatPredefinedStub(std::string_view source, angel_lsp::parser::AngelScriptParser& parser,
                                  const std::string& indent)
 {
     const std::optional<std::vector<IndexedStubDeclaration>> declarations = ExtractStubDeclarations(source, parser);
     if (!declarations)
     {
-        return source;
+        return std::string(source);
     }
 
     FormattingPlan plan = BuildFormattingPlan(*declarations, source);
 
     std::string out = EmitFormattedStub(plan, indent, source.size());
-    return out == source ? source : out;
+    return out == source ? std::string(source) : out;
 }
 } // namespace angel_lsp::analysis::formatting

@@ -1185,3 +1185,70 @@ TEST_CASE("DefinitionHandler - Words inside multiline and verbatim strings are i
     auto defVb = env.DefAt(posVb.line, posVb.character);
     CHECK(!defVb.has_value());
 }
+
+TEST_CASE("DefinitionHandler - Field reached through a get-only virtual property of the base class")
+{
+    // The engine exposes `self` as a get-only virtual property typed as the engine weapon class.
+    const std::string engine = "class EngineWeapon {\n"
+                               "    float idleTime;\n"
+                               "    void Reload() {}\n"
+                               "}\n"
+                               "class ScriptBase {\n"
+                               "    EngineWeapon@ self { get const { return null; } }\n"
+                               "}\n";
+    const std::string code = "class MyWeapon : ScriptBase {\n"
+                             "    void Think() {\n"
+                             "        self.idleTime = 1.0f;\n"
+                             "        self.Reload();\n"
+                             "        self.missing = 1.0f;\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    env.AddFile("file:///engine.as.predefined", engine);
+
+    // Good: the field and the method both navigate to the engine class.
+    const auto field = env.DefAt(2, 15);
+    REQUIRE(field.has_value());
+    REQUIRE(!field->empty());
+    CHECK((*field)[0].range.start.line == 1);
+
+    const auto method = env.DefAt(3, 15);
+    REQUIRE(method.has_value());
+    REQUIRE(!method->empty());
+    CHECK((*method)[0].range.start.line == 2);
+
+    // Bad: a member the engine class does not declare navigates nowhere.
+    const auto missing = env.DefAt(4, 15);
+    CHECK((!missing.has_value() || missing->empty()));
+}
+
+TEST_CASE("DefinitionHandler - Host member used inside a mixin body resolves on the physical mixin file")
+{
+    // The mixin names `m_pPlayer`, which only the host class declares as a virtual property.
+    const std::string mixinUri = "file:///base.as";
+    const std::string mixinCode = "mixin class WeaponBase {\n"
+                                  "    void Fire() {\n"
+                                  "        Use( m_pPlayer );\n"
+                                  "        Use( m_notDeclared );\n"
+                                  "    }\n"
+                                  "}\n"
+                                  "void Use( int v ) {}\n";
+    const std::string hostCode = "class weapon_x : WeaponBase {\n"
+                                 "    private int m_pPlayer { get const { return 0; } }\n"
+                                 "}\n";
+
+    TestEnvironment env(mixinCode, mixinUri);
+    env.AddFile("file:///weapon_x.as", hostCode);
+
+    // Good: navigates to the declaration in the host file.
+    const auto host = env.DefAt(2, 14);
+    REQUIRE(host.has_value());
+    REQUIRE(!host->empty());
+    CHECK((*host)[0].uri.toString() == "file:///weapon_x.as");
+    CHECK((*host)[0].range.start.line == 1);
+
+    // Bad: a name no host declares navigates nowhere.
+    const auto unknown = env.DefAt(3, 14);
+    CHECK((!unknown.has_value() || unknown->empty()));
+}

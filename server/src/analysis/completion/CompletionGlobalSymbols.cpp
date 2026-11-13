@@ -120,7 +120,7 @@ static void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsA
  * @param[in] accessorsAreProperties Whether get_/set_ accessors can synthesize properties.
  * @return True if bucket should be inspected.
  */
-static bool BucketMatchesPrefix(const std::string& qualifiedName, std::string_view queryPrefix,
+static bool BucketMatchesPrefix(std::string_view qualifiedName, std::string_view queryPrefix,
                                 bool accessorsAreProperties)
 {
     if (queryPrefix.empty() || utils::CaseInsensitiveStartsWith(qualifiedName, queryPrefix))

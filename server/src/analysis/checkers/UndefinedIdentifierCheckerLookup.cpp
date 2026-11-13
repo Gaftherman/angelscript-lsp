@@ -4,6 +4,7 @@
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 
+#include <algorithm>
 #include <span>
 #include <string>
 #include <string_view>
@@ -120,6 +121,69 @@ bool IsEnclosingScopeMember(uint32_t byteOffset, std::string_view refName, std::
     }
 
     return false;
+}
+
+static bool HasEnumConstant(const std::vector<Symbol>* symbols)
+{
+    if (symbols == nullptr)
+    {
+        return false;
+    }
+    return std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
+                       { return sym.type == SymbolType::Variable && sym.GetVariable().isEnumConstant; });
+}
+
+bool IsEnumValueReachable(uint32_t byteOffset, std::string_view valueName, std::span<const std::string> usingNamespaces,
+                          const DiagnosticContext& ctx)
+{
+    const SymbolTable& table = ctx.request.symbolTable;
+    if (HasEnumConstant(table.FindSymbolsPtr(valueName).get()))
+    {
+        return true;
+    }
+    if (!ctx.request.nodeIndex)
+    {
+        return true;
+    }
+
+    const auto reachableIn = [&](std::string_view container)
+    { return HasEnumConstant(table.FindMemberSymbolPtr(container, valueName).get()); };
+
+    for (const auto& container : ctx.request.nodeIndex->CollectEnclosingContainers(byteOffset, ctx.request.sourceCode))
+    {
+        const std::string_view path = container.qualifiedName.empty() ? std::string_view(container.name)
+                                                                      : std::string_view(container.qualifiedName);
+        if (container.kind == ContainerKind::Namespace)
+        {
+            bool found = false;
+            utils::ForEachEnclosingScope(path,
+                                         [&](std::string_view scope)
+                                         {
+                                             found = reachableIn(scope);
+                                             return found;
+                                         });
+            if (found)
+            {
+                return true;
+            }
+        }
+        else if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+        {
+            for (const auto& typeName : GetInheritedTypeHierarchy(path, table))
+            {
+                if (reachableIn(typeName))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    const std::vector<std::string> activeUsings =
+        ctx.request.nodeIndex->CollectUsingNamespaces(ctx.request.sourceCode, byteOffset);
+    const auto isImported = [&](std::string_view ns) { return reachableIn(ns); };
+    return std::any_of(activeUsings.begin(), activeUsings.end(), isImported) ||
+           std::any_of(usingNamespaces.begin(), usingNamespaces.end(), isImported);
 }
 
 bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticContext& ctx)

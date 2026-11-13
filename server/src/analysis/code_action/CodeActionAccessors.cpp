@@ -45,7 +45,7 @@ static std::string CleanPropertyName(std::string_view fieldName)
  * @param[in] insertPt Class body insertion point coordinates.
  * @return Constructed CodeActionEntry.
  */
-static CodeActionEntry CreateAccessorEntry(std::string title, const std::string& text,
+static CodeActionEntry CreateAccessorEntry(std::string title, std::string_view text,
                                            analysis::IndexedSourcePoint insertPt)
 {
     CodeActionEntry entry;
@@ -54,7 +54,7 @@ static CodeActionEntry CreateAccessorEntry(std::string title, const std::string&
     entry.edits = std::vector<CodeActionTextEdit>{
         CodeActionTextEdit{
             analysis::SourceRange{insertPt.line, insertPt.character, insertPt.line, insertPt.character},
-            "\n" + text,
+            "\n" + std::string(text),
         },
     };
     return entry;
@@ -67,7 +67,7 @@ static CodeActionEntry CreateAccessorEntry(std::string title, const std::string&
  * @param[in] propName Clean property name.
  * @return Pair of booleans {hasGetter, hasSetter}.
  */
-static std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, const std::string& className,
+static std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, std::string_view className,
                                                  const std::string& propName)
 {
     const std::string getterName = std::string(utils::k_getterPrefix) + propName;

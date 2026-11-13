@@ -34,6 +34,18 @@ bool IsEnclosingScopeMember(uint32_t byteOffset, std::string_view refName, std::
                             const DiagnosticContext& ctx);
 
 /**
+ * @brief Checks whether an enum value can be named without qualification at a source position.
+ * @param[in] byteOffset Byte offset of the reference node in source code.
+ * @param[in] valueName Enum value name being inspected.
+ * @param[in] usingNamespaces Active using-namespace import declarations for the document.
+ * @param[in] ctx Diagnostic context containing request metadata, node index, and symbol table.
+ * @return True when the value is global, or belongs to an enclosing namespace or class, or to an imported
+ *         namespace; false when only an explicit qualifier would reach it.
+ */
+bool IsEnumValueReachable(uint32_t byteOffset, std::string_view valueName, std::span<const std::string> usingNamespaces,
+                          const DiagnosticContext& ctx);
+
+/**
  * @brief Checks whether a reference matches a reserved keyword, global accessor property, or container accessor.
  * @param[in] ref Local reference to validate.
  * @param[in] ctx Diagnostic context containing request metadata, rule index, and symbol table.

@@ -88,6 +88,14 @@ enum class InitializerItemKind
 std::string CleanExpressionType(std::string_view typeName);
 
 /**
+ * @brief Allocation-free form of CleanExpressionType that keeps template arguments intact.
+ * @param[in] typeName Raw type name; the result is a sub-view of it.
+ * @return Type without leading const, trailing reference modifier and surrounding whitespace.
+ * @note Unlike CleanBaseTypeView this never unwraps `array<T>`, so `@arr` stays `array<T>@`.
+ */
+std::string_view CleanExpressionTypeView(std::string_view typeName);
+
+/**
  * @brief Checks whether the given name is a reserved AngelScript keyword.
  * @param name Symbol name to check.
  * @return True if name is a reserved keyword.
