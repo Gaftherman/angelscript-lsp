@@ -6,12 +6,14 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <span>
 #include <spdlog/fmt/fmt.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
 {
-bool Server::RefreshStubDefinedWords(const std::string& uriStr, const std::string& text)
+bool Server::RefreshStubDefinedWords(std::string_view uriStr, std::string_view text)
 {
     const std::string path = CanonicalPathFromUri(uriStr);
     if (path.empty())
@@ -27,7 +29,7 @@ bool Server::RefreshStubDefinedWords(const std::string& uriStr, const std::strin
     return SetDefinedWordsFrom(path, angel_lsp::utils::ScanDefinedWords(text));
 }
 
-void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wantedPaths)
+void Server::UnloadUnselectedPredefinedStubs(std::span<const std::string> wantedPaths)
 {
     std::vector<std::string> stale;
     for (const auto& [path, uri] : m_predefinedManager.GetAllUriByPath())
@@ -58,7 +60,7 @@ void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wan
     }
 }
 
-bool Server::PathsAreSameFile(const std::string& a, const std::string& b)
+bool Server::PathsAreSameFile(std::string_view a, std::string_view b)
 {
     if (a == b)
     {
@@ -75,7 +77,8 @@ bool Server::PathsAreSameFile(const std::string& a, const std::string& b)
 #endif
 
     std::error_code ec;
-    if (!a.empty() && !b.empty() && std::filesystem::equivalent(a, b, ec) && !ec)
+    if (!a.empty() && !b.empty() &&
+        std::filesystem::equivalent(std::filesystem::path(a), std::filesystem::path(b), ec) && !ec)
     {
         return true;
     }
@@ -83,8 +86,8 @@ bool Server::PathsAreSameFile(const std::string& a, const std::string& b)
     return false;
 }
 
-void Server::ReportPredefinedSelection(const std::vector<std::string>& discovered, const std::string& activePath,
-                                       const std::string& autoSelected, bool mergeAll)
+void Server::ReportPredefinedSelection(std::span<const std::string> discovered, std::string_view activePath,
+                                       std::string_view autoSelected, bool mergeAll)
 {
     const auto tell = [this](lsp::MessageType type, const std::string& text)
     {
@@ -138,14 +141,14 @@ void Server::ReportPredefinedSelection(const std::vector<std::string>& discovere
                         std::filesystem::path(autoSelected).filename().string(), discovered.size(), list));
 }
 
-bool Server::UnloadPredefinedUri(std::string uriStr)
+bool Server::UnloadPredefinedUri(std::string_view uriStr)
 {
     std::string path;
     const bool unloaded = m_predefinedManager.UnloadUri(uriStr, &path);
 
-    m_symbolTable.ClearDocumentSymbols(uriStr);
-    m_scopeIndex.ClearDocument(uriStr);
-    m_callGraph.ClearDocument(uriStr);
+    m_symbolTable.ClearDocumentSymbols(std::string(uriStr));
+    m_scopeIndex.ClearDocument(std::string(uriStr));
+    m_callGraph.ClearDocument(std::string(uriStr));
 
     if (!path.empty())
     {
@@ -157,7 +160,7 @@ bool Server::UnloadPredefinedUri(std::string uriStr)
     return unloaded;
 }
 
-bool Server::PredefinedStubContributes(const std::string& uriStr) const
+bool Server::PredefinedStubContributes(std::string_view uriStr) const
 {
     if (uriStr.starts_with(angel_lsp::analysis::k_profileUriPrefix))
     {
@@ -214,7 +217,7 @@ bool Server::PredefinedStubContributes(const std::string& uriStr) const
     return !path.empty() && PathsAreSameFile(path, effective);
 }
 
-bool Server::ClaimPredefinedFile(const std::string& uriStr, bool forceReload)
+bool Server::ClaimPredefinedFile(std::string_view uriStr, bool forceReload)
 {
     const std::string path = CanonicalPathFromUri(uriStr);
     std::string previous;

@@ -10,14 +10,15 @@
 
 #include <algorithm>
 #include <spdlog/fmt/fmt.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
 {
-ankerl::unordered_dense::set<std::string> Server::ComputeModuleClosureUris(const std::string& uriStr) const
+ankerl::unordered_dense::set<std::string> Server::ComputeModuleClosureUris(std::string_view uriStr) const
 {
     ankerl::unordered_dense::set<std::string> moduleFileUris;
-    moduleFileUris.insert(uriStr);
+    moduleFileUris.insert(std::string(uriStr));
     const std::string ownPath = CanonicalPathFromUri(uriStr);
     if (ownPath.empty())
     {
@@ -40,11 +41,11 @@ ankerl::unordered_dense::set<std::string> Server::ComputeModuleClosureUris(const
 }
 
 angel_lsp::analysis::SemanticAnalysisRequest
-Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const analysis::NodeIndex* nodeIndex,
+Server::BuildAnalysisRequest(std::string_view uriStr, std::string_view text, const analysis::NodeIndex* nodeIndex,
                              const utils::PreprocessorScan& preprocessing,
                              const angel_lsp::analysis::SymbolTable* customSymbolTable) const
 {
-    angel_lsp::analysis::SemanticAnalysisRequest request{customSymbolTable ? *customSymbolTable : m_symbolTable, uriStr,
+    angel_lsp::analysis::SemanticAnalysisRequest request{customSymbolTable ? *customSymbolTable : m_symbolTable, std::string(uriStr),
                                                          std::string(m_config.info.predefinedFileExtension),
                                                          m_i18n.get()};
 
@@ -61,7 +62,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
     request.enableCommentSuppressions = m_config.features.enableCommentSuppressions;
     request.enableMetadata = m_config.features.enableMetadata;
-    request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
+    request.scopeRoot = m_scopeIndex.GetRoot(std::string(uriStr));
     request.scopeIndex = &m_scopeIndex;
     request.sourceCode = text;
     request.nodeIndex = nodeIndex;
@@ -77,44 +78,44 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
 }
 
 std::vector<angel_lsp::analysis::Diagnostic>
-Server::ReplaceSymbolsFromTree(const std::string& uriStr, const std::string& text, const parser::TreePtr* tree,
+Server::ReplaceSymbolsFromTree(std::string_view uriStr, std::string_view text, const parser::TreePtr* tree,
                                bool* outInterfaceChanged, const analysis::NodeIndex* index)
 {
     angel_lsp::analysis::SymbolTable staging;
-    const analysis::SymbolCollectRequest request{uriStr, text, m_i18n.get()};
+    const analysis::SymbolCollectRequest request{std::string(uriStr), text, m_i18n.get()};
     auto diagnostics = index
                            ? m_symbolCollector->CollectSymbolsWithIndex(request, *index, staging)
                            : m_symbolCollector->CollectSymbolsWithTree(request, tree ? tree->get() : nullptr, staging);
     if ((index && index->HasSyntaxErrors()) || (tree && parser::TreeHasError(*tree)))
     {
-        m_symbolTable.RetainLastKnownGoodTypes(uriStr, staging);
+        m_symbolTable.RetainLastKnownGoodTypes(std::string(uriStr), staging);
     }
     if (outInterfaceChanged)
     {
-        const uint64_t newHash = staging.ComputeDocumentInterfaceHash(uriStr);
-        uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
+        const uint64_t newHash = staging.ComputeDocumentInterfaceHash(std::string(uriStr));
+        uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(std::string(uriStr));
         {
             std::lock_guard<std::mutex> lock(m_closureMutex);
-            if (const auto it = m_lastSavedInterfaceHash.find(uriStr); it != m_lastSavedInterfaceHash.end())
+            if (const auto it = m_lastSavedInterfaceHash.find(std::string(uriStr)); it != m_lastSavedInterfaceHash.end())
             {
                 oldHash = it->second;
             }
-            m_lastSavedInterfaceHash[uriStr] = newHash;
+            m_lastSavedInterfaceHash[std::string(uriStr)] = newHash;
         }
 
         *outInterfaceChanged = (oldHash != newHash);
     }
-    m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
+    m_symbolTable.ReplaceDocumentSymbols(std::string(uriStr), std::move(staging));
     return diagnostics;
 }
 
 std::vector<angel_lsp::analysis::Diagnostic>
-Server::ReplaceSymbolsFromSource(const std::string& uriStr, const std::string& text,
+Server::ReplaceSymbolsFromSource(std::string_view uriStr, std::string_view text,
                                  angel_lsp::parser::AngelScriptParser& parser)
 {
     angel_lsp::analysis::SymbolTable staging;
-    auto diagnostics = m_symbolCollector->CollectSymbols({uriStr, text, m_i18n.get()}, parser, staging);
-    m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
+    auto diagnostics = m_symbolCollector->CollectSymbols({std::string(uriStr), text, m_i18n.get()}, parser, staging);
+    m_symbolTable.ReplaceDocumentSymbols(std::string(uriStr), std::move(staging));
     return diagnostics;
 }
 

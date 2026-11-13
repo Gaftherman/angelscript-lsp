@@ -89,9 +89,9 @@ void Server::ScheduleAnalysis(ScheduleAnalysisRequest req)
     }
 }
 
-void Server::ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force)
+void Server::ScheduleAnalysis(std::string_view uriStr, std::string_view text, bool force)
 {
-    ScheduleAnalysis(ScheduleAnalysisRequest{.uriStr = uriStr, .text = text, .force = force});
+    ScheduleAnalysis(ScheduleAnalysisRequest{.uriStr = std::string(uriStr), .text = std::string(text), .force = force});
 }
 
 void Server::ScheduleAnalysisImmediate(ScheduleAnalysisRequest req)
@@ -102,9 +102,9 @@ void Server::ScheduleAnalysisImmediate(ScheduleAnalysisRequest req)
     }
 }
 
-bool Server::IsClosedRevisionCurrentLocked(const std::string& uri, uint64_t revision) const
+bool Server::IsClosedRevisionCurrentLocked(std::string_view uri, uint64_t revision) const
 {
-    const auto entry = m_closureDocuments.find(uri);
+    const auto entry = m_closureDocuments.find(std::string(uri));
     return entry != m_closureDocuments.end() && entry->second.revision == revision;
 }
 

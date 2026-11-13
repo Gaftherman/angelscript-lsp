@@ -30,18 +30,18 @@ bool Server::IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const
     return false;
 }
 
-void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, std::string_view analysisText,
                                      const parser::TreePtr& tree, bool contributes)
 {
     if (contributes)
     {
         ClaimPredefinedFile(req.uriStr, true);
-        m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
+        m_predefinedManager.SetDocumentText(req.uriStr, std::string(analysisText));
         if (tree)
         {
             GetDocumentStore().SetTree(req.uriStr, parser::CopyTree(tree.get()));
             auto updatedDoc = std::make_shared<const document::Document>(
-                document::DocumentSnapshot{req.uriStr, analysisText, req.version, req.generation},
+                document::DocumentSnapshot{req.uriStr, std::string(analysisText), req.version, req.generation},
                 parser::CopyTree(tree.get()));
             m_predefinedManager.SetPreindexedDocument(req.uriStr, updatedDoc);
             if (m_workspaceStore)
@@ -56,7 +56,7 @@ void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const st
     }
 }
 
-bool Server::TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+bool Server::TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, std::string_view analysisText,
                                            const utils::HighResTimer& totalTimer)
 {
     auto preindexedDoc = m_workspaceStore ? m_workspaceStore->GetPreindexedDocument(req.uriStr)

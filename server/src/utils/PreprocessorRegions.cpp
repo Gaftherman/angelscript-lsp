@@ -515,7 +515,7 @@ std::vector<std::string> ScanDefinedWords(std::string_view sourceCode)
     return words;
 }
 
-bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line)
+bool IsLineExcluded(std::span<const ExcludedLineRange> ranges, uint32_t line)
 {
     for (const auto& r : ranges)
     {
@@ -525,14 +525,14 @@ bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line)
     return false;
 }
 
-std::string BlankExcludedLines(std::string_view sourceCode, const std::vector<ExcludedLineRange>& ranges)
+std::string BlankExcludedLines(std::string_view sourceCode, std::span<const ExcludedLineRange> ranges)
 {
     if (ranges.empty() || sourceCode.empty())
     {
         return std::string(sourceCode);
     }
 
-    std::vector<ExcludedLineRange> sortedRanges = ranges;
+    std::vector<ExcludedLineRange> sortedRanges(ranges.begin(), ranges.end());
     std::sort(sortedRanges.begin(), sortedRanges.end(),
               [](const ExcludedLineRange& a, const ExcludedLineRange& b) { return a.startLine < b.startLine; });
 

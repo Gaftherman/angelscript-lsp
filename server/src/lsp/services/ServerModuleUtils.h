@@ -30,7 +30,7 @@ inline bool NormalizedPathsEqual(std::string_view a, std::string_view b)
 #endif
 }
 
-inline bool PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory)
+inline bool PathIsInside(std::string_view normalizedPath, std::string_view normalizedDirectory)
 {
     if (normalizedDirectory.empty() || normalizedPath.size() <= normalizedDirectory.size() ||
         normalizedPath[normalizedDirectory.size()] != '/')
@@ -38,7 +38,6 @@ inline bool PathIsInside(const std::string& normalizedPath, const std::string& n
         return false;
     }
 
-    return NormalizedPathsEqual(std::string_view(normalizedPath).substr(0, normalizedDirectory.size()),
-                                normalizedDirectory);
+    return NormalizedPathsEqual(normalizedPath.substr(0, normalizedDirectory.size()), normalizedDirectory);
 }
 } // namespace angel_lsp

@@ -5,13 +5,15 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <span>
 #include <spdlog/fmt/fmt.h>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
 {
-static void AppendFilteredMembers(const ankerl::unordered_dense::set<std::string>& members, const std::string& openPath,
+static void AppendFilteredMembers(const ankerl::unordered_dense::set<std::string>& members, std::string_view openPath,
                                   std::vector<std::string>& outClosure)
 {
     for (const auto& member : members)
@@ -23,7 +25,7 @@ static void AppendFilteredMembers(const ankerl::unordered_dense::set<std::string
     }
 }
 
-static void AppendEnclosingFolderModuleMembers(const std::vector<ModuleView>& modules, const std::string& openPath,
+static void AppendEnclosingFolderModuleMembers(std::span<const ModuleView> modules, std::string_view openPath,
                                                const ModuleClaim& claim, std::vector<std::string>& closure)
 {
     for (const auto& mod : modules)
@@ -39,7 +41,7 @@ static void AppendEnclosingFolderModuleMembers(const std::vector<ModuleView>& mo
     }
 }
 
-static void AppendIncludeGraphClosure(const Server& server, const std::string& openPath,
+static void AppendIncludeGraphClosure(const Server& server, std::string_view openPath,
                                       std::vector<std::string>& closure)
 {
     if (!server.GetConfig().moduleEntryPoint.empty())
@@ -53,7 +55,7 @@ static void AppendIncludeGraphClosure(const Server& server, const std::string& o
             return;
         }
     }
-    const auto mc = server.GetIncludeGraph().GetModuleClosure(openPath);
+    const auto mc = server.GetIncludeGraph().GetModuleClosure(std::string(openPath));
     closure.insert(closure.end(), mc.begin(), mc.end());
 }
 
@@ -74,7 +76,7 @@ static void AppendForceIncludesClosure(const Server& server, std::vector<std::st
     }
 }
 
-std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPath) const
+std::vector<std::string> Server::ComputeModuleClosure(std::string_view openPath) const
 {
     const ModuleClaim claim = ClaimFor(openPath);
     std::vector<std::string> closure;
@@ -177,39 +179,40 @@ void Server::PurgeUnusedClosureFiles()
     }
 }
 
-void Server::WithdrawClosedSnapshot(const std::string& uriStr)
+void Server::WithdrawClosedSnapshot(std::string_view uriStr)
 {
     std::lock_guard lock(m_closureMutex);
-    m_closureDocuments.erase(uriStr);
+    m_closureDocuments.erase(std::string(uriStr));
 }
 
-void Server::PurgeClosureFile(const std::string& uriStr)
+void Server::PurgeClosureFile(std::string_view uriStr)
 {
     std::lock_guard closureLock(m_closureMutex);
-    m_closureDocuments.erase(uriStr);
+    const std::string uriCopy(uriStr);
+    m_closureDocuments.erase(uriCopy);
     {
         std::lock_guard<std::mutex> lock(m_diagnosticsPipeline->GetCacheMutexRef());
-        m_diagnosticsPipeline->GetCacheRef().erase(uriStr);
+        m_diagnosticsPipeline->GetCacheRef().erase(uriCopy);
     }
 
-    m_symbolTable.ClearDocumentSymbols(uriStr);
-    m_scopeIndex.ClearDocument(uriStr);
-    m_callGraph.ClearDocument(uriStr);
+    m_symbolTable.ClearDocumentSymbols(uriCopy);
+    m_scopeIndex.ClearDocument(uriCopy);
+    m_callGraph.ClearDocument(uriCopy);
 
-    const std::string path = CanonicalPathFromUri(uriStr);
-    if (const auto it = m_indexedUriByPath.find(path); it != m_indexedUriByPath.end() && it->second == uriStr)
+    const std::string path = CanonicalPathFromUri(uriCopy);
+    if (const auto it = m_indexedUriByPath.find(path); it != m_indexedUriByPath.end() && it->second == uriCopy)
     {
         m_indexedUriByPath.erase(it);
     }
 }
 
-void Server::ReleaseModuleClosure(const std::string& openUriStr)
+void Server::ReleaseModuleClosure(std::string_view openUriStr)
 {
     std::vector<std::string> released;
     std::vector<std::string> toPurge;
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        const auto closure = m_openDocumentClosures.find(openUriStr);
+        const auto closure = m_openDocumentClosures.find(std::string(openUriStr));
         if (closure == m_openDocumentClosures.end())
         {
             return;

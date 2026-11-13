@@ -7,25 +7,27 @@
 
 #include <algorithm>
 #include <fstream>
+#include <span>
 #include <spdlog/fmt/fmt.h>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
 {
-void Server::NotifyModuleWarning(const std::string& text)
+void Server::NotifyModuleWarning(std::string_view text)
 {
     LogError(text);
 
     lsp::notifications::Window_ShowMessage::Params params;
     params.type = lsp::MessageType::Warning;
-    params.message = text;
+    params.message = std::string(text);
 
     std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
     m_messageHandler->sendNotification<lsp::notifications::Window_ShowMessage>(std::move(params));
 }
 
-bool Server::IsOpenElsewhere(const std::string& uriStr) const
+bool Server::IsOpenElsewhere(std::string_view uriStr) const
 {
     return GetDocumentStore().IsOpen(uriStr);
 }
@@ -146,11 +148,11 @@ void Server::WithdrawStaleModuleDiagnostics()
     }
 }
 
-std::string Server::ReadClosedDocumentContent(const std::string& uriStr)
+std::string Server::ReadClosedDocumentContent(std::string_view uriStr)
 {
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        if (const auto cached = m_closureDocuments.find(uriStr);
+        if (const auto cached = m_closureDocuments.find(std::string(uriStr));
             cached != m_closureDocuments.end() && cached->second.text)
         {
             return *cached->second.text;
@@ -165,7 +167,7 @@ std::string Server::ReadClosedDocumentContent(const std::string& uriStr)
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
-void Server::ReanalyzeClosedModuleDependents(const std::string& savedUriStr, const ModuleClaim& savedClaim,
+void Server::ReanalyzeClosedModuleDependents(std::string_view savedUriStr, const ModuleClaim& savedClaim,
                                              const ankerl::unordered_dense::set<std::string>& closureSet)
 {
     std::vector<std::string> closedToReanalyze;
@@ -200,8 +202,8 @@ void Server::ReanalyzeClosedModuleDependents(const std::string& savedUriStr, con
     }
 }
 
-void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::string& text,
-                                      const std::vector<utils::ExcludedLineRange>& excluded,
+void Server::AppendIncludeDiagnostics(std::string_view uriStr, std::string_view text,
+                                      std::span<const utils::ExcludedLineRange> excluded,
                                       std::vector<angel_lsp::analysis::Diagnostic>& diagnostics)
 {
     if (!m_config.features.enableDocumentLink)
@@ -210,27 +212,27 @@ void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::stri
     }
 
     const auto searchDirectories = SearchDirectories();
-    const auto doc = LookupOpenDocument(uriStr);
+    const auto doc = LookupOpenDocument(std::string(uriStr));
     const auto hasTree = doc && doc->docHandle && doc->docHandle->tree;
     const auto syntax =
         hasTree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
                 : nullptr;
 
     const auto allowedRoots = IncludeAllowedRoots();
-    features::DocumentLinkRequest request{uriStr,
-                                          text,
+    features::DocumentLinkRequest request{std::string(uriStr),
+                                          std::string(text),
                                           {.searchDirectories = *searchDirectories,
                                            .allowedRoots = allowedRoots,
                                            .implicitExtension = ImplicitIncludeExtension()},
                                           m_i18n.get()};
-    request.excludedLineRanges = excluded;
+    request.excludedLineRanges = std::vector<utils::ExcludedLineRange>(excluded.begin(), excluded.end());
     request.nodeIndex = syntax ? &syntax->index : nullptr;
 
     auto includeDiagnostics = features::GetUnresolvedIncludeDiagnostics(request);
     diagnostics.insert(diagnostics.end(), includeDiagnostics.begin(), includeDiagnostics.end());
 }
 
-std::vector<angel_lsp::utils::ExcludedLineRange> Server::ExcludedLineRanges(const std::string& text) const
+std::vector<angel_lsp::utils::ExcludedLineRange> Server::ExcludedLineRanges(std::string_view text) const
 {
     return angel_lsp::utils::FindExcludedLineRanges(text, *DefinedWords(), m_config.preprocessor);
 }

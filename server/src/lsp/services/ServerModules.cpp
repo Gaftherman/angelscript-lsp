@@ -6,11 +6,12 @@
 #include <algorithm>
 #include <filesystem>
 #include <spdlog/fmt/fmt.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
 {
-static void AppendUniqueDirectory(std::vector<std::string>& dirs, const std::string& dir, bool& added)
+static void AppendUniqueDirectory(std::vector<std::string>& dirs, std::string_view dir, bool& added)
 {
     if (dir.empty())
     {
@@ -20,7 +21,7 @@ static void AppendUniqueDirectory(std::vector<std::string>& dirs, const std::str
     if (std::filesystem::is_directory(std::filesystem::path(dir), ec) &&
         std::find(dirs.begin(), dirs.end(), dir) == dirs.end())
     {
-        dirs.push_back(dir);
+        dirs.emplace_back(dir);
         added = true;
     }
 }
@@ -130,13 +131,13 @@ void Server::BuildModuleIndex()
     SyncModuleIndexSymbols();
 }
 
-ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
+ModuleClaim Server::ClaimFor(std::string_view normalizedPath) const
 {
     std::vector<ModuleCandidate> candidates;
 
     for (const auto& view : m_modules)
     {
-        if (view.closurePaths.contains(normalizedPath))
+        if (view.closurePaths.contains(std::string(normalizedPath)))
         {
             candidates.push_back(ModuleCandidate{&view, 2, 0});
         }
@@ -175,15 +176,15 @@ ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
     return claim;
 }
 
-std::string Server::ResolveConfiguredPath(const std::string& configured) const
+std::string Server::ResolveConfiguredPath(std::string_view configured) const
 {
-    std::string cleaned = configured;
+    std::string_view cleaned = configured;
     for (const std::string_view prefix :
          {"${workspaceFolder}/", "${workspaceFolder}\\", "${workspaceRoot}/", "${workspaceRoot}\\"})
     {
-        if (cleaned.rfind(prefix, 0) == 0)
+        if (cleaned.starts_with(prefix))
         {
-            cleaned = cleaned.substr(prefix.size());
+            cleaned.remove_prefix(prefix.size());
             break;
         }
     }

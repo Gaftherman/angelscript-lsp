@@ -8,13 +8,15 @@
 
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <spdlog/fmt/fmt.h>
 #include <sstream>
+#include <string_view>
 #include <unordered_set>
 
 namespace angel_lsp
 {
-static std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const std::string& filePath,
+static std::optional<std::string> ReadPredefinedFile(std::string_view normPath, std::string_view filePath,
                                                      angel_lsp::utils::LspLogger* logger)
 {
     if (logger)
@@ -22,10 +24,10 @@ static std::optional<std::string> ReadPredefinedFile(const std::string& normPath
         logger->LogInfo(fmt::format("[File Read] Opening and reading predefined file: {}", filePath));
     }
     angel_lsp::utils::HighResTimer readTimer;
-    std::ifstream file(normPath, std::ios::binary);
+    std::ifstream file(std::filesystem::path(normPath), std::ios::binary);
     if (!file.is_open())
     {
-        file.open(filePath, std::ios::binary);
+        file.open(std::filesystem::path(filePath), std::ios::binary);
     }
     if (!file.is_open())
     {
@@ -46,12 +48,12 @@ static std::optional<std::string> ReadPredefinedFile(const std::string& normPath
     return sanitized;
 }
 
-void Server::CommitPredefinedIndex(const std::string& uri, const std::string& content, parser::TreePtr tree)
+void Server::CommitPredefinedIndex(std::string_view uri, std::string_view content, parser::TreePtr tree)
 {
-    m_scopeIndex.ClearDocument(uri);
-    m_callGraph.ClearDocument(uri);
+    m_scopeIndex.ClearDocument(std::string(uri));
+    m_callGraph.ClearDocument(std::string(uri));
     auto preindexedDoc =
-        std::make_shared<const document::Document>(document::DocumentSnapshot{uri, content, 0, 1}, std::move(tree));
+        std::make_shared<const document::Document>(document::DocumentSnapshot{std::string(uri), std::string(content), 0, 1}, std::move(tree));
     m_predefinedManager.SetPreindexedDocument(uri, preindexedDoc);
     if (m_workspaceStore)
     {
@@ -72,7 +74,7 @@ static uint64_t ComputeDefinedWordsHash(const std::shared_ptr<const TransparentS
     return definesHash;
 }
 
-PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(const std::string& uri, const std::string& content,
+PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(std::string_view uri, std::string_view content,
                                                            angel_lsp::parser::AngelScriptParser& parser)
 {
     utils::HighResTimer parseTimer;
@@ -90,14 +92,14 @@ PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(const std::string& ur
     return PredefinedIndexTiming{parseMs, symMs, scopeMs};
 }
 
-void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
+void Server::ParserPredefined(std::string_view filePath, angel_lsp::parser::AngelScriptParser& parser,
                               bool forceReload)
 {
     std::unordered_set<std::string> visited;
     ParserPredefinedInternal(filePath, parser, forceReload, visited);
 }
 
-void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
+void Server::ParserPredefinedInternal(std::string_view filePath, angel_lsp::parser::AngelScriptParser& parser,
                                       bool forceReload, std::unordered_set<std::string>& visited)
 {
     std::error_code ec;
@@ -169,7 +171,7 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     LoadPredefinedIncludes(content, filePath, ctx);
 }
 
-void Server::PreScanStubDefinedWords(const std::vector<std::string>& stubPaths)
+void Server::PreScanStubDefinedWords(std::span<const std::string> stubPaths)
 {
     for (const auto& path : stubPaths)
     {
@@ -184,7 +186,7 @@ void Server::PreScanStubDefinedWords(const std::vector<std::string>& stubPaths)
     }
 }
 
-void Server::LoadPredefinedIncludes(const std::string& content, const std::string& filePath, PredefinedLoadContext& ctx)
+void Server::LoadPredefinedIncludes(std::string_view content, std::string_view filePath, PredefinedLoadContext& ctx)
 {
     std::vector<std::string> searchDirs;
     if (const auto dirs = SearchDirectories())
@@ -205,7 +207,7 @@ void Server::LoadPredefinedIncludes(const std::string& content, const std::strin
         std::string resolved =
             angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
                 .includePath = inc.rawPath,
-                .currentFilePath = filePath,
+                .currentFilePath = std::string(filePath),
                 .searchDirectories = searchDirs,
                 .allowedRoots = allowedRoots,
                 .implicitExtension = ImplicitIncludeExtension(),

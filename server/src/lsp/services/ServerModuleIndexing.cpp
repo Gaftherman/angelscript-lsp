@@ -12,11 +12,12 @@
 #include <fstream>
 #include <spdlog/fmt/fmt.h>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
 {
-void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelScriptParser& parser,
+void Server::IndexClosureFile(std::string_view path, angel_lsp::parser::AngelScriptParser& parser,
                               SyntaxRevisionCache* syntaxCache)
 {
     const std::string uriStr = UriFromPath(path);
@@ -32,7 +33,7 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
         m_scopeIndex.InvalidateDocumentOccurrences(uriStr);
     }
 
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     if (content.empty())
     {
@@ -74,7 +75,7 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
     }
     m_scopeIndex.SetScopeTree(uriStr, closed.lexicalScopes);
     m_callGraph.SetDocumentCalls(uriStr, std::move(calls));
-    m_indexedUriByPath[path] = uriStr;
+    m_indexedUriByPath[std::string(path)] = uriStr;
     m_lastSavedInterfaceHash[uriStr] = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
 }
 
@@ -113,7 +114,7 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
     SyncModuleIndexSymbols();
 }
 
-size_t Server::IndexModuleClosure(const std::string& openUriStr, SyntaxRevisionCache* syntaxCache)
+size_t Server::IndexModuleClosure(std::string_view openUriStr, SyntaxRevisionCache* syntaxCache)
 {
     const std::string openPath = CanonicalPathFromUri(openUriStr);
     if (openPath.empty())
@@ -131,7 +132,7 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr, SyntaxRevisionC
                 previousToPurge = previous->second;
             }
         }
-        m_indexedUriByPath[openPath] = openUriStr;
+        m_indexedUriByPath[openPath] = std::string(openUriStr);
     }
     if (!previousToPurge.empty())
     {
@@ -182,9 +183,9 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr, SyntaxRevisionC
 
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        if (GetDocumentStore().IsOpen(openUriStr) || !m_closureDocuments.contains(openUriStr))
+        if (GetDocumentStore().IsOpen(openUriStr) || !m_closureDocuments.contains(std::string(openUriStr)))
         {
-            m_openDocumentClosures[openUriStr] = std::move(indexed);
+            m_openDocumentClosures[std::string(openUriStr)] = std::move(indexed);
         }
     }
     return newlyIndexed;

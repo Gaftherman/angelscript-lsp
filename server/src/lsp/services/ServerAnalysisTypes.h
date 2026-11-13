@@ -90,8 +90,8 @@ struct CachedTokensSnapshot
 class PhaseTimer
 {
   public:
-    PhaseTimer(angel_lsp::utils::LspLogger* logger, std::string phase)
-        : m_logger(logger), m_phase(std::move(phase)), m_start(std::chrono::steady_clock::now())
+    PhaseTimer(angel_lsp::utils::LspLogger* logger, std::string_view phase)
+        : m_logger(logger), m_phase(phase), m_start(std::chrono::steady_clock::now())
     {
     }
 

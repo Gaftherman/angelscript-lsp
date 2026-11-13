@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <span>
 #include <spdlog/fmt/fmt.h>
+#include <string_view>
 
 namespace angel_lsp
 {
@@ -36,7 +38,7 @@ static std::string FindWildcardRulesInDir(const std::filesystem::path& dir)
     return matches.front();
 }
 
-static std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath)
+static std::string TryResolveSiblingRulesForStub(std::string_view stubFilePath)
 {
     if (stubFilePath.empty())
     {
@@ -67,9 +69,9 @@ static std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath
     return {};
 }
 
-static std::string ResolveRulesPath(const std::string& configuredPath, const std::vector<std::string>& workspaceRoots,
-                                    const std::string& effectivePredefined,
-                                    const std::vector<std::string>& fallbackStubs)
+static std::string ResolveRulesPath(std::string_view configuredPath, std::span<const std::string> workspaceRoots,
+                                    std::string_view effectivePredefined,
+                                    std::span<const std::string> fallbackStubs)
 {
     std::error_code ec;
     if (!configuredPath.empty())
@@ -122,7 +124,7 @@ static std::string ResolveRulesPath(const std::string& configuredPath, const std
     return {};
 }
 
-void Server::LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots)
+void Server::LoadWorkspaceEngineRules(std::span<const std::string> workspaceRoots)
 {
     std::string effectivePredef;
     std::vector<std::string> fallbackStubs = m_config.activeStubFiles;

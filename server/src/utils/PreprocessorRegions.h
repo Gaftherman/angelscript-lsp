@@ -3,6 +3,7 @@
 #include "utils/TransparentHash.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -112,7 +113,7 @@ PreprocessorScan ScanPreprocessor(std::string_view sourceCode, const Transparent
  * @note Linear in the number of ranges, which is the count of `#if` directives in one file -
  *        small enough that an index would cost more than it saves.
  */
-bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line);
+bool IsLineExcluded(std::span<const ExcludedLineRange> ranges, uint32_t line);
 
 /**
  * @brief Blanks out characters in excluded line ranges with spaces, preserving newlines (\\r and \\n).
@@ -121,7 +122,7 @@ bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line)
  * @param[in] ranges Non-overlapping line intervals to blank (inclusive startLine and endLine).
  * @return Source code with excluded lines blanked by spaces.
  */
-std::string BlankExcludedLines(std::string_view sourceCode, const std::vector<ExcludedLineRange>& ranges);
+std::string BlankExcludedLines(std::string_view sourceCode, std::span<const ExcludedLineRange> ranges);
 
 /**
  * @brief Words a predefined stub declares with `#define <word>`, in source order.

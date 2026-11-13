@@ -48,7 +48,7 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     return tokens;
 }
 
-std::string Server::CanonicalPathFromUri(const std::string& uriStr)
+std::string Server::CanonicalPathFromUri(std::string_view uriStr)
 {
     const std::string path = angel_lsp::utils::UriToPath(uriStr);
     if (path.empty())
@@ -64,7 +64,7 @@ std::string Server::DocumentKey(const std::string& uriStr)
     return path.empty() ? uriStr : UriFromPath(path);
 }
 
-std::string Server::UriFromPath(const std::string& path)
+std::string Server::UriFromPath(std::string_view path)
 {
     return angel_lsp::utils::PathToUri(angel_lsp::utils::IncludeResolver::NormalizePath(path));
 }

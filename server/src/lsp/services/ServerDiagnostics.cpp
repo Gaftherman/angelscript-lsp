@@ -7,20 +7,22 @@
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
 
+#include <span>
 #include <spdlog/fmt/fmt.h>
+#include <string_view>
 
 namespace angel_lsp
 {
-void Server::PublishDiagnostics(const std::string& uriStr,
+void Server::PublishDiagnostics(std::string_view uriStr,
                                 const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version)
 {
-    auto docText = FindDocumentText(uriStr);
+    auto docText = FindDocumentText(std::string(uriStr));
     if (version < 0)
     {
-        version = GetDocumentVersion(uriStr);
+        version = GetDocumentVersion(std::string(uriStr));
     }
     PublishDiagnostics(PublishDiagnosticsRequest{
-        .uriStr = uriStr,
+        .uriStr = std::string(uriStr),
         .text = docText ? *docText : std::string(),
         .diagnostics = diagnostics,
         .version = version,
@@ -29,8 +31,8 @@ void Server::PublishDiagnostics(const std::string& uriStr,
 }
 
 std::vector<lsp::Diagnostic>
-Server::ToProtocolDiagnostics(const std::string& text, const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics,
-                              const std::vector<utils::ExcludedLineRange>& excluded) const
+Server::ToProtocolDiagnostics(std::string_view text, std::span<const angel_lsp::analysis::Diagnostic> diagnostics,
+                              std::span<const utils::ExcludedLineRange> excluded) const
 {
     std::vector<lsp::Diagnostic> converted;
     converted.reserve(diagnostics.size());
@@ -88,7 +90,7 @@ Server::ToProtocolDiagnostics(const std::string& text, const std::vector<angel_l
     return converted;
 }
 
-void Server::PublishInactiveRegions(const std::string& uriStr, const std::vector<utils::ExcludedLineRange>& excluded)
+void Server::PublishInactiveRegions(std::string_view uriStr, std::span<const utils::ExcludedLineRange> excluded)
 {
     lsp::json::Array regions;
     for (const auto& range : excluded)

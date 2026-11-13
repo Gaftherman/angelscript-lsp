@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <span>
 #include <spdlog/fmt/fmt.h>
 #include <vector>
 
@@ -71,7 +72,7 @@ Server::ResolveTargetEngineProfile(const angel_lsp::utils::StopFlag& stopToken)
     return kind;
 }
 
-void Server::UnloadStaleBuiltinEngineProfiles(const std::vector<angel_lsp::analysis::EngineProfileKind>& wantedProfiles)
+void Server::UnloadStaleBuiltinEngineProfiles(std::span<const angel_lsp::analysis::EngineProfileKind> wantedProfiles)
 {
     std::vector<std::string> wanted;
     wanted.reserve(wantedProfiles.size());

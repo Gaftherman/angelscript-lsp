@@ -53,7 +53,7 @@ ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req
     return {std::move(syntax), std::move(diagnostics), parseMs, (colTimer.ElapsedMs() - parseMs), extractedNodes};
 }
 
-void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
+void Server::LogAnalysisProfile(std::string_view prefix, std::string_view uriStr,
                                 const AnalysisTimingProfile& profile) const
 {
     LogInfo(fmt::format("{} Finished analysis for file: {} in {} (Snapshot: {}, Parse: {}, Collector: {}, "
@@ -70,13 +70,13 @@ void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriS
                         profile.extractedNodes));
 }
 
-const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& uriStr,
+const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(std::string_view uriStr,
                                                              const analysis::SymbolTable* staging,
                                                              std::unique_ptr<analysis::SymbolTable>& outSnapshot) const
 {
     const auto moduleUris = ComputeModuleClosureUris(uriStr);
     const bool sameInterface =
-        !staging || m_symbolTable.ComputeDocumentInterfaceHash(uriStr) == staging->ComputeDocumentInterfaceHash(uriStr);
+        !staging || m_symbolTable.ComputeDocumentInterfaceHash(std::string(uriStr)) == staging->ComputeDocumentInterfaceHash(std::string(uriStr));
     if (sameInterface && (moduleUris.empty() || m_config.modules.empty() ||
                           m_symbolTable.ContainsOnlyFiles(moduleUris, m_config.info.predefinedFileExtension)))
     {
@@ -84,7 +84,7 @@ const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& 
     }
     const auto predefinedBase = GetWorkspaceStore().GetPredefinedBaseTable();
     outSnapshot = m_symbolTable.CreateAnalysisSnapshot({
-        .uriStr = uriStr,
+        .uriStr = std::string(uriStr),
         .staging = staging,
         .allowedModuleFileUris = &moduleUris,
         .predefinedExtension = m_config.info.predefinedFileExtension,
@@ -93,7 +93,7 @@ const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& 
     return outSnapshot.get();
 }
 
-static void LogAnalysisProfileAndClosure(const Server& server, const std::string& uriStr, double closureMs,
+static void LogAnalysisProfileAndClosure(const Server& server, std::string_view uriStr, double closureMs,
                                          const AnalysisTimingProfile& profile)
 {
     server.LogAnalysisProfile("[Analysis]", uriStr, profile);

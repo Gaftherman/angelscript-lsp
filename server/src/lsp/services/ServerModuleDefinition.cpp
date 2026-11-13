@@ -7,13 +7,15 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <span>
 #include <spdlog/fmt/fmt.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
 {
-static bool PopulateModuleFolderMembers(Server& server, const std::string& folder, ModuleView& view,
-                                        const std::vector<std::string>& workspaceFiles)
+static bool PopulateModuleFolderMembers(Server& server, std::string_view folder, ModuleView& view,
+                                        std::span<const std::string> workspaceFiles)
 {
     view.folderPath = server.ResolveConfiguredPath(folder);
 
@@ -51,7 +53,7 @@ static bool PopulateModuleFolderMembers(Server& server, const std::string& folde
     return true;
 }
 
-static bool PopulateModuleEntryClosure(Server& server, const std::string& entry, ModuleView& view)
+static bool PopulateModuleEntryClosure(Server& server, std::string_view entry, ModuleView& view)
 {
     view.entryPath = server.ResolveConfiguredPath(entry);
 
@@ -108,8 +110,8 @@ static bool PopulateModuleEntryClosure(Server& server, const std::string& entry,
 
 std::optional<ModuleView> ResolveModuleDefinition(Server& server,
                                                   const config::ServerConfig::ModuleDefinition& definition,
-                                                  const std::vector<ModuleView>& resolved,
-                                                  const std::vector<std::string>& workspaceFiles)
+                                                  std::span<const ModuleView> resolved,
+                                                  std::span<const std::string> workspaceFiles)
 {
     if (definition.name.empty() || (definition.entry.empty() && definition.folder.empty()))
     {

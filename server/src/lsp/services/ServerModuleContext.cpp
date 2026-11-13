@@ -78,7 +78,7 @@ void Server::CollectSharedSymbolsElsewhere(
 }
 
 std::optional<angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext>
-Server::ModuleContextFor(const std::string& uriStr) const
+Server::ModuleContextFor(std::string_view uriStr) const
 {
     if (m_modules.empty())
     {
@@ -113,7 +113,7 @@ Server::ModuleContextFor(const std::string& uriStr) const
     return context;
 }
 
-static void AppendConfiguredPathAndParent(const Server& server, const std::string& raw, std::vector<std::string>& roots)
+static void AppendConfiguredPathAndParent(const Server& server, std::string_view raw, std::vector<std::string>& roots)
 {
     if (raw.empty())
     {
