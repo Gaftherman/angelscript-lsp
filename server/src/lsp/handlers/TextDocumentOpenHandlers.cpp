@@ -106,7 +106,7 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
                         utils::FormatDuration(totalMs)));
 }
 
-static std::shared_ptr<const std::string> TransformedSource(std::string_view original, const std::string& parsed)
+static std::shared_ptr<const std::string> TransformedSource(std::string_view original, std::string_view parsed)
 {
     return original == parsed ? nullptr : std::make_shared<const std::string>(parsed);
 }

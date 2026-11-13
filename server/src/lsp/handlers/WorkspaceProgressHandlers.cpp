@@ -8,7 +8,7 @@
 namespace angel_lsp
 {
 
-void Server::BeginWorkspaceProgress(const std::string& title)
+void Server::BeginWorkspaceProgress(std::string_view title)
 {
     if (!m_sessionCoordinator->GetWorkDoneProgressSupport())
     {
@@ -42,7 +42,7 @@ void Server::BeginWorkspaceProgress(const std::string& title)
     m_messageHandler->sendNotification<lsp::notifications::Progress>(std::move(params));
 }
 
-void Server::ReportWorkspaceProgress(const std::string& message, unsigned percentage)
+void Server::ReportWorkspaceProgress(std::string_view message, unsigned percentage)
 {
     if (!m_sessionCoordinator->GetWorkDoneProgressSupport() || m_workspaceProgressToken.empty())
     {
@@ -59,7 +59,7 @@ void Server::ReportWorkspaceProgress(const std::string& message, unsigned percen
     m_messageHandler->sendNotification<lsp::notifications::Progress>(std::move(params));
 }
 
-void Server::EndWorkspaceProgress(const std::string& message)
+void Server::EndWorkspaceProgress(std::string_view message)
 {
     if (!m_sessionCoordinator->GetWorkDoneProgressSupport() || m_workspaceProgressToken.empty())
     {

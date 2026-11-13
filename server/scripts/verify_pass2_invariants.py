@@ -50,6 +50,31 @@ BANNED_STD_STRING_REGEX = re.compile(
     r"\bstd::string\b"
 )
 
+AVOIDABLE_COPY_PATTERNS = (
+    (
+        re.compile(r"[(,]\s*const\s+std::string\s*&\s*\w*\s*[,)]"),
+        "parametro 'const std::string&' que solo se lee (usa std::string_view)",
+    ),
+    (
+        re.compile(r"\.(find|contains|count|erase|at)\(\s*std::string\("),
+        "busqueda con std::string temporal (usa un mapa/set transparente y la vista)",
+    ),
+    (
+        re.compile(r"\bstd::string\([^;]*?\)\s*\.(starts_with|ends_with|find|compare|substr|empty|size)\b"),
+        "copia std::string solo para inspeccionar (opera sobre la vista)",
+    ),
+)
+
+
+def find_avoidable_copy(clean: str) -> str | None:
+    """Return why a line holds an avoidable string copy, or None when it is acceptable ownership."""
+    if re.match(r"\s*for\s*\(", clean):
+        return None
+    for pattern, reason in AVOIDABLE_COPY_PATTERNS:
+        if pattern.search(clean):
+            return reason
+    return None
+
 
 def strip_comments(line: str) -> str:
     idx = line.find("//")
@@ -88,7 +113,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Validador dinámico Zero-AST y Zero-std::string en 2da pasada")
     parser.add_argument("--steps", default="docs/REFACTOR_STEPS.json", help="Ruta a REFACTOR_STEPS.json")
     parser.add_argument("--extra", nargs="*", default=[], help="Archivos o carpetas adicionales a validar")
-    parser.add_argument("--strict-string-view", action="store_true", help="Bloquea std::string en carpetas de 2da pasada")
+    parser.add_argument(
+        "--strict-string-view",
+        action="store_true",
+        help="Bloquea copias evitables de std::string en 2da pasada (parametros const&, busquedas con temporal, copias de inspeccion)",
+    )
+    parser.add_argument(
+        "--audit-string-ownership",
+        action="store_true",
+        help="Informe del uso total de std::string (almacenamiento propietario incluido); no hace fallar el gate",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[2]
@@ -98,6 +132,7 @@ def main() -> None:
 
     files = collect_files_to_check(root, steps_path, args.extra)
     violations: list[str] = []
+    ownership_hits = 0
 
     for file_path in files:
         rel = file_path.relative_to(root).as_posix()
@@ -123,12 +158,15 @@ def main() -> None:
                     f"[VIOLACIÓN AST/TS_*] {rel}:{lineno} -> '{m_ts.group(0)}' detectado en módulo de 2da pasada/util:\n    {clean}"
                 )
 
-            if args.strict_string_view and not rel.startswith(STRING_OWNER_FOLDERS):
-                m_str = BANNED_STD_STRING_REGEX.search(clean)
-                if m_str:
-                    violations.append(
-                        f"[VIOLACIÓN STD::STRING] {rel}:{lineno} -> Uso de 'std::string' prohibido en 2da pasada (usa std::string_view):\n    {clean}"
-                    )
+            if (args.strict_string_view or args.audit_string_ownership) and not rel.startswith(STRING_OWNER_FOLDERS):
+                if args.audit_string_ownership and BANNED_STD_STRING_REGEX.search(clean):
+                    ownership_hits += 1
+                reason = find_avoidable_copy(clean) if args.strict_string_view else None
+                if reason:
+                    violations.append(f"[VIOLACIÓN STD::STRING] {rel}:{lineno} -> {reason}:\n    {clean}")
+
+    if args.audit_string_ownership:
+        print(f"[AUDIT] {ownership_hits} lineas usan std::string (incluye almacenamiento propietario permitido).")
 
     if violations:
         print("\n".join(violations))

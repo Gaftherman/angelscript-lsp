@@ -184,7 +184,7 @@ bool Server::LoadAndProcessPredefinedStubs(const std::vector<std::string>& disco
     return !stopToken.stop_requested();
 }
 
-void Server::RecoverFromScanFailure(const std::string& err)
+void Server::RecoverFromScanFailure(std::string_view err)
 {
     LogError(err);
     angel_lsp::utils::MultiFileLogger::Instance().LogCrash(err);

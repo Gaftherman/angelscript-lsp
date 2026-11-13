@@ -14,7 +14,7 @@
 
 namespace angel_lsp
 {
-static parser::TextChangeEdit ComputeTextChangeEdit(const std::string& buffer,
+static parser::TextChangeEdit ComputeTextChangeEdit(std::string_view buffer,
                                                     const lsp::TextDocumentContentChangePartial& rt,
                                                     angel_lsp::utils::PositionEncoding encoding)
 {
@@ -96,7 +96,7 @@ static void ApplyContentChange(std::string& buffer, parser::TreePtr& workingTree
     }
 }
 
-static std::shared_ptr<const std::string> TransformedSource(std::string_view original, const std::string& parsed)
+static std::shared_ptr<const std::string> TransformedSource(std::string_view original, std::string_view parsed)
 {
     return original == parsed ? nullptr : std::make_shared<const std::string>(parsed);
 }

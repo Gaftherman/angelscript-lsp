@@ -72,7 +72,7 @@ Server::HandleRequestsCompletionItem_Resolve(lsp::requests::CompletionItem_Resol
 
     auto heldDocs = std::make_shared<std::vector<std::shared_ptr<const std::string>>>();
     features::CompletionResolveRequest rr{req, m_symbolTable,
-                                          [this, heldDocs](const std::string& uri) -> const std::string*
+                                          [this, heldDocs](std::string_view uri) -> const std::string*
                                           {
                                               auto sp = FindDocumentText(uri);
                                               if (!sp)

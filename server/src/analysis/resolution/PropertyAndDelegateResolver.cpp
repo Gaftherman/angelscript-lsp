@@ -163,7 +163,7 @@ bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbo
             delegateProps = ruleIndex->baseClassDelegateProperties;
         }
     }
-    return std::any_of(delegateProps.begin(), delegateProps.end(), [&](const std::string& p) { return p == name; });
+    return std::any_of(delegateProps.begin(), delegateProps.end(), [&](std::string_view p) { return p == name; });
 }
 
 static std::string FindEnclosingClassOrHost(IndexedByteRange targetRange, std::string_view sourceCode,

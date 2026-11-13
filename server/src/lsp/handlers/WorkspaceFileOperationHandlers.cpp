@@ -47,7 +47,7 @@ static std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
     return edit;
 }
 
-static std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const Server& server, const std::string& includerPath,
+static std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const Server& server, std::string_view includerPath,
                                                                 const std::string& oldTargetPath,
                                                                 const std::string& newTargetPath)
 {
@@ -62,7 +62,7 @@ static std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const Server& se
     }
     else
     {
-        std::ifstream file(includerPath, std::ios::binary);
+        std::ifstream file(std::filesystem::path(includerPath), std::ios::binary);
         if (!file.is_open())
             return std::nullopt;
         text.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());

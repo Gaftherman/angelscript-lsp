@@ -86,7 +86,7 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
     - **Second Pass (`features/`, `analysis/resolution/`, `analysis/checkers/`, `analysis/rules/`, `lsp/`) and `utils/`:**
       - Strictly 0 `ts_*` calls, 0 `TSNode` / `TSTree` usages, 0 `#include "parser/ASTUtils.h"`.
       - Strictly 0 legacy unbounded recursion; use $O(1)$ / $O(\log N)$ indexed lookups or flat iterations over pre-indexed First Pass vectors.
-      - Strictly 100% `std::string_view` for string inspection, parameters, and paths (prohibited `std::string` and `const std::string&` where zero-copy views into `Document.h` or `SymbolTable` apply). Enforced via `server/scripts/verify_pass2_invariants.py --strict-string-view`.
+      - `std::string_view` for string inspection, parameters, and paths. Prohibited: `const std::string&` parameters that are only read, lookups through a temporary `std::string(...)` (use transparent hashing from `utils/TransparentHash.h`), and copies made only to inspect. Owning storage (members, containers, returned values, sinks that keep the value) is allowed. Enforced via `server/scripts/verify_pass2_invariants.py --strict-string-view`.
 11. **Shared Utility Functions: Overload & Deprecate Strategy (Rule 4.11):**
     - **Absolute Inlining Prohibition:** Never copy-paste or inline the body of a shared utility function into its call sites (causes immediate violations of `jscpd <= 3%`).
     - When a utility function in `utils/`, `features/common/FeatureSharedUtils.h`, `analysis/resolution/SemanticHelpers.h`, or `analysis/index/NodeIndex.h` uses `ts_*` or `std::string`:

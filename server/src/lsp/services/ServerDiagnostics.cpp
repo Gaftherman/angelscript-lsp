@@ -207,13 +207,13 @@ void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
     NotifyClientDiagnostics(std::move(params));
 }
 
-void Server::PublishDiagnostics(const std::string& uriStr, const std::string& text,
+void Server::PublishDiagnostics(std::string_view uriStr, std::string_view text,
                                 const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version,
                                 std::shared_ptr<const utils::PreprocessorScan> preprocessing)
 {
     PublishDiagnostics(PublishDiagnosticsRequest{
-        .uriStr = uriStr,
-        .text = text,
+        .uriStr = std::string(uriStr),
+        .text = std::string(text),
         .diagnostics = diagnostics,
         .version = version,
         .generation = GetDocumentStore().GetGeneration(uriStr),

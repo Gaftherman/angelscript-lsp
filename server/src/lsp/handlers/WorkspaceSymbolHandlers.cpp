@@ -31,8 +31,8 @@ Server::HandleRequestsWorkspace_TextDocumentContent(lsp::requests::Workspace_Tex
         throw lsp::RequestError(lsp::MessageError::InvalidParams, "Unsupported scheme: " + requested);
     }
 
-    const std::string wanted = angel_lsp::utils::IncludeResolver::NormalizePath(
-        std::string(std::string_view(requested).substr(k_scheme.size())));
+    const std::string wanted =
+        angel_lsp::utils::IncludeResolver::NormalizePath(std::string_view(requested).substr(k_scheme.size()));
 
     std::string fileUri;
     if (const auto uriOpt = m_predefinedManager.GetUriByPath(wanted))

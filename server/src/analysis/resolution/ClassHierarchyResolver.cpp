@@ -72,7 +72,7 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
     return NonInstantiableKind::None;
 }
 
-std::vector<Symbol> FindHierarchyTypeSymbols(const std::string& curType, const SymbolTable& symbolTable)
+std::vector<Symbol> FindHierarchyTypeSymbols(std::string_view curType, const SymbolTable& symbolTable)
 {
     const auto symbols = symbolTable.FindSymbolsPtr(curType);
     if (symbols && !symbols->empty())
@@ -161,7 +161,7 @@ std::vector<std::string> GetInheritedTypeHierarchy(std::string_view className, c
     std::vector<std::string> queue;
 
     visited.insert(rootType);
-    queue.push_back(rootType);
+    queue.emplace_back(rootType);
 
     size_t head = 0;
     while (head < queue.size())
@@ -264,7 +264,7 @@ void ExtractTypesFromMemberSymbols(const std::vector<Symbol>& syms, std::string_
     }
 }
 
-void InspectDelegateProperty(std::string_view className, const std::string& prop, const SymbolTable& symbolTable,
+void InspectDelegateProperty(std::string_view className, std::string_view prop, const SymbolTable& symbolTable,
                              std::vector<std::string>& result)
 {
     if (const auto syms = symbolTable.FindMemberSymbolPtr(className, prop))
@@ -273,7 +273,7 @@ void InspectDelegateProperty(std::string_view className, const std::string& prop
     }
     if (!prop.starts_with("get_"))
     {
-        if (const auto getterSyms = symbolTable.FindMemberSymbolPtr(className, "get_" + prop))
+        if (const auto getterSyms = symbolTable.FindMemberSymbolPtr(className, std::string("get_").append(prop)))
         {
             ExtractTypesFromMemberSymbols(*getterSyms, className, result);
         }
@@ -476,12 +476,12 @@ bool HierarchyIsFullyVisible(std::string_view typeName, const SymbolTable& symbo
     return true;
 }
 
-void TraverseAncestorsAndInterfaces(const std::string& rootType, const SymbolTable& symbolTable,
+void TraverseAncestorsAndInterfaces(std::string_view rootType, const SymbolTable& symbolTable,
                                     TransparentStringSet& visited, std::vector<std::string>& related)
 {
     std::vector<std::string> queue;
     visited.insert(rootType);
-    queue.push_back(rootType);
+    queue.emplace_back(rootType);
 
     size_t head = 0;
     while (head < queue.size())

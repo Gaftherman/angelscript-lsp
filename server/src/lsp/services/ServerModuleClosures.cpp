@@ -50,7 +50,7 @@ static void AppendIncludeGraphClosure(const Server& server, std::string_view ope
         const std::string entryPath = server.ResolveConfiguredPath(server.GetConfig().moduleEntryPoint);
         auto fwd = server.GetIncludeGraph().GetForwardClosure(entryPath);
         if (std::any_of(fwd.begin(), fwd.end(),
-                        [&openPath](const std::string& p) { return NormalizedPathsEqual(p, openPath); }))
+                        [&openPath](std::string_view p) { return NormalizedPathsEqual(p, openPath); }))
         {
             closure.insert(closure.end(), fwd.begin(), fwd.end());
             return;

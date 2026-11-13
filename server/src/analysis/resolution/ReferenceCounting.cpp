@@ -122,12 +122,12 @@ static void CountBoundCalls(ReferenceCountTarget& target, const ReferenceCountRe
         }
         request.scopeIndex.ForEachBoundUse(
             CallDeclaration(symbol), moduleFilter,
-            [&](const std::string& uri, std::span<const SourceRange> ranges)
+            [&](std::string_view uri, std::span<const SourceRange> ranges)
             {
                 for (const auto& range : ranges)
                 {
                     const uint64_t position = (static_cast<uint64_t>(range.startLine) << 32) | range.startCharacter;
-                    target.seenRefs.insert({uri, position});
+                    target.seenRefs.insert({std::string(uri), position});
                 }
             });
     }
@@ -145,7 +145,7 @@ void CountReferences(std::span<ReferenceCountTarget> targets, const TargetIndexM
     const auto& moduleFilter = request.occurrenceModule ? *request.occurrenceModule : kEmptyFilter;
     request.scopeIndex.ForEachOccurrenceScope(
         moduleFilter,
-        [&](const std::string& fileUri, const std::shared_ptr<const Scope>& root)
+        [&](std::string_view fileUri, const std::shared_ptr<const Scope>& root)
         {
             if (root && !angel_lsp::utils::IsPredefinedFile(fileUri, request.predefinedExtension))
             {

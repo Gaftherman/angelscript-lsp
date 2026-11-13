@@ -60,7 +60,7 @@ namespace angel_lsp
 class Server
 {
   public:
-    using OnBeforeCommitHook = std::function<void(const std::string& uri, int version, uint64_t generation)>;
+    using OnBeforeCommitHook = std::function<void(std::string_view uri, int version, uint64_t generation)>;
 
     explicit Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream = lsp::io::standardIO());
     ~Server();
@@ -268,7 +268,7 @@ class Server
     std::unique_ptr<LspSessionCoordinator> m_sessionCoordinator;
     mutable std::mutex m_lifecycleMutex;
     mutable std::mutex m_runtimeConfigMutex;
-    std::function<void(const std::string& uri, int version, uint64_t generation)> m_onBeforeCommitHook;
+    OnBeforeCommitHook m_onBeforeCommitHook;
     std::thread m_workspaceThread;
     utils::StopFlag m_workspaceStop;
     std::mutex m_messageHandlerMutex;
@@ -322,9 +322,9 @@ class Server
     void RegisterTextDocumentHandlers();
     void RegisterHierarchyHandlers();
     void RegisterTokensAndFormattingHandlers();
-    void BeginWorkspaceProgress(const std::string& title);
-    void ReportWorkspaceProgress(const std::string& message, unsigned percentage);
-    void EndWorkspaceProgress(const std::string& message);
+    void BeginWorkspaceProgress(std::string_view title);
+    void ReportWorkspaceProgress(std::string_view message, unsigned percentage);
+    void EndWorkspaceProgress(std::string_view message);
     [[nodiscard]] int GetDocumentVersion(std::string_view uriStr) const;
     void ClearMixinCaches();
     PreparedAnalysisSource PrepareAnalysisSource(std::string_view uriStr, std::string_view text) const;
@@ -344,13 +344,13 @@ class Server
     [[nodiscard]] std::optional<analysis::SemanticAnalysisRequest::ModuleContext>
     ModuleContextFor(std::string_view uriStr) const;
     void RestartWorkspaceScan();
-    lsp::SemanticTokens ComputeAndCacheSemanticTokens(std::string_view uriStr, const std::string& text);
+    lsp::SemanticTokens ComputeAndCacheSemanticTokens(std::string_view uriStr, std::string_view text);
     void UpdateSavedDocumentCaches(std::string_view uriStr, std::string_view text,
                                    const std::vector<utils::ExcludedLineRange>& excluded);
     void HandleSavedInterfaceChange(std::string_view uriStr, bool interfaceChanged);
     void StartWorkspaceScan();
     void ReadWorkspaceFiles(const utils::StopFlag& stopToken);
-    void RecoverFromScanFailure(const std::string& err);
+    void RecoverFromScanFailure(std::string_view err);
     void LoadPredefinedIncludes(std::string_view content, std::string_view filePath, PredefinedLoadContext& ctx);
     void PreScanStubDefinedWords(std::span<const std::string> stubPaths);
     PredefinedIndexTiming IndexAndCommitPredefinedStub(std::string_view uri, std::string_view content,
@@ -396,7 +396,7 @@ class Server
     void PublishDiagnostics(const PublishDiagnosticsRequest& request);
     void PublishDiagnostics(std::string_view uriStr, const std::vector<analysis::Diagnostic>& diagnostics,
                             int version = -1);
-    void PublishDiagnostics(const std::string& uriStr, const std::string& text,
+    void PublishDiagnostics(std::string_view uriStr, std::string_view text,
                             const std::vector<analysis::Diagnostic>& diagnostics, int version = -1,
                             std::shared_ptr<const utils::PreprocessorScan> preprocessing = {});
     std::vector<lsp::Diagnostic> ToProtocolDiagnostics(std::string_view text,
@@ -408,7 +408,7 @@ class Server
     [[nodiscard]] std::optional<uint64_t> ClosedDiagnosticRevision(std::string_view uriStr,
                                                                    const std::string* source) const;
     std::string GenerateVirtualMixinDocument(std::string_view uri);
-    void DidSavePredefinedFile(const std::string& uriStr, const std::string& text);
+    void DidSavePredefinedFile(std::string_view uriStr, std::string_view text);
     void ReanalyzeDependentsOnSave(std::string_view uriStr);
     void ReanalyzeClosedModuleDependents(std::string_view savedUriStr, const ModuleClaim& savedClaim,
                                          const TransparentStringSet& closureSet);
@@ -434,7 +434,7 @@ class Server
     void ReplaceDeletedPredefinedStub(parser::AngelScriptParser& parser);
     void RefreshOpenDocumentIncludes();
     static std::string CanonicalPathFromUri(std::string_view uriStr);
-    std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, std::string_view uriStr);
+    std::shared_ptr<const document::Document> ResolveVirtualDocument(std::string_view key, std::string_view uriStr);
     std::optional<OpenDocument> LookupPreindexedFallback(std::string_view key);
     [[nodiscard]] std::optional<std::string> OccurrenceModuleFor(std::string_view uri) const;
     features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);

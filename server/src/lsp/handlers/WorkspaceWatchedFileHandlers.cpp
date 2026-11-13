@@ -178,7 +178,7 @@ void Server::ReplaceDeletedPredefinedStub(angel_lsp::parser::AngelScriptParser& 
     std::string replacement;
     {
         std::lock_guard<std::mutex> configLock(m_runtimeConfigMutex);
-        std::erase_if(m_discoveredPredefined, [this](const std::string& candidate)
+        std::erase_if(m_discoveredPredefined, [this](std::string_view candidate)
                       { return PathsAreSameFile(candidate, m_effectivePredefined); });
 
         if (!m_discoveredPredefined.empty())

@@ -38,7 +38,7 @@ void Server::UnloadUnselectedPredefinedStubs(std::span<const std::string> wanted
         {
             continue;
         }
-        auto matchesPath = [&path](const std::string& candidate) { return PathsAreSameFile(candidate, path); };
+        auto matchesPath = [&path](std::string_view candidate) { return PathsAreSameFile(candidate, path); };
         const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(), matchesPath);
         bool isTransitive = false;
         {
@@ -89,7 +89,7 @@ bool Server::PathsAreSameFile(std::string_view a, std::string_view b)
 void Server::ReportPredefinedSelection(std::span<const std::string> discovered, std::string_view activePath,
                                        std::string_view autoSelected, bool mergeAll)
 {
-    const auto tell = [this](lsp::MessageType type, const std::string& text)
+    const auto tell = [this](lsp::MessageType type, std::string_view text)
     {
         lsp::notifications::Window_ShowMessage::Params params;
         params.type = type;
@@ -99,7 +99,7 @@ void Server::ReportPredefinedSelection(std::span<const std::string> discovered, 
 
     if (!activePath.empty())
     {
-        auto matchesActive = [&activePath](const std::string& path) { return PathsAreSameFile(path, activePath); };
+        auto matchesActive = [&activePath](std::string_view path) { return PathsAreSameFile(path, activePath); };
         const bool found = std::any_of(discovered.begin(), discovered.end(), matchesActive);
 
         if (!found)

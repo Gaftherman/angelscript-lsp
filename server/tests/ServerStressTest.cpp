@@ -365,7 +365,7 @@ TEST_CASE("Server - Barrier: Close during analysis cancels analysis and suppress
 
     angel_lsp::Server server(serverConfig, stream);
     server.SetOnBeforeCommitHook(
-        [&](const std::string& /*uri*/, int version, uint64_t /*generation*/)
+        [&](std::string_view /*uri*/, int version, uint64_t /*generation*/)
         {
             if (version == 2)
             {
@@ -469,7 +469,7 @@ TEST_CASE("Server - Barrier: Immediate reopen updates generation and receives fr
     angel_lsp::Server server(serverConfig, stream);
     serverPtr = &server;
     server.SetOnBeforeCommitHook(
-        [&](const std::string& /*uri*/, int version, uint64_t generation)
+        [&](std::string_view /*uri*/, int version, uint64_t generation)
         {
             if (generation == 1 && version == 2)
             {
@@ -563,7 +563,7 @@ TEST_CASE("Server - Barrier: Concurrent edit with higher version supersedes earl
 
     angel_lsp::Server server(serverConfig, stream);
     server.SetOnBeforeCommitHook(
-        [&](const std::string& /*uri*/, int version, uint64_t /*generation*/)
+        [&](std::string_view /*uri*/, int version, uint64_t /*generation*/)
         {
             if (version == 2)
             {
@@ -705,7 +705,7 @@ TEST_CASE("Server - Closed analysis cannot publish after a disk revision is with
     bool release = false;
     bool observed = false;
     server.SetOnBeforeCommitHook(
-        [&](const std::string& uri, int version, [[maybe_unused]] uint64_t generation)
+        [&](std::string_view uri, int version, [[maybe_unused]] uint64_t generation)
         {
             if (uri != useKey || version != -1)
             {

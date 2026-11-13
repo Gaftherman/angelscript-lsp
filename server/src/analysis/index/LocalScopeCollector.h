@@ -39,7 +39,7 @@ class LocalScopeCollector
      * @param parser Tree-sitter parser used to produce the AST (and immediately discarded).
      * @return The document's root Scope, or nullptr if parsing failed.
      */
-    std::unique_ptr<Scope> CollectScopes(const std::string& sourceCode,
+    std::unique_ptr<Scope> CollectScopes(std::string_view sourceCode,
                                          angel_lsp::parser::AngelScriptParser& parser) const;
 
     /**
@@ -47,7 +47,7 @@ class LocalScopeCollector
      * @param rootNode Root node of a pre-parsed tree-sitter tree; the caller retains ownership.
      * @see CollectScopes for sourceCode.
      */
-    std::unique_ptr<Scope> CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode,
+    std::unique_ptr<Scope> CollectScopesFromTree(TSNode rootNode, std::string_view sourceCode,
                                                  const NodeIndex* nodeIndex = nullptr) const;
 
     /**
@@ -56,7 +56,7 @@ class LocalScopeCollector
      * @param sourceCode Full text of the document.
      * @return The document's root Scope, or nullptr on failure.
      */
-    std::unique_ptr<Scope> CollectScopesFromIndex(const NodeIndex& nodeIndex, const std::string& sourceCode) const;
+    std::unique_ptr<Scope> CollectScopesFromIndex(const NodeIndex& nodeIndex, std::string_view sourceCode) const;
 
     struct ByteSpan
     {
@@ -147,7 +147,7 @@ class LocalScopeCollector
      * @param docCtx Pre-collected document context for error and metadata spans.
      * @return Unique pointer to the constructed root Scope, or nullptr on failure.
      */
-    std::unique_ptr<Scope> BuildScopeTree(std::vector<RawCapture>& captures, const std::string& sourceCode,
+    std::unique_ptr<Scope> BuildScopeTree(std::vector<RawCapture>& captures, std::string_view sourceCode,
                                           DocumentContext& docCtx) const;
 
     /**
@@ -163,7 +163,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving extracted type info.
      */
-    void ReadVariableTypeInfo(const RawCapture& capture, const std::string& sourceCode, LocalDefinition& def) const;
+    void ReadVariableTypeInfo(const RawCapture& capture, std::string_view sourceCode, LocalDefinition& def) const;
 
     /**
      * @brief Initializes capture classifications from the compiled LOCALS_QUERY.
@@ -186,7 +186,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      */
     void ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack, std::unique_ptr<Scope>& root,
-                             const std::string& sourceCode) const;
+                             std::string_view sourceCode) const;
 
     /**
      * @brief Processes a definition capture node.
@@ -195,7 +195,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      */
     void ProcessDefinitionCapture(const RawCapture& capture, const std::vector<OpenScope>& stack,
-                                  const std::string& sourceCode) const;
+                                  std::string_view sourceCode) const;
 
     /**
      * @brief Processes a reference capture node.
@@ -204,7 +204,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      * @param docCtx Pre-collected document context for error and metadata spans.
      */
-    void ProcessReferenceCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode,
+    void ProcessReferenceCapture(const RawCapture& capture, Scope* current, std::string_view sourceCode,
                                  DocumentContext& docCtx) const;
 
     /**
@@ -213,7 +213,7 @@ class LocalScopeCollector
      * @param[in,out] current Innermost open scope receiving the string call reference.
      * @param sourceCode Source text of the document.
      */
-    void ProcessStringCallRefCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode) const;
+    void ProcessStringCallRefCapture(const RawCapture& capture, Scope* current, std::string_view sourceCode) const;
 
     /**
      * @brief Recovers local variable declarations from broken control flow or error nodes.
@@ -221,7 +221,7 @@ class LocalScopeCollector
      * @param rootScope Root lexical scope.
      * @param sourceCode Source text of the document.
      */
-    void RecoverDeclarationsFromErrorNodes(TSNode rootNode, Scope* rootScope, const std::string& sourceCode) const;
+    void RecoverDeclarationsFromErrorNodes(TSNode rootNode, Scope* rootScope, std::string_view sourceCode) const;
 
     /**
      * @brief Registers implicit 'value' parameter in virtual property 'set' accessor scopes.
@@ -230,7 +230,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      */
     void RegisterVirtualPropertySetParameters(const NodeIndex& nodeIndex, Scope* rootScope,
-                                              const std::string& sourceCode) const;
+                                              std::string_view sourceCode) const;
 
     /**
      * @brief Enriches reference metadata with lambda, constructor, and error context.
@@ -284,7 +284,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type info.
      */
-    void ReadParameterTypeInfo(TSNode declaratorNode, const std::string& sourceCode, LocalDefinition& def) const;
+    void ReadParameterTypeInfo(TSNode declaratorNode, std::string_view sourceCode, LocalDefinition& def) const;
 
     /**
      * @brief Reads declared type information for lambda parameters.
@@ -293,7 +293,7 @@ class LocalScopeCollector
      * @param[in] sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving extracted type info.
      */
-    void ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declaratorNode, const std::string& sourceCode,
+    void ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declaratorNode, std::string_view sourceCode,
                                      LocalDefinition& def) const;
 
     /**
@@ -302,7 +302,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type info.
      */
-    void ReadForeachVariableTypeInfo(TSNode declaratorNode, const std::string& sourceCode, LocalDefinition& def) const;
+    void ReadForeachVariableTypeInfo(TSNode declaratorNode, std::string_view sourceCode, LocalDefinition& def) const;
 
     /**
      * @brief Reads type and initializer details for a variable declarator AST node.
@@ -311,7 +311,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type info.
      */
-    void ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNode declarationNode, const std::string& sourceCode,
+    void ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNode declarationNode, std::string_view sourceCode,
                                         LocalDefinition& def) const;
 
     /**
@@ -320,7 +320,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type info.
      */
-    void ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std::string& sourceCode, LocalDefinition& def) const;
+    void ReadVirtualPropertyTypeInfo(TSNode propertyNode, std::string_view sourceCode, LocalDefinition& def) const;
 
     /**
      * @brief Reads declared type information for an empty-parentheses func declaration.
@@ -328,7 +328,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type info.
      */
-    void ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::string& sourceCode, LocalDefinition& def) const;
+    void ReadEmptyParenVariableTypeInfo(TSNode funcNode, std::string_view sourceCode, LocalDefinition& def) const;
 
     /**
      * @brief Populates type metadata and full source range from a named child field.
@@ -337,7 +337,7 @@ class LocalScopeCollector
      * @param[in] sourceCode Source text of the document.
      * @param[in,out] def LocalDefinition receiving type info.
      */
-    void PopulateVariableFromField(TSNode parentNode, TSSymbol fieldSymbol, const std::string& sourceCode,
+    void PopulateVariableFromField(TSNode parentNode, TSSymbol fieldSymbol, std::string_view sourceCode,
                                    LocalDefinition& def) const;
 
     /**
@@ -346,7 +346,7 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type ranges.
      */
-    void PopulateTypeRanges(TSNode tNode, const std::string& sourceCode, LocalDefinition& def) const;
+    void PopulateTypeRanges(TSNode tNode, std::string_view sourceCode, LocalDefinition& def) const;
 };
 
 /**

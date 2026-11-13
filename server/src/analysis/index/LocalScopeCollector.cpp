@@ -95,7 +95,7 @@ void LocalScopeCollector::InitializeCaptureKinds(std::vector<CaptureKind>& kinds
 
 LocalScopeCollector::~LocalScopeCollector() = default;
 
-std::unique_ptr<Scope> LocalScopeCollector::CollectScopes(const std::string& sourceCode,
+std::unique_ptr<Scope> LocalScopeCollector::CollectScopes(std::string_view sourceCode,
                                                           angel_lsp::parser::AngelScriptParser& parser) const
 {
     parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(sourceCode));
@@ -196,12 +196,12 @@ static LocalScopeCollector::DocumentContext BuildDocumentContext(const NodeIndex
 }
 
 std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromIndex(const NodeIndex& nodeIndex,
-                                                                   const std::string& sourceCode) const
+                                                                   std::string_view sourceCode) const
 {
     return CollectScopesFromTree(nodeIndex.Root(), sourceCode, &nodeIndex);
 }
 
-std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode,
+std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNode, std::string_view sourceCode,
                                                                   const NodeIndex* nodeIndex) const
 {
     if (!m_localsQuery || ts_node_is_null(rootNode))
@@ -491,7 +491,7 @@ static void UpdateScopeContextAndOpen(LocalScopeCollector::OpenScope& openScope,
 }
 
 void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack,
-                                              std::unique_ptr<Scope>& root, const std::string& sourceCode) const
+                                              std::unique_ptr<Scope>& root, std::string_view sourceCode) const
 {
     auto kindInfo = DetermineScopeKind(capture.node, m_gs, sourceCode);
     if (!kindInfo)
@@ -600,7 +600,7 @@ static uint32_t CalculateVisibleFromByte(LocalDefinitionKind kind, ScopeKind sco
 }
 
 void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, const std::vector<OpenScope>& stack,
-                                                   const std::string& sourceCode) const
+                                                   std::string_view sourceCode) const
 {
     if (ts_node_has_error(capture.node) || !ts_node_is_named(capture.node))
     {
@@ -999,7 +999,7 @@ static bool IsWriteTargetNode(TSNode refNode, TSNode parent, TSNode grandparent,
 }
 
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
-                                                  const std::string& sourceCode, DocumentContext& docCtx) const
+                                                  std::string_view sourceCode, DocumentContext& docCtx) const
 {
     if (ts_node_has_error(capture.node))
     {
@@ -1065,7 +1065,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
 }
 
 void LocalScopeCollector::ProcessStringCallRefCapture(const RawCapture& capture, Scope* current,
-                                                      const std::string& sourceCode) const
+                                                      std::string_view sourceCode) const
 {
     if (ts_node_has_error(capture.node) || !current)
     {
@@ -1092,7 +1092,7 @@ void LocalScopeCollector::ProcessStringCallRefCapture(const RawCapture& capture,
 }
 
 std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCapture>& captures,
-                                                           const std::string& sourceCode, DocumentContext& docCtx) const
+                                                           std::string_view sourceCode, DocumentContext& docCtx) const
 {
     DeduplicateCaptures(captures);
 
@@ -1164,7 +1164,7 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
     return root;
 }
 
-void LocalScopeCollector::PopulateTypeRanges(TSNode tNode, const std::string& sourceCode, LocalDefinition& def) const
+void LocalScopeCollector::PopulateTypeRanges(TSNode tNode, std::string_view sourceCode, LocalDefinition& def) const
 {
     TSPoint typeStart = ts_node_start_point(tNode);
     TSPoint typeEnd = ts_node_end_point(tNode);
@@ -1250,7 +1250,7 @@ static std::string NormalizeParameterTypeName(std::string_view slice, bool& isRe
     return std::string(slice);
 }
 
-static std::string ExtractParamDefaultValue(TSNode declaratorNode, const std::string& sourceCode)
+static std::string ExtractParamDefaultValue(TSNode declaratorNode, std::string_view sourceCode)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(declaratorNode);
     std::string result;
@@ -1275,7 +1275,7 @@ static std::string ExtractParamDefaultValue(TSNode declaratorNode, const std::st
     return result;
 }
 
-void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
+void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, std::string_view sourceCode,
                                                 LocalDefinition& def) const
 {
     TSPoint pStart = ts_node_start_point(declaratorNode);
@@ -1309,7 +1309,7 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
 }
 
 void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol fieldSymbol,
-                                                    const std::string& sourceCode, LocalDefinition& def) const
+                                                    std::string_view sourceCode, LocalDefinition& def) const
 {
     TSPoint rStart = ts_node_start_point(parentNode);
     TSPoint rEnd = ts_node_end_point(parentNode);
@@ -1337,7 +1337,7 @@ void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol 
  * @param[in] sourceCode Document source text buffer.
  * @param[in,out] def LocalDefinition receiving type extraction and location bounds.
  */
-void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
+void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, std::string_view sourceCode,
                                                       LocalDefinition& def) const
 {
     PopulateVariableFromField(declaratorNode, parser::GetGrammarSymbols().fieldType, sourceCode, def);
@@ -1351,7 +1351,7 @@ void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con
  * @param[out] def LocalDefinition receiving extracted type info.
  */
 void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declaratorNode,
-                                                      const std::string& sourceCode, LocalDefinition& def) const
+                                                      std::string_view sourceCode, LocalDefinition& def) const
 {
     TSNode startNode = nameNode;
     TSNode typeNode{};
@@ -1450,7 +1450,7 @@ static TSNode FindDeclarationTypeNode(TSNode declarationNode, TSNode declaratorN
  * @param[in,out] def LocalDefinition receiving type extraction and location bounds.
  */
 void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNode declarationNode,
-                                                         const std::string& sourceCode, LocalDefinition& def) const
+                                                         std::string_view sourceCode, LocalDefinition& def) const
 {
     if (ts_node_is_null(declarationNode))
     {
@@ -1494,13 +1494,13 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
  * @param sourceCode Source text.
  * @param def Local definition to populate.
  */
-void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::string& sourceCode,
+void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, std::string_view sourceCode,
                                                          LocalDefinition& def) const
 {
     PopulateVariableFromField(funcNode, parser::GetGrammarSymbols().fieldReturnType, sourceCode, def);
 }
 
-void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const std::string& sourceCode,
+void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, std::string_view sourceCode,
                                                LocalDefinition& def) const
 {
     TSNode declaratorNode = capture.parent;
@@ -1553,7 +1553,7 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
  * @param[in] sourceCode Document source text.
  * @param[in,out] def LocalDefinition being populated with variable metadata.
  */
-void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std::string& sourceCode,
+void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, std::string_view sourceCode,
                                                       LocalDefinition& def) const
 {
     TSPoint rStart = ts_node_start_point(propertyNode);
@@ -1700,7 +1700,7 @@ static void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::s
  * @param[in] gs Precompiled grammar symbol mappings.
  * @return True if a split variable declaration was successfully recovered; false otherwise.
  */
-static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, std::string_view sourceCode,
                                          const parser::GrammarSymbols& gs)
 {
     TSNode nextStmt = ts_node_next_sibling(node);
@@ -1751,7 +1751,7 @@ static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const st
  * @param[in] sourceCode Source text of the document.
  * @param[in] gs Precompiled grammar symbol mappings.
  */
-static void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+static void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, std::string_view sourceCode,
                                          const parser::GrammarSymbols& gs)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(node);
@@ -1801,7 +1801,7 @@ static void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const st
     }
 }
 
-static void TryRecoverUnbracedIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+static void TryRecoverUnbracedIfDeclaration(TSNode node, Scope* rootScope, std::string_view sourceCode,
                                             const parser::GrammarSymbols& gs)
 {
     if (TryRecoverSplitIfDeclaration(node, rootScope, sourceCode, gs))
@@ -1894,7 +1894,7 @@ static void ProcessVirtualPropertyNode(TSNode propNode, Scope* root, const parse
 }
 
 void LocalScopeCollector::RecoverDeclarationsFromErrorNodes(TSNode rootNode, Scope* rootScope,
-                                                            const std::string& sourceCode) const
+                                                            std::string_view sourceCode) const
 {
     if (!ts_node_has_error(rootNode) || !rootScope)
         return;
@@ -1939,7 +1939,7 @@ void LocalScopeCollector::RecoverDeclarationsFromErrorNodes(TSNode rootNode, Sco
 }
 
 void LocalScopeCollector::RegisterVirtualPropertySetParameters(const NodeIndex& nodeIndex, Scope* rootScope,
-                                                               const std::string& sourceCode) const
+                                                               std::string_view sourceCode) const
 {
     for (TSNode property : nodeIndex.Nodes(m_gs.symVirtualProperty))
     {

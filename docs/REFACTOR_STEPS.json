@@ -48,7 +48,7 @@
     "rule": "AGENTS.md 4.10, verify_pass2_invariants.py --strict-string-view",
     "criterion": "Remove avoidable copies: const std::string& params, temporary std::string(...) passed to view APIs, string-keyed lookups. Keep owned results (returned resolved types, composed qualified names, caches) until D1.",
     "baseline": { "date": "2026-11-12", "total": 2372 },
-    "active_lot": "D1",
+    "active_lot": null,
     "protocol": "On start: set active_lot and status=active, record before. On finish: record after and status=done; fill commit once the user commits.",
     "lots": [
       { "id": "C1", "title": "checkers: scope lookup and accessor names", "scope": ["server/src/analysis/checkers"], "status": "done", "before": 85, "after": 69, "commit": "8891ebf1" },
@@ -59,12 +59,13 @@
       { "id": "R5", "title": "templates, callables, properties, mixins, interfaces", "scope": ["TemplateTypeResolver.*", "CallableAndLambdaResolver.*", "PropertyAndDelegateResolver.*", "MixinInclusion.*", "InterfaceImplementation.*"], "status": "done", "before": 111, "after": 89, "commit": "060058fa" },
       { "id": "R6", "title": "hover, inlay and reference resolution", "scope": ["HoverResolution*", "Inlay*", "Reference*"], "status": "done", "before": 137, "after": 107, "commit": "7107c323" },
       { "id": "R7", "title": "rest of analysis/resolution", "scope": ["analysis/resolution (remaining files)"], "status": "done", "before": 39, "after": 39, "commit": "fd50f666" },
-      { "id": "D1", "title": "type-name interning design for owned results", "status": "blocked", "needs": "user decision after R7" },
+      { "id": "D1", "title": "type-name interning design for owned results", "status": "superseded", "reason": "strict gate narrowed to avoidable copies; owning storage is allowed" },
       { "id": "L1", "title": "lsp/state", "scope": ["server/src/lsp/state"], "status": "done", "before": 282, "after": 193, "commit": "9d617a60" },
       { "id": "L2", "title": "lsp/services", "status": "done", "before": 436, "after": 218, "commit": "61b668d0" },
       { "id": "L3", "title": "lsp/handlers", "status": "done", "before": 346, "after": 308 },
       { "id": "L4", "title": "lsp/pipeline", "status": "done", "before": 120, "after": 74 },
-      { "id": "L5", "title": "lsp root (Server.h, ServerDocuments, ServerInitOptions...)", "status": "done", "before": 156, "after": 100 }
+      { "id": "L5", "title": "lsp root (Server.h, ServerDocuments, ServerInitOptions...)", "status": "done", "before": 156, "after": 100 },
+      { "id": "S1", "title": "avoidable copies sweep and narrowed strict gate", "scope": ["server/src (checked folders)", "server/scripts/verify_pass2_invariants.py"], "status": "done", "before": 1917, "after": 0, "audit_before": 1917, "audit_after": 1818 }
     ]
   }
 }

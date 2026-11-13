@@ -18,14 +18,17 @@ void Server::HandleNotificationsTextDocument_WillSave(
 {
 }
 
-void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string& text)
+void Server::DidSavePredefinedFile(std::string_view uriStr, std::string_view text)
 {
+    const std::string uri(uriStr);
     const std::string analysisText = PrepareAnalysisSource(uriStr, text).text;
     parser::TreePtr savedTree = parser::MakeTreePtr(m_parser->Parse(analysisText));
 
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        m_closureDocuments[uriStr] = {std::make_shared<const std::string>(text), ++m_nextClosedRevision};
+        m_closureDocuments.insert_or_assign(
+            std::string(uriStr),
+            ClosedDocumentSnapshot{std::make_shared<const std::string>(text), ++m_nextClosedRevision});
     }
 
     if (PredefinedStubContributes(uriStr))
@@ -36,7 +39,7 @@ void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string&
     }
     else
     {
-        m_symbolTable.ClearDocumentSymbols(uriStr);
+        m_symbolTable.ClearDocumentSymbols(uri);
         m_predefinedManager.RemoveStub(uriStr);
     }
 
@@ -184,7 +187,9 @@ void Server::UpdateSavedDocumentCaches(std::string_view uriStr, std::string_view
 {
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        m_closureDocuments[uriStr] = {std::make_shared<const std::string>(text), ++m_nextClosedRevision};
+        m_closureDocuments.insert_or_assign(
+            std::string(uriStr),
+            ClosedDocumentSnapshot{std::make_shared<const std::string>(text), ++m_nextClosedRevision});
     }
 
     if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())

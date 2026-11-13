@@ -31,7 +31,7 @@ void Server::AugmentSearchDirectoriesFromModules()
     std::vector<std::string> searchDirs = *SearchDirectories();
     bool addedSearchDir = false;
 
-    auto appendPathOrParent = [&](const std::string& rawPath, bool takeParent)
+    auto appendPathOrParent = [&](std::string_view rawPath, bool takeParent)
     {
         if (rawPath.empty())
         {

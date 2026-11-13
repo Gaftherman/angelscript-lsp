@@ -2047,7 +2047,7 @@ static void CollectBoundCallOccurrences(const CollectOccurrencesRequest& request
         return;
     }
     request.scopeIndex.ForEachBoundUse(*request.target.callDeclaration, request.occurrenceModule,
-                                       [&](const std::string& uri, std::span<const SourceRange> ranges)
+                                       [&](std::string_view uri, std::span<const SourceRange> ranges)
                                        {
                                            for (const auto& use : ranges)
                                            {

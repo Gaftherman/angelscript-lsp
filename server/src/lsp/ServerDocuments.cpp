@@ -15,7 +15,7 @@
 namespace angel_lsp
 {
 
-lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(std::string_view uriStr, const std::string& text)
+lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(std::string_view uriStr, std::string_view text)
 {
     const auto docHandle = GetDocumentStore().GetDocument(uriStr);
     const auto syntax = docHandle && docHandle->tree
@@ -103,8 +103,7 @@ std::shared_ptr<const std::string> Server::FindDocumentText(std::string_view uri
     return nullptr;
 }
 
-std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const std::string& key,
-                                                                         std::string_view uriStr)
+std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(std::string_view key, std::string_view uriStr)
 {
     const std::string_view targetUri = key.starts_with("angelscript-virtual:") ? std::string_view(key) : uriStr;
     std::string text = GenerateVirtualMixinDocument(targetUri);
@@ -113,7 +112,8 @@ std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const s
         return nullptr;
     }
     parser::TreePtr tree = m_parser ? m_parser->ParseTree(text) : parser::MakeTreePtr(nullptr);
-    GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
+    const std::string keyCopy(key);
+    GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{keyCopy, text, 0, std::move(tree), keyCopy});
     return GetDocumentStore().GetDocument(key);
 }
 

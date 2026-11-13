@@ -6309,7 +6309,7 @@ TEST_CASE("Server - Inactive regions are published from the worker's prepared so
     test::ScriptedStream stream;
     Server server(serverConfig, stream);
     server.SetOnBeforeCommitHook(
-        [&server](const std::string&, int version, uint64_t)
+        [&server](std::string_view, int version, uint64_t)
         {
             if (version == 2)
             {

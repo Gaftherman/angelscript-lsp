@@ -29,6 +29,7 @@ def main():
 
     # 2. Dead Parameter & Clean Signature Enforcement
     run_step("Clean Function Signatures", "python server/scripts/check-clean-signatures.py")
+    run_step("Second Pass String Copies", "python server/scripts/verify_pass2_invariants.py --strict-string-view")
 
     # 3. Diagnostic Code Registration Integrity
     run_step("Diagnostic Codes Registry", "python server/scripts/check-diagnostic-codes.py")
