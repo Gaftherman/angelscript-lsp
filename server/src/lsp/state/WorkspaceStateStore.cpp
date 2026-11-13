@@ -49,18 +49,6 @@ void WorkspaceStateStore::SetSearchDirectories(std::shared_ptr<const std::vector
     m_searchDirectories = std::move(searchDirs);
 }
 
-std::string WorkspaceStateStore::GetEngineProfile() const
-{
-    std::lock_guard<std::mutex> lock(m_configMutex);
-    return m_engineProfile;
-}
-
-void WorkspaceStateStore::SetEngineProfile(std::string profile)
-{
-    std::lock_guard<std::mutex> lock(m_configMutex);
-    m_engineProfile = std::move(profile);
-}
-
 std::shared_ptr<const TransparentStringSet> WorkspaceStateStore::GetDefinedWords() const
 {
     std::lock_guard<std::mutex> lock(m_configMutex);
@@ -236,7 +224,6 @@ void WorkspaceStateStore::Clear()
     std::lock_guard<std::mutex> lock(m_configMutex);
     m_workspaceRoots.clear();
     m_searchDirectories = std::make_shared<const std::vector<std::string>>();
-    m_engineProfile.clear();
     m_definedWords = std::make_shared<const TransparentStringSet>();
     m_definedWordsBySource.clear();
 }

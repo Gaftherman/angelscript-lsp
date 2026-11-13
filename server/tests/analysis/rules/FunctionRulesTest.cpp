@@ -895,10 +895,8 @@ TEST_CASE("FunctionRules - Unknown Type Corpus Audit" * doctest::skip(true))
     // number that decides the default is the third.
     const auto bare = angel_lsp::test::RunCorpusAudit(interesting, 5, nullptr);
     const auto strictBare = angel_lsp::test::RunCorpusAudit(interesting, 5, &strict);
-    const auto strictProfiled =
-        angel_lsp::test::RunCorpusAudit(interesting, 5, &strict, angel_lsp::analysis::EngineProfileKind::SvenCoop);
-    const auto profiled =
-        angel_lsp::test::RunCorpusAudit(interesting, 5, nullptr, angel_lsp::analysis::EngineProfileKind::SvenCoop);
+    const auto strictProfiled = angel_lsp::test::RunCorpusAudit(interesting, 5, &strict, "sven-sashi.as.predefined");
+    const auto profiled = angel_lsp::test::RunCorpusAudit(interesting, 5, nullptr, "sven-sashi.as.predefined");
 
     MESSAGE("files=" << bare.filesAnalysed << "  no profile: off=" << bare.Total() << " on=" << strictBare.Total()
                      << "  |  svencoop profile: off=" << profiled.Total() << " on=" << strictProfiled.Total());

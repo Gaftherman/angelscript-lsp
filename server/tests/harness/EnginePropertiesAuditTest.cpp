@@ -4,7 +4,6 @@
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/EngineProfiles.h"
 #include "config/EngineRuleConfig.h"
 #include "config/EngineRuleParser.h"
 #include "config/ServerConfig.h"
@@ -342,24 +341,5 @@ TEST_CASE("EngineProperties: JSON deserialization with asEP_* and camelCase keys
         CHECK(nativeProps.compilerWarnings == 0);
         CHECK(nativeProps.memberInitMode == 1);
         CHECK(nativeProps.heredocTrimMode == 0);
-    }
-}
-
-TEST_CASE("EngineProperties: Profile default configurations")
-{
-    SUBCASE("Sven Co-op profile default properties")
-    {
-        const auto props = GetDefaultEngineProperties(EngineProfileKind::SvenCoop);
-        CHECK(props.propertyAccessorMode == 2);
-        CHECK(props.foreachSupport == true);
-        CHECK(props.allowUnsafeReferences == false);
-        CHECK(props.disallowGlobalVars == false);
-        CHECK(props.boolConversionMode == 0);
-    }
-
-    SUBCASE("Standard profile default properties")
-    {
-        const auto props = GetDefaultEngineProperties(EngineProfileKind::Standard);
-        CHECK(props.propertyAccessorMode == 2);
     }
 }

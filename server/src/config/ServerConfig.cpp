@@ -347,7 +347,7 @@ void PrintOptionsHelp()
         << "                                          silence at every call site, since a call whose parameter\n"
         << "                                          types are unknown cannot be judged either. Turn it off for\n"
         << "                                          a host that registers types in C++ and declares none of\n"
-        << "                                          them - or better, name its --engine-profile.\n"
+        << "                                          them.\n"
         << "  --report-accessor-portability           Hint on accessors without the 'property' keyword\n"
         << "  --report-bool-conversion                Hint on a class used where a bool is expected\n"
         << "  --report-missing-funcdef                Hint when a type position names a function\n"
@@ -974,15 +974,6 @@ static bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
     if (ctx.key == "--implicit-include-extension")
     {
         config.implicitIncludeExtension = ctx.GetBoolValue(true);
-        return true;
-    }
-    if (ctx.key == "--engine-profile" || ctx.key == "--profile")
-    {
-        std::string_view val;
-        if (ctx.GetStringValue(val) && !val.empty())
-        {
-            config.engineProfile = std::string(val);
-        }
         return true;
     }
     if (ctx.key == "--rules-file" || ctx.key == "--rules")

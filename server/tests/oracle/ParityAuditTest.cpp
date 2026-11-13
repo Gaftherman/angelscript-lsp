@@ -4,7 +4,6 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/EngineProfiles.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -291,9 +290,8 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
 
     // Owned, not a view. The stub is copied because the parser input must be owned.
     const std::string standardStub =
-        useBuiltinProfile
-            ? std::string(angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::Standard))
-            : std::string();
+        useBuiltinProfile ? ReadFile(std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "sdk-addons.as.predefined")
+                          : std::string();
 
     size_t agreeAccept = 0;
     size_t agreeReject = 0;

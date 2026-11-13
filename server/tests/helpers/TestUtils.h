@@ -22,10 +22,13 @@
 #include "utils/PreprocessorRegions.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <ostream>
 #include <random>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -106,6 +109,151 @@ inline std::string GenerateRandomPrimitiveType(std::mt19937_64& rng)
                                                        "float", "double", "bool",   "string"};
     std::uniform_int_distribution<size_t> dist(0, sizeof(kPrimitives) / sizeof(kPrimitives[0]) - 1);
     return std::string(kPrimitives[dist(rng)]);
+}
+
+/**
+ * @brief Reads the full contents of a test fixture file.
+ *
+ * Checks the relative path directly, then under ANGELSCRIPT_FIXTURE_DIR, then the fixtures folder under
+ * ANGELSCRIPT_REPO_ROOT, and finally ANGELSCRIPT_REPO_ROOT itself (for shipped files such as predefined/).
+ *
+ * @param[in] relativeOrFileName Filename or relative path to fixture file.
+ * @return Entire file content as string, or empty string if file cannot be opened.
+ */
+inline std::string LoadFixtureText(const std::string& relativeOrFileName)
+{
+    std::filesystem::path target = relativeOrFileName;
+    if (!std::filesystem::exists(target))
+    {
+#if defined(ANGELSCRIPT_FIXTURE_DIR)
+        target = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / relativeOrFileName;
+#endif
+    }
+    if (!std::filesystem::exists(target))
+    {
+#if defined(ANGELSCRIPT_REPO_ROOT)
+        target = std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "tests" / "fixtures" / relativeOrFileName;
+#endif
+    }
+    if (!std::filesystem::exists(target))
+    {
+#if defined(ANGELSCRIPT_REPO_ROOT)
+        target = std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / relativeOrFileName;
+#endif
+    }
+    std::ifstream in(target, std::ios::binary);
+    if (!in.is_open())
+    {
+        return {};
+    }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+/**
+ * @brief Checks if a diagnostic vector contains a diagnostic with the given code.
+ *
+ * @param[in] diagnostics Diagnostic list to inspect.
+ * @param[in] code Diagnostic code string to find.
+ * @return True if code matches any diagnostic code in list, false otherwise.
+ */
+inline bool HasDiagnostic(const std::vector<analysis::Diagnostic>& diagnostics, std::string_view code)
+{
+    return std::any_of(diagnostics.begin(), diagnostics.end(),
+                       [&](const analysis::Diagnostic& d) { return d.code == code; });
+}
+
+/**
+ * @brief Analyzes an AngelScript snippet with standard SDK add-ons predefined stub fixture.
+ *
+ * Loads symbols from server/tests/fixtures/sdk-addons.as.predefined and configures
+ * explicit standard engine properties.
+ *
+ * @param[in] code AngelScript source code to analyze.
+ * @return Vector of diagnostics generated during semantic analysis.
+ */
+inline std::vector<analysis::Diagnostic> AnalyzeScriptWithStandardProfile(const std::string& code)
+{
+    const std::string fileUri = "file:///" + GenerateRandomSymbolName() + ".as";
+    parser::AngelScriptParser parser;
+    analysis::SymbolCollector collector(nullptr);
+    analysis::LocalScopeCollector scopes(nullptr);
+    analysis::SymbolTable table;
+    static i18n::I18n i18n;
+
+    const std::string stdStub = LoadFixtureText("sdk-addons.as.predefined");
+    collector.CollectSymbols("file:///sdk-addons.as.predefined", stdStub, parser, table);
+    collector.CollectSymbols(fileUri, code, parser, table);
+
+    static const config::EngineProperties standardProps = []()
+    {
+        config::EngineProperties props;
+        props.propertyAccessorMode = 2;
+        props.allowUnsafeReferences = false;
+        props.disallowGlobalVars = false;
+        props.boolConversionMode = 0;
+        return props;
+    }();
+
+    analysis::SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+    request.scopeRoot = scopes.CollectScopes(code, parser);
+    request.sourceCode = code;
+    request.engineProperties = &standardProps;
+    TSTree* tree = parser.Parse(code);
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
+
+    analysis::SemanticAnalyzer analyzer(nullptr);
+    auto diagnostics = analyzer.Analyze(request);
+
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+    return diagnostics;
+}
+
+/**
+ * @brief Analyzes an AngelScript snippet with the Sven Co-op predefined stub fixture.
+ *
+ * Loads symbols from the repository's predefined/sven.as.predefined, the same stub the shipped
+ * extension documents, and runs the analyzer with default engine properties.
+ *
+ * @param[in] code AngelScript source code to analyze.
+ * @param[in] diagConfig Optional diagnostics configuration overrides.
+ * @return Vector of diagnostics generated during semantic analysis.
+ */
+inline std::vector<analysis::Diagnostic>
+AnalyzeScriptWithSvenProfile(const std::string& code, const config::DiagnosticsConfig* diagConfig = nullptr)
+{
+    const std::string fileUri = "file:///" + GenerateRandomSymbolName() + ".as";
+    parser::AngelScriptParser parser;
+    analysis::SymbolCollector collector(nullptr);
+    analysis::LocalScopeCollector scopes(nullptr);
+    analysis::SymbolTable table;
+    static i18n::I18n i18n;
+
+    const std::string svenStub = LoadFixtureText("predefined/sven.as.predefined");
+    collector.CollectSymbols("file:///sven.as.predefined", svenStub, parser, table);
+    collector.CollectSymbols(fileUri, code, parser, table);
+
+    analysis::SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+    request.scopeRoot = scopes.CollectScopes(code, parser);
+    request.sourceCode = code;
+    TSTree* tree = parser.Parse(code);
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+    request.nodeIndex = &nodeIndex;
+    request.diagnostics = diagConfig;
+
+    analysis::SemanticAnalyzer analyzer(nullptr);
+    auto diagnostics = analyzer.Analyze(request);
+
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+    return diagnostics;
 }
 
 /**

@@ -90,7 +90,7 @@
   "Select Predefined Stubs": "Seleccionar stubs predefinidos",
   "Enable or disable .as.predefined files": "Activar o desactivar archivos .as.predefined",
   "Configure Engine Environment": "Configurar entorno del motor",
-  "Adjust engine profile and rules": "Ajustar perfil del motor y reglas",
+  "Adjust engine rules": "Ajustar reglas del motor",
   "Open AngelScript output panel": "Abrir panel de salida de AngelScript",
   "Show log files on disk": "Mostrar archivos de registro en disco",
   "Restart the AngelLSP process": "Reiniciar el proceso de AngelLSP",

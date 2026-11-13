@@ -4,7 +4,7 @@ AST Traversal, Parent-Climb & Layer Antipattern Quality Gate.
 Enforces:
 1. No unbounded root-climb loops (while/for (!ts_node_is_null(ts_node_parent(...))) / GetParent) across server/src/.
 2. Zero raw ts_node_parent calls across server/src/ outside parser/ASTUtils.h.
-3. Zero hardcoded engine-specific symbols ("BaseClass", "EHandle", etc.) outside EngineProfiles.cpp.
+3. Zero hardcoded engine-specific symbols ("BaseClass", "EHandle", etc.) in server/src/.
 4. Zero hardcoded type names or parameter defaults ("weakref", "const_weakref", ="string", ="array") in Layer 2 & 3.
 5. Zero heap string concatenations (+ "::" +) passed to SymbolTable lookups.
 """
@@ -77,9 +77,7 @@ ENGINE_HARDCODED_SYMBOLS = [
     '"CustomEntity"',
 ]
 
-ENGINE_ALLOWED_FILES = {
-    SERVER_SRC / "analysis" / "types" / "EngineProfiles.cpp",
-}
+ENGINE_ALLOWED_FILES: set[Path] = set()
 
 BANNED_IDENTIFIER_PATTERNS = [
     (re.compile(r"\bk_baseClassIdentifier\b"), "banned identifier k_baseClassIdentifier (eradicated in favor of dynamic baseClassDelegateProperties)"),
@@ -1147,7 +1145,7 @@ def main():
     engine_violations = check_no_engine_hardcoding()
     if engine_violations:
         has_errors = True
-        print("[ERROR] Engine-specific symbols hardcoded outside EngineProfiles.cpp:")
+        print("[ERROR] Engine-specific symbols hardcoded in server/src/:")
         for f, line_num, line in engine_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")

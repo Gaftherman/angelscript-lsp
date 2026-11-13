@@ -696,7 +696,7 @@ def compute_memory_layout_audit():
             "estimatedPaddingBytes": 9,
             "currentSizeBytes": 512,
             "compactedSizeBytes": 416,
-            "compactionProposal": "Pack isSynthesized and isPredefined into 1-byte uint8_t flags; optimize virtualFileUri SSO allocation; shrink std::variant footprint by compacting largest signature.",
+            "compactionProposal": "Pack isSynthesized and isPredefined into 1-byte uint8_t flags; shrink std::variant footprint by compacting largest signature.",
             "savedMbPer100k": 9.16,
         },
     ]

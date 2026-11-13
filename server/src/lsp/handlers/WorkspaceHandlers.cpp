@@ -200,7 +200,7 @@ static bool UpdateActiveStubFiles(angel_lsp::config::ServerConfig& config, const
     return false;
 }
 
-static bool UpdatePredefinedAndProfileConfiguration(Server& server, const lsp::LSPObject& section)
+static bool UpdatePredefinedConfiguration(Server& server, const lsp::LSPObject& section)
 {
     auto& config = server.GetMutableConfig();
     bool shouldRescan = false;
@@ -224,16 +224,6 @@ static bool UpdatePredefinedAndProfileConfiguration(Server& server, const lsp::L
     {
         server.LogInfo(fmt::format("Active stub files changed ({} active); rescanning", config.activeStubFiles.size()));
         shouldRescan = true;
-    }
-
-    if (const auto* profileVal = section.find("engineProfile"); profileVal && profileVal->isString())
-    {
-        if (!profileVal->string().empty() && profileVal->string() != server.EngineProfile())
-        {
-            server.GetWorkspaceStore().SetEngineProfile(profileVal->string());
-            server.LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", profileVal->string()));
-            shouldRescan = true;
-        }
     }
 
     if (const auto* rulesFileVal = section.find("rulesFile"); rulesFileVal && rulesFileVal->isString())
@@ -310,7 +300,7 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
     bool shouldRescan = false;
     shouldRescan = UpdateModulesConfiguration(*this, *section) || shouldRescan;
     shouldRescan = UpdateIncludeConfiguration(*this, *section) || shouldRescan;
-    shouldRescan = UpdatePredefinedAndProfileConfiguration(*this, *section) || shouldRescan;
+    shouldRescan = UpdatePredefinedConfiguration(*this, *section) || shouldRescan;
     shouldRescan = UpdateSearchDirectoriesConfiguration(*this, *section) || shouldRescan;
 
     if (shouldRescan)

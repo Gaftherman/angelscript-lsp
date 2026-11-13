@@ -68,6 +68,16 @@ struct WorkspaceFixture
         out << contents;
     }
 
+    /**
+     * @brief Copies the standard SDK add-ons predefined stub into the workspace root.
+     *
+     * Provides standard types such as string, array, and dictionary via predefined discovery.
+     */
+    void AddStandardPredefined() const
+    {
+        Write("sdk-addons.as.predefined", test::LoadFixtureText("sdk-addons.as.predefined"));
+    }
+
     /** @brief file:// URI of a workspace file, in the spelling a client would send. */
     std::string Uri(const std::string& name) const
     {
@@ -1696,7 +1706,6 @@ TEST_CASE("Server - Pull diagnostics on closed file blanks excluded preprocessor
 
     config::ServerConfig serverConfig;
     serverConfig.features.enablePullDiagnostics = true;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"MapScript", "", (fixture.dir / "scripts/maps").generic_string()}};
     RunScript(serverConfig, stream);
 
@@ -2758,66 +2767,11 @@ TEST_CASE("Server - A #define in a script is reported, and the same one in a stu
 }
 
 // =====================================================================================
-// Switching engine profile has to unload the profile that was left.
-//
-// The profiles load as synthetic documents - `builtin:///profiles/<name>.as.predefined` - claimed
-// through the same ClaimPredefinedFile path as a stub on disk. didChangeConfiguration notices the
-// profile changed and sets shouldRescan, but a rescan only ever *adds*: ClaimPredefinedFile refuses
-// a URI it has already seen, and nothing releases the one that is no longer wanted.
-//
-// `Vector` is declared only by the SvenCoop profile, so a script naming it after a move to Urho3D
-// should stop resolving. Still resolving means the old profile was never unloaded.
-// =====================================================================================
-
-TEST_CASE("Server - Switching engine profile forgets the profile that was left")
-{
-    const std::string source = "void main() { Vector v; }\n";
-
-    WorkspaceFixture fixture;
-    fixture.Write("main.as", source);
-
-    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle, size_t times)
-    { stream.WaitForCount(needle, times); };
-
-    test::ScriptedStream stream;
-    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
-    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-
-    // The first scan loads the SvenCoop profile named in the config at the bottom.
-    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\"", 1); });
-
-    // Move to a profile that has never heard of Vector.
-    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
-                R"({"settings":{"angelscript":{"engineProfile":"urho3d"}}}})");
-
-    // The rescan runs its own progress cycle, so wait for a second one to finish.
-    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\"", 2); });
-
-    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
-    stream.PushAction([&]() { waitFor(stream, "publishDiagnostics", 1); });
-
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
-    config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "svencoop";
-    RunScript(serverConfig, stream);
-
-    const std::string frames = PublishedFrames(stream.Output());
-    INFO(frames);
-
-    // Published at all - otherwise the assertion below would pass on a server that said nothing.
-    REQUIRE(stream.Output().find("publishDiagnostics") != std::string::npos);
-
-    CHECK(Published(stream.Output(), "as-err-unresolved-type"));
-}
-
-// =====================================================================================
 // One active stub, the rest ignored.
 //
-// The three cases are a set and only mean something together: with a selection the other stub's
-// declarations must be gone, without one they must both be there, and the engine profile has to
-// survive either way. Testing only the first would pass against a server that had simply stopped
-// loading stubs at all.
+// The cases are a set and only mean something together: with a selection the other stub's
+// declarations must be gone, and without one they must both be there. Testing only the first
+// would pass against a server that had simply stopped loading stubs at all.
 // =====================================================================================
 
 namespace
@@ -2858,10 +2812,6 @@ std::string RunWithActiveStub(const TwoStubFixture& two, const std::string& sour
 
     config::ServerConfig serverConfig;
     serverConfig.activePredefined = activeStub;
-
-    // Not the default "none". The analyzer stays silent about a type it cannot see the world
-    // of, so with an empty symbol table every one of these assertions would pass by vacuity.
-    serverConfig.engineProfile = "standard";
 
     RunScript(serverConfig, stream);
     return stream.Output();
@@ -2964,21 +2914,6 @@ TEST_CASE("Server - A lone stub is loaded without a word about it")
     CHECK_FALSE(Published(output, "as-err-unresolved-type"));
     CHECK(output.find("predefined stubs found") == std::string::npos);
     CHECK(output.find("predefined stubs loaded together") == std::string::npos);
-}
-
-TEST_CASE("Server - The engine profile survives a stub selection")
-{
-    // A host stub describes the host's API, not the standard library. If selecting one dropped the
-    // profile as well, every workspace that chose a stub would lose `array` and `string`.
-    TwoStubFixture two;
-
-    const std::string output =
-        RunWithActiveStub(two, "void main() { array<int> xs; }\n", two.Stub("host_a.as.predefined"));
-
-    INFO(PublishedFrames(output));
-    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
-
-    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
 }
 
 TEST_CASE("Server - A selection naming a file that is not there is reported, loudly")
@@ -5029,13 +4964,11 @@ TEST_CASE("Server - Hover answers for the shapes that nest")
 }
 
 // =====================================================================================
-// Switching the active stub, and the half of that fix nobody had written.
+// Switching the active stub.
 //
-// "Switching engine profile forgets the profile that was left" above pins the built-in half:
-// LoadBuiltinEngineProfiles releases the profile the user moved away from. The stubs on disk go
-// through the same ClaimPredefinedFile path and had no release at all, so a rescan could only ever
-// add - the stub that stopped being active kept every class it declared in the symbol table, kept
-// answering hover, and kept its `#define`s defined.
+// The stubs on disk go through the ClaimPredefinedFile path, where a rescan must unload
+// the stub that stopped being active so it does not keep every class it declared in the
+// symbol table, keep answering hover, or keep its `#define`s defined.
 //
 // Reported from use: after switching stubs, "me sigue pudiendo hacer hover y no marca la entidad
 // como si fuera invalida". Both halves of that sentence are a case below, because they fail
@@ -5080,10 +5013,6 @@ std::string RunAfterSwitchingStub(const TwoStubFixture& two, const std::string& 
 
     config::ServerConfig serverConfig;
     serverConfig.activePredefined = two.Stub("host_a.as.predefined");
-
-    // Not the default "none": the analyzer stays silent about a type whose world it cannot see,
-    // and with an empty table every assertion below would pass by vacuity.
-    serverConfig.engineProfile = "standard";
 
     RunScript(serverConfig, stream);
     return stream.Output();
@@ -5303,6 +5232,7 @@ struct TwoModuleFixture
 
     TwoModuleFixture()
     {
+        fixture.AddStandardPredefined();
         fixture.Write("mod_shared_lib.as", "shared class ModPacket { int id; }\n"
                                            "shared void ModHelper() { }\n");
         fixture.Write("mod_shared_main.as", "#include \"mod_shared_lib.as\"\n"
@@ -5337,10 +5267,6 @@ std::string RunWithModules(TwoModuleFixture& two, const std::string& consumerSou
 
     config::ServerConfig serverConfig;
     serverConfig.modules = modules;
-
-    // Not the default "none": the analyzer stays silent about a world it cannot see, and with an
-    // empty table these assertions would pass by vacuity.
-    serverConfig.engineProfile = "standard";
 
     RunScript(serverConfig, stream);
     return stream.Output();
@@ -5495,6 +5421,7 @@ struct FolderModuleFixture
 
     FolderModuleFixture()
     {
+        fixture.AddStandardPredefined();
         fixture.Write("scripts/maps/broken_map.as", "void FmBrokenMap()\n{\n    FmNoSuchFunction();\n}\n");
         fixture.Write("scripts/maps/clean_map.as", "void FmCleanMap() { }\n");
         fixture.Write("scripts/plugins/plugin_main.as", "void FmPluginMain() { }\n");
@@ -5544,7 +5471,6 @@ std::string RunWithFolderModules(FolderModuleFixture& fx,
 
     config::ServerConfig serverConfig;
     serverConfig.modules = modules;
-    serverConfig.engineProfile = "standard";
 
     RunScript(serverConfig, stream);
     return stream.Output();
@@ -5702,6 +5628,7 @@ TEST_CASE("Server - A renamed module folder is not remembered at its old path")
     //
     // That cost is only bounded if something clears the cache, and until this case nothing did.
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     fixture.Write("before/renamed_map.as", "void RnRenamedMap()\n{\n    RnNoSuchFunction();\n}\n");
     fixture.Write("opened.as", "void RnOpened() { }\n");
 
@@ -5734,7 +5661,6 @@ TEST_CASE("Server - A renamed module folder is not remembered at its old path")
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     // Deliberately none at startup. The module arrives with the configuration change below,
     // which is also what makes the change a change - re-sending the same definition is not one.
 
@@ -5757,6 +5683,7 @@ TEST_CASE("Server - A symlink does not put one file in two modules twice over")
     // needs Developer Mode or an elevated process, and a test that assumed either would fail on
     // whichever machine did not have it. The same discipline the case-sensitivity cases use.
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     fixture.Write("real/linked_map.as", "void SlLinkedMap() { }\n");
     fixture.Write("opened.as", "void SlOpened() { }\n");
 
@@ -5780,7 +5707,6 @@ TEST_CASE("Server - A symlink does not put one file in two modules twice over")
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"Real", "", (fixture.dir / "real").generic_string()},
                             {"Mirror", "", (fixture.dir / "mirror").generic_string()}};
 
@@ -5800,6 +5726,7 @@ TEST_CASE("Server - A symlink does not put one file in two modules twice over")
 TEST_CASE("Server - Closing a file outside configured modules clears Push diagnostics")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     const std::string orphanSource = "void OrphanBroken() { UnknownOrphanType x; }\n";
     fixture.Write("module_main.as", "void Main() { }\n");
     fixture.Write("orphan.as", orphanSource);
@@ -5821,7 +5748,6 @@ TEST_CASE("Server - Closing a file outside configured modules clears Push diagno
     stream.Push(R"({"jsonrpc":"2.0","id":101,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"MyModule", fixture.Path("module_main.as"), ""}};
 
     RunScript(serverConfig, stream);
@@ -5840,6 +5766,7 @@ TEST_CASE("Server - Closing a file outside configured modules clears Push diagno
 TEST_CASE("Server - Configured module entry resolves sibling includes during initial scan")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     const std::string helperName = test::GenerateRandomSymbolName("Helper");
     fixture.Write("scripts/maps/main.as", "#include \"util.as\"\nvoid Main() { " + helperName + "(); }\n");
     fixture.Write("scripts/maps/util.as", "void " + helperName + "() { }\n");
@@ -5855,7 +5782,6 @@ TEST_CASE("Server - Configured module entry resolves sibling includes during ini
     stream.Push(R"({"jsonrpc":"2.0","id":10,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"MapModule", fixture.Path("scripts/maps/main.as"), ""}};
 
     RunScript(serverConfig, stream);
@@ -5873,6 +5799,7 @@ TEST_CASE("Server - The cost of a module-wide pass is measured rather than assum
     // as knowing it, and this is the number that was missing - printed rather than bounded, because
     // a threshold here would be a test about the machine the suite runs on.
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
 
     constexpr int k_files = 200;
     for (int i = 0; i < k_files; ++i)
@@ -5907,7 +5834,6 @@ TEST_CASE("Server - The cost of a module-wide pass is measured rather than assum
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"Big", "", (fixture.dir / "module").generic_string()}};
 
     RunScript(serverConfig, stream);
@@ -5924,6 +5850,7 @@ TEST_CASE("Server - The cost of a module-wide pass is measured rather than assum
 TEST_CASE("Server - Closing an open file in a folder module does not purge module symbols")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     fixture.Write("scripts/maps/decl.as", "void RetainedHelper() { }\n");
     fixture.Write("scripts/maps/use.as", "void UserFunc()\n{\n    RetainedHelper();\n}\n");
 
@@ -5947,7 +5874,6 @@ TEST_CASE("Server - Closing an open file in a folder module does not purge modul
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"MapScript", "", (fixture.dir / "scripts/maps").generic_string()}};
 
     RunScript(serverConfig, stream);
@@ -6005,6 +5931,7 @@ TEST_CASE("Server - An incremental edit to an open stub is applied and re-analys
 TEST_CASE("Server - Dynamic modules change updates diagnostics for open document")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     fixture.Write("maps/ins2/weapon.as", "namespace INS2_KNUCKLES { void Register() { } }\n");
     fixture.Write("maps/ins2/ins2_register.as", "void main()\n{\n    INS2_KNUCKLES::Register();\n}\n");
 
@@ -6064,7 +5991,6 @@ TEST_CASE("Server - Dynamic modules change updates diagnostics for open document
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"MapInit", (fixture.dir / "maps/ins2/ins2_register.as").generic_string(), ""},
                             {"ins2", "", (fixture.dir / "maps/ins2").generic_string()}};
 
@@ -6186,6 +6112,7 @@ TEST_CASE("Telemetry - FormatDuration formats milliseconds and converts seconds 
 TEST_CASE("Server - Closed analysis reuses lexical scopes from the exact preprocessed revision")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     fixture.Write("closed_scope.as", R"(#if INACTIVE_CLOSED_BRANCH
 void Hidden() { HiddenMissing(); }
 #endif
@@ -6212,7 +6139,6 @@ void Main()
     stream.Push(R"({"jsonrpc":"2.0","id":20,"method":"shutdown"})");
 
     config::ServerConfig config;
-    config.engineProfile = "standard";
     config.modules = {{"Closed", "", fixture.dir.generic_string()}};
     const std::string output = RunScript(config, stream);
     CHECK(output.find("[Analysis] Reused closed lexical scopes for file:") != std::string::npos);
@@ -6471,6 +6397,7 @@ TEST_CASE("Server - Save and semantic tokens reuse exact protocol syntax revisio
 TEST_CASE("Server - Saving an open file in a module does not re-analyze closed files or unchanged peers")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     fixture.Write("scripts/weapons/weapon_base.as", "void BaseFunc() {}\n");
     fixture.Write("scripts/weapons/weapon_closed.as", "void ClosedFunc() { BaseFunc(); }\n");
     fixture.Write("scripts/weapons/weapon_open.as", "void OpenFunc() { BaseFunc(); }\n");
@@ -6504,7 +6431,6 @@ TEST_CASE("Server - Saving an open file in a module does not re-analyze closed f
                 fixture.Uri("scripts/weapons/weapon_open.as") + R"("},"text":")" + JsonEscape(savedText) + R"("}})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"Weapons", "", (fixture.dir / "scripts/weapons").generic_string()}};
     Server server(serverConfig, stream);
 
@@ -7266,6 +7192,7 @@ TEST_CASE("ServerHarness - MasterHarnessTelemetrySmokeTest")
 TEST_CASE("ServerHarness - Wildcard rules file auto-discovery")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     const std::string wildcardRules = test::GenerateRandomSymbolName("engine") + ".angelscript.rules.json";
     const std::string customEntry = test::GenerateRandomSymbolName("CustomCallback");
     fixture.Write(wildcardRules, R"({
@@ -7286,7 +7213,6 @@ TEST_CASE("ServerHarness - Wildcard rules file auto-discovery")
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
 
     RunScript(serverConfig, stream);
 
@@ -7301,6 +7227,7 @@ TEST_CASE("Server - Saving an interface-changing module file clears diagnostics 
     const std::string callerName = test::GenerateRandomSymbolName("UserFunc");
 
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     // Initially decl.as is missing helperName, so use.as produces an error during module scan
     fixture.Write("scripts/maps/decl.as", "// initial empty decl\n");
     fixture.Write("scripts/maps/use.as", "void " + callerName + "()\n{\n    " + helperName + "();\n}\n");
@@ -7330,7 +7257,6 @@ TEST_CASE("Server - Saving an interface-changing module file clears diagnostics 
                 fixture.Uri("scripts/maps/decl.as") + R"("},"text":")" + JsonEscape(fixedDecl) + R"("}})");
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"MapScript", "", (fixture.dir / "scripts/maps").generic_string()}};
     Server server(serverConfig, stream);
 
@@ -7513,6 +7439,7 @@ TEST_CASE("Server - OnTypeFormatting inside heredoc is a no-op")
 TEST_CASE("Server - Independent module entry points isolate duplicate funcdefs without collision")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     const std::string nsName = test::GenerateRandomSymbolName("ModNS");
     const std::string funcdefName = test::GenerateRandomSymbolName("Callback");
     const std::string fnName = test::GenerateRandomSymbolName("InvokeCb");
@@ -7532,7 +7459,6 @@ TEST_CASE("Server - Independent module entry points isolate duplicate funcdefs w
     fixture.Write("scripts/scriptB.as", scriptB);
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"ModuleA", (fixture.dir / "scripts/scriptA.as").generic_string(), ""},
                             {"ModuleB", (fixture.dir / "scripts/scriptB.as").generic_string(), ""}};
 
@@ -7557,6 +7483,7 @@ TEST_CASE("Server - Independent module entry points isolate duplicate funcdefs w
 TEST_CASE("ServerHarness - Sub-header included by root resolves parent types and functions without E103 or W108")
 {
     WorkspaceFixture fixture;
+    fixture.AddStandardPredefined();
     const std::string typeJson = test::GenerateRandomSymbolName("CustomJson");
     const std::string fnPrefix = test::GenerateRandomSymbolName("GetLogPrefix");
     const std::string validatorCls = test::GenerateRandomSymbolName("Validator");
@@ -7588,7 +7515,6 @@ TEST_CASE("ServerHarness - Sub-header included by root resolves parent types and
     fixture.Write("scripts/sub/schema.as", subSource);
 
     config::ServerConfig serverConfig;
-    serverConfig.engineProfile = "standard";
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));

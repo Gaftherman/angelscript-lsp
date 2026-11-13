@@ -562,12 +562,6 @@ struct ServerConfig
     std::string activePredefined;
 
     /**
-     * @brief Built-in predefined engine profile identifier (deprecated; defaults to "none").
-     *        Predefined API stubs on disk (.as.predefined) supersede built-in engine profiles.
-     */
-    std::string engineProfile = "none";
-
-    /**
      * @brief Path to the engine rules configuration file (default: "angelscript.rules.json").
      */
     std::string rulesFile;

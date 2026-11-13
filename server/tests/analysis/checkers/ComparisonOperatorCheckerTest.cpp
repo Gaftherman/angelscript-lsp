@@ -7,7 +7,6 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/EngineProfiles.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -19,48 +18,6 @@
 
 namespace angel_lsp::test
 {
-using namespace angel_lsp::analysis;
-
-namespace
-{
-std::vector<Diagnostic> AnalyzeScriptWithStandardProfile(const std::string& code)
-{
-    const std::string fileUri = "file:///" + GenerateRandomSymbolName() + ".as";
-    parser::AngelScriptParser parser;
-    analysis::SymbolCollector collector(nullptr);
-    analysis::LocalScopeCollector scopes(nullptr);
-    analysis::SymbolTable table;
-    static i18n::I18n i18n;
-
-    // Load standard built-in profile (defines string, ref, array, etc.)
-    const std::string stdStub(GetProfileStubText(EngineProfileKind::Standard));
-    collector.CollectSymbols(GetProfileSyntheticUri(EngineProfileKind::Standard), stdStub, parser, table);
-
-    // Collect user script symbols
-    collector.CollectSymbols(fileUri, code, parser, table);
-
-    analysis::SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
-    request.scopeRoot = scopes.CollectScopes(code, parser);
-    request.sourceCode = code;
-    TSTree* tree = parser.Parse(code);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
-
-    analysis::SemanticAnalyzer analyzer(nullptr);
-    auto diagnostics = analyzer.Analyze(request);
-
-    if (tree)
-    {
-        ts_tree_delete(tree);
-    }
-    return diagnostics;
-}
-
-bool HasDiagnostic(const std::vector<Diagnostic>& diagnostics, std::string_view code)
-{
-    return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic& d) { return d.code == code; });
-}
-} // namespace
 
 TEST_SUITE("ComparisonOperatorChecker")
 {
@@ -81,7 +38,7 @@ TEST_SUITE("ComparisonOperatorChecker")
             if (d.code == diagnostics::codes::NoMatchingOperator)
             {
                 ++count;
-                CHECK(d.severity == DiagnosticSeverity::Error);
+                CHECK(d.severity == analysis::DiagnosticSeverity::Error);
             }
         }
         CHECK(count == 4);
@@ -117,7 +74,7 @@ TEST_SUITE("ComparisonOperatorChecker")
             if (d.code == diagnostics::codes::IllegalOperation)
             {
                 ++illegalCount;
-                CHECK(d.severity == DiagnosticSeverity::Error);
+                CHECK(d.severity == analysis::DiagnosticSeverity::Error);
             }
         }
         CHECK(illegalCount == 3);

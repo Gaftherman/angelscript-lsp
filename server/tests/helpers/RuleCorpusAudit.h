@@ -6,9 +6,9 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/EngineProfiles.h"
 #include "config/ServerConfig.h"
 #include "helpers/CorpusDirectory.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
@@ -63,13 +63,15 @@ struct CorpusResult
  * Every corpus file is working AngelScript, so a hit is a false positive until the specific
  * case is read and shown to be a genuine error.
  *
- * @param interesting Predicate selecting the diagnostic codes this audit is about.
- * @param maxHits Cap on retained examples, so a flooding rule does not exhaust memory.
+ * @param[in] interesting Predicate selecting the diagnostic codes this audit is about.
+ * @param[in] maxHits Cap on retained examples, so a flooding rule does not exhaust memory.
+ * @param[in] diagConfig Optional diagnostics configuration overrides.
+ * @param[in] predefinedStubFixture Optional fixture file name (e.g. "sven-sashi.as.predefined") to preload.
+ * @return CorpusResult containing audit summary, counts by code, and collected hits.
  */
-inline CorpusResult
-RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_t maxHits = 80,
-               const angel_lsp::config::DiagnosticsConfig* diagConfig = nullptr,
-               angel_lsp::analysis::EngineProfileKind profile = angel_lsp::analysis::EngineProfileKind::None)
+inline CorpusResult RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_t maxHits = 80,
+                                   const angel_lsp::config::DiagnosticsConfig* diagConfig = nullptr,
+                                   std::string_view predefinedStubFixture = "")
 {
     CorpusResult result;
 
@@ -100,16 +102,16 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
         std::unordered_map<std::string, std::string> sources;
 
         // A workspace of game scripts is analysed against the host's declarations, not in a
-        // vacuum - the server loads the profile stub before any document. Measuring without one
+        // vacuum - the server loads the predefined stub before any document. Measuring without one
         // measures a configuration nobody runs.
-        if (profile != angel_lsp::analysis::EngineProfileKind::None)
+        if (!predefinedStubFixture.empty())
         {
-            const std::string stub(angel_lsp::analysis::GetProfileStubText(profile));
+            const std::string stub = LoadFixtureText(std::string(predefinedStubFixture));
             if (!stub.empty())
             {
                 angel_lsp::parser::AngelScriptParser stubParser;
                 angel_lsp::analysis::SymbolCollector stubCollector(nullptr);
-                stubCollector.CollectSymbols(angel_lsp::analysis::GetProfileSyntheticUri(profile), stub, stubParser,
+                stubCollector.CollectSymbols("file:///" + std::string(predefinedStubFixture), stub, stubParser,
                                              sharedTable);
             }
         }

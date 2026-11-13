@@ -6,6 +6,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ### Removed
 
+- Built-in engine profiles: the `engineProfile` setting key (now ignored if present), the `--engine-profile`/`--profile` server flags and the embedded profile stubs. Predefined API stubs on disk (`.as.predefined`) are the only source of engine types.
 - Virtual Mixin Documents: the synthetic `angelscript-virtual://` documents, the `angelscript.viewMixinExpansion`, `angelscript.peekMixinInline` and `angelscript.openPhysicalSource` commands, the `angelscript.enableVirtualMixinDocuments` and `angelscript.codeLens.showMixinExpansion` settings, the matching `--enable-virtual-mixin-documents` and `--codelens-mixin-expansion` server flags, and the `angelscript/virtualDocumentContent` request. Mixin members are still resolved in their host class through the normal symbol table.
 
 ### Fixed

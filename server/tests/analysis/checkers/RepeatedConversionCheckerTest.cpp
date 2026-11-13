@@ -5,7 +5,6 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/EngineProfiles.h"
 #include "config/ServerConfig.h"
 #include "features/code_action/CodeActionHandler.h"
 #include "helpers/TestUtils.h"
@@ -21,60 +20,6 @@
 
 namespace angel_lsp::test
 {
-using namespace angel_lsp::analysis;
-using namespace angel_lsp::config;
-using namespace angel_lsp::features;
-
-namespace
-{
-std::vector<Diagnostic> AnalyzeScriptWithSvenProfile(const std::string& code,
-                                                     const DiagnosticsConfig* diagConfig = nullptr)
-{
-    const std::string fileUri = "file:///" + GenerateRandomSymbolName() + ".as";
-    parser::AngelScriptParser parser;
-    analysis::SymbolCollector collector(nullptr);
-    analysis::LocalScopeCollector scopes(nullptr);
-    analysis::SymbolTable table;
-    static i18n::I18n i18n;
-
-    std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
-    std::filesystem::path stubPath = repoRoot / "predefined" / "sven.as.predefined";
-    if (std::filesystem::exists(stubPath))
-    {
-        std::ifstream stubFile(stubPath, std::ios::binary);
-        std::string stubContent((std::istreambuf_iterator<char>(stubFile)), std::istreambuf_iterator<char>());
-        collector.CollectSymbols("file:///sven.as.predefined", stubContent, parser, table);
-    }
-    else
-    {
-        const std::string svenStub(GetProfileStubText(EngineProfileKind::SvenCoop));
-        collector.CollectSymbols(GetProfileSyntheticUri(EngineProfileKind::SvenCoop), svenStub, parser, table);
-    }
-    collector.CollectSymbols(fileUri, code, parser, table);
-
-    analysis::SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
-    request.scopeRoot = scopes.CollectScopes(code, parser);
-    request.sourceCode = code;
-    TSTree* tree = parser.Parse(code);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
-    request.diagnostics = diagConfig;
-
-    analysis::SemanticAnalyzer analyzer(nullptr);
-    auto diagnostics = analyzer.Analyze(request);
-
-    if (tree)
-    {
-        ts_tree_delete(tree);
-    }
-    return diagnostics;
-}
-
-bool HasDiagnostic(const std::vector<Diagnostic>& diagnostics, std::string_view code)
-{
-    return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic& d) { return d.code == code; });
-}
-} // namespace
 
 TEST_SUITE("RepeatedConversionChecker")
 {
@@ -94,7 +39,7 @@ TEST_SUITE("RepeatedConversionChecker")
             if (d.code == diagnostics::codes::RepeatedConversion)
             {
                 ++count;
-                CHECK(d.severity == DiagnosticSeverity::Hint);
+                CHECK(d.severity == analysis::DiagnosticSeverity::Hint);
             }
         }
         CHECK(count == 2);
@@ -167,7 +112,7 @@ TEST_SUITE("RepeatedConversionChecker")
 
         // Enabled configuration: warns only on first dereference when reportAllNullDereferences is false
         {
-            DiagnosticsConfig cfg;
+            config::DiagnosticsConfig cfg;
             cfg.reportPossibleNullDereference = true;
             cfg.reportAllNullDereferences = false;
             const auto diags = AnalyzeScriptWithSvenProfile(script, &cfg);
@@ -184,7 +129,7 @@ TEST_SUITE("RepeatedConversionChecker")
 
         // Configured to report all null dereferences
         {
-            DiagnosticsConfig cfg;
+            config::DiagnosticsConfig cfg;
             cfg.reportPossibleNullDereference = true;
             cfg.reportAllNullDereferences = true;
             const auto diags = AnalyzeScriptWithSvenProfile(script, &cfg);

@@ -4,7 +4,6 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/EngineProfiles.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "lsp/state/ModuleIndex.h"
@@ -248,9 +247,8 @@ TEST_CASE("Performance - PERF-02 Checkers Latency and Stub Invariant on Weapon S
     angel_lsp::analysis::SymbolTable table;
     angel_lsp::parser::AngelScriptParser stubParser;
     angel_lsp::analysis::SymbolCollector stubCollector(nullptr);
-    const std::string svenStub(
-        angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::SvenCoop));
-    stubCollector.CollectSymbols("predefined:///svencoop.as.predefined", svenStub, stubParser, table);
+    const std::string svenStub = angel_lsp::test::LoadFixtureText("sven-sashi.as.predefined");
+    stubCollector.CollectSymbols("file:///sven-sashi.as.predefined", svenStub, stubParser, table);
 
     const std::string weaponUri = "file:///weapon_ins2coach.as";
     angel_lsp::parser::AngelScriptParser weaponParser;

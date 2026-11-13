@@ -1,4 +1,3 @@
-#include "analysis/types/EngineProfiles.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PreprocessorRegions.h"
@@ -162,11 +161,6 @@ bool Server::UnloadPredefinedUri(std::string_view uriStr)
 
 bool Server::PredefinedStubContributes(std::string_view uriStr) const
 {
-    if (uriStr.starts_with(angel_lsp::analysis::k_profileUriPrefix))
-    {
-        return true;
-    }
-
     if (m_config.activePredefined == "all")
     {
         return true;
@@ -230,5 +224,56 @@ bool Server::ClaimPredefinedFile(std::string_view uriStr, bool forceReload)
     }
 
     return claimed;
+}
+
+std::vector<std::string> Server::LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser& parser,
+                                                               const angel_lsp::utils::StopFlag& stopToken)
+{
+    std::vector<std::string> loadedPaths;
+
+    for (const auto& entry : m_config.predefinedFiles)
+    {
+        if (stopToken.stop_requested())
+        {
+            return loadedPaths;
+        }
+
+        std::error_code ec;
+        const std::filesystem::path configured(entry);
+
+        std::vector<std::filesystem::path> candidates;
+        if (configured.is_absolute())
+        {
+            candidates.push_back(configured);
+        }
+        else
+        {
+            for (const auto& workspaceRoot : WorkspaceRoots())
+            {
+                candidates.push_back(std::filesystem::path(angel_lsp::utils::UriToPath(workspaceRoot)) / configured);
+            }
+        }
+
+        bool loaded = false;
+        for (const auto& candidate : candidates)
+        {
+            if (!std::filesystem::is_regular_file(candidate, ec))
+            {
+                continue;
+            }
+
+            ParserPredefined(candidate.string(), parser);
+            loadedPaths.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(candidate));
+            loaded = true;
+            break;
+        }
+
+        if (!loaded)
+        {
+            LogError(fmt::format("Configured predefined file not found: {}", entry));
+        }
+    }
+
+    return loadedPaths;
 }
 } // namespace angel_lsp

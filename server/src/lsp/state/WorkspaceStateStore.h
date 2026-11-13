@@ -151,18 +151,6 @@ class WorkspaceStateStore
     void SetSearchDirectories(std::shared_ptr<const std::vector<std::string>> searchDirs);
 
     /**
-     * @brief Retrieves the active engine profile name.
-     * @return Current engine profile string.
-     */
-    [[nodiscard]] std::string GetEngineProfile() const;
-
-    /**
-     * @brief Updates the active engine profile name.
-     * @param[in] profile New engine profile string.
-     */
-    void SetEngineProfile(std::string profile);
-
-    /**
      * @brief Retrieves a thread-safe snapshot of defined preprocessor words.
      * @return Shared pointer to const set of defined words.
      */
@@ -255,7 +243,6 @@ class WorkspaceStateStore
     mutable std::mutex m_configMutex;
     std::vector<std::string> m_workspaceRoots;
     std::shared_ptr<const std::vector<std::string>> m_searchDirectories;
-    std::string m_engineProfile;
 
     std::shared_ptr<const TransparentStringSet> m_definedWords;
     ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>

@@ -20,7 +20,6 @@ TEST_SUITE("ServerDomainServices")
 
         store.SetWorkspaceRoots({rootA, rootB});
         store.SetSearchDirectories({dirA});
-        store.SetEngineProfile("SvenCoop");
 
         WorkspaceSnapshot snapshot = store.CreateSnapshot();
         REQUIRE(snapshot.searchDirectories != nullptr);
@@ -28,7 +27,6 @@ TEST_SUITE("ServerDomainServices")
         CHECK((*snapshot.searchDirectories)[0] == dirA);
         CHECK(snapshot.workspaceRoots.size() == 2);
         CHECK(snapshot.workspaceRoots[0] == rootA);
-        CHECK(store.GetEngineProfile() == "SvenCoop");
 
         // Defined words contributions
         const std::string stubPath = "/stubs/" + test::GenerateRandomSymbolName("stub") + ".as";
@@ -50,7 +48,6 @@ TEST_SUITE("ServerDomainServices")
 
         store.Clear();
         CHECK(store.GetWorkspaceRoots().empty());
-        CHECK(store.GetEngineProfile().empty());
     }
 
     TEST_CASE("DiagnosticsPipeline caches and manages snapshots and revisions")

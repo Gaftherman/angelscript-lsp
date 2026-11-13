@@ -56,7 +56,6 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
     m_i18n = std::make_unique<angel_lsp::i18n::I18n>(m_config.info.locale.empty() ? "en" : m_config.info.locale);
 
     m_workspaceStore->SetSearchDirectories(m_config.searchDirectories);
-    m_workspaceStore->SetEngineProfile(m_config.engineProfile);
     m_workspaceStore->SetDefinedWordsFrom(std::string(), m_config.definedWords);
 
     m_diagnosticsPipeline->InitScheduler(

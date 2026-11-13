@@ -7,7 +7,6 @@
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/rules/ClassRules.h"
-#include "analysis/types/EngineProfiles.h"
 #include "config/ServerConfig.h"
 #include "document/Document.h"
 #include "features/definition/DefinitionHandler.h"
@@ -98,7 +97,6 @@ class Server
     [[nodiscard]] std::vector<std::string> WorkspaceRoots() const;
     [[nodiscard]] std::vector<std::string> WorkspaceRootPaths() const;
     [[nodiscard]] std::shared_ptr<const std::vector<std::string>> SearchDirectories() const;
-    [[nodiscard]] std::string EngineProfile() const;
     [[nodiscard]] std::vector<utils::ExcludedLineRange> ExcludedLineRanges(std::string_view text) const;
     [[nodiscard]] std::shared_ptr<const TransparentStringSet> DefinedWords() const;
     bool SetDefinedWordsFrom(std::string_view source, std::vector<std::string> words);
@@ -361,11 +359,6 @@ class Server
                                                            const utils::StopFlag& stopToken);
     void UnloadUnselectedPredefinedStubs(std::span<const std::string> wantedPaths);
     bool RefreshStubDefinedWords(std::string_view uriStr, std::string_view text);
-    void LoadBuiltinEngineProfiles(parser::AngelScriptParser& parser, const utils::StopFlag& stopToken);
-    [[nodiscard]] std::optional<analysis::EngineProfileKind>
-    ResolveTargetEngineProfile(const utils::StopFlag& stopToken);
-    void UnloadStaleBuiltinEngineProfiles(std::span<const analysis::EngineProfileKind> wantedProfiles);
-    void LoadEngineProfileStub(analysis::EngineProfileKind pKind, parser::AngelScriptParser& parser);
     void LoadWorkspaceEngineRules(std::span<const std::string> workspaceRoots);
     analysis::SemanticAnalysisRequest
     BuildAnalysisRequest(std::string_view uriStr, std::string_view text, const analysis::NodeIndex* nodeIndex,

@@ -24,11 +24,6 @@ std::shared_ptr<const std::vector<std::string>> Server::SearchDirectories() cons
     return m_workspaceStore->GetSearchDirectories();
 }
 
-std::string Server::EngineProfile() const
-{
-    return m_workspaceStore->GetEngineProfile();
-}
-
 std::shared_ptr<const TransparentStringSet> Server::DefinedWords() const
 {
     return m_workspaceStore->GetDefinedWords();

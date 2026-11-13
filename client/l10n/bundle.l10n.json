@@ -90,7 +90,7 @@
   "Select Predefined Stubs": "Select Predefined Stubs",
   "Enable or disable .as.predefined files": "Enable or disable .as.predefined files",
   "Configure Engine Environment": "Configure Engine Environment",
-  "Adjust engine profile and rules": "Adjust engine profile and rules",
+  "Adjust engine rules": "Adjust engine rules",
   "Open AngelScript output panel": "Open AngelScript output panel",
   "Show log files on disk": "Show log files on disk",
   "Restart the AngelLSP process": "Restart the AngelLSP process",

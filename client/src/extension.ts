@@ -1956,7 +1956,7 @@ async function showStatusMenu(context: ExtensionContext): Promise<void> {
         },
         {
             label: '$(gear) ' + l10n.t('Configure Engine Environment'),
-            description: l10n.t('Adjust engine profile and rules'),
+            description: l10n.t('Adjust engine rules'),
             run: () => configureHostEnvironment()
         },
         {

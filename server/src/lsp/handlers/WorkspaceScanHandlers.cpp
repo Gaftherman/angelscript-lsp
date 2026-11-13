@@ -160,16 +160,6 @@ bool Server::LoadAndProcessPredefinedStubs(const std::vector<std::string>& disco
                                            const angel_lsp::utils::StopFlag& stopToken,
                                            angel_lsp::parser::AngelScriptParser& parser)
 {
-    ReportWorkspaceProgress("Loading engine profiles", 15);
-    {
-        PhaseTimer profileTimer(m_logger.get(), "built-in engine profiles");
-        LoadBuiltinEngineProfiles(parser, stopToken);
-    }
-    if (stopToken.stop_requested())
-    {
-        return false;
-    }
-
     ReportWorkspaceProgress("Loading predefined stubs", 30);
     std::vector<std::string> configuredPaths;
     {
