@@ -1,4 +1,3 @@
-#include <cstdio>
 #include "analysis/index/DeclarationSiteFacts.h"
 #include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
@@ -112,8 +111,7 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
         }
     }
 
-    fprintf(stderr, "DBG LD name=%s kind=%d tn=[%s] idx=%d
-", def.name.c_str(), (int)def.kind, def.typeName.c_str(), ctx.nodeIndex != nullptr);
+    std::fprintf(stderr, "DBG LD %s kind=%d idx=%d\n", def.name.c_str(), static_cast<int>(def.kind), ctx.nodeIndex != nullptr);
     if (def.typeName.empty() && def.kind == LocalDefinitionKind::Parameter && ctx.nodeIndex)
     {
         std::string deduced = DeduceLambdaParameterType(

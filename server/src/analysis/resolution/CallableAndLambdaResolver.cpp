@@ -1,4 +1,3 @@
-#include <cstdio>
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 
 #include "analysis/index/LambdaTargetFacts.h"
@@ -364,15 +363,11 @@ std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, cons
 std::string DeduceLambdaParameterType(uint32_t paramLine, uint32_t paramCharacter,
                                       const std::vector<LambdaSiteFact>& lambdas, const SymbolTable& table)
 {
-    fprintf(stderr, "DBG DL line=%u col=%u n=%zu
-", paramLine, paramCharacter, lambdas.size());
     for (const auto& lambda : lambdas)
     {
         for (size_t i = 0; i < lambda.parameters.size(); ++i)
         {
             const auto& param = lambda.parameters[i];
-            fprintf(stderr, "DBG  cand %u %u
-", param.startLine, param.startCharacter);
             if (param.startLine != paramLine || param.startCharacter != paramCharacter)
             {
                 continue;
