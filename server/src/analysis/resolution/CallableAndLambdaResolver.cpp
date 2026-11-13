@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 
 #include "analysis/index/LambdaTargetFacts.h"
@@ -348,7 +349,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, cons
         return std::nullopt;
     }
 
-    const std::string calleeName = CleanBaseType(std::string(target.text));
+    const std::string calleeName = CleanBaseType(utils::CleanCandidateIdentifier(target.text));
     if (target.soleArgument)
     {
         if (auto asConversion = FindFuncdefSymbol(calleeName, table))
@@ -358,6 +359,37 @@ std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, cons
     }
 
     return FindCallArgumentFuncdef(table, calleeName, target.position);
+}
+
+std::string DeduceLambdaParameterType(uint32_t paramLine, uint32_t paramCharacter,
+                                      const std::vector<LambdaSiteFact>& lambdas, const SymbolTable& table)
+{
+    fprintf(stderr, "DBG DL line=%u col=%u n=%zu
+", paramLine, paramCharacter, lambdas.size());
+    for (const auto& lambda : lambdas)
+    {
+        for (size_t i = 0; i < lambda.parameters.size(); ++i)
+        {
+            const auto& param = lambda.parameters[i];
+            fprintf(stderr, "DBG  cand %u %u
+", param.startLine, param.startCharacter);
+            if (param.startLine != paramLine || param.startCharacter != paramCharacter)
+            {
+                continue;
+            }
+            if (param.hasWrittenType)
+            {
+                return {};
+            }
+            const auto target = FuncdefTargetOfLambda(lambda.target, table);
+            if (!target || i >= target->GetFuncdef().parameters.size())
+            {
+                return {};
+            }
+            return target->GetFuncdef().parameters[i].typeName;
+        }
+    }
+    return {};
 }
 
 Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName)

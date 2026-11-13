@@ -1,11 +1,14 @@
 #include "analysis/index/LambdaTargetFacts.h"
 
+#include "analysis/index/CallArgumentFacts.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 
 #include <cstdint>
 #include <string_view>
 #include <tree_sitter/api.h>
+#include <utility>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -112,6 +115,23 @@ LambdaTargetFact ReadLambdaTarget(TSNode lambdaNode, std::string_view source)
         return ReadCallArgumentTarget(parent, lambdaNode, source);
     }
     return {};
+}
+
+std::vector<LambdaSiteFact> BuildLambdaSiteFacts(const NodeIndex& index, std::string_view source)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    std::vector<LambdaSiteFact> facts;
+    for (const TSNode node : index.Nodes(gs.symLambdaExpression))
+    {
+        LambdaSiteFact fact{{ts_node_start_byte(node), ts_node_end_byte(node)}, ReadLambdaTarget(node, source), {}};
+        for (const auto& param : ExtractLambdaParameters(node, source, &index))
+        {
+            const TSPoint point = ts_node_is_null(param.nameNode) ? TSPoint{} : ts_node_start_point(param.nameNode);
+            fact.parameters.push_back({point.row, point.column, param.hasWrittenType});
+        }
+        facts.push_back(std::move(fact));
+    }
+    return facts;
 }
 
 } // namespace angel_lsp::analysis

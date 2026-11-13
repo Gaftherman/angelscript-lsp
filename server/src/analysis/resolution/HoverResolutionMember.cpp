@@ -2,7 +2,7 @@
 #include "analysis/documentation/HoverMarkdown.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/index/DeclarationSiteFacts.h"
-#include "analysis/index/ReturnSiteFacts.h"
+#include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
@@ -98,13 +98,12 @@ std::string FormatLambdaHover(IndexedByteRange lambdaRange, const ExpressionType
     std::optional<Symbol> targetFuncdef;
     if (exprCtx.nodeIndex)
     {
-        const auto returnFacts = BuildReturnSiteFacts(*exprCtx.nodeIndex, exprCtx.sourceCode);
-        for (const auto& ret : returnFacts.returns)
+        const auto lambdaFacts = BuildLambdaSiteFacts(*exprCtx.nodeIndex, exprCtx.sourceCode);
+        for (const auto& site : lambdaFacts)
         {
-            if (ret.owner == ReturnOwnerKind::Lambda && ret.bytes.startByte >= lambdaRange.startByte &&
-                ret.bytes.endByte <= lambdaRange.endByte)
+            if (site.bytes.startByte >= lambdaRange.startByte && site.bytes.endByte <= lambdaRange.endByte)
             {
-                targetFuncdef = FuncdefTargetOfLambda(ret.lambdaTarget, exprCtx.symbolTable);
+                targetFuncdef = FuncdefTargetOfLambda(site.target, exprCtx.symbolTable);
                 if (targetFuncdef)
                 {
                     break;

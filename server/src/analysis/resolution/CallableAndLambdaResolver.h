@@ -45,6 +45,19 @@ std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolT
  * @return Funcdef symbol, or std::nullopt when the context names none or the callee candidates disagree.
  */
 std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, const SymbolTable& table);
+
+/**
+ * @brief Deduces the type of an untyped lambda parameter from the funcdef the lambda converts to.
+ * @param[in] paramLine Zero-based line of the parameter name.
+ * @param[in] paramCharacter Zero-based column of the parameter name.
+ * @param[in] lambdas Lambda facts of the document, as built by BuildLambdaSiteFacts.
+ * @param[in] table Symbol table searched for the target funcdef.
+ * @return Declared type of the matching funcdef parameter, or an empty string when the parameter is typed,
+ *         belongs to no indexed lambda, or the lambda has no funcdef target.
+ */
+[[nodiscard]] std::string DeduceLambdaParameterType(uint32_t paramLine, uint32_t paramCharacter,
+                                                    const std::vector<LambdaSiteFact>& lambdas,
+                                                    const SymbolTable& table);
 Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName);
 std::optional<Symbol> TryResolveCallableFuncdef(std::string_view name, const Scope* scope, const SymbolTable& table,
                                                 uint32_t refByte = UINT32_MAX);
