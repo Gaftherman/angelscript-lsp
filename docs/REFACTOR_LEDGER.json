@@ -3305,14 +3305,14 @@
     {
       "id": "REF-M27-REQUEST-TRAVERSALBUDGET-DEAD",
       "phase": "M27",
-      "action": "DELETE_DEAD_FIELD",
+      "action": "DELETE_DEAD_FUNCTION",
       "sourceFile": "server/src/analysis/SemanticAnalysisRequest.h",
       "deletedLineRange": "whole-member",
       "originalSymbolOrCode": "SemanticAnalysisRequest::traversalBudget",
       "whatItDidAndWhyInThatFile": "Optional pointer to a parser::TraversalBudget that SemanticAnalyzer once forwarded to a locally built NodeIndex.",
       "whyChangedOrDeleted": "SemanticAnalyzer no longer builds a NodeIndex, so the field had zero readers; the budget is now passed to the NodeIndex through NodeIndexOptions::budget.",
       "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.h",
-      "replacedByCanonicalSymbol": "NodeIndexOptions::budget",
+      "replacedByCanonicalSymbol": "NodeIndexOptions",
       "ramOrCpuImpact": "Removes one pointer from every analysis request; no behavioural change.",
       "verifiedByTests": [
         "IterationBudgetHarnessTest"
