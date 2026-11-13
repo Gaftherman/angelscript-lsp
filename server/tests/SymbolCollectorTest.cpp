@@ -129,7 +129,7 @@ TEST_CASE("SymbolCollector - Namespace-Qualified Call In Initializer Keeps Full 
     REQUIRE(refs.size() == 1);
     CHECK(refs[0].type == SymbolType::CallReference);
     CHECK(refs[0].GetCallReference().calleeName == "NS::Foo");
-    CHECK_FALSE(refs[0].GetCallReference().isMethodCall);
+    CHECK_FALSE(static_cast<bool>(refs[0].GetCallReference().isMethodCall));
 }
 
 TEST_CASE("SymbolCollector - Class Field Initializer Call Is Captured With Class As Container")
@@ -227,7 +227,7 @@ TEST_CASE("SymbolCollector - Direct Null Initializer Is Detected")
 
     auto symbols = table.FindSymbols("f");
     REQUIRE(symbols.size() == 1);
-    CHECK(symbols[0].GetVariable().hasNullInitializer);
+    CHECK(static_cast<bool>(symbols[0].GetVariable().hasNullInitializer));
 }
 
 TEST_CASE("SymbolCollector - Parenthesized Null Initializer Is Detected")
@@ -237,7 +237,7 @@ TEST_CASE("SymbolCollector - Parenthesized Null Initializer Is Detected")
 
     auto symbols = table.FindSymbols("f");
     REQUIRE(symbols.size() == 1);
-    CHECK(symbols[0].GetVariable().hasNullInitializer);
+    CHECK(static_cast<bool>(symbols[0].GetVariable().hasNullInitializer));
 }
 
 TEST_CASE("SymbolCollector - Handle Variable Null Initializer Is Detected")
@@ -247,8 +247,8 @@ TEST_CASE("SymbolCollector - Handle Variable Null Initializer Is Detected")
 
     auto symbols = table.FindSymbols("h");
     REQUIRE(symbols.size() == 1);
-    CHECK(symbols[0].GetVariable().hasNullInitializer);
-    CHECK(symbols[0].GetVariable().modifiers.isHandle);
+    CHECK(static_cast<bool>(symbols[0].GetVariable().hasNullInitializer));
+    CHECK(static_cast<bool>(symbols[0].GetVariable().modifiers.isHandle));
 }
 
 TEST_CASE("SymbolCollector - Null Used As Call Argument Is Not A Null Initializer")
@@ -260,7 +260,7 @@ TEST_CASE("SymbolCollector - Null Used As Call Argument Is Not A Null Initialize
 
     auto symbols = table.FindSymbols("f");
     REQUIRE(symbols.size() == 1);
-    CHECK_FALSE(symbols[0].GetVariable().hasNullInitializer);
+    CHECK_FALSE(static_cast<bool>(symbols[0].GetVariable().hasNullInitializer));
 }
 
 TEST_CASE("SymbolCollector - Non Null Initializer Is Not Flagged")
@@ -270,7 +270,7 @@ TEST_CASE("SymbolCollector - Non Null Initializer Is Not Flagged")
 
     auto symbols = table.FindSymbols("f");
     REQUIRE(symbols.size() == 1);
-    CHECK_FALSE(symbols[0].GetVariable().hasNullInitializer);
+    CHECK_FALSE(static_cast<bool>(symbols[0].GetVariable().hasNullInitializer));
 }
 
 // =====================================================================================
