@@ -1589,7 +1589,7 @@ static bool IsBoundCallOccurrence(const Scope& root, const LocalReference& ref, 
 static bool IsUnboundSearchCandidate(const Scope& root, const LocalReference& ref, const OccurrenceScanContext& ctx)
 {
     return ref.name == ctx.request.target.name &&
-           !ctx.declRanges.contains({ctx.fileUri, ref.startLine, ref.startCharacter}) &&
+           !ctx.declRanges.contains({std::string(ctx.fileUri), ref.startLine, ref.startCharacter}) &&
            !IsBoundCallOccurrence(root, ref, ctx.request.target) && MatchesCallArguments(ref, ctx.request.target);
 }
 
@@ -1978,7 +1978,7 @@ static void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceSca
         for (const auto& ref : s->references)
         {
             if (ref.name != ctx.request.target.name ||
-                ctx.declRanges.contains({ctx.fileUri, ref.startLine, ref.startCharacter}))
+                ctx.declRanges.contains({std::string(ctx.fileUri), ref.startLine, ref.startCharacter}))
             {
                 continue;
             }
