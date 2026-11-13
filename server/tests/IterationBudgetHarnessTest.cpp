@@ -71,10 +71,9 @@ TEST_CASE("Iteration Budget - Linear AST Traversal Invariant on Script Analysis"
     collector.CollectSymbols(uri, sourceCode, parser, symbolTable);
 
     SemanticAnalysisRequest request(symbolTable, uri);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    NodeIndex nodeIndex(ts_tree_root_node(tree), NodeIndexOptions{.budget = &budget, .source = sourceCode});
     request.nodeIndex = &nodeIndex;
     request.sourceCode = sourceCode;
-    request.traversalBudget = &budget;
 
     SemanticAnalyzer analyzer(nullptr);
     const auto diagnostics = analyzer.Analyze(request);

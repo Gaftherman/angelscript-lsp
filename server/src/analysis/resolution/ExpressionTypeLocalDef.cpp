@@ -111,7 +111,6 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
         }
     }
 
-    std::fprintf(stderr, "DBG LD %s kind=%d idx=%d\n", def.name.c_str(), static_cast<int>(def.kind), ctx.nodeIndex != nullptr);
     if (def.typeName.empty() && def.kind == LocalDefinitionKind::Parameter && ctx.nodeIndex)
     {
         std::string deduced = DeduceLambdaParameterType(
