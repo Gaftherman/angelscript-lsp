@@ -25,12 +25,14 @@ static std::string ResolveObjectTextType(std::string_view oText, const Scope* sc
     {
         return CleanBaseType(oDef->typeName);
     }
-    auto gSyms = symbolTable.FindSymbols(oText);
-    for (const auto& gs : gSyms)
+    if (const auto gSyms = symbolTable.FindSymbolsPtr(oText))
     {
-        if (gs.type == SymbolType::Variable && !gs.GetVariable().typeName.empty())
+        for (const auto& gs : *gSyms)
         {
-            return CleanBaseType(gs.GetVariable().typeName);
+            if (gs.type == SymbolType::Variable && !gs.GetVariable().typeName.empty())
+            {
+                return CleanBaseType(gs.GetVariable().typeName);
+            }
         }
     }
     return "";
