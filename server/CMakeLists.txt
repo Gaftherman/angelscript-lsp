@@ -343,8 +343,15 @@ if(TEST_SOURCES)
     else()
         target_compile_options(angel_lsp_tests PRIVATE ${ANGELLSP_WARNING_FLAGS})
     endif()
-    add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests --duration=true)
+    # The memory-ceiling stress test reads the process-wide peak RSS. Run inside the shared binary it
+    # would also count every earlier benchmark, so it gets its own process and the rest excludes it.
+    set(ANGELLSP_STRESS_CASE "Massive Workspace Stress*")
+    add_test(NAME angel_lsp_tests
+             COMMAND angel_lsp_tests --duration=true "--test-case-exclude=${ANGELLSP_STRESS_CASE}")
     set_tests_properties(angel_lsp_tests PROPERTIES TIMEOUT 600)
+    add_test(NAME angel_lsp_stress_memory
+             COMMAND angel_lsp_tests "--test-case=${ANGELLSP_STRESS_CASE}")
+    set_tests_properties(angel_lsp_stress_memory PROPERTIES TIMEOUT 300)
 
     add_custom_command(TARGET angel_lsp_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/bin"
