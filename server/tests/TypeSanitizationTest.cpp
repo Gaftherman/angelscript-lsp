@@ -106,19 +106,19 @@ TEST_SUITE("TypeSanitization")
 
         CHECK(funcScope->definitions[0].name == paramA);
         CHECK(funcScope->definitions[0].typeName == "const string &in");
-        CHECK(funcScope->definitions[0].isReference == true);
+        CHECK(funcScope->definitions[0].isReference);
 
         CHECK(funcScope->definitions[1].name == paramB);
         CHECK(funcScope->definitions[1].typeName == "const Vector &out");
-        CHECK(funcScope->definitions[1].isReference == true);
+        CHECK(funcScope->definitions[1].isReference);
 
         CHECK(funcScope->definitions[2].name == paramC);
         CHECK(funcScope->definitions[2].typeName == "int &inout");
-        CHECK(funcScope->definitions[2].isReference == true);
+        CHECK(funcScope->definitions[2].isReference);
 
         CHECK(funcScope->definitions[3].name == paramD);
         CHECK(funcScope->definitions[3].typeName == "float &");
-        CHECK(funcScope->definitions[3].isReference == true);
+        CHECK(funcScope->definitions[3].isReference);
     }
 }
 } // namespace angel_lsp::analysis

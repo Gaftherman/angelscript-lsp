@@ -35,7 +35,7 @@ TEST_CASE("ConstSiteFacts - Assignment targets classification and handle flag")
     // 1. Plain identifier assignment
     const auto& assign0 = facts.assignments[0];
     CHECK(assign0.target.kind == angel_lsp::analysis::ConstTargetKind::Identifier);
-    CHECK(assign0.target.isHandle == false);
+    CHECK_FALSE(assign0.target.isHandle);
     CHECK(assign0.target.text == varX);
     CHECK(assign0.target.actualTargetText == varX);
     CHECK(assign0.target.leafText == varX);
@@ -46,7 +46,7 @@ TEST_CASE("ConstSiteFacts - Assignment targets classification and handle flag")
     // 2. Handle assignment
     const auto& assign1 = facts.assignments[1];
     CHECK(assign1.target.kind == angel_lsp::analysis::ConstTargetKind::Identifier);
-    CHECK(assign1.target.isHandle == true);
+    CHECK(assign1.target.isHandle);
     CHECK(assign1.target.actualTargetText == varH);
     CHECK(assign1.target.leafText == varH);
     CHECK(assign1.target.leafIsThis == false);
@@ -174,13 +174,13 @@ TEST_CASE("ConstSiteFacts - Enclosing methods and parameter declarations")
     const auto constParams = facts.ParametersOf(*constFact);
     REQUIRE(constParams.size() == 3);
     CHECK(constParams[0].name == paramA);
-    CHECK(constParams[0].isConst == true);
+    CHECK(constParams[0].isConst);
     CHECK(constParams[0].isHandleConst == false);
     CHECK(constParams[1].name == paramB);
-    CHECK(constParams[1].isConst == false);
+    CHECK_FALSE(constParams[1].isConst);
     CHECK(constParams[1].isHandleConst == true);
     CHECK(constParams[2].name == paramC);
-    CHECK(constParams[2].isConst == false);
+    CHECK_FALSE(constParams[2].isConst);
     CHECK(constParams[2].isHandleConst == false);
 
     REQUIRE(mutFact != nullptr);

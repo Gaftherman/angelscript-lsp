@@ -115,7 +115,7 @@ TEST_CASE("SymbolCollector - Global Function Call In Variable Initializer Is Cap
 
     const auto& callSig = refs[0].GetCallReference();
     CHECK(callSig.calleeName == "Foo");
-    CHECK(callSig.isMethodCall == false);
+    CHECK_FALSE(callSig.isMethodCall);
 }
 
 TEST_CASE("SymbolCollector - Namespace-Qualified Call In Initializer Keeps Full Scoped Name")
@@ -129,7 +129,7 @@ TEST_CASE("SymbolCollector - Namespace-Qualified Call In Initializer Keeps Full 
     REQUIRE(refs.size() == 1);
     CHECK(refs[0].type == SymbolType::CallReference);
     CHECK(refs[0].GetCallReference().calleeName == "NS::Foo");
-    CHECK(refs[0].GetCallReference().isMethodCall == false);
+    CHECK_FALSE(refs[0].GetCallReference().isMethodCall);
 }
 
 TEST_CASE("SymbolCollector - Class Field Initializer Call Is Captured With Class As Container")
@@ -159,7 +159,7 @@ TEST_CASE("SymbolCollector - Method Call Body Location Determines Reference Capt
 
         const auto& callSig = refs[0].GetCallReference();
         CHECK(callSig.calleeName == "GetValue");
-        CHECK(callSig.isMethodCall == true);
+        CHECK(callSig.isMethodCall);
         CHECK(callSig.objectExpression == "g_obj");
     }
 
@@ -227,7 +227,7 @@ TEST_CASE("SymbolCollector - Direct Null Initializer Is Detected")
 
     auto symbols = table.FindSymbols("f");
     REQUIRE(symbols.size() == 1);
-    CHECK(symbols[0].GetVariable().hasNullInitializer == true);
+    CHECK(symbols[0].GetVariable().hasNullInitializer);
 }
 
 TEST_CASE("SymbolCollector - Parenthesized Null Initializer Is Detected")
@@ -237,7 +237,7 @@ TEST_CASE("SymbolCollector - Parenthesized Null Initializer Is Detected")
 
     auto symbols = table.FindSymbols("f");
     REQUIRE(symbols.size() == 1);
-    CHECK(symbols[0].GetVariable().hasNullInitializer == true);
+    CHECK(symbols[0].GetVariable().hasNullInitializer);
 }
 
 TEST_CASE("SymbolCollector - Handle Variable Null Initializer Is Detected")
@@ -247,8 +247,8 @@ TEST_CASE("SymbolCollector - Handle Variable Null Initializer Is Detected")
 
     auto symbols = table.FindSymbols("h");
     REQUIRE(symbols.size() == 1);
-    CHECK(symbols[0].GetVariable().hasNullInitializer == true);
-    CHECK(symbols[0].GetVariable().modifiers.isHandle == true);
+    CHECK(symbols[0].GetVariable().hasNullInitializer);
+    CHECK(symbols[0].GetVariable().modifiers.isHandle);
 }
 
 TEST_CASE("SymbolCollector - Null Used As Call Argument Is Not A Null Initializer")
@@ -260,7 +260,7 @@ TEST_CASE("SymbolCollector - Null Used As Call Argument Is Not A Null Initialize
 
     auto symbols = table.FindSymbols("f");
     REQUIRE(symbols.size() == 1);
-    CHECK(symbols[0].GetVariable().hasNullInitializer == false);
+    CHECK_FALSE(symbols[0].GetVariable().hasNullInitializer);
 }
 
 TEST_CASE("SymbolCollector - Non Null Initializer Is Not Flagged")
@@ -270,7 +270,7 @@ TEST_CASE("SymbolCollector - Non Null Initializer Is Not Flagged")
 
     auto symbols = table.FindSymbols("f");
     REQUIRE(symbols.size() == 1);
-    CHECK(symbols[0].GetVariable().hasNullInitializer == false);
+    CHECK_FALSE(symbols[0].GetVariable().hasNullInitializer);
 }
 
 // =====================================================================================

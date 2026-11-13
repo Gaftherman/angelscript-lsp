@@ -80,7 +80,7 @@ TEST_CASE("IsolationSiteFacts - Class and function shared contexts and member sl
     // Shared class inspection
     const auto& cls0 = facts.classes[0];
     CHECK(cls0.name == sharedCls);
-    CHECK(cls0.isShared == true);
+    CHECK(cls0.isShared);
     CHECK(cls0.functionCount == 2);
     CHECK(cls0.typeCount >= 1);
     CHECK(facts.FindClass(cls0.bytes) == &cls0);
@@ -88,7 +88,7 @@ TEST_CASE("IsolationSiteFacts - Class and function shared contexts and member sl
     // Normal class inspection
     const auto& cls1 = facts.classes[1];
     CHECK(cls1.name == normalCls);
-    CHECK(cls1.isShared == false);
+    CHECK_FALSE(cls1.isShared);
     CHECK(cls1.functionCount == 2);
     CHECK(facts.FindClass(cls1.bytes) == &cls1);
 
@@ -111,14 +111,14 @@ TEST_CASE("IsolationSiteFacts - Class and function shared contexts and member sl
     const auto& fn2 = facts.functions[cls1.functionBegin];
     CHECK(fn2.name == memberShared);
     CHECK(fn2.className == normalCls);
-    CHECK(fn2.isShared == true);
+    CHECK(fn2.isShared);
     CHECK(fn2.isClassShared == false);
     CHECK(fn2.inSharedContext == true);
 
     // Normal member method in normal class
     const auto& fn3 = facts.functions[cls1.functionBegin + 1];
     CHECK(fn3.name == memberNormal);
-    CHECK(fn3.isShared == false);
+    CHECK_FALSE(fn3.isShared);
     CHECK(fn3.isClassShared == false);
     CHECK(fn3.inSharedContext == false);
 

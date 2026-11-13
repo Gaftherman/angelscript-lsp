@@ -14,23 +14,24 @@ namespace angel_lsp
 /**
  * @brief Looks up a settings key built as `<prefix>.<name>` or `angelscript.<prefix>.<name>` without heap use.
  * @param[in] section Settings object searched by the dotted keys.
- * @param[in] pattern fmt pattern taking `prefix` then `name`.
+ * @param[in] pattern Compile-time checked fmt pattern taking `prefix` then `name`.
  * @param[in] prefix Settings group, for example `engine`.
  * @param[in] name Setting name inside the group.
  * @return The value stored under the composed key, or nullptr when absent.
  * @note Keys up to 256 bytes use a stack buffer; longer keys fall back to one `std::string`.
  */
-template <typename Pattern>
-inline const lsp::json::Value* FindComposedKey(const lsp::LSPObject& section, const Pattern& pattern,
+inline const lsp::json::Value* FindComposedKey(const lsp::LSPObject& section,
+                                               fmt::format_string<std::string_view, std::string_view> pattern,
                                                std::string_view prefix, std::string_view name)
 {
     char buf[256];
-    const auto res = fmt::format_to_n(buf, sizeof(buf), pattern, prefix, name);
+    const auto args = fmt::make_format_args(prefix, name);
+    const auto res = fmt::vformat_to_n(buf, sizeof(buf), pattern, args);
     if (res.size <= sizeof(buf))
     {
         return section.find(std::string_view(buf, res.size));
     }
-    return section.find(fmt::format(pattern, prefix, name));
+    return section.find(fmt::vformat(pattern, args));
 }
 
 /**
@@ -53,11 +54,11 @@ inline const lsp::json::Value* FindSectionValue(const lsp::LSPObject& section, c
             return val;
         }
     }
-    if (const auto* val = FindComposedKey(section, FMT_STRING("{}.{}"), prefix, name); val && hasType(*val))
+    if (const auto* val = FindComposedKey(section, "{}.{}", prefix, name); val && hasType(*val))
     {
         return val;
     }
-    if (const auto* val = FindComposedKey(section, FMT_STRING("angelscript.{}.{}"), prefix, name); val && hasType(*val))
+    if (const auto* val = FindComposedKey(section, "angelscript.{}.{}", prefix, name); val && hasType(*val))
     {
         return val;
     }

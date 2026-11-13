@@ -254,11 +254,11 @@ TEST_SUITE("AdversarialSemantics_OverloadResolver")
 
         auto matchConst = ResolveBestOverload(candidates, {"const int"}, table);
         REQUIRE(matchConst.bestCandidate != nullptr);
-        CHECK(matchConst.bestCandidate->GetFunction().parameters[0].isConst == true);
+        CHECK(matchConst.bestCandidate->GetFunction().parameters[0].isConst);
 
         auto matchNonConst = ResolveBestOverload(candidates, {"int"}, table);
         REQUIRE(matchNonConst.bestCandidate != nullptr);
-        CHECK(matchNonConst.bestCandidate->GetFunction().parameters[0].isConst == false);
+        CHECK_FALSE(matchNonConst.bestCandidate->GetFunction().parameters[0].isConst);
     }
 
     TEST_CASE("Tricky Overload Ambiguities with Multiple Arguments")
