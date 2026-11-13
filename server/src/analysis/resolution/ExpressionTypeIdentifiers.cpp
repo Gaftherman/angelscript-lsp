@@ -34,7 +34,7 @@ std::string ExtractVariableOrPropertyType(std::span<const Symbol> syms, const Sy
     return {};
 }
 
-std::string ResolveScopedEnumMember(std::string_view whole, const std::vector<Symbol>& scopeSymbols,
+std::string ResolveScopedEnumMember(std::string_view whole, std::span<const Symbol> scopeSymbols,
                                     const SymbolTable& symbolTable)
 {
     const auto [qualView, mem] = utils::SplitScopedName(whole);
@@ -42,37 +42,46 @@ std::string ResolveScopedEnumMember(std::string_view whole, const std::vector<Sy
     {
         return "";
     }
-    std::string qual(qualView);
-    auto qSyms = symbolTable.FindSymbols(qual);
-    if (qSyms.empty())
+    const auto qSymsPtr = symbolTable.FindSymbolsPtr(qualView);
+    const bool hasQSyms = qSymsPtr && !qSymsPtr->empty();
+    const auto checkEnums = [&](const auto& symList) -> std::string
     {
-        qSyms = scopeSymbols;
-    }
-    for (const auto& qSym : qSyms)
-    {
-        if (qSym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(qSym.signature))
+        for (const auto& qSym : symList)
         {
-            for (const auto& m : qSym.GetEnum().members)
+            if (qSym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(qSym.signature))
             {
-                if (m.name == mem)
+                for (const auto& m : qSym.GetEnum().members)
                 {
-                    return qSym.qualifiedName.empty() ? qSym.name : qSym.qualifiedName;
+                    if (m.name == mem)
+                    {
+                        return qSym.qualifiedName.empty() ? qSym.name : qSym.qualifiedName;
+                    }
                 }
             }
         }
+        return "";
+    };
+    if (hasQSyms)
+    {
+        if (auto res = checkEnums(*qSymsPtr); !res.empty())
+        {
+            return res;
+        }
     }
-    return "";
+    return checkEnums(scopeSymbols);
 }
 
-std::string ResolveScopedIdentifierType(std::string_view scopedText, const std::vector<Symbol>& wholeScopeSymbols,
-                                        const std::vector<Symbol>& qualScopeSymbols, const SymbolTable& symbolTable)
+std::string ResolveScopedIdentifierType(std::string_view scopedText, std::span<const Symbol> wholeScopeSymbols,
+                                        std::span<const Symbol> qualScopeSymbols, const SymbolTable& symbolTable)
 {
     std::string_view lookupPath =
         utils::HasLeadingGlobalPrefix(scopedText) ? utils::StripGlobalPrefix(scopedText) : scopedText;
-    auto syms = symbolTable.FindSymbols(lookupPath);
-    if (std::string type = ExtractVariableOrPropertyType(syms, symbolTable); !type.empty())
+    if (const auto syms = symbolTable.FindSymbolsPtr(lookupPath))
     {
-        return type;
+        if (std::string type = ExtractVariableOrPropertyType(*syms, symbolTable); !type.empty())
+        {
+            return type;
+        }
     }
     if (std::string type = ExtractVariableOrPropertyType(wholeScopeSymbols, symbolTable); !type.empty())
     {
@@ -83,29 +92,34 @@ std::string ResolveScopedIdentifierType(std::string_view scopedText, const std::
 
 std::string ResolveIdentifierAccessorFallback(std::string_view name, const SymbolTable& symbolTable)
 {
-    std::string nameStr(name);
     for (const auto& prefix : {"get_", "set_"})
     {
-        auto accessorSyms = symbolTable.FindSymbols(std::string(prefix) + nameStr);
-        for (const auto& sym : accessorSyms)
+        std::string fullName;
+        fullName.reserve(std::string_view(prefix).size() + name.size());
+        fullName.append(prefix);
+        fullName.append(name);
+        if (const auto accessorSyms = symbolTable.FindSymbolsPtr(fullName))
         {
-            if (sym.type == SymbolType::Function && sym.containerName.empty() &&
-                std::holds_alternative<FunctionSignature>(sym.signature))
+            for (const auto& sym : *accessorSyms)
             {
-                const auto& fn = sym.GetFunction();
-                const bool isIndexed = (sym.name.starts_with("get_") && !fn.parameters.empty()) ||
-                                       (sym.name.starts_with("set_") && fn.parameters.size() > 1);
-                if (isIndexed)
+                if (sym.type == SymbolType::Function && sym.containerName.empty() &&
+                    std::holds_alternative<FunctionSignature>(sym.signature))
                 {
-                    continue;
-                }
-                if (!fn.returnType.empty() && fn.returnType != "void")
-                {
-                    return CleanExpressionType(fn.returnType);
-                }
-                if (!fn.parameters.empty())
-                {
-                    return CleanExpressionType(fn.parameters.front().typeName);
+                    const auto& fn = sym.GetFunction();
+                    const bool isIndexed = (sym.name.starts_with("get_") && !fn.parameters.empty()) ||
+                                           (sym.name.starts_with("set_") && fn.parameters.size() > 1);
+                    if (isIndexed)
+                    {
+                        continue;
+                    }
+                    if (!fn.returnType.empty() && fn.returnType != "void")
+                    {
+                        return CleanExpressionType(fn.returnType);
+                    }
+                    if (!fn.parameters.empty())
+                    {
+                        return CleanExpressionType(fn.parameters.front().typeName);
+                    }
                 }
             }
         }
@@ -114,27 +128,27 @@ std::string ResolveIdentifierAccessorFallback(std::string_view name, const Symbo
 }
 
 std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(std::string_view name,
-                                                           const std::vector<ContainerInfo>& containers,
+                                                           std::span<const ContainerInfo> containers,
                                                            const SymbolTable& symbolTable, ExpressionTypeCache* cache)
 {
-    std::string nameStr(name);
     for (const auto& c : containers)
     {
         if (c.kind != ContainerKind::Class && c.kind != ContainerKind::Interface)
         {
             continue;
         }
-        const std::string& typeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+        const std::string_view typeName =
+            c.qualifiedName.empty() ? std::string_view(c.name) : std::string_view(c.qualifiedName);
         auto hierarchy = GetInheritedTypeHierarchy(typeName, symbolTable, cache);
         ExpandMixinHostHierarchies(typeName, symbolTable, hierarchy, cache);
         for (const auto& cls : hierarchy)
         {
-            auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(cls, nameStr), c.kind);
+            auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(cls, name), c.kind);
             if (!found.empty())
             {
                 return found;
             }
-            auto accessors = FindPropertyAccessors(cls, nameStr, symbolTable, false);
+            auto accessors = FindPropertyAccessors(cls, name, symbolTable, false);
             if (!accessors.empty())
             {
                 return accessors;
@@ -145,21 +159,19 @@ std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(std::string_view name
     return {};
 }
 
-std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name, const std::string& hostClass,
+std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name, std::string_view hostClass,
                                                        const SymbolTable& symbolTable, ExpressionTypeCache* cache)
 {
     if (hostClass.empty())
     {
         return "";
     }
-    std::string nameStr(name);
     auto hierarchy = GetInheritedTypeHierarchy(hostClass, symbolTable, cache);
     for (const auto& cls : hierarchy)
     {
-        auto found = symbolTable.FindMemberSymbols(cls, nameStr);
-        if (!found.empty())
+        if (const auto found = symbolTable.FindMemberSymbolPtr(cls, name))
         {
-            for (const auto& sym : found)
+            for (const auto& sym : *found)
             {
                 if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
                     !sym.GetVariable().typeName.empty())
@@ -177,7 +189,7 @@ std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name, co
     }
     for (const auto& cls : hierarchy)
     {
-        auto accessors = FindPropertyAccessors(cls, nameStr, symbolTable, false);
+        auto accessors = FindPropertyAccessors(cls, name, symbolTable, false);
         if (!accessors.empty())
         {
             std::string pType = PropertyTypeFromAccessors(accessors);
@@ -190,7 +202,7 @@ std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name, co
     return "";
 }
 
-std::string ResolveThisType(std::string_view hostClass, const std::vector<ContainerInfo>& containers)
+std::string ResolveThisType(std::string_view hostClass, std::span<const ContainerInfo> containers)
 {
     if (!hostClass.empty())
     {
@@ -200,13 +212,14 @@ std::string ResolveThisType(std::string_view hostClass, const std::vector<Contai
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
         {
-            return CleanExpressionType(c.qualifiedName.empty() ? c.name : c.qualifiedName);
+            return CleanExpressionType(c.qualifiedName.empty() ? std::string_view(c.name)
+                                                               : std::string_view(c.qualifiedName));
         }
     }
     return "";
 }
 
-std::string ExtractFirstSymbolTypeOrAccessor(const std::vector<Symbol>& syms, const SymbolTable& symbolTable)
+std::string ExtractFirstSymbolTypeOrAccessor(std::span<const Symbol> syms, const SymbolTable& symbolTable)
 {
     for (const auto& sym : syms)
     {

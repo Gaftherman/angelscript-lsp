@@ -72,8 +72,7 @@ namespace angel_lsp::analysis
  * @param[in,out] cache Optional expression type cache.
  * @return Inferred type name, or empty string.
  */
-[[nodiscard]] std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name,
-                                                                     std::string_view hostClass,
+[[nodiscard]] std::string ResolveIdentifierHostFallbackFromHierarchy(std::string_view name, std::string_view hostClass,
                                                                      const SymbolTable& symbolTable,
                                                                      ExpressionTypeCache* cache);
 
