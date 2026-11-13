@@ -6,7 +6,7 @@
 namespace angel_lsp::analysis
 {
 
-std::string ResolveFloatingPointLiteral(std::string_view text)
+std::string_view ResolveFloatingPointLiteral(std::string_view text)
 {
     if (text.find('f') != std::string_view::npos || text.find('F') != std::string_view::npos)
     {
@@ -17,10 +17,10 @@ std::string ResolveFloatingPointLiteral(std::string_view text)
     {
         return "double";
     }
-    return "";
+    return {};
 }
 
-std::string ResolveIntegerLiteralSuffix(std::string_view text)
+std::string_view ResolveIntegerLiteralSuffix(std::string_view text)
 {
     const bool hasU = text.find('u') != std::string_view::npos || text.find('U') != std::string_view::npos;
     const bool hasL = text.find('l') != std::string_view::npos || text.find('L') != std::string_view::npos;
@@ -39,7 +39,7 @@ std::string ResolveIntegerLiteralSuffix(std::string_view text)
     return "int";
 }
 
-std::string ResolveNumberLiteral(std::string_view text)
+std::string_view ResolveNumberLiteral(std::string_view text)
 {
     const bool isRadixPrefixed =
         text.size() > 1 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X' || text[1] == 'b' || text[1] == 'B');

@@ -87,7 +87,7 @@ TEST_CASE("OverloadResolution - Const Reference Qualification")
 
     auto matchConst = ResolveBestOverload(candidates, {"const string"}, table);
     REQUIRE(matchConst.bestCandidate != nullptr);
-    CHECK(matchConst.bestCandidate->GetFunction().parameters[0].isConst);
+    CHECK(static_cast<bool>(matchConst.bestCandidate->GetFunction().parameters[0].isConst));
     CHECK(matchConst.bestCandidate->GetFunction().parameters[0].modifier == ParameterModifier::In);
 }
 

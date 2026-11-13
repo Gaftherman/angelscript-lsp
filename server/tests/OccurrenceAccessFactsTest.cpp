@@ -259,7 +259,7 @@ TEST_CASE("OccurrenceAccess - IndexedCallArgumentRef facts indexing and span mat
                 // Check that wrap's expression span does NOT match arg span
                 const auto* refWrap = ctx.FindReference("wrap");
                 REQUIRE(bool(refWrap));
-                CHECK_FALSE(refWrap->isMemberAccess);
+                CHECK_FALSE(static_cast<bool>(refWrap->isMemberAccess));
                 const bool wrapSpansArgument =
                     refWrap->startByte == arg.argStartByte && refWrap->endByte == arg.argEndByte;
                 CHECK_FALSE(wrapSpansArgument);

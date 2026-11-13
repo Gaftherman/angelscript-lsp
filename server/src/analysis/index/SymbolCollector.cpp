@@ -14,6 +14,7 @@
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
+#include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cctype>
 #include <charconv>

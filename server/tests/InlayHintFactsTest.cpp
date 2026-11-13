@@ -86,11 +86,11 @@ TEST_CASE("InlayHintFacts - Syntax Sites Extraction and Range Filtering")
         // 2. Auto variable declarators
         REQUIRE(sites.autoVars.size() == 3);
         CHECK(sites.autoVars[0].nameRange.startLine == 6);
-        CHECK_FALSE(sites.autoVars[0].isHandle);
+        CHECK_FALSE(static_cast<bool>(sites.autoVars[0].isHandle));
         CHECK(sites.autoVars[1].nameRange.startLine == 7);
-        CHECK(sites.autoVars[1].isHandle);
+        CHECK(static_cast<bool>(sites.autoVars[1].isHandle));
         CHECK(sites.autoVars[2].nameRange.startLine == 9);
-        CHECK_FALSE(sites.autoVars[2].isHandle);
+        CHECK_FALSE(static_cast<bool>(sites.autoVars[2].isHandle));
 
         // 3. Call expressions and arguments
         REQUIRE(sites.calls.size() >= 1);

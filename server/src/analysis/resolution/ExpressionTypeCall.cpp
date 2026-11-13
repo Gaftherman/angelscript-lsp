@@ -21,17 +21,21 @@ namespace angel_lsp::analysis
 void CollectMixinCallCandidates(std::string_view containerName, std::string_view funcName,
                                 const SymbolTable& symbolTable, std::vector<Symbol>& candidates)
 {
-    auto classSyms = symbolTable.FindSymbols(containerName);
-    for (const auto& cs : classSyms)
+    if (const auto classSyms = symbolTable.FindSymbolsPtr(containerName))
     {
-        if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
+        for (const auto& cs : *classSyms)
         {
-            for (const auto& mixin : cs.GetClass().includedMixins)
+            if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
             {
-                auto mixinFound = symbolTable.FindMemberSymbols(mixin, funcName);
-                for (const auto& sym : mixinFound)
+                for (const auto& mixin : cs.GetClass().includedMixins)
                 {
-                    AppendCandidateIfUnique(candidates, sym);
+                    if (const auto mixinFound = symbolTable.FindMemberSymbolPtr(mixin, funcName))
+                    {
+                        for (const auto& sym : *mixinFound)
+                        {
+                            AppendCandidateIfUnique(candidates, sym);
+                        }
+                    }
                 }
             }
         }
@@ -52,10 +56,12 @@ std::vector<Symbol> CollectEnclosingCallCandidates(std::span<const ContainerInfo
             auto hierarchy = GetInheritedTypeHierarchy(containerName, symbolTable, cache);
             for (const auto& cls : hierarchy)
             {
-                auto found = symbolTable.FindMemberSymbols(cls, funcName);
-                for (const auto& sym : found)
+                if (const auto found = symbolTable.FindMemberSymbolPtr(cls, funcName))
                 {
-                    AppendCandidateIfUnique(candidates, sym);
+                    for (const auto& sym : *found)
+                    {
+                        AppendCandidateIfUnique(candidates, sym);
+                    }
                 }
             }
             CollectMixinCallCandidates(containerName, funcName, symbolTable, candidates);
@@ -119,12 +125,14 @@ void CollectScopeAndGlobalFunctions(std::string_view funcName, std::span<const S
     {
         return;
     }
-    auto globalFound = symbolTable.FindSymbols(funcName);
-    for (const auto& sym : globalFound)
+    if (const auto globalFound = symbolTable.FindSymbolsPtr(funcName))
     {
-        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+        for (const auto& sym : *globalFound)
         {
-            candidates.push_back(sym);
+            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+            {
+                candidates.push_back(sym);
+            }
         }
     }
 }
@@ -136,28 +144,30 @@ std::string FindClassOrInterfaceName(std::string_view funcName, const SymbolTabl
                                           ? funcName.substr(0, templatePos)
                                           : funcName;
 
-    auto globalFound = symbolTable.FindSymbols(baseName);
-    for (const auto& sym : globalFound)
+    if (const auto globalFound = symbolTable.FindSymbolsPtr(baseName))
     {
-        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+        for (const auto& sym : *globalFound)
         {
-            if (templatePos != std::string_view::npos)
+            if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
             {
-                if (!sym.containerName.empty() && !utils::ContainsScopeSeparator(funcName))
+                if (templatePos != std::string_view::npos)
                 {
-                    return utils::JoinScopedName(sym.containerName, funcName);
+                    if (!sym.containerName.empty() && !utils::ContainsScopeSeparator(funcName))
+                    {
+                        return utils::JoinScopedName(sym.containerName, funcName);
+                    }
+                    return std::string(funcName);
                 }
-                return std::string(funcName);
+                if (!sym.qualifiedName.empty())
+                {
+                    return sym.qualifiedName;
+                }
+                if (!sym.containerName.empty())
+                {
+                    return utils::JoinScopedName(sym.containerName, sym.name);
+                }
+                return sym.name;
             }
-            if (!sym.qualifiedName.empty())
-            {
-                return sym.qualifiedName;
-            }
-            if (!sym.containerName.empty())
-            {
-                return utils::JoinScopedName(sym.containerName, sym.name);
-            }
-            return sym.name;
         }
     }
     return "";
@@ -166,7 +176,7 @@ std::string FindClassOrInterfaceName(std::string_view funcName, const SymbolTabl
 std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req,
                                     std::span<const std::string_view> argTypes, const SymbolTable& symbolTable)
 {
-    std::string objType = CanonicalizeArrayType(std::string(req.objType), req.arrayTypeName);
+    std::string objType = CanonicalizeArrayType(req.objType, req.arrayTypeName);
     std::string ownerType = MemberOwnerType(objType, req.arrayTypeName);
     if (ownerType.empty())
     {

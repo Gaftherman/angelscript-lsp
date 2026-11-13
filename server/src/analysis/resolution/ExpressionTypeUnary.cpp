@@ -41,7 +41,7 @@ bool IsFunctionHandleTargetName(std::string_view targetName, std::span<const Sym
 
 std::string ResolveUnaryMinus(std::string_view operandType)
 {
-    std::string clean = CleanExpressionType(operandType);
+    const std::string_view clean = CleanExpressionTypeView(operandType);
     if (clean == "uint" || clean == "uint32")
     {
         return "int";
@@ -75,8 +75,8 @@ std::string ResolveUnaryHandle(bool isFunctionTarget, std::string_view operandTy
     {
         return {};
     }
-    std::string clean = CleanExpressionType(operandType);
-    return IsHandleTypeView(clean) ? clean : clean + "@";
+    const std::string_view clean = CleanExpressionTypeView(operandType);
+    return IsHandleTypeView(clean) ? std::string(clean) : std::string(clean) + "@";
 }
 
 } // namespace angel_lsp::analysis

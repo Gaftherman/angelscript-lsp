@@ -2,6 +2,8 @@
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "i18n/i18n.h"
 
+#include <algorithm>
+
 namespace angel_lsp::analysis::code_action
 {
 

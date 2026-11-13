@@ -44,7 +44,7 @@ static std::string ResolveLiteralExpr(TSSymbol nodeSym, TSNode exprNode, std::st
     }
     if (nodeSym == gs.symNumberLiteral)
     {
-        return ResolveNumberLiteral(std::string(parser::NodeText(exprNode, sourceCode)));
+        return std::string(ResolveNumberLiteral(parser::NodeText(exprNode, sourceCode)));
     }
     return "";
 }

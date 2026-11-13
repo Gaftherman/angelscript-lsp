@@ -960,17 +960,17 @@ TEST_CASE("LocalScopeCollector - Invariant: Nested namespace type specifiers mar
         if (ref.name == ns1)
         {
             foundNs1 = true;
-            CHECK(ref.isTypeSpecifier);
+            CHECK(static_cast<bool>(ref.isTypeSpecifier));
         }
         else if (ref.name == ns2)
         {
             foundNs2 = true;
-            CHECK(ref.isTypeSpecifier);
+            CHECK(static_cast<bool>(ref.isTypeSpecifier));
         }
         else if (ref.name == typeName)
         {
             foundType = true;
-            CHECK(ref.isTypeSpecifier);
+            CHECK(static_cast<bool>(ref.isTypeSpecifier));
         }
     }
 

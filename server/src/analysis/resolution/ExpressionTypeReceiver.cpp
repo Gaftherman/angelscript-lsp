@@ -37,19 +37,21 @@ static std::string ExtractMemberSymbolOwner(const Symbol& sym, std::string_view 
 
 static std::string ResolveMemberInHierarchy(const MemberHierarchyQuery& query, const SymbolTable& symbolTable)
 {
-    auto hier = GetInheritedTypeHierarchy(std::string(query.hostClass), symbolTable, query.cache);
+    auto hier = GetInheritedTypeHierarchy(query.hostClass, symbolTable, query.cache);
     ExpandMixinHostHierarchies(query.hostClass, symbolTable, hier, query.cache);
     for (const auto& cls : hier)
     {
-        auto memberSyms = symbolTable.FindMemberSymbols(cls, query.memberName);
-        for (const auto& sym : memberSyms)
+        if (const auto memberSyms = symbolTable.FindMemberSymbolPtr(cls, query.memberName))
         {
-            if (auto owner = ExtractMemberSymbolOwner(sym, query.arrayTypeName); !owner.empty())
+            for (const auto& sym : *memberSyms)
             {
-                return owner;
+                if (auto owner = ExtractMemberSymbolOwner(sym, query.arrayTypeName); !owner.empty())
+                {
+                    return owner;
+                }
             }
         }
-        auto accessors = FindPropertyAccessors(cls, std::string(query.memberName), symbolTable, false);
+        auto accessors = FindPropertyAccessors(cls, query.memberName, symbolTable, false);
         if (!accessors.empty())
         {
             std::string pType = PropertyTypeFromAccessors(accessors);
@@ -107,21 +109,23 @@ static std::string ResolveReceiverInEnclosingContainers(IndexedByteRange objRang
 static std::string ResolveReceiverInGlobalOrShort(std::string_view objText, const SymbolTable& symbolTable,
                                                   std::string_view arrayTypeName)
 {
-    auto globSyms = symbolTable.FindSymbols(objText);
-    for (const auto& sym : globSyms)
+    if (const auto globSyms = symbolTable.FindSymbolsPtr(objText))
     {
-        if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
-            std::holds_alternative<VariableSignature>(sym.signature))
+        for (const auto& sym : *globSyms)
         {
-            const auto& var = sym.GetVariable();
-            if (!var.typeName.empty())
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                std::holds_alternative<VariableSignature>(sym.signature))
             {
-                return MemberOwnerType(var.typeName, arrayTypeName);
+                const auto& var = sym.GetVariable();
+                if (!var.typeName.empty())
+                {
+                    return MemberOwnerType(var.typeName, arrayTypeName);
+                }
             }
-        }
-        else if (sym.type == SymbolType::Class || sym.type == SymbolType::Namespace)
-        {
-            return sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            else if (sym.type == SymbolType::Class || sym.type == SymbolType::Namespace)
+            {
+                return sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            }
         }
     }
 
@@ -236,7 +240,7 @@ static std::string ResolveReceiverTypeUncached(IndexedByteRange objRange, std::s
     }
 
     if (auto delRes = ResolveDelegatePropertyReceiver(
-            {objRange, std::string(objText), effectiveHostClass, sourceCode, arrayTypeName, ctx.nodeIndex}, symbolTable,
+            {objRange, objText, effectiveHostClass, sourceCode, arrayTypeName, ctx.nodeIndex}, symbolTable,
             ctx);
         !delRes.empty())
     {

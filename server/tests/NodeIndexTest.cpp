@@ -113,9 +113,9 @@ TEST_CASE("NodeIndex - Indexed type metadata preserves deep templates and direct
     const auto nestedInfo = ExtractTypeInfoFromAST(nested, code, &index);
     CHECK(nestedInfo.kind == TypeKind::Array);
     CHECK(nestedInfo.arrayDepth == depth);
-    CHECK(nestedInfo.isConst);
-    CHECK(nestedInfo.isHandle);
-    CHECK(nestedInfo.hasPrimitiveHandle);
+    CHECK(static_cast<bool>(nestedInfo.isConst));
+    CHECK(static_cast<bool>(nestedInfo.isHandle));
+    CHECK(static_cast<bool>(nestedInfo.hasPrimitiveHandle));
     CHECK(nestedInfo.baseTypeName == "int");
     CHECK(nestedInfo.templateName == "array");
     REQUIRE(nestedInfo.templateArgumentTypes.size() == 1);
@@ -207,7 +207,7 @@ TEST_CASE("NodeIndex - Container spans and innermost class lookup")
     REQUIRE(varPos != std::string::npos);
     const auto* spanClass = index.FindInnermostClassSpan(static_cast<uint32_t>(varPos));
     REQUIRE(spanClass != nullptr);
-    CHECK_FALSE(spanClass->isMixin);
+    CHECK_FALSE(static_cast<bool>(spanClass->isMixin));
     std::string extractedClassName =
         code.substr(spanClass->nameStartByte, spanClass->nameEndByte - spanClass->nameStartByte);
     CHECK(extractedClassName == className);
@@ -223,7 +223,7 @@ TEST_CASE("NodeIndex - Container spans and innermost class lookup")
     REQUIRE(mixinVarPos != std::string::npos);
     const auto* spanMixin = index.FindInnermostClassSpan(static_cast<uint32_t>(mixinVarPos));
     REQUIRE(spanMixin != nullptr);
-    CHECK(spanMixin->isMixin);
+    CHECK(static_cast<bool>(spanMixin->isMixin));
     std::string extractedMixinName =
         code.substr(spanMixin->nameStartByte, spanMixin->nameEndByte - spanMixin->nameStartByte);
     CHECK(extractedMixinName == mixinName);

@@ -83,7 +83,7 @@ TEST_CASE("VirtualMixinDocument - Toggle Feature Flag and Synthetic URIs")
 
         auto symbols = table.FindSymbols("Rifle::Deploy");
         REQUIRE(!symbols.empty());
-        CHECK(symbols[0].isSynthesized);
+        CHECK(static_cast<bool>(symbols[0].isSynthesized));
         CHECK(symbols[0].fileUri == mixinUri);
         CHECK(symbols[0].virtualFileUri.empty());
     }
@@ -100,7 +100,7 @@ TEST_CASE("VirtualMixinDocument - Toggle Feature Flag and Synthetic URIs")
 
         auto symbols = table.FindSymbols("Rifle::Deploy");
         REQUIRE(!symbols.empty());
-        CHECK(symbols[0].isSynthesized);
+        CHECK(static_cast<bool>(symbols[0].isSynthesized));
         CHECK(symbols[0].fileUri == mixinUri);
         CHECK(symbols[0].virtualFileUri == "angelscript-virtual://Rifle/WeaponMixin.as");
     }

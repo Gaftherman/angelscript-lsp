@@ -3,6 +3,7 @@
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <doctest/doctest.h>
 #include <string>
@@ -190,7 +191,7 @@ TEST_CASE("NamespaceUsageFacts - Identifier use sites and enclosing container hi
     // Innermost container is class Cls, followed by namespace NS
     CHECK(containersA[0].name == clsName);
     CHECK(containersA[0].kind == angel_lsp::analysis::ContainerKind::Class);
-    CHECK_FALSE(containersA[0].isMixin);
+    CHECK_FALSE(static_cast<bool>(containersA[0].isMixin));
     CHECK(containersA[1].name == nsName);
     CHECK(containersA[1].kind == angel_lsp::analysis::ContainerKind::Namespace);
 
@@ -204,7 +205,7 @@ TEST_CASE("NamespaceUsageFacts - Identifier use sites and enclosing container hi
     REQUIRE(containersB.size() >= 1);
     CHECK(containersB[0].name == mixinName);
     CHECK(containersB[0].kind == angel_lsp::analysis::ContainerKind::Class);
-    CHECK(containersB[0].isMixin);
+    CHECK(static_cast<bool>(containersB[0].isMixin));
 
     ts_tree_delete(tree);
 }

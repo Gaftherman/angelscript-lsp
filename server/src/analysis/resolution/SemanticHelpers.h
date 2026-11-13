@@ -16,6 +16,7 @@
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
+#include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <optional>
 #include <span>

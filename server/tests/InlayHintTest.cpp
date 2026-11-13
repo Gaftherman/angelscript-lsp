@@ -7,6 +7,7 @@
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
+#include <algorithm>
 #include <doctest/doctest.h>
 
 using namespace angel_lsp;

@@ -20,6 +20,7 @@
 #include "utils/Utils.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
+#include <algorithm>
 #include <chrono>
 #include <doctest/doctest.h>
 #include <filesystem>

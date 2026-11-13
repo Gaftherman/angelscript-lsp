@@ -17,11 +17,14 @@ std::string ResolveConstructCallType(std::string_view typeText, std::string_view
     {
         return "";
     }
-    std::string written(typeText);
-    if (!templateText.empty())
+    if (templateText.empty())
     {
-        written += std::string(templateText);
+        return CleanExpressionType(typeText);
     }
+    std::string written;
+    written.reserve(typeText.size() + templateText.size());
+    written.append(typeText);
+    written.append(templateText);
     return CleanExpressionType(written);
 }
 

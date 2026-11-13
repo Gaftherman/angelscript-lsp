@@ -1,6 +1,7 @@
 #include "analysis/formatting/FormattingEngine.h"
 #include "helpers/CorpusDirectory.h"
 
+#include <algorithm>
 #include <cctype>
 #include <doctest/doctest.h>
 #include <filesystem>

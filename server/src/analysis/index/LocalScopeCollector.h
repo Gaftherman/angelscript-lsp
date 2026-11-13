@@ -7,6 +7,7 @@
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>

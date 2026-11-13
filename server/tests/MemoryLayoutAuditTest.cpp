@@ -95,9 +95,9 @@ TEST_SUITE("MemoryLayoutAudit")
 
         CHECK(param.name == randomName);
         CHECK(param.typeName == randomType);
-        CHECK(param.isConst);
-        CHECK(param.isHandle);
-        CHECK_FALSE(param.isReference);
+        CHECK(static_cast<bool>(param.isConst));
+        CHECK(static_cast<bool>(param.isHandle));
+        CHECK_FALSE(static_cast<bool>(param.isReference));
         CHECK(param.typeKind == TypeKind::Object);
         CHECK(param.modifier == ParameterModifier::In);
 
@@ -105,9 +105,9 @@ TEST_SUITE("MemoryLayoutAudit")
         modifiers.isConst = true;
         modifiers.isExplicit = false;
         modifiers.isFinal = true;
-        CHECK(modifiers.isConst);
-        CHECK_FALSE(modifiers.isExplicit);
-        CHECK(modifiers.isFinal);
+        CHECK(static_cast<bool>(modifiers.isConst));
+        CHECK_FALSE(static_cast<bool>(modifiers.isExplicit));
+        CHECK(static_cast<bool>(modifiers.isFinal));
     }
 
     TEST_CASE("TypeSanitization view helpers evaluate complex qualifiers accurately without false positives")
@@ -176,18 +176,18 @@ TEST_SUITE("MemoryLayoutAudit")
 
         // Canonical TypeQualifiers extraction
         const auto q1 = ExtractTypeQualifiersView(typeName + "@ const &out");
-        CHECK(q1.isHandle);
-        CHECK(q1.isConst);
-        CHECK(q1.isConstHandle);
-        CHECK(q1.isReference);
-        CHECK(q1.isOutRef);
-        CHECK_FALSE(q1.isInOutRef);
-        CHECK_FALSE(q1.isStandaloneRef);
+        CHECK(static_cast<bool>(q1.isHandle));
+        CHECK(static_cast<bool>(q1.isConst));
+        CHECK(static_cast<bool>(q1.isConstHandle));
+        CHECK(static_cast<bool>(q1.isReference));
+        CHECK(static_cast<bool>(q1.isOutRef));
+        CHECK_FALSE(static_cast<bool>(q1.isInOutRef));
+        CHECK_FALSE(static_cast<bool>(q1.isStandaloneRef));
 
         const auto q2 = ExtractTypeQualifiersView("array<" + typeName + "@>&");
-        CHECK_FALSE(q2.isHandle);
-        CHECK_FALSE(q2.isConst);
-        CHECK(q2.isReference);
-        CHECK(q2.isStandaloneRef);
+        CHECK_FALSE(static_cast<bool>(q2.isHandle));
+        CHECK_FALSE(static_cast<bool>(q2.isConst));
+        CHECK(static_cast<bool>(q2.isReference));
+        CHECK(static_cast<bool>(q2.isStandaloneRef));
     }
 }

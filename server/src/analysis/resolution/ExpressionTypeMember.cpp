@@ -57,7 +57,11 @@ static bool IsNonEnumSymbol(const Symbol& s)
 std::vector<Symbol> FindMemberSymbolsInType(std::string_view typeName, std::string_view memName,
                                             const SymbolTable& symbolTable)
 {
-    auto found = symbolTable.FindMemberSymbols(typeName, memName);
+    std::vector<Symbol> found;
+    if (const auto bucket = symbolTable.FindMemberSymbolPtr(typeName, memName))
+    {
+        found = *bucket;
+    }
     const bool hasInstance = std::any_of(found.begin(), found.end(), IsNonEnumSymbol);
     if (!hasInstance)
     {
@@ -71,22 +75,25 @@ std::vector<Symbol> FindMemberSymbolsInType(std::string_view typeName, std::stri
         setProp.append("set_");
         setProp.append(memName);
 
-        auto getters = symbolTable.FindMemberSymbols(typeName, getProp);
-        auto setters = symbolTable.FindMemberSymbols(typeName, setProp);
-        if (!getters.empty() || !setters.empty())
+        if (const auto getters = symbolTable.FindMemberSymbolPtr(typeName, getProp))
         {
-            found.insert(found.begin(), setters.begin(), setters.end());
-            found.insert(found.begin(), getters.begin(), getters.end());
+            found.insert(found.begin(), getters->begin(), getters->end());
+        }
+        if (const auto setters = symbolTable.FindMemberSymbolPtr(typeName, setProp))
+        {
+            found.insert(found.begin(), setters->begin(), setters->end());
         }
     }
     if (found.empty())
     {
-        auto allSymbols = symbolTable.FindSymbols(memName);
-        for (const auto& sSym : allSymbols)
+        if (const auto allSymbols = symbolTable.FindSymbolsPtr(memName))
         {
-            if (sSym.containerName == typeName)
+            for (const auto& sSym : *allSymbols)
             {
-                found.push_back(sSym);
+                if (sSym.containerName == typeName)
+                {
+                    found.push_back(sSym);
+                }
             }
         }
     }
@@ -233,10 +240,12 @@ std::vector<Symbol> CollectMemberMethodCandidates(std::string_view ownerType, st
     }
     for (const auto& typeName : hierarchy)
     {
-        auto found = symbolTable.FindMemberSymbols(typeName, memName);
-        for (const auto& sym : found)
+        if (const auto found = symbolTable.FindMemberSymbolPtr(typeName, memName))
         {
-            AppendCandidateIfUnique(candidates, sym);
+            for (const auto& sym : *found)
+            {
+                AppendCandidateIfUnique(candidates, sym);
+            }
         }
     }
     return candidates;

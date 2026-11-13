@@ -58,10 +58,10 @@ struct LocalDefinition
      * @param[in] typeRange Source range of the declared type.
      */
     LocalDefinition(std::string name_, LocalDefinitionKind kind_, SourceRange range = {}, SourceRange typeRange = {})
-        : name(std::move(name_)), kind(kind_), startLine(range.startLine), startCharacter(range.startCharacter),
+        : name(std::move(name_)), startLine(range.startLine), startCharacter(range.startCharacter),
           endLine(range.endLine), endCharacter(range.endCharacter), typeStartLine(typeRange.startLine),
           typeStartCharacter(typeRange.startCharacter), typeEndLine(typeRange.endLine),
-          typeEndCharacter(typeRange.endCharacter)
+          typeEndCharacter(typeRange.endCharacter), kind(kind_)
     {
     }
 

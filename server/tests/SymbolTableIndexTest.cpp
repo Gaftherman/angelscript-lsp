@@ -2,6 +2,7 @@
 #include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
 
+#include <algorithm>
 #include <doctest/doctest.h>
 #include <string>
 #include <vector>

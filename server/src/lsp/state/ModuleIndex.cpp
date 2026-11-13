@@ -2,6 +2,8 @@
 
 #include "utils/Utils.h"
 
+#include <algorithm>
+
 namespace angel_lsp
 {
 void ModuleIndex::UpdateFile(const UpdateFileRequest& request)
