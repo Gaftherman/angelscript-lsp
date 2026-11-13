@@ -1,6 +1,7 @@
 #include "analysis/checkers/CallCheckerCommon.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -168,9 +169,9 @@ void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, bool isRec
 static std::optional<Symbol> TryResolveGetterCallableFuncdef(std::string_view typeName, std::string_view memberName,
                                                              const SymbolTable& table)
 {
-    std::string getterName = "get_";
-    getterName.append(memberName);
-    if (const auto getterFound = table.FindMemberSymbolPtr(typeName, getterName))
+    char getterBuf[512];
+    const std::string_view getterName = utils::ComposeGetterName(memberName, getterBuf);
+    if (const auto getterFound = getterName.empty() ? nullptr : table.FindMemberSymbolPtr(typeName, getterName))
     {
         for (const auto& sym : *getterFound)
         {

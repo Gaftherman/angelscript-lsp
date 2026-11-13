@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -50,8 +51,8 @@ struct CallBindingRevision
 class CallBindings
 {
   public:
-    CallBindings(std::optional<CallBindingRevision> revision, std::string module)
-        : m_revision(revision), m_module(std::move(module))
+    CallBindings(std::optional<CallBindingRevision> revision, std::string_view module)
+        : m_revision(revision), m_module(module)
     {
     }
     CallBindings(const CallBindings&) = delete;

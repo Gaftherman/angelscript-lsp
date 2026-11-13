@@ -19,7 +19,7 @@ namespace angel_lsp::analysis
 
 struct MemberLookupContext
 {
-    std::string typeName;
+    std::string_view typeName;
     const SymbolTable& table;
     bool accessorKeywordRequired = false;
 };
@@ -62,7 +62,7 @@ std::vector<std::string> CollectVisibleUsingNamespaces(uint32_t byteOffset, std:
                                                        const NodeIndex* nodeIndex);
 [[nodiscard]] const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request);
 std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std::vector<ContainerInfo>& containers,
-                                       const std::string& name, const std::vector<std::string>& usingNamespaces = {});
+                                       std::string_view name, std::span<const std::string> usingNamespaces = {});
 std::vector<Symbol> FindSymbolsInScope(std::string_view name, uint32_t byteOffset, std::string_view sourceCode,
                                        const SymbolTable& symbolTable, const NodeIndex* nodeIndex = nullptr);
 std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> found, ContainerKind expected);

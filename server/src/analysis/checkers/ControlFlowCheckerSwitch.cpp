@@ -168,7 +168,7 @@ static void CheckCaseConstantness(const ControlFlowCaseLabelFact& label, std::st
                                                                         sourceCode);
         }
         const auto& usings = GetUsingNamespaces(ctx.request);
-        const auto syms = FindSymbolsInScope(ctx.request.symbolTable, containers, std::string(idText), usings);
+        const auto syms = FindSymbolsInScope(ctx.request.symbolTable, containers, idText, usings);
         for (const auto& s : syms)
         {
             if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
@@ -190,23 +190,34 @@ static void CheckCaseConstantness(const ControlFlowCaseLabelFact& label, std::st
     }
 }
 
-static std::string ComputeCaseKey(std::string_view text, const rules::RuleIndex& ruleIndex)
+/**
+ * @brief Records a case label and reports whether an equal label was already seen.
+ * @param[in] text Label spelling, viewing the analysed document.
+ * @param[in] ruleIndex Rule index that resolves enumerator labels to their values.
+ * @param[in,out] seenNumbers Numeric values of earlier labels; an enumerator and a literal of equal value collide.
+ * @param[in,out] seenTexts Spellings of earlier labels that have no numeric value.
+ * @return True when the label was new.
+ */
+static bool InsertCaseLabel(std::string_view text, const rules::RuleIndex& ruleIndex,
+                            ankerl::unordered_dense::set<long long>& seenNumbers,
+                            ankerl::unordered_dense::set<std::string_view>& seenTexts)
 {
     if (const auto resolved = EnumeratorValue(text, ruleIndex))
     {
-        return "#" + std::to_string(*resolved);
+        return seenNumbers.insert(*resolved).second;
     }
     if (const auto parsed = ParseDecimalInteger(text))
     {
-        return "#" + std::to_string(*parsed);
+        return seenNumbers.insert(*parsed).second;
     }
-    return std::string(text);
+    return seenTexts.insert(text).second;
 }
 
 void CheckSwitchLabels(std::span<const ControlFlowCaseLabelFact> labels, std::string_view sourceCode,
                        DiagnosticContext& ctx)
 {
-    ankerl::unordered_dense::set<std::string> seenValues;
+    ankerl::unordered_dense::set<long long> seenNumbers;
+    ankerl::unordered_dense::set<std::string_view> seenTexts;
     for (const auto& label : labels)
     {
         if (label.isUnusable)
@@ -216,7 +227,7 @@ void CheckSwitchLabels(std::span<const ControlFlowCaseLabelFact> labels, std::st
 
         CheckCaseConstantness(label, sourceCode, ctx);
         const auto text = label.text;
-        if (!text.empty() && !seenValues.insert(ComputeCaseKey(text, ctx.request.GetRuleIndex())).second)
+        if (!text.empty() && !InsertCaseLabel(text, ctx.request.GetRuleIndex(), seenNumbers, seenTexts))
         {
             ctx.EmitAtRange(label.range, "as-err-duplicate-case-value", text);
         }

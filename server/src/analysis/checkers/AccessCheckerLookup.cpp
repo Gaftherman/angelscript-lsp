@@ -2,6 +2,7 @@
 #include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "config/EngineRuleConfig.h"
+#include "utils/AccessorNames.h"
 
 #include <algorithm>
 #include <string>
@@ -82,11 +83,11 @@ static std::vector<Symbol> CollectDirectCandidates(std::string_view owner, std::
         }
     }
 
-    for (const auto* accessorPrefix : {"get_", "set_"})
+    for (const std::string_view accessorPrefix : {utils::k_getterPrefix, utils::k_setterPrefix})
     {
-        std::string accName(accessorPrefix);
-        accName.append(memberName);
-        auto accSyms = ctx.table.FindMemberSymbolPtr(owner, accName);
+        char accBuf[512];
+        const std::string_view accName = utils::ComposeAccessorName(accessorPrefix, memberName, accBuf);
+        auto accSyms = accName.empty() ? nullptr : ctx.table.FindMemberSymbolPtr(owner, accName);
         if (!accSyms)
         {
             continue;
@@ -138,11 +139,11 @@ static std::vector<Symbol> CollectContainerCandidates(std::string_view owner, st
         return candidates;
     }
 
-    for (const auto* accessorPrefix : {"get_", "set_"})
+    for (const std::string_view accessorPrefix : {utils::k_getterPrefix, utils::k_setterPrefix})
     {
-        std::string accName(accessorPrefix);
-        accName.append(memberName);
-        if (auto syms = ctx.table.FindSymbolsPtr(accName))
+        char accBuf[512];
+        const std::string_view accName = utils::ComposeAccessorName(accessorPrefix, memberName, accBuf);
+        if (auto syms = accName.empty() ? nullptr : ctx.table.FindSymbolsPtr(accName))
         {
             for (const auto& sym : *syms)
             {
@@ -204,7 +205,7 @@ static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, std::st
         {
             result.decided = false;
             result.access = AccessModifier::Public;
-            result.declaringClass = IsMixinClass(owner, ctx.table) ? ctx.typeName : std::string(owner);
+            result.declaringClass = IsMixinClass(owner, ctx.table) ? std::string(ctx.typeName) : std::string(owner);
             return true;
         }
 
@@ -212,7 +213,7 @@ static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, std::st
         {
             result.decided = true;
             result.access = access;
-            result.declaringClass = IsMixinClass(owner, ctx.table) ? ctx.typeName : std::string(owner);
+            result.declaringClass = IsMixinClass(owner, ctx.table) ? std::string(ctx.typeName) : std::string(owner);
         }
     }
     return false;
@@ -228,16 +229,11 @@ MemberLookupResult FindMember(std::string_view typeName, std::string_view member
     }
 
     const auto ruleIndex = table.GetRuleIndex();
-    const MemberLookupContext ctx{std::string(typeName), table, accessorKeywordRequired};
-    std::string getAcc;
-    std::string setAcc;
-    if (ruleIndex)
-    {
-        getAcc = "get_";
-        getAcc.append(memberName);
-        setAcc = "set_";
-        setAcc.append(memberName);
-    }
+    const MemberLookupContext ctx{typeName, table, accessorKeywordRequired};
+    char getBuf[512];
+    char setBuf[512];
+    const std::string_view getAcc = utils::ComposeAccessorName(utils::k_getterPrefix, memberName, getBuf);
+    const std::string_view setAcc = utils::ComposeAccessorName(utils::k_setterPrefix, memberName, setBuf);
     for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
     {
         if (ruleIndex)

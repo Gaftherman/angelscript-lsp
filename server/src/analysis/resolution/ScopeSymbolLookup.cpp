@@ -13,6 +13,7 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -261,8 +262,8 @@ std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> found, Cont
     return found;
 }
 
-static std::vector<Symbol> FindEnumMemberInNamespace(const SymbolTable& symbolTable, const std::string& namespaceName,
-                                                     const std::string& name)
+static std::vector<Symbol> FindEnumMemberInNamespace(const SymbolTable& symbolTable, std::string_view namespaceName,
+                                                     std::string_view name)
 {
     const auto ruleIndex = symbolTable.GetRuleIndex();
     if (!ruleIndex)
@@ -289,7 +290,7 @@ static std::vector<Symbol> FindEnumMemberInNamespace(const SymbolTable& symbolTa
 }
 
 static std::vector<Symbol> FindSymbolInClassHierarchy(const SymbolTable& symbolTable, const ContainerInfo& container,
-                                                      const std::string& name)
+                                                      std::string_view name)
 {
     auto hierarchy = GetInheritedTypeHierarchy(container.qualifiedName, symbolTable);
     ExpandMixinHostHierarchies(container.qualifiedName, symbolTable, hierarchy);
@@ -323,7 +324,7 @@ static std::vector<Symbol> FindSymbolInClassHierarchy(const SymbolTable& symbolT
  */
 static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& symbolTable,
                                                           const std::vector<ContainerInfo>& containers,
-                                                          const std::string& name)
+                                                          std::string_view name)
 {
     ankerl::unordered_dense::set<std::string_view> visitedContainers;
     for (const auto& container : containers)
@@ -363,8 +364,8 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
  * @brief Searches for a symbol name across using namespaces.
  */
 static std::vector<Symbol> FindSymbolInUsingNamespaces(const SymbolTable& symbolTable,
-                                                       const std::vector<std::string>& usingNamespaces,
-                                                       const std::string& name)
+                                                       std::span<const std::string> usingNamespaces,
+                                                       std::string_view name)
 {
     for (const auto& ns : usingNamespaces)
     {
@@ -385,7 +386,7 @@ static std::vector<Symbol> FindSymbolInUsingNamespaces(const SymbolTable& symbol
 /**
  * @brief Fallback lookup for enum members and short-name types.
  */
-static std::vector<Symbol> FindSymbolEnumOrTypeFallback(const SymbolTable& symbolTable, const std::string& name)
+static std::vector<Symbol> FindSymbolEnumOrTypeFallback(const SymbolTable& symbolTable, std::string_view name)
 {
     if (const auto ruleIndex = symbolTable.GetRuleIndex())
     {
@@ -399,7 +400,7 @@ static std::vector<Symbol> FindSymbolEnumOrTypeFallback(const SymbolTable& symbo
 }
 
 std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std::vector<ContainerInfo>& containers,
-                                       const std::string& name, const std::vector<std::string>& usingNamespaces)
+                                       std::string_view name, std::span<const std::string> usingNamespaces)
 {
     if (name.empty())
     {
@@ -412,7 +413,7 @@ std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std
         if (!utils::ContainsScopeSeparator(rest))
         {
             std::vector<Symbol> filtered;
-            if (auto symsPtr = symbolTable.FindSymbolsPtr(std::string(rest)))
+            if (auto symsPtr = symbolTable.FindSymbolsPtr(rest))
             {
                 for (const auto& sym : *symsPtr)
                 {

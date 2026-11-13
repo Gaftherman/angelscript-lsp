@@ -6,6 +6,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <cstdint>
@@ -125,12 +126,13 @@ static bool IsKnownCallee(std::string_view name, const CallSiteFact& call, const
     const auto usings = cctx.nodeIndex ? cctx.nodeIndex->CollectUsingNamespaces(cctx.sourceCode, call.bytes.startByte)
                                        : GetUsingNamespaces(ctx.request);
 
-    if (!FindSymbolsInScope(ctx.request.symbolTable, containers, std::string(name), usings).empty())
+    if (!FindSymbolsInScope(ctx.request.symbolTable, containers, name, usings).empty())
     {
         return true;
     }
 
-    const std::string getterName = "get_" + std::string(name);
+    char getterBuf[512];
+    const std::string_view getterName = utils::ComposeGetterName(name, getterBuf);
     if (!FindSymbolsInScope(ctx.request.symbolTable, containers, getterName, usings).empty())
     {
         return true;

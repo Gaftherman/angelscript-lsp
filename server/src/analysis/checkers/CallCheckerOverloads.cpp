@@ -97,7 +97,8 @@ static void RecordBoundCall(const Symbol& declaration, const CallSiteFact& site,
     {
         const auto& request = ctx.request;
         bindings = std::make_shared<CallBindings>(request.callBindingRevision,
-                                                  request.moduleContext ? request.moduleContext->name : std::string{});
+                                                  request.moduleContext ? std::string_view(request.moduleContext->name)
+                                                                        : std::string_view{});
     }
     bindings->Add(site.calleeNameBytes.startByte, site.calleeNameRange, declaration);
 }

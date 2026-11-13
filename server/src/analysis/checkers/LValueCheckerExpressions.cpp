@@ -6,6 +6,7 @@
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "utils/AccessorNames.h"
 
 #include <cstdint>
 #include <string>
@@ -92,9 +93,12 @@ static bool IsAssignableMember(const LValueCandidateFact& candidate, const Scope
                 for (const auto& ancestor :
                      GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable, ctx.request.exprCache))
                 {
-                    std::string setterName = "set_";
-                    setterName.append(candidate.memberName);
-                    auto setters = ctx.request.symbolTable.FindMemberSymbolPtr(ancestor, setterName);
+                    char setterBuf[512];
+                    const std::string_view setterName =
+                        utils::ComposeAccessorName(utils::k_setterPrefix, candidate.memberName, setterBuf);
+                    auto setters = setterName.empty()
+                                       ? nullptr
+                                       : ctx.request.symbolTable.FindMemberSymbolPtr(ancestor, setterName);
                     if (setters && !setters->empty())
                     {
                         hasSetter = true;

@@ -88,8 +88,7 @@ static void CollectIdentifierCandidates(const LValueCallSiteFact& callSite, cons
         containers = cctx.request.nodeIndex->CollectLookupContainers(
             callSite.calleeBytes.startByte, callSite.calleeBytes.endByte, 0, cctx.request.sourceCode);
     }
-    for (const auto& sym :
-         FindSymbolsInScope(cctx.ctx.request.symbolTable, containers, std::string(callSite.calleeText)))
+    for (const auto& sym : FindSymbolsInScope(cctx.ctx.request.symbolTable, containers, callSite.calleeText))
     {
         if (sym.type == SymbolType::Function)
         {

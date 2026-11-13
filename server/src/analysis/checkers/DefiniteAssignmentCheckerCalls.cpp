@@ -58,8 +58,7 @@ void DefiniteAssignmentVisitor::CollectCallCandidates(const DefiniteAssignmentCa
                                                                       m_request.sourceCode);
         }
         const auto& usings = GetUsingNamespaces(m_ctx.request);
-        const auto inScope =
-            FindSymbolsInScope(m_ctx.request.symbolTable, containers, std::string(call.calleeText), usings);
+        const auto inScope = FindSymbolsInScope(m_ctx.request.symbolTable, containers, call.calleeText, usings);
         for (const auto& sym : inScope)
         {
             if (sym.type == SymbolType::Function)
