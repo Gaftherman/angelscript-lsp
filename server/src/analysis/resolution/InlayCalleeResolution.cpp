@@ -24,7 +24,7 @@ namespace angel_lsp::analysis
  * @param[in] symbolTable Symbol table for resolution.
  * @return Vector of constructor function symbols.
  */
-static std::vector<Symbol> CollectClassConstructorCandidates(const std::vector<Symbol>& candidateSymbols,
+static std::vector<Symbol> CollectClassConstructorCandidates(std::span<const Symbol> candidateSymbols,
                                                              const SymbolTable& symbolTable)
 {
     std::vector<Symbol> ctorSymbols;
@@ -32,13 +32,19 @@ static std::vector<Symbol> CollectClassConstructorCandidates(const std::vector<S
     {
         if (sym.type == SymbolType::Class)
         {
-            const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            auto ctors = symbolTable.FindMemberSymbols(qName, sym.name);
-            if (ctors.empty() && qName != sym.name)
+            const std::string_view qName =
+                sym.qualifiedName.empty() ? std::string_view(sym.name) : std::string_view(sym.qualifiedName);
+            if (const auto ctors = symbolTable.FindMemberSymbolPtr(qName, sym.name))
             {
-                ctors = symbolTable.FindMemberSymbols(sym.name, sym.name);
+                ctorSymbols.insert(ctorSymbols.end(), ctors->begin(), ctors->end());
             }
-            ctorSymbols.insert(ctorSymbols.end(), ctors.begin(), ctors.end());
+            else if (qName != sym.name)
+            {
+                if (const auto ctors2 = symbolTable.FindMemberSymbolPtr(sym.name, sym.name))
+                {
+                    ctorSymbols.insert(ctorSymbols.end(), ctors2->begin(), ctors2->end());
+                }
+            }
         }
     }
     return ctorSymbols;
@@ -54,7 +60,7 @@ static std::vector<Symbol> CollectClassConstructorCandidates(const std::vector<S
 static std::vector<Symbol> CollectFreeCalleeCandidates(std::string_view calleeRawName, uint32_t callByteOffset,
                                                        const ExpressionTypeContext& ctx)
 {
-    std::string calleeName = std::string(utils::StripGlobalPrefix(calleeRawName));
+    std::string_view calleeName = utils::StripGlobalPrefix(calleeRawName);
     auto candidateSymbols =
         FindSymbolsInScope(calleeName, callByteOffset, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
 
@@ -62,7 +68,10 @@ static std::vector<Symbol> CollectFreeCalleeCandidates(std::string_view calleeRa
 
     if (candidateSymbols.empty())
     {
-        candidateSymbols = ctx.symbolTable.FindSymbols(calleeName);
+        if (const auto found = ctx.symbolTable.FindSymbolsPtr(calleeName))
+        {
+            candidateSymbols = *found;
+        }
     }
 
     if (candidateSymbols.empty())

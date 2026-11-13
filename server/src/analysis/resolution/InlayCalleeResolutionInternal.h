@@ -27,7 +27,7 @@ std::vector<Symbol> CollectMemberCalleeCandidates(const IndexedCallSite& site, c
  * @param[in] ctx Semantic expression type context.
  * @param[in,out] candidateSymbols Symbol collection receiving candidates.
  */
-void CollectEnclosingClassCallees(const std::string& calleeName, uint32_t callByteOffset,
+void CollectEnclosingClassCallees(std::string_view calleeName, uint32_t callByteOffset,
                                   const ExpressionTypeContext& ctx, std::vector<Symbol>& candidateSymbols);
 
 /**
@@ -37,7 +37,7 @@ void CollectEnclosingClassCallees(const std::string& calleeName, uint32_t callBy
  * @param[in] ctx Semantic expression type context.
  * @return Vector of resolved candidate symbols.
  */
-std::vector<Symbol> CollectScopedCalleeCandidates(const std::string& calleeName, uint32_t callByteOffset,
+std::vector<Symbol> CollectScopedCalleeCandidates(std::string_view calleeName, uint32_t callByteOffset,
                                                   const ExpressionTypeContext& ctx);
 
 } // namespace angel_lsp::analysis

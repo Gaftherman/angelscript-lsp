@@ -21,27 +21,29 @@ namespace angel_lsp::analysis
  * @param[in] symbolTable Symbol table to look up in.
  * @param[in,out] candidateSymbols Output symbol vector.
  */
-static void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const std::string& memberName,
+static void CollectHierarchyMembers(std::span<const std::string> hierarchy, std::string_view memberName,
                                     const SymbolTable& symbolTable, std::vector<Symbol>& candidateSymbols)
 {
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedName = utils::JoinScopedName(typeName, memberName);
-        auto found = symbolTable.FindSymbols(qualifiedName);
-        for (const auto& sym : found)
+        if (const auto found = symbolTable.FindMemberSymbolPtr(typeName, memberName))
         {
-            if (sym.type == SymbolType::Function)
+            for (const auto& sym : *found)
             {
-                bool overriddenLower = std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
-                                                   [&](const Symbol& kept) { return HasSameParameterList(kept, sym); });
-                if (!overriddenLower)
+                if (sym.type == SymbolType::Function)
+                {
+                    bool overriddenLower =
+                        std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
+                                    [&](const Symbol& kept) { return HasSameParameterList(kept, sym); });
+                    if (!overriddenLower)
+                    {
+                        candidateSymbols.push_back(sym);
+                    }
+                }
+                else
                 {
                     candidateSymbols.push_back(sym);
                 }
-            }
-            else
-            {
-                candidateSymbols.push_back(sym);
             }
         }
     }
@@ -57,7 +59,7 @@ std::vector<Symbol> CollectMemberCalleeCandidates(const IndexedCallSite& site, c
 
     std::string_view objText =
         ctx.sourceCode.substr(site.receiverStartByte, site.receiverEndByte - site.receiverStartByte);
-    const std::string memText(site.calleeText);
+    const std::string_view memText = site.calleeText;
     const IndexedByteRange receiverRange{site.receiverStartByte, site.receiverEndByte};
     ReceiverTypeContext recvCtx{ctx.scope, "", ctx.uri};
     recvCtx.nodeIndex = ctx.nodeIndex;
@@ -65,10 +67,9 @@ std::vector<Symbol> CollectMemberCalleeCandidates(const IndexedCallSite& site, c
 
     if (receiverTypeName.empty())
     {
-        auto directCandidates = ctx.symbolTable.FindMemberSymbols(std::string(objText), memText);
-        for (const auto& sym : directCandidates)
+        if (const auto directCandidates = ctx.symbolTable.FindMemberSymbolPtr(objText, memText))
         {
-            candidateSymbols.push_back(sym);
+            candidateSymbols = *directCandidates;
         }
         return candidateSymbols;
     }
@@ -78,7 +79,7 @@ std::vector<Symbol> CollectMemberCalleeCandidates(const IndexedCallSite& site, c
     return candidateSymbols;
 }
 
-void CollectEnclosingClassCallees(const std::string& calleeName, uint32_t callByteOffset,
+void CollectEnclosingClassCallees(std::string_view calleeName, uint32_t callByteOffset,
                                   const ExpressionTypeContext& ctx, std::vector<Symbol>& candidateSymbols)
 {
     std::vector<ContainerInfo> containers;
@@ -99,26 +100,26 @@ void CollectEnclosingClassCallees(const std::string& calleeName, uint32_t callBy
     }
 }
 
-std::vector<Symbol> CollectScopedCalleeCandidates(const std::string& calleeName, uint32_t callByteOffset,
+std::vector<Symbol> CollectScopedCalleeCandidates(std::string_view calleeName, uint32_t callByteOffset,
                                                   const ExpressionTypeContext& ctx)
 {
     std::vector<Symbol> candidates;
-    const auto [targetContainerView, methodNameView] = utils::SplitScopedName(calleeName);
-    if (targetContainerView.empty())
+    const auto [targetContainer, methodName] = utils::SplitScopedName(calleeName);
+    if (targetContainer.empty())
     {
         return candidates;
     }
-    std::string targetContainer(targetContainerView);
-    std::string methodName(methodNameView);
 
     auto hierarchy = GetInheritedTypeHierarchy(targetContainer, ctx.symbolTable);
     for (const auto& typeName : hierarchy)
     {
-        auto syms = ctx.symbolTable.FindMemberSymbols(typeName, methodName);
-        if (!syms.empty())
+        if (const auto syms = ctx.symbolTable.FindMemberSymbolPtr(typeName, methodName))
         {
-            candidates.insert(candidates.end(), syms.begin(), syms.end());
-            return candidates;
+            if (!syms->empty())
+            {
+                candidates.insert(candidates.end(), syms->begin(), syms->end());
+                return candidates;
+            }
         }
     }
 
@@ -132,21 +133,26 @@ std::vector<Symbol> CollectScopedCalleeCandidates(const std::string& calleeName,
     {
         if (it->kind == ContainerKind::Namespace)
         {
-            std::string nsPrefix = it->qualifiedName.empty() ? it->name : it->qualifiedName;
-            auto scopedSyms = ctx.symbolTable.FindMemberSymbols(nsPrefix, calleeName);
-            if (!scopedSyms.empty())
+            const std::string_view nsPrefix =
+                it->qualifiedName.empty() ? std::string_view(it->name) : std::string_view(it->qualifiedName);
+            if (const auto scopedSyms = ctx.symbolTable.FindMemberSymbolPtr(nsPrefix, calleeName))
             {
-                return scopedSyms;
+                if (!scopedSyms->empty())
+                {
+                    return *scopedSyms;
+                }
             }
             auto scopedHier =
                 GetInheritedTypeHierarchy(utils::JoinScopedName(nsPrefix, targetContainer), ctx.symbolTable);
             for (const auto& typeName : scopedHier)
             {
-                auto syms = ctx.symbolTable.FindMemberSymbols(typeName, methodName);
-                if (!syms.empty())
+                if (const auto syms = ctx.symbolTable.FindMemberSymbolPtr(typeName, methodName))
                 {
-                    candidates.insert(candidates.end(), syms.begin(), syms.end());
-                    return candidates;
+                    if (!syms->empty())
+                    {
+                        candidates.insert(candidates.end(), syms->begin(), syms->end());
+                        return candidates;
+                    }
                 }
             }
         }
