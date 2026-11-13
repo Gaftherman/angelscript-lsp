@@ -7,6 +7,7 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
 
+#include <span>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -30,10 +31,10 @@ struct FuncdefAgreement
     bool conflict = false;
 };
 
-std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, uint32_t byteOffset,
+std::vector<Symbol> CollectConstructorCandidates(std::string_view baseName, uint32_t byteOffset,
                                                  std::string_view sourceCode, const SymbolTable& symbolTable,
                                                  const NodeIndex* nodeIndex = nullptr);
-bool LambdaContradictsFuncdef(const std::vector<LambdaParameter>& lambdaParameters, const FuncdefSignature& funcdefSig,
+bool LambdaContradictsFuncdef(std::span<const LambdaParameter> lambdaParameters, const FuncdefSignature& funcdefSig,
                               const SymbolTable& table);
 std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolTable& table);
 [[nodiscard]] bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noexcept;
@@ -56,7 +57,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, cons
  *         belongs to no indexed lambda, or the lambda has no funcdef target.
  */
 [[nodiscard]] std::string DeduceLambdaParameterType(uint32_t paramLine, uint32_t paramCharacter,
-                                                    const std::vector<LambdaSiteFact>& lambdas,
+                                                    std::span<const LambdaSiteFact> lambdas,
                                                     const SymbolTable& table);
 Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName);
 std::optional<Symbol> TryResolveCallableFuncdef(std::string_view name, const Scope* scope, const SymbolTable& table,

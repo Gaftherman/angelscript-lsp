@@ -6,6 +6,7 @@
 
 #include <ankerl/unordered_dense.h>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -40,7 +41,7 @@ struct MixinClassContext
  * @return Set of compatible class names.
  */
 [[nodiscard]] ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>
-CollectCompatibleClasses(const std::vector<Symbol>& symGroup, const Symbol& sym, AccessModifier targetAccess,
+CollectCompatibleClasses(std::span<const Symbol> symGroup, const Symbol& sym, AccessModifier targetAccess,
                          const MixinClassContext& ctx);
 
 /**

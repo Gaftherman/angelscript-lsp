@@ -8,6 +8,7 @@
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
+#include <span>
 
 namespace angel_lsp::analysis
 {
@@ -66,7 +67,7 @@ static bool IsInterfaceMethodCandidate(const Symbol& symbol)
            !IsDestructorSymbol(symbol) && symbol.name != utils::LastScopeSegment(symbol.containerName);
 }
 
-static bool HasInterfaceImplementation(const std::vector<std::string>& owners, const Symbol& method,
+static bool HasInterfaceImplementation(std::span<const std::string> owners, const Symbol& method,
                                        const SymbolTable& table, bool& canOverride)
 {
     for (const auto& owner : owners)
@@ -98,7 +99,7 @@ static bool HasInterfaceImplementation(const std::vector<std::string>& owners, c
     return false;
 }
 
-static void AppendMissingMethods(const std::string& interfaceName, const std::vector<std::string>& owners,
+static void AppendMissingMethods(std::string_view interfaceName, std::span<const std::string> owners,
                                  const SymbolTable& table, std::vector<MissingInterfaceMethod>& missing)
 {
     const auto index = table.GetRuleIndex();
@@ -136,7 +137,7 @@ static void AppendMissingMethods(const std::string& interfaceName, const std::ve
                 }
                 else
                 {
-                    missing.push_back({method, interfaceName, canOverride});
+                    missing.push_back({method, std::string(interfaceName), canOverride});
                 }
             }
         }

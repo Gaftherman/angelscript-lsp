@@ -42,7 +42,7 @@ std::string SubstituteTypeParam(std::string_view typeStr, std::string_view param
     return result;
 }
 
-bool IsTypeSymbolList(const std::vector<Symbol>& syms) noexcept
+bool IsTypeSymbolList(std::span<const Symbol> syms) noexcept
 {
     for (const auto& s : syms)
     {
@@ -167,18 +167,19 @@ TemplateBinding BindTemplateArguments(std::string_view writtenType, const Symbol
 
 std::string SubstituteTemplateParameters(std::string_view typeStr, const TemplateBinding& binding)
 {
-    std::string result(typeStr);
-    if (binding.usable)
+    if (!binding.usable)
     {
-        for (size_t i = 0; i < binding.parameters.size(); ++i)
-        {
-            result = SubstituteTypeParam(result, binding.parameters[i], binding.arguments[i]);
-        }
+        return std::string(typeStr);
+    }
+    std::string result(typeStr);
+    for (size_t i = 0; i < binding.parameters.size(); ++i)
+    {
+        result = SubstituteTypeParam(result, binding.parameters[i], binding.arguments[i]);
     }
     return result;
 }
 
-static std::vector<Symbol> CollectOpIndexCandidates(const std::vector<std::string>& hierarchy,
+static std::vector<Symbol> CollectOpIndexCandidates(std::span<const std::string> hierarchy,
                                                     const SymbolTable& symbolTable)
 {
     std::vector<Symbol> candidates;
@@ -203,7 +204,7 @@ static std::vector<Symbol> CollectOpIndexCandidates(const std::vector<std::strin
     return candidates;
 }
 
-static std::string ApplyTemplateBindingToReturn(std::string ret, const std::string& canonical,
+static std::string ApplyTemplateBindingToReturn(std::string_view ret, std::string_view canonical,
                                                 const SymbolTable& symbolTable)
 {
     auto binding = BindTemplateArguments(canonical, symbolTable);
@@ -212,20 +213,21 @@ static std::string ApplyTemplateBindingToReturn(std::string ret, const std::stri
         return CleanExpressionType(SubstituteTemplateParameters(ret, binding));
     }
     auto tmpl = ParseTemplateType(canonical);
+    std::string substituted(ret);
     if (tmpl.templateArgs.size() == 1)
     {
-        ret = SubstituteTypeParam(ret, "T", tmpl.templateArgs[0]);
+        substituted = SubstituteTypeParam(substituted, "T", tmpl.templateArgs[0]);
     }
     else if (tmpl.templateArgs.size() >= 2)
     {
-        ret = SubstituteTypeParam(ret, "T", tmpl.templateArgs.back());
-        ret = SubstituteTypeParam(ret, "V", tmpl.templateArgs[1]);
-        ret = SubstituteTypeParam(ret, "K", tmpl.templateArgs[0]);
+        substituted = SubstituteTypeParam(substituted, "T", tmpl.templateArgs.back());
+        substituted = SubstituteTypeParam(substituted, "V", tmpl.templateArgs[1]);
+        substituted = SubstituteTypeParam(substituted, "K", tmpl.templateArgs[0]);
     }
-    return CleanExpressionType(ret);
+    return CleanExpressionType(substituted);
 }
 
-std::string FindOpIndexInHierarchy(const std::string& owner, const std::string& canonical,
+std::string FindOpIndexInHierarchy(std::string_view owner, std::string_view canonical,
                                    const SymbolTable& symbolTable, std::string_view indexArgType = "")
 {
     auto hierarchy = GetInheritedTypeHierarchy(owner, symbolTable);
@@ -250,7 +252,7 @@ std::string FindOpIndexInHierarchy(const std::string& owner, const std::string& 
     return "";
 }
 
-std::string ResolveIndexFallback(const std::string& canonical)
+std::string ResolveIndexFallback(std::string_view canonical)
 {
     auto tmpl = ParseTemplateType(canonical);
     if (!tmpl.templateArgs.empty())
@@ -386,7 +388,7 @@ bool AreCompatibleTemplateArgPair(std::string_view va, std::string_view vb)
     return LastScopeSegment(va) == LastScopeSegment(vb);
 }
 
-bool AreCompatibleTemplateArguments(const std::vector<std::string>& fromArgs, const std::vector<std::string>& toArgs)
+bool AreCompatibleTemplateArguments(std::span<const std::string> fromArgs, std::span<const std::string> toArgs)
 {
     if (fromArgs.size() != toArgs.size())
     {

@@ -36,10 +36,14 @@ std::vector<Symbol> FindPropertyAccessors(std::string_view typeName, std::string
 
     auto hierarchy = GetInheritedTypeHierarchy(typeName, symbolTable);
     ExpandMixinHostHierarchies(typeName, symbolTable, hierarchy);
-    for (const std::string_view prefix : {std::string_view("get_"), std::string_view("set_")})
+    char accBuf[128];
+    for (const std::string_view prefix : {utils::k_getterPrefix, utils::k_setterPrefix})
     {
-        std::string accessorName(prefix);
-        accessorName += propertyName;
+        const std::string_view accessorName = utils::ComposeAccessorName(prefix, propertyName, accBuf);
+        if (accessorName.empty())
+        {
+            continue;
+        }
         for (const auto& owner : hierarchy)
         {
             bool foundForOwner = false;

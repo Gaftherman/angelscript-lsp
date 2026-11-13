@@ -43,7 +43,7 @@ MixinInclusionMap BuildMixinInclusionMap(const SymbolTable& symbolTable)
 }
 
 ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>
-CollectCompatibleClasses(const std::vector<Symbol>& symGroup, const Symbol& sym, AccessModifier targetAccess,
+CollectCompatibleClasses(std::span<const Symbol> symGroup, const Symbol& sym, AccessModifier targetAccess,
                          const MixinClassContext& ctx)
 {
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> compatibleClasses;
@@ -52,7 +52,7 @@ CollectCompatibleClasses(const std::vector<Symbol>& symGroup, const Symbol& sym,
         if (IsSymbolInClassContainer(s, ctx.symbolTable))
         {
             compatibleClasses.insert(s.containerName);
-            compatibleClasses.insert(std::string(utils::LastScopeSegment(s.containerName)));
+            compatibleClasses.emplace(utils::LastScopeSegment(s.containerName));
             auto comp = GetCompatibleMemberClasses(s.containerName, sym.name, targetAccess, ctx.symbolTable);
             for (const auto& c : comp)
             {
@@ -94,12 +94,12 @@ std::vector<std::string> CollectClassIncludedMixins(const Symbol& classSym, cons
     std::vector<std::string> includedMixins = sig.includedMixins;
     for (const auto& b : sig.bases)
     {
-        std::string clean = CleanBaseType(b);
+        std::string_view clean = CleanBaseTypeView(b);
         if (!clean.empty() && IsMixinClass(clean, table))
         {
             if (std::find(includedMixins.begin(), includedMixins.end(), clean) == includedMixins.end())
             {
-                includedMixins.push_back(clean);
+                includedMixins.emplace_back(clean);
             }
         }
     }

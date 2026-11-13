@@ -21,17 +21,19 @@
 
 namespace angel_lsp::analysis
 {
-std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, uint32_t byteOffset,
+std::vector<Symbol> CollectConstructorCandidates(std::string_view baseName, uint32_t byteOffset,
                                                  std::string_view sourceCode, const SymbolTable& symbolTable,
                                                  const NodeIndex* nodeIndex)
 {
     std::vector<Symbol> candidateSymbols;
-    auto ctorSyms = symbolTable.FindMemberSymbols(baseName, LastScopeSegment(baseName));
-    for (const auto& s : ctorSyms)
+    if (const auto ctorSyms = symbolTable.FindMemberSymbolPtr(baseName, LastScopeSegment(baseName)))
     {
-        if (s.type == SymbolType::Function)
+        for (const auto& s : *ctorSyms)
         {
-            candidateSymbols.push_back(s);
+            if (s.type == SymbolType::Function)
+            {
+                candidateSymbols.push_back(s);
+            }
         }
     }
 
@@ -42,13 +44,16 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, ui
         {
             if (s.type == SymbolType::Class)
             {
-                std::string qName = s.qualifiedName.empty() ? s.name : s.qualifiedName;
-                auto qCtors = symbolTable.FindMemberSymbols(qName, s.name);
-                for (const auto& cs : qCtors)
+                const std::string_view qName =
+                    s.qualifiedName.empty() ? std::string_view(s.name) : std::string_view(s.qualifiedName);
+                if (const auto qCtors = symbolTable.FindMemberSymbolPtr(qName, s.name))
                 {
-                    if (cs.type == SymbolType::Function)
+                    for (const auto& cs : *qCtors)
                     {
-                        candidateSymbols.push_back(cs);
+                        if (cs.type == SymbolType::Function)
+                        {
+                            candidateSymbols.push_back(cs);
+                        }
                     }
                 }
             }
@@ -57,12 +62,14 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, ui
 
     if (candidateSymbols.empty())
     {
-        auto fnSyms = symbolTable.FindSymbols(baseName);
-        for (const auto& s : fnSyms)
+        if (const auto fnSyms = symbolTable.FindSymbolsPtr(baseName))
         {
-            if (s.type == SymbolType::Function)
+            for (const auto& s : *fnSyms)
             {
-                candidateSymbols.push_back(s);
+                if (s.type == SymbolType::Function)
+                {
+                    candidateSymbols.push_back(s);
+                }
             }
         }
     }
@@ -72,15 +79,15 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, ui
 
 // --- A lambda against the funcdef it is being handed to -------------------------------
 
-std::string LastSegmentOf(const std::string& name)
+std::string_view LastSegmentOf(std::string_view name) noexcept
 {
-    return std::string(utils::LastScopeSegment(name));
+    return utils::LastScopeSegment(name);
 }
 
 /**
  * @brief True for a name that denotes a typedef, whose alias no spelling can see through.
  */
-bool NamesATypedef(const std::string& name, const SymbolTable& table)
+bool NamesATypedef(std::string_view name, const SymbolTable& table)
 {
     const auto bucket = table.FindSymbolsPtr(name);
     if (!bucket)
@@ -97,7 +104,7 @@ bool NamesATypedef(const std::string& name, const SymbolTable& table)
     return false;
 }
 
-bool LambdaContradictsFuncdef(const std::vector<LambdaParameter>& lambdaParameters, const FuncdefSignature& funcdefSig,
+bool LambdaContradictsFuncdef(std::span<const LambdaParameter> lambdaParameters, const FuncdefSignature& funcdefSig,
                               const SymbolTable& table)
 {
     if (lambdaParameters.size() != funcdefSig.parameters.size())
@@ -125,7 +132,7 @@ bool LambdaContradictsFuncdef(const std::vector<LambdaParameter>& lambdaParamete
         // `A::Foo` against `B::Foo` case, which is a rejection this misses rather than a legal
         // program it reports.
         const std::string writtenBase(CanonicalizeType(LastSegmentOf(written.typeName)));
-        const std::string expectedBase(CanonicalizeType(LastSegmentOf(CleanBaseType(expected.typeName))));
+        const std::string expectedBase(CanonicalizeType(LastSegmentOf(CleanBaseTypeView(expected.typeName))));
 
         if (writtenBase.empty() || expectedBase.empty() || writtenBase == expectedBase)
         {
@@ -197,7 +204,7 @@ bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noe
     {
         return true;
     }
-    const std::string clean = CleanBaseType(typeName);
+    const std::string_view clean = CleanBaseTypeView(typeName);
     return !clean.empty() && FindFuncdefSymbol(clean, symbolTable).has_value();
 }
 
@@ -227,7 +234,7 @@ static bool MatchCandidateFuncdef(const SymbolTable& table, std::string_view nam
         {
             continue;
         }
-        auto funcdef = FindFuncdefSymbol(CleanBaseType(parameters[position].typeName), table);
+        auto funcdef = FindFuncdefSymbol(CleanBaseTypeView(parameters[position].typeName), table);
         if (!funcdef)
         {
             continue;
@@ -252,9 +259,9 @@ static bool MatchCandidateFuncdef(const SymbolTable& table, std::string_view nam
  */
 static std::optional<Symbol> FindAssignmentFuncdefTarget(std::string_view leftText, const SymbolTable& table)
 {
-    std::string varName = CleanBaseType(std::string(leftText));
+    std::string_view varName = CleanBaseTypeView(leftText);
     const size_t dot = varName.rfind('.');
-    if (dot != std::string::npos)
+    if (dot != std::string_view::npos)
     {
         varName = varName.substr(dot + 1);
     }
@@ -267,7 +274,7 @@ static std::optional<Symbol> FindAssignmentFuncdefTarget(std::string_view leftTe
     {
         if (s.type == SymbolType::Variable && std::holds_alternative<VariableSignature>(s.signature))
         {
-            if (auto funcdef = FindFuncdefSymbol(CleanBaseType(s.GetVariable().typeName), table))
+            if (auto funcdef = FindFuncdefSymbol(CleanBaseTypeView(s.GetVariable().typeName), table))
             {
                 return funcdef;
             }
@@ -339,7 +346,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, cons
     switch (target.kind)
     {
     case LambdaTargetKind::DeclaratorType:
-        return FindFuncdefSymbol(CleanBaseType(std::string(target.text)), table);
+        return FindFuncdefSymbol(CleanBaseTypeView(target.text), table);
     case LambdaTargetKind::AssignmentLeft:
         return FindAssignmentFuncdefTarget(target.text, table);
     case LambdaTargetKind::CallArgument:
@@ -348,7 +355,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, cons
         return std::nullopt;
     }
 
-    const std::string calleeName = CleanBaseType(utils::CleanCandidateIdentifier(target.text));
+    const std::string_view calleeName = CleanBaseTypeView(utils::CleanCandidateIdentifier(target.text));
     if (target.soleArgument)
     {
         if (auto asConversion = FindFuncdefSymbol(calleeName, table))
@@ -361,7 +368,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, cons
 }
 
 std::string DeduceLambdaParameterType(uint32_t paramLine, uint32_t paramCharacter,
-                                      const std::vector<LambdaSiteFact>& lambdas, const SymbolTable& table)
+                                      std::span<const LambdaSiteFact> lambdas, const SymbolTable& table)
 {
     for (const auto& lambda : lambdas)
     {
@@ -432,7 +439,7 @@ std::optional<Symbol> TryResolveCallableFuncdef(std::string_view name, const Sco
     {
         return std::nullopt;
     }
-    const std::string clean = CleanBaseType(def->typeName);
+    const std::string_view clean = CleanBaseTypeView(def->typeName);
     if (clean.empty())
     {
         return std::nullopt;
@@ -447,7 +454,8 @@ std::optional<Symbol> TryResolveCallableFuncdef(std::string_view name, const Sco
 
 static bool HasListConstructorParam(const ParameterInformation& p)
 {
-    const std::string norm = StripTypeDecorations(p.baseTypeName.empty() ? p.typeName : p.baseTypeName);
+    const std::string_view norm =
+        StripTypeDecorationsView(p.baseTypeName.empty() ? std::string_view(p.typeName) : std::string_view(p.baseTypeName));
     const bool isInt = (norm == "int" || norm == "uint" || norm == "int64" || norm == "uint64");
     return isInt && (p.isReference || p.modifier == ParameterModifier::In || p.modifier == ParameterModifier::InOut ||
                      p.isInOutRef || IsReferenceTypeView(p.typeName));
