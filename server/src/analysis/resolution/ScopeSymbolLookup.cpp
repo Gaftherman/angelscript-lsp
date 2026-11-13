@@ -510,7 +510,7 @@ std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRange
     }
     symbolTable.ForEachSymbolInFile(
         fileUri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
+        [&]([[maybe_unused]] std::string_view qualifiedName, const std::vector<analysis::Symbol>& sList)
         {
             for (const auto& s : sList)
             {
