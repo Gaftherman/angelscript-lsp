@@ -29,7 +29,7 @@ struct MemberCallResolutionRequest
  * @param[in] symbolTable Symbol table to query.
  * @param[in,out] candidates Accumulating candidate symbols.
  */
-void CollectMixinCallCandidates(std::string_view containerName, const std::string& funcName,
+void CollectMixinCallCandidates(std::string_view containerName, std::string_view funcName,
                                 const SymbolTable& symbolTable, std::vector<Symbol>& candidates);
 
 /**
@@ -40,8 +40,8 @@ void CollectMixinCallCandidates(std::string_view containerName, const std::strin
  * @param[in,out] cache Optional expression type cache.
  * @return Vector of candidate function symbols.
  */
-[[nodiscard]] std::vector<Symbol> CollectEnclosingCallCandidates(const std::vector<ContainerInfo>& containers,
-                                                                 const std::string& funcName,
+[[nodiscard]] std::vector<Symbol> CollectEnclosingCallCandidates(std::span<const ContainerInfo> containers,
+                                                                 std::string_view funcName,
                                                                  const SymbolTable& symbolTable,
                                                                  ExpressionTypeCache* cache);
 
@@ -52,7 +52,11 @@ void CollectMixinCallCandidates(std::string_view containerName, const std::strin
  * @param[in] symbolTable Symbol table to query.
  * @return Resolved return type, or empty string.
  */
-[[nodiscard]] std::string ResolveCallOverloadReturn(const std::vector<Symbol>& candidates,
+[[nodiscard]] std::string ResolveCallOverloadReturn(std::span<const Symbol> candidates,
+                                                    std::span<const std::string_view> argTypes,
+                                                    const SymbolTable& symbolTable);
+
+[[nodiscard]] std::string ResolveCallOverloadReturn(std::span<const Symbol> candidates,
                                                     const std::vector<std::string>& argTypes,
                                                     const SymbolTable& symbolTable);
 
@@ -63,7 +67,7 @@ void CollectMixinCallCandidates(std::string_view containerName, const std::strin
  * @param[in] symbolTable Symbol table to query.
  * @param[in,out] candidates Accumulating candidate symbols.
  */
-void CollectScopeAndGlobalFunctions(const std::string& funcName, const std::vector<Symbol>& inScopeSymbols,
+void CollectScopeAndGlobalFunctions(std::string_view funcName, std::span<const Symbol> inScopeSymbols,
                                     const SymbolTable& symbolTable, std::vector<Symbol>& candidates);
 
 /**
@@ -72,7 +76,7 @@ void CollectScopeAndGlobalFunctions(const std::string& funcName, const std::vect
  * @param[in] symbolTable Symbol table to query.
  * @return Matched type name, or empty string.
  */
-[[nodiscard]] std::string FindClassOrInterfaceName(const std::string& funcName, const SymbolTable& symbolTable);
+[[nodiscard]] std::string FindClassOrInterfaceName(std::string_view funcName, const SymbolTable& symbolTable);
 
 /**
  * @brief Resolves member method call return type.
@@ -81,6 +85,10 @@ void CollectScopeAndGlobalFunctions(const std::string& funcName, const std::vect
  * @param[in] symbolTable Symbol table to query.
  * @return Resolved return type, or empty string.
  */
+[[nodiscard]] std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req,
+                                                  std::span<const std::string_view> argTypes,
+                                                  const SymbolTable& symbolTable);
+
 [[nodiscard]] std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req,
                                                   const std::vector<std::string>& argTypes,
                                                   const SymbolTable& symbolTable);

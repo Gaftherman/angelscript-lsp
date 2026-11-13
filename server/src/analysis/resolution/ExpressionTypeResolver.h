@@ -86,10 +86,10 @@ struct MemberHierarchyQuery
 
 struct TernaryBranchTypes
 {
-    std::string t1;
-    std::string t2;
-    std::string c1;
-    std::string c2;
+    std::string_view t1;
+    std::string_view t2;
+    std::string_view c1;
+    std::string_view c2;
 };
 
 struct ActiveLocalDefKey

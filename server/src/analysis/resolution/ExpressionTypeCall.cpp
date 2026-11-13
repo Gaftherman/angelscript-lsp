@@ -18,7 +18,7 @@
 namespace angel_lsp::analysis
 {
 
-void CollectMixinCallCandidates(std::string_view containerName, const std::string& funcName,
+void CollectMixinCallCandidates(std::string_view containerName, std::string_view funcName,
                                 const SymbolTable& symbolTable, std::vector<Symbol>& candidates)
 {
     auto classSyms = symbolTable.FindSymbols(containerName);
@@ -38,8 +38,8 @@ void CollectMixinCallCandidates(std::string_view containerName, const std::strin
     }
 }
 
-std::vector<Symbol> CollectEnclosingCallCandidates(const std::vector<ContainerInfo>& containers,
-                                                   const std::string& funcName, const SymbolTable& symbolTable,
+std::vector<Symbol> CollectEnclosingCallCandidates(std::span<const ContainerInfo> containers,
+                                                   std::string_view funcName, const SymbolTable& symbolTable,
                                                    ExpressionTypeCache* cache)
 {
     std::vector<Symbol> candidates;
@@ -47,7 +47,8 @@ std::vector<Symbol> CollectEnclosingCallCandidates(const std::vector<ContainerIn
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
         {
-            std::string containerName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+            const std::string_view containerName =
+                c.qualifiedName.empty() ? std::string_view(c.name) : std::string_view(c.qualifiedName);
             auto hierarchy = GetInheritedTypeHierarchy(containerName, symbolTable, cache);
             for (const auto& cls : hierarchy)
             {
@@ -64,8 +65,8 @@ std::vector<Symbol> CollectEnclosingCallCandidates(const std::vector<ContainerIn
     return candidates;
 }
 
-std::string ResolveCallOverloadReturn(const std::vector<Symbol>& candidates, const std::vector<std::string>& argTypes,
-                                      const SymbolTable& symbolTable)
+std::string ResolveCallOverloadReturn(std::span<const Symbol> candidates,
+                                      std::span<const std::string_view> argTypes, const SymbolTable& symbolTable)
 {
     if (candidates.empty())
     {
@@ -92,7 +93,19 @@ std::string ResolveCallOverloadReturn(const std::vector<Symbol>& candidates, con
     return ret;
 }
 
-void CollectScopeAndGlobalFunctions(const std::string& funcName, const std::vector<Symbol>& inScopeSymbols,
+std::string ResolveCallOverloadReturn(std::span<const Symbol> candidates, const std::vector<std::string>& argTypes,
+                                      const SymbolTable& symbolTable)
+{
+    std::vector<std::string_view> views;
+    views.reserve(argTypes.size());
+    for (const auto& a : argTypes)
+    {
+        views.emplace_back(a);
+    }
+    return ResolveCallOverloadReturn(candidates, std::span<const std::string_view>(views), symbolTable);
+}
+
+void CollectScopeAndGlobalFunctions(std::string_view funcName, std::span<const Symbol> inScopeSymbols,
                                     const SymbolTable& symbolTable, std::vector<Symbol>& candidates)
 {
     for (const auto& sym : inScopeSymbols)
@@ -116,25 +129,25 @@ void CollectScopeAndGlobalFunctions(const std::string& funcName, const std::vect
     }
 }
 
-std::string FindClassOrInterfaceName(const std::string& funcName, const SymbolTable& symbolTable)
+std::string FindClassOrInterfaceName(std::string_view funcName, const SymbolTable& symbolTable)
 {
     const auto templatePos = funcName.find('<');
-    const std::string_view baseName = (templatePos != std::string::npos)
-                                          ? std::string_view(funcName).substr(0, templatePos)
-                                          : std::string_view(funcName);
+    const std::string_view baseName = (templatePos != std::string_view::npos)
+                                          ? funcName.substr(0, templatePos)
+                                          : funcName;
 
     auto globalFound = symbolTable.FindSymbols(baseName);
     for (const auto& sym : globalFound)
     {
         if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
         {
-            if (templatePos != std::string::npos)
+            if (templatePos != std::string_view::npos)
             {
                 if (!sym.containerName.empty() && !utils::ContainsScopeSeparator(funcName))
                 {
                     return utils::JoinScopedName(sym.containerName, funcName);
                 }
-                return funcName;
+                return std::string(funcName);
             }
             if (!sym.qualifiedName.empty())
             {
@@ -150,8 +163,8 @@ std::string FindClassOrInterfaceName(const std::string& funcName, const SymbolTa
     return "";
 }
 
-std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req, const std::vector<std::string>& argTypes,
-                                    const SymbolTable& symbolTable)
+std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req,
+                                    std::span<const std::string_view> argTypes, const SymbolTable& symbolTable)
 {
     std::string objType = CanonicalizeArrayType(std::string(req.objType), req.arrayTypeName);
     std::string ownerType = MemberOwnerType(objType, req.arrayTypeName);
@@ -164,8 +177,7 @@ std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req, cons
         ownerType = std::string(req.fallbackObjName);
     }
 
-    std::string memName(req.memName);
-    auto candidates = CollectMemberMethodCandidates(ownerType, memName, symbolTable);
+    auto candidates = CollectMemberMethodCandidates(ownerType, req.memName, symbolTable);
     if (!candidates.empty())
     {
         return ResolveCandidateMethodReturn(candidates, argTypes, objType, symbolTable);
@@ -175,9 +187,21 @@ std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req, cons
     return ResolveContainerMethodFallback(req.memName, templateInfo, objType, req.arrayTypeName);
 }
 
+std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req, const std::vector<std::string>& argTypes,
+                                    const SymbolTable& symbolTable)
+{
+    std::vector<std::string_view> views;
+    views.reserve(argTypes.size());
+    for (const auto& a : argTypes)
+    {
+        views.emplace_back(a);
+    }
+    return ResolveMemberCallReturn(req, std::span<const std::string_view>(views), symbolTable);
+}
+
 std::string ResolveCalleeFuncdefReturn(std::string_view calleeType, const SymbolTable& symbolTable)
 {
-    std::string cleanCallee = CleanBaseType(calleeType);
+    const std::string_view cleanCallee = CleanBaseTypeView(calleeType);
     if (!cleanCallee.empty())
     {
         if (auto funcdef = FindFuncdefSymbol(cleanCallee, symbolTable))
