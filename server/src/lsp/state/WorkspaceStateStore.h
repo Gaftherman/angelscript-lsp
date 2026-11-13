@@ -174,14 +174,14 @@ class WorkspaceStateStore
      * @param[in] words List of defined symbol words.
      * @return True if the aggregated set of defined words changed as a result.
      */
-    bool SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words);
+    bool SetDefinedWordsFrom(std::string_view source, std::vector<std::string> words);
 
     /**
      * @brief Computes list of documents affected by changes to the specified URI.
      * @param[in] changedUri Canonical URI of changed file.
      * @return Vector of URIs that depend on changedUri according to the include graph.
      */
-    [[nodiscard]] std::vector<std::string> GetAffectedDocuments(const std::string& changedUri) const;
+    [[nodiscard]] std::vector<std::string> GetAffectedDocuments(std::string_view changedUri) const;
 
     /**
      * @brief Computes the list of directories an #include directive is permitted to resolve into.
@@ -196,14 +196,14 @@ class WorkspaceStateStore
      * @param[in] uri Canonical URI.
      * @param[in] doc Shared pointer to Document snapshot.
      */
-    void SetPreindexedDocument(const std::string& uri, std::shared_ptr<const document::Document> doc);
+    void SetPreindexedDocument(std::string_view uri, std::shared_ptr<const document::Document> doc);
 
     /**
      * @brief Retrieves pre-indexed immutable Document snapshot for a URI, if available.
      * @param[in] uri Canonical URI.
      * @return Shared pointer to Document snapshot or nullptr.
      */
-    [[nodiscard]] std::shared_ptr<const document::Document> GetPreindexedDocument(const std::string& uri) const;
+    [[nodiscard]] std::shared_ptr<const document::Document> GetPreindexedDocument(std::string_view uri) const;
 
     /**
      * @brief Caches pre-indexed base SymbolTable for predefined symbols.
@@ -227,20 +227,20 @@ class WorkspaceStateStore
      * @param[in] moduleKey Key representing the module or module URI.
      * @param[in] baseTable Shared pointer to module SymbolTable.
      */
-    void SetModuleBaseTable(const std::string& moduleKey, std::shared_ptr<const analysis::SymbolTable> baseTable);
+    void SetModuleBaseTable(std::string_view moduleKey, std::shared_ptr<const analysis::SymbolTable> baseTable);
 
     /**
      * @brief Retrieves cached pre-indexed base SymbolTable for a module.
      * @param[in] moduleKey Key representing the module or module URI.
      * @return Shared pointer to module SymbolTable or nullptr.
      */
-    [[nodiscard]] std::shared_ptr<const analysis::SymbolTable> GetModuleBaseTable(const std::string& moduleKey) const;
+    [[nodiscard]] std::shared_ptr<const analysis::SymbolTable> GetModuleBaseTable(std::string_view moduleKey) const;
 
     /**
      * @brief Invalidates cached module base SymbolTables (or for a specific module).
      * @param[in] moduleKey Optional module key; clears all if empty.
      */
-    void InvalidateModuleBaseTable(const std::string& moduleKey = "");
+    void InvalidateModuleBaseTable(std::string_view moduleKey = "");
 
     /**
      * @brief Clears all document, include, module, and preprocessor state.
@@ -258,16 +258,21 @@ class WorkspaceStateStore
     std::string m_engineProfile;
 
     std::shared_ptr<const TransparentStringSet> m_definedWords;
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_definedWordsBySource;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        m_definedWordsBySource;
 
     mutable std::mutex m_preindexedMutex;
-    ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_preindexedDocuments;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>, TransparentStringHash,
+                                 std::equal_to<>>
+        m_preindexedDocuments;
 
     mutable std::mutex m_predefinedBaseMutex;
     std::shared_ptr<const analysis::SymbolTable> m_predefinedBaseTable;
 
     mutable std::mutex m_moduleBaseMutex;
-    ankerl::unordered_dense::map<std::string, std::shared_ptr<const analysis::SymbolTable>> m_moduleBaseTables;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<const analysis::SymbolTable>, TransparentStringHash,
+                                 std::equal_to<>>
+        m_moduleBaseTables;
 };
 
 } // namespace angel_lsp

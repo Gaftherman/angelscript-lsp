@@ -13,31 +13,31 @@ void ModuleIndex::UpdateFile(const UpdateFileRequest& request)
         request.filePath, request.content, request.searchDirectories, request.allowedRoots, request.implicitExtension});
 }
 
-void ModuleIndex::UpdateFile(const std::string& filePath, std::string_view content,
+void ModuleIndex::UpdateFile(std::string_view filePath, std::string_view content,
                              const std::vector<std::string>& searchDirectories)
 {
-    UpdateFile(UpdateFileRequest{filePath, content, searchDirectories, {}, {}});
+    UpdateFile(UpdateFileRequest{std::string(filePath), content, searchDirectories, {}, {}});
 }
 
-void ModuleIndex::RemoveFile(const std::string& filePath)
+void ModuleIndex::RemoveFile(std::string_view filePath)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_includeGraph.RemoveFile(filePath);
+    m_includeGraph.RemoveFile(std::string(filePath));
 }
 
-std::vector<std::string> ModuleIndex::GetModuleClosure(const std::string& filePath) const
+std::vector<std::string> ModuleIndex::GetModuleClosure(std::string_view filePath) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_includeGraph.GetModuleClosure(filePath);
+    return m_includeGraph.GetModuleClosure(std::string(filePath));
 }
 
-void ModuleIndex::AssociateClosure(const std::string& openUri, std::vector<std::string> closureUris)
+void ModuleIndex::AssociateClosure(std::string_view openUri, std::vector<std::string> closureUris)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_openDocumentClosures[openUri] = std::move(closureUris);
+    m_openDocumentClosures[std::string(openUri)] = std::move(closureUris);
 }
 
-std::vector<std::string> ModuleIndex::ReleaseClosure(const std::string& openUri)
+std::vector<std::string> ModuleIndex::ReleaseClosure(std::string_view openUri)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_openDocumentClosures.find(openUri);
@@ -72,19 +72,19 @@ std::vector<std::string> ModuleIndex::ReleaseClosure(const std::string& openUri)
     return unreferenced;
 }
 
-void ModuleIndex::SetClosureDocument(const std::string& uri, std::string content)
+void ModuleIndex::SetClosureDocument(std::string_view uri, std::string content)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_closureDocuments[uri] = std::move(content);
+    m_closureDocuments[std::string(uri)] = std::move(content);
 }
 
-bool ModuleIndex::HasClosureDocument(const std::string& uri) const
+bool ModuleIndex::HasClosureDocument(std::string_view uri) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_closureDocuments.contains(uri);
 }
 
-std::optional<std::string> ModuleIndex::GetClosureDocument(const std::string& uri) const
+std::optional<std::string> ModuleIndex::GetClosureDocument(std::string_view uri) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_closureDocuments.find(uri); it != m_closureDocuments.end())
@@ -94,19 +94,19 @@ std::optional<std::string> ModuleIndex::GetClosureDocument(const std::string& ur
     return std::nullopt;
 }
 
-void ModuleIndex::PurgeClosureDocument(const std::string& uri)
+void ModuleIndex::PurgeClosureDocument(std::string_view uri)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_closureDocuments.erase(uri);
 }
 
-void ModuleIndex::SetIndexedUri(const std::string& path, const std::string& uri)
+void ModuleIndex::SetIndexedUri(std::string_view path, std::string_view uri)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_indexedUriByPath[path] = uri;
+    m_indexedUriByPath[std::string(path)] = std::string(uri);
 }
 
-std::optional<std::string> ModuleIndex::GetIndexedUri(const std::string& path) const
+std::optional<std::string> ModuleIndex::GetIndexedUri(std::string_view path) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_indexedUriByPath.find(path); it != m_indexedUriByPath.end())
@@ -116,7 +116,7 @@ std::optional<std::string> ModuleIndex::GetIndexedUri(const std::string& path) c
     return std::nullopt;
 }
 
-void ModuleIndex::RemoveIndexedPath(const std::string& path)
+void ModuleIndex::RemoveIndexedPath(std::string_view path)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_indexedUriByPath.erase(path);

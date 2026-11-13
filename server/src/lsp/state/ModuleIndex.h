@@ -1,5 +1,6 @@
 #pragma once
 
+#include "utils/TransparentHash.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
@@ -88,65 +90,65 @@ class ModuleIndex
      * @param content File contents.
      * @param searchDirectories Search directories for includes.
      */
-    void UpdateFile(const std::string& filePath, std::string_view content,
+    void UpdateFile(std::string_view filePath, std::string_view content,
                     const std::vector<std::string>& searchDirectories);
 
     /**
      * @brief Removes a file from the include graph.
      */
-    void RemoveFile(const std::string& filePath);
+    void RemoveFile(std::string_view filePath);
 
     /**
      * @brief Computes transitive module closure of file paths for a root file.
      */
-    [[nodiscard]] std::vector<std::string> GetModuleClosure(const std::string& filePath) const;
+    [[nodiscard]] std::vector<std::string> GetModuleClosure(std::string_view filePath) const;
 
     /**
      * @brief Associates an open document with its required closure URIs.
      */
-    void AssociateClosure(const std::string& openUri, std::vector<std::string> closureUris);
+    void AssociateClosure(std::string_view openUri, std::vector<std::string> closureUris);
 
     /**
      * @brief Releases an open document's reference to its closure URIs.
      * @param openUri Canonical URI of open document closing.
      * @return Closure URIs that are no longer referenced by any open document.
      */
-    std::vector<std::string> ReleaseClosure(const std::string& openUri);
+    std::vector<std::string> ReleaseClosure(std::string_view openUri);
 
     /**
      * @brief Stores text for a closure document.
      */
-    void SetClosureDocument(const std::string& uri, std::string content);
+    void SetClosureDocument(std::string_view uri, std::string content);
 
     /**
      * @brief Checks if a closure document is currently cached.
      */
-    [[nodiscard]] bool HasClosureDocument(const std::string& uri) const;
+    [[nodiscard]] bool HasClosureDocument(std::string_view uri) const;
 
     /**
      * @brief Gets stored text for a closure document, if present.
      */
-    [[nodiscard]] std::optional<std::string> GetClosureDocument(const std::string& uri) const;
+    [[nodiscard]] std::optional<std::string> GetClosureDocument(std::string_view uri) const;
 
     /**
      * @brief Purges a closure document from cache.
      */
-    void PurgeClosureDocument(const std::string& uri);
+    void PurgeClosureDocument(std::string_view uri);
 
     /**
      * @brief Maps a canonical filesystem path to its indexed URI.
      */
-    void SetIndexedUri(const std::string& path, const std::string& uri);
+    void SetIndexedUri(std::string_view path, std::string_view uri);
 
     /**
      * @brief Looks up indexed URI for a canonical filesystem path.
      */
-    [[nodiscard]] std::optional<std::string> GetIndexedUri(const std::string& path) const;
+    [[nodiscard]] std::optional<std::string> GetIndexedUri(std::string_view path) const;
 
     /**
      * @brief Removes indexed path entry.
      */
-    void RemoveIndexedPath(const std::string& path);
+    void RemoveIndexedPath(std::string_view path);
 
     /**
      * @brief An exported symbol indexed across modules.
@@ -187,9 +189,10 @@ class ModuleIndex
   private:
     mutable std::mutex m_mutex;
     utils::WorkspaceIncludeGraph m_includeGraph;
-    ankerl::unordered_dense::map<std::string, std::string> m_closureDocuments;
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_openDocumentClosures;
-    ankerl::unordered_dense::map<std::string, std::string> m_indexedUriByPath;
+    ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, std::equal_to<>> m_closureDocuments;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        m_openDocumentClosures;
+    ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, std::equal_to<>> m_indexedUriByPath;
     std::vector<ExportedSymbol> m_exportedSymbols;
 };
 } // namespace angel_lsp

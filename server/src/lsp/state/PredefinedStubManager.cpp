@@ -9,29 +9,29 @@
 namespace angel_lsp
 {
 
-void PredefinedStubManager::RegisterStub(const std::string& path, const std::string& uri, std::string content)
+void PredefinedStubManager::RegisterStub(std::string_view path, std::string_view uri, std::string content)
 {
     const std::string canon = CanonicalizeStubPath(path);
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!path.empty())
     {
-        m_predefinedUriByPath[path] = uri;
+        m_predefinedUriByPath[std::string(path)] = std::string(uri);
     }
     if (!canon.empty())
     {
         m_loadedCanonicalPaths.insert(canon);
     }
-    m_predefinedUris.insert(uri);
-    m_predefinedDocuments[uri] = std::make_shared<std::string>(std::move(content));
+    m_predefinedUris.insert(std::string(uri));
+    m_predefinedDocuments[std::string(uri)] = std::make_shared<std::string>(std::move(content));
 }
 
-bool PredefinedStubManager::HasStub(const std::string& uri) const
+bool PredefinedStubManager::HasStub(std::string_view uri) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_predefinedUris.contains(uri);
 }
 
-std::optional<std::string> PredefinedStubManager::GetDocumentText(const std::string& uri) const
+std::optional<std::string> PredefinedStubManager::GetDocumentText(std::string_view uri) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_predefinedDocuments.find(uri); it != m_predefinedDocuments.end() && it->second)
@@ -41,21 +41,21 @@ std::optional<std::string> PredefinedStubManager::GetDocumentText(const std::str
     return std::nullopt;
 }
 
-void PredefinedStubManager::SetDocumentText(const std::string& uri, std::string content)
+void PredefinedStubManager::SetDocumentText(std::string_view uri, std::string content)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_predefinedDocuments[uri] = std::make_shared<std::string>(std::move(content));
-    m_predefinedUris.insert(uri);
+    m_predefinedDocuments[std::string(uri)] = std::make_shared<std::string>(std::move(content));
+    m_predefinedUris.insert(std::string(uri));
 }
 
-void PredefinedStubManager::SetPreindexedDocument(const std::string& uri, std::shared_ptr<const document::Document> doc)
+void PredefinedStubManager::SetPreindexedDocument(std::string_view uri, std::shared_ptr<const document::Document> doc)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_preindexedSnapshots[uri] = std::move(doc);
-    m_predefinedUris.insert(uri);
+    m_preindexedSnapshots[std::string(uri)] = std::move(doc);
+    m_predefinedUris.insert(std::string(uri));
 }
 
-std::shared_ptr<const document::Document> PredefinedStubManager::GetPreindexedDocument(const std::string& uri) const
+std::shared_ptr<const document::Document> PredefinedStubManager::GetPreindexedDocument(std::string_view uri) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_preindexedSnapshots.find(uri); it != m_preindexedSnapshots.end())
@@ -65,7 +65,7 @@ std::shared_ptr<const document::Document> PredefinedStubManager::GetPreindexedDo
     return nullptr;
 }
 
-std::optional<std::string> PredefinedStubManager::GetUriByPath(const std::string& path) const
+std::optional<std::string> PredefinedStubManager::GetUriByPath(std::string_view path) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_predefinedUriByPath.find(path); it != m_predefinedUriByPath.end())
@@ -83,13 +83,13 @@ std::optional<std::string> PredefinedStubManager::GetUriByPath(const std::string
     return std::nullopt;
 }
 
-void PredefinedStubManager::SetUriForPath(const std::string& path, const std::string& uri)
+void PredefinedStubManager::SetUriForPath(std::string_view path, std::string_view uri)
 {
     const std::string canon = CanonicalizeStubPath(path);
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!path.empty())
     {
-        m_predefinedUriByPath[path] = uri;
+        m_predefinedUriByPath[std::string(path)] = std::string(uri);
     }
     if (!canon.empty())
     {
@@ -97,7 +97,7 @@ void PredefinedStubManager::SetUriForPath(const std::string& path, const std::st
     }
 }
 
-void PredefinedStubManager::RemoveStub(const std::string& uri)
+void PredefinedStubManager::RemoveStub(std::string_view uri)
 {
     UnloadUri(uri, nullptr);
 }
@@ -126,7 +126,7 @@ std::vector<std::string> PredefinedStubManager::GetLoadedUris() const
     return uris;
 }
 
-bool PredefinedStubManager::Contributes(const std::string& uri, const std::string& activeStub) const
+bool PredefinedStubManager::Contributes(std::string_view uri, std::string_view activeStub) const
 {
     if (activeStub.empty())
     {
@@ -139,7 +139,7 @@ bool PredefinedStubManager::Contributes(const std::string& uri, const std::strin
         return true;
     }
 
-    return uri.find(activeStub) != std::string::npos;
+    return uri.find(activeStub) != std::string_view::npos;
 }
 
 void PredefinedStubManager::Clear()
@@ -153,7 +153,7 @@ void PredefinedStubManager::Clear()
     m_preindexedSnapshots.clear();
 }
 
-std::shared_ptr<const std::string> PredefinedStubManager::GetDocumentTextShared(const std::string& uri) const
+std::shared_ptr<const std::string> PredefinedStubManager::GetDocumentTextShared(std::string_view uri) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_predefinedDocuments.find(uri); it != m_predefinedDocuments.end())

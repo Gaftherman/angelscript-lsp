@@ -67,7 +67,7 @@ std::shared_ptr<const TransparentStringSet> WorkspaceStateStore::GetDefinedWords
     return m_definedWords;
 }
 
-bool WorkspaceStateStore::SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words)
+bool WorkspaceStateStore::SetDefinedWordsFrom(std::string_view source, std::vector<std::string> words)
 {
     auto merged = std::make_shared<TransparentStringSet>();
 
@@ -78,7 +78,7 @@ bool WorkspaceStateStore::SetDefinedWordsFrom(const std::string& source, std::ve
     }
     else
     {
-        m_definedWordsBySource[source] = std::move(words);
+        m_definedWordsBySource[std::string(source)] = std::move(words);
     }
 
     for (const auto& [_, contributed] : m_definedWordsBySource)
@@ -98,7 +98,7 @@ bool WorkspaceStateStore::SetDefinedWordsFrom(const std::string& source, std::ve
     return true;
 }
 
-std::vector<std::string> WorkspaceStateStore::GetAffectedDocuments(const std::string& changedUri) const
+std::vector<std::string> WorkspaceStateStore::GetAffectedDocuments(std::string_view changedUri) const
 {
     const std::string changedPath = utils::UriToPath(changedUri);
     if (changedPath.empty())
@@ -153,13 +153,13 @@ WorkspaceStateStore::PermittedIncludeDirectories(const std::vector<std::string>&
     return roots;
 }
 
-void WorkspaceStateStore::SetPreindexedDocument(const std::string& uri, std::shared_ptr<const document::Document> doc)
+void WorkspaceStateStore::SetPreindexedDocument(std::string_view uri, std::shared_ptr<const document::Document> doc)
 {
     std::lock_guard<std::mutex> lock(m_preindexedMutex);
-    m_preindexedDocuments[uri] = std::move(doc);
+    m_preindexedDocuments[std::string(uri)] = std::move(doc);
 }
 
-std::shared_ptr<const document::Document> WorkspaceStateStore::GetPreindexedDocument(const std::string& uri) const
+std::shared_ptr<const document::Document> WorkspaceStateStore::GetPreindexedDocument(std::string_view uri) const
 {
     std::lock_guard<std::mutex> lock(m_preindexedMutex);
     if (auto it = m_preindexedDocuments.find(uri); it != m_preindexedDocuments.end())
@@ -187,21 +187,21 @@ void WorkspaceStateStore::InvalidatePredefinedBaseTable()
     m_predefinedBaseTable.reset();
 }
 
-void WorkspaceStateStore::SetModuleBaseTable(const std::string& moduleKey,
+void WorkspaceStateStore::SetModuleBaseTable(std::string_view moduleKey,
                                              std::shared_ptr<const analysis::SymbolTable> baseTable)
 {
     std::lock_guard<std::mutex> lock(m_moduleBaseMutex);
-    m_moduleBaseTables[moduleKey] = std::move(baseTable);
+    m_moduleBaseTables[std::string(moduleKey)] = std::move(baseTable);
 }
 
-std::shared_ptr<const analysis::SymbolTable> WorkspaceStateStore::GetModuleBaseTable(const std::string& moduleKey) const
+std::shared_ptr<const analysis::SymbolTable> WorkspaceStateStore::GetModuleBaseTable(std::string_view moduleKey) const
 {
     std::lock_guard<std::mutex> lock(m_moduleBaseMutex);
     auto it = m_moduleBaseTables.find(moduleKey);
     return it != m_moduleBaseTables.end() ? it->second : nullptr;
 }
 
-void WorkspaceStateStore::InvalidateModuleBaseTable(const std::string& moduleKey)
+void WorkspaceStateStore::InvalidateModuleBaseTable(std::string_view moduleKey)
 {
     std::lock_guard<std::mutex> lock(m_moduleBaseMutex);
     if (moduleKey.empty())

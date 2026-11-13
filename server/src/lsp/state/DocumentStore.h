@@ -2,6 +2,7 @@
 
 #include "document/Document.h"
 #include "parser/SyntaxTree.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
 #include <memory>
@@ -9,6 +10,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
@@ -60,7 +62,7 @@ class DocumentStore
      * @param version Document version.
      * @param tree Parsed syntax tree (transfers ownership).
      */
-    void OpenDocument(const std::string& uri, std::string text, int version, parser::TreePtr tree);
+    void OpenDocument(std::string_view uri, std::string text, int version, parser::TreePtr tree);
 
     /**
      * @brief Links an existing immutable Document snapshot into the open document store.
@@ -68,8 +70,8 @@ class DocumentStore
      * @param document Shared pointer to immutable Document snapshot.
      * @param clientUri Optional client URI spelling.
      */
-    void LinkDocument(const std::string& uri, std::shared_ptr<const document::Document> document,
-                      const std::string& clientUri = "", int version = 0);
+    void LinkDocument(std::string_view uri, std::shared_ptr<const document::Document> document,
+                      std::string_view clientUri = "", int version = 0);
 
     /**
      * @brief Updates text, version, and syntax tree of an existing open document.
@@ -78,76 +80,76 @@ class DocumentStore
      * @param version New document version.
      * @param tree Newly parsed syntax tree.
      */
-    void UpdateDocument(const std::string& uri, std::string text, int version, parser::TreePtr tree,
+    void UpdateDocument(std::string_view uri, std::string text, int version, parser::TreePtr tree,
                         std::shared_ptr<const std::string> transformedSource = {});
 
     /**
      * @brief Removes a document when closed.
      * @param uri Canonical URI key.
      */
-    void CloseDocument(const std::string& uri);
+    void CloseDocument(std::string_view uri);
 
     /**
      * @brief Checks if document is currently open. Thread-safe.
      * @param uri Canonical URI key.
      * @return True if document is tracked as open.
      */
-    [[nodiscard]] bool IsOpen(const std::string& uri) const;
+    [[nodiscard]] bool IsOpen(std::string_view uri) const;
 
     /**
      * @brief Gets a copy of document source text, or nullopt if not open. Thread-safe.
      * @param uri Canonical URI key.
      * @return Optional string containing document text.
      */
-    [[nodiscard]] std::optional<std::string> GetText(const std::string& uri) const;
+    [[nodiscard]] std::optional<std::string> GetText(std::string_view uri) const;
 
     /**
      * @brief Gets document version, or -1 if not tracked. Thread-safe.
      * @param uri Canonical URI key.
      * @return Document version number or -1.
      */
-    [[nodiscard]] int GetVersion(const std::string& uri) const;
+    [[nodiscard]] int GetVersion(std::string_view uri) const;
 
     /**
      * @brief Sets document version. Thread-safe.
      * @param uri Canonical URI key.
      * @param version Document version number.
      */
-    void SetVersion(const std::string& uri, int version);
+    void SetVersion(std::string_view uri, int version);
 
     /**
      * @brief Returns a thread-local copy of the document's syntax tree via ts_tree_copy(). Thread-safe.
      * @param uri Canonical URI key.
      * @return Managed TreePtr owning the copied tree, or nullptr.
      */
-    [[nodiscard]] parser::TreePtr GetTree(const std::string& uri) const;
+    [[nodiscard]] parser::TreePtr GetTree(std::string_view uri) const;
 
     /**
      * @brief Sets or replaces the syntax tree for a document. Thread-safe.
      * @param uri Canonical URI key.
      * @param tree Managed TreePtr.
      */
-    void SetTree(const std::string& uri, parser::TreePtr tree);
+    void SetTree(std::string_view uri, parser::TreePtr tree);
 
     /**
      * @brief Gets the client URI spelling for a canonical URI key. Thread-safe.
      * @param uri Canonical URI key.
      * @return Client URI string, or uri if not recorded.
      */
-    [[nodiscard]] std::string GetClientUri(const std::string& uri) const;
+    [[nodiscard]] std::string GetClientUri(std::string_view uri) const;
 
     /**
      * @brief Sets the client URI spelling. Thread-safe.
      * @param uri Canonical URI key.
      * @param clientUri Client URI string.
      */
-    void SetClientUri(const std::string& uri, const std::string& clientUri);
+    void SetClientUri(std::string_view uri, std::string_view clientUri);
 
     /**
      * @brief Removes the client URI spelling. Thread-safe.
      * @param uri Canonical URI key.
      */
-    void RemoveClientUri(const std::string& uri);
+    void RemoveClientUri(std::string_view uri);
 
     /**
      * @brief Returns a thread-safe snapshot of all open document URIs and texts.
@@ -171,7 +173,7 @@ class DocumentStore
      * @param uri Canonical URI key.
      * @return Monotonic generation counter.
      */
-    [[nodiscard]] uint64_t GetGeneration(const std::string& uri) const;
+    [[nodiscard]] uint64_t GetGeneration(std::string_view uri) const;
 
     /**
      * @brief Verifies whether a work item matches the active open document state.
@@ -180,21 +182,21 @@ class DocumentStore
      * @param version Document version at time of scheduling.
      * @return True if document is open with identical generation and version >= current version.
      */
-    [[nodiscard]] bool IsCurrent(const std::string& uri, uint64_t generation, int version) const;
+    [[nodiscard]] bool IsCurrent(std::string_view uri, uint64_t generation, int version) const;
 
     /**
      * @brief Returns a shared pointer snapshot of the document, or nullptr if not open. Thread-safe.
      * @param uri Canonical URI key.
      * @return Shared pointer to Document or nullptr.
      */
-    [[nodiscard]] std::shared_ptr<const document::Document> GetDocument(const std::string& uri) const;
+    [[nodiscard]] std::shared_ptr<const document::Document> GetDocument(std::string_view uri) const;
 
     /**
      * @brief Returns a shared pointer handle to the document text, preserving lifetime. Thread-safe.
      * @param uri Canonical URI key.
      * @return Shared pointer to const document text or nullptr.
      */
-    [[nodiscard]] std::shared_ptr<const std::string> GetTextShared(const std::string& uri) const;
+    [[nodiscard]] std::shared_ptr<const std::string> GetTextShared(std::string_view uri) const;
 
     /**
      * @brief Returns thread-safe snapshot list of all open documents as immutable handles.
@@ -213,7 +215,7 @@ class DocumentStore
      * @param[in] uri Document URI.
      * @return Shared pointer to const Document.
      */
-    [[nodiscard]] std::shared_ptr<const document::Document> getDocument(const std::string& uri) const
+    [[nodiscard]] std::shared_ptr<const document::Document> getDocument(std::string_view uri) const
     {
         return GetDocument(uri);
     }
@@ -225,7 +227,7 @@ class DocumentStore
      * @param[in] version Document version.
      * @param[in] tree Parsed AST handle.
      */
-    void putDocument(const std::string& uri, std::string text, int version, parser::TreePtr tree)
+    void putDocument(std::string_view uri, std::string text, int version, parser::TreePtr tree)
     {
         OpenDocument(uri, std::move(text), version, std::move(tree));
     }
@@ -234,7 +236,7 @@ class DocumentStore
      * @brief Concurrency helper to remove a document from store under unique lock.
      * @param[in] uri Document URI.
      */
-    void removeDocument(const std::string& uri)
+    void removeDocument(std::string_view uri)
     {
         CloseDocument(uri);
     }
@@ -242,7 +244,9 @@ class DocumentStore
   private:
     mutable std::shared_mutex m_mutex;
     uint64_t m_nextGeneration = 1;
-    ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_documents;
-    ankerl::unordered_dense::map<std::string, std::string> m_clientUriByKey;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>, TransparentStringHash,
+                                 std::equal_to<>>
+        m_documents;
+    ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, std::equal_to<>> m_clientUriByKey;
 };
 } // namespace angel_lsp

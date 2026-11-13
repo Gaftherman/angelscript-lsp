@@ -1,12 +1,14 @@
 #pragma once
 
 #include "document/Document.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp
@@ -38,62 +40,62 @@ class PredefinedStubManager
      * @param uri URI under which stub is indexed.
      * @param content Stub source text.
      */
-    void RegisterStub(const std::string& path, const std::string& uri, std::string content);
+    void RegisterStub(std::string_view path, std::string_view uri, std::string content);
 
     /**
      * @brief Checks if a stub URI is registered.
      * @param uri Stub URI.
      * @return True if registered.
      */
-    [[nodiscard]] bool HasStub(const std::string& uri) const;
+    [[nodiscard]] bool HasStub(std::string_view uri) const;
 
     /**
      * @brief Gets source text for a predefined stub URI, if loaded.
      * @param uri Stub URI.
      * @return Optional string containing stub source content.
      */
-    [[nodiscard]] std::optional<std::string> GetDocumentText(const std::string& uri) const;
+    [[nodiscard]] std::optional<std::string> GetDocumentText(std::string_view uri) const;
 
     /**
      * @brief Updates source content of an existing predefined stub.
      * @param uri Stub URI.
      * @param content New stub source text.
      */
-    void SetDocumentText(const std::string& uri, std::string content);
+    void SetDocumentText(std::string_view uri, std::string content);
 
     /**
      * @brief Caches pre-indexed immutable Document snapshot for a predefined stub URI.
      * @param uri Stub URI.
      * @param doc Shared pointer to Document snapshot.
      */
-    void SetPreindexedDocument(const std::string& uri, std::shared_ptr<const document::Document> doc);
+    void SetPreindexedDocument(std::string_view uri, std::shared_ptr<const document::Document> doc);
 
     /**
      * @brief Gets pre-indexed immutable Document snapshot for a predefined stub URI, if available.
      * @param uri Stub URI.
      * @return Shared pointer to Document snapshot or nullptr.
      */
-    [[nodiscard]] std::shared_ptr<const document::Document> GetPreindexedDocument(const std::string& uri) const;
+    [[nodiscard]] std::shared_ptr<const document::Document> GetPreindexedDocument(std::string_view uri) const;
 
     /**
      * @brief Looks up indexed URI for a given filesystem path.
      * @param path Canonical filesystem path.
      * @return Optional URI string.
      */
-    [[nodiscard]] std::optional<std::string> GetUriByPath(const std::string& path) const;
+    [[nodiscard]] std::optional<std::string> GetUriByPath(std::string_view path) const;
 
     /**
      * @brief Associates a filesystem path with an indexed URI.
      * @param path Canonical filesystem path.
      * @param uri Indexed URI.
      */
-    void SetUriForPath(const std::string& path, const std::string& uri);
+    void SetUriForPath(std::string_view path, std::string_view uri);
 
     /**
      * @brief Removes a predefined stub by URI.
      * @param uri Stub URI to remove.
      */
-    void RemoveStub(const std::string& uri);
+    void RemoveStub(std::string_view uri);
 
     /**
      * @brief Returns list of all registered stub URIs.
@@ -107,7 +109,7 @@ class PredefinedStubManager
      * @param activeStub Optional active stub path filter (empty means all contribute).
      * @return True if the stub should be loaded and contribute symbols.
      */
-    [[nodiscard]] bool Contributes(const std::string& uri, const std::string& activeStub = "") const;
+    [[nodiscard]] bool Contributes(std::string_view uri, std::string_view activeStub = "") const;
 
     /**
      * @brief Claims or re-indexes a predefined stub by URI and filesystem path.
@@ -117,7 +119,7 @@ class PredefinedStubManager
      * @param outPreviousUri Optional out-parameter receiving previously claimed URI if replaced.
      * @return True if claimed/reloaded.
      */
-    bool ClaimFile(const std::string& uri, const std::string& path, bool forceReload = false,
+    bool ClaimFile(std::string_view uri, std::string_view path, bool forceReload = false,
                    std::string* outPreviousUri = nullptr);
 
     /**
@@ -126,7 +128,7 @@ class PredefinedStubManager
      * @param outPath Optional out-parameter receiving filesystem path.
      * @return True if stub was unloaded.
      */
-    bool UnloadUri(const std::string& uri, std::string* outPath = nullptr);
+    bool UnloadUri(std::string_view uri, std::string* outPath = nullptr);
 
     /**
      * @brief Returns snapshot of all registered filesystem paths and their indexed URIs.
@@ -139,28 +141,28 @@ class PredefinedStubManager
      * @param uri Stub URI.
      * @return Shared pointer to text string or nullptr if not registered.
      */
-    [[nodiscard]] std::shared_ptr<const std::string> GetDocumentTextShared(const std::string& uri) const;
+    [[nodiscard]] std::shared_ptr<const std::string> GetDocumentTextShared(std::string_view uri) const;
 
     /**
      * @brief Computes weakly canonical and normalized path for predefined stubs.
      * @param path Filesystem path.
      * @return Canonical normalized path string, or empty if input is empty.
      */
-    [[nodiscard]] static std::string CanonicalizeStubPath(const std::string& path);
+    [[nodiscard]] static std::string CanonicalizeStubPath(std::string_view path);
 
     /**
      * @brief Checks if a canonical stub path has already been indexed.
      * @param path Filesystem path (relative or absolute).
      * @return True if already loaded.
      */
-    [[nodiscard]] bool IsCanonicalPathLoaded(const std::string& path) const;
+    [[nodiscard]] bool IsCanonicalPathLoaded(std::string_view path) const;
 
     /**
      * @brief Marks a canonical stub path as loaded.
      * @param path Filesystem path (relative or absolute).
      * @return True if newly marked, false if already marked.
      */
-    bool MarkCanonicalPathLoaded(const std::string& path);
+    bool MarkCanonicalPathLoaded(std::string_view path);
 
     struct StubFingerprint
     {
@@ -175,7 +177,7 @@ class PredefinedStubManager
      * @param definesHash Active preprocessor defines hash.
      * @return True if hashes match.
      */
-    [[nodiscard]] bool HasMatchingFingerprint(const std::string& path, uint64_t contentHash,
+    [[nodiscard]] bool HasMatchingFingerprint(std::string_view path, uint64_t contentHash,
                                               uint64_t definesHash) const;
 
     /**
@@ -184,7 +186,7 @@ class PredefinedStubManager
      * @param contentHash Content hash.
      * @param definesHash Active preprocessor defines hash.
      */
-    void RecordFingerprint(const std::string& path, uint64_t contentHash, uint64_t definesHash);
+    void RecordFingerprint(std::string_view path, uint64_t contentHash, uint64_t definesHash);
 
     /**
      * @brief Clears all registered stubs and path mappings.
@@ -198,11 +200,14 @@ class PredefinedStubManager
 
   private:
     mutable std::mutex m_mutex;
-    ankerl::unordered_dense::set<std::string> m_predefinedUris;
-    ankerl::unordered_dense::map<std::string, std::string> m_predefinedUriByPath;
-    ankerl::unordered_dense::set<std::string> m_loadedCanonicalPaths;
-    ankerl::unordered_dense::map<std::string, StubFingerprint> m_fingerprints;
-    ankerl::unordered_dense::map<std::string, std::shared_ptr<std::string>> m_predefinedDocuments;
-    ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_preindexedSnapshots;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> m_predefinedUris;
+    ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, std::equal_to<>> m_predefinedUriByPath;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> m_loadedCanonicalPaths;
+    ankerl::unordered_dense::map<std::string, StubFingerprint, TransparentStringHash, std::equal_to<>> m_fingerprints;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<std::string>, TransparentStringHash, std::equal_to<>>
+        m_predefinedDocuments;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>, TransparentStringHash,
+                                 std::equal_to<>>
+        m_preindexedSnapshots;
 };
 } // namespace angel_lsp

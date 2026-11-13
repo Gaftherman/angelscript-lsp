@@ -6,11 +6,12 @@
 #include <filesystem>
 #include <mutex>
 #include <string>
+#include <string_view>
 
 namespace angel_lsp
 {
 
-std::string PredefinedStubManager::CanonicalizeStubPath(const std::string& path)
+std::string PredefinedStubManager::CanonicalizeStubPath(std::string_view path)
 {
     if (path.empty())
     {
@@ -42,7 +43,7 @@ std::string PredefinedStubManager::CanonicalizeStubPath(const std::string& path)
     return angel_lsp::utils::IncludeResolver::NormalizePath(ec ? p.lexically_normal() : canon);
 }
 
-bool PredefinedStubManager::IsCanonicalPathLoaded(const std::string& path) const
+bool PredefinedStubManager::IsCanonicalPathLoaded(std::string_view path) const
 {
     const std::string canon = CanonicalizeStubPath(path);
     if (canon.empty())
@@ -53,7 +54,7 @@ bool PredefinedStubManager::IsCanonicalPathLoaded(const std::string& path) const
     return m_loadedCanonicalPaths.contains(canon);
 }
 
-bool PredefinedStubManager::MarkCanonicalPathLoaded(const std::string& path)
+bool PredefinedStubManager::MarkCanonicalPathLoaded(std::string_view path)
 {
     const std::string canon = CanonicalizeStubPath(path);
     if (canon.empty())
@@ -64,7 +65,7 @@ bool PredefinedStubManager::MarkCanonicalPathLoaded(const std::string& path)
     return m_loadedCanonicalPaths.insert(canon).second;
 }
 
-bool PredefinedStubManager::HasMatchingFingerprint(const std::string& path, uint64_t contentHash,
+bool PredefinedStubManager::HasMatchingFingerprint(std::string_view path, uint64_t contentHash,
                                                    uint64_t definesHash) const
 {
     const std::string canon = CanonicalizeStubPath(path);
@@ -81,7 +82,7 @@ bool PredefinedStubManager::HasMatchingFingerprint(const std::string& path, uint
     return it->second.contentHash == contentHash && it->second.definesHash == definesHash;
 }
 
-void PredefinedStubManager::RecordFingerprint(const std::string& path, uint64_t contentHash, uint64_t definesHash)
+void PredefinedStubManager::RecordFingerprint(std::string_view path, uint64_t contentHash, uint64_t definesHash)
 {
     const std::string canon = CanonicalizeStubPath(path);
     if (canon.empty())
@@ -92,13 +93,13 @@ void PredefinedStubManager::RecordFingerprint(const std::string& path, uint64_t 
     m_fingerprints[canon] = StubFingerprint{contentHash, definesHash};
 }
 
-bool PredefinedStubManager::ClaimFile(const std::string& uri, const std::string& path, bool forceReload,
+bool PredefinedStubManager::ClaimFile(std::string_view uri, std::string_view path, bool forceReload,
                                       std::string* outPreviousUri)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (path.empty())
     {
-        return m_predefinedUris.insert(uri).second || forceReload;
+        return m_predefinedUris.insert(std::string(uri)).second || forceReload;
     }
 
     if (const auto owner = m_predefinedUriByPath.find(path); owner != m_predefinedUriByPath.end())
@@ -118,17 +119,17 @@ bool PredefinedStubManager::ClaimFile(const std::string& uri, const std::string&
         m_preindexedSnapshots.erase(previous);
     }
 
-    m_predefinedUriByPath[path] = uri;
+    m_predefinedUriByPath[std::string(path)] = std::string(uri);
     const std::string canon = CanonicalizeStubPath(path);
     if (!canon.empty())
     {
         m_loadedCanonicalPaths.insert(canon);
     }
-    m_predefinedUris.insert(uri);
+    m_predefinedUris.insert(std::string(uri));
     return true;
 }
 
-bool PredefinedStubManager::UnloadUri(const std::string& uri, std::string* outPath)
+bool PredefinedStubManager::UnloadUri(std::string_view uri, std::string* outPath)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_predefinedUris.contains(uri))
