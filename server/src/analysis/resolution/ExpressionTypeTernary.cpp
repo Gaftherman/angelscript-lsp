@@ -21,7 +21,7 @@ static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, cons
     {
         if (CanonicalizeType(CleanBaseType(b)) == types.c2)
         {
-            return types.t2;
+            return std::string(types.t2);
         }
     }
     auto h2 = GetInheritedTypeHierarchy(types.c2, symbolTable);
@@ -29,21 +29,21 @@ static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, cons
     {
         if (CanonicalizeType(CleanBaseType(b)) == types.c1)
         {
-            return types.t1;
+            return std::string(types.t1);
         }
     }
     if (HasConversionMethod(types.c1, types.c2, symbolTable))
     {
-        return types.t2;
+        return std::string(types.t2);
     }
     if (HasConversionMethod(types.c2, types.c1, symbolTable))
     {
-        return types.t1;
+        return std::string(types.t1);
     }
     return "";
 }
 
-static std::string ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)
+static std::string ResolveTernaryNumericPromotion(std::string_view c1, std::string_view c2)
 {
     if (c1 == "double" || c2 == "double")
         return "double";
@@ -58,26 +58,26 @@ static std::string ResolveTernaryNumericPromotion(const std::string& c1, const s
     return "int";
 }
 
-static std::string ResolveTernaryEnumPromotion(const std::string& c1, const std::string& c2,
+static std::string ResolveTernaryEnumPromotion(std::string_view c1, std::string_view c2,
                                                const SymbolTable& symbolTable)
 {
     if (ResolvesToEnum(c1, symbolTable) && IsIntegerPrimitive(c2))
-        return c2;
+        return std::string(c2);
     if (ResolvesToEnum(c2, symbolTable) && IsIntegerPrimitive(c1))
-        return c1;
+        return std::string(c1);
     return "";
 }
 
-static std::string ResolveTernaryNullBranch(const std::string& t1, const std::string& t2, const std::string& c1,
-                                            const std::string& c2)
+static std::string ResolveTernaryNullBranch(std::string_view t1, std::string_view t2, std::string_view c1,
+                                            std::string_view c2)
 {
     if (c1 == "null" && IsHandleTypeView(t2))
     {
-        return t2;
+        return std::string(t2);
     }
     if (c2 == "null" && IsHandleTypeView(t1))
     {
-        return t1;
+        return std::string(t1);
     }
     return (c1 == "null" && c2 == "null") ? "null" : "";
 }
@@ -109,7 +109,7 @@ std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_view t2, 
     {
         return enumRes;
     }
-    return ResolveTernaryHierarchy(TernaryBranchTypes{std::string(t1), std::string(t2), c1, c2}, symbolTable);
+    return ResolveTernaryHierarchy(TernaryBranchTypes{t1, t2, c1, c2}, symbolTable);
 }
 
 } // namespace angel_lsp::analysis
