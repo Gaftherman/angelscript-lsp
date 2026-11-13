@@ -32,8 +32,7 @@ static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::Rule
     {
         return false;
     }
-    const std::string shortName = std::string(LastScopeSegment(clean));
-    auto it = index->qualifiedTypesByShortName.find(shortName);
+    auto it = index->qualifiedTypesByShortName.find(LastScopeSegment(clean));
     if (it == index->qualifiedTypesByShortName.end())
     {
         return false;
@@ -185,8 +184,8 @@ bool ResolvesToEnum(std::string_view typeName, const SymbolTable& table)
     {
         return false;
     }
-    std::string bare = std::string(LastScopeSegment(typeName));
-    for (const auto& candidate : {std::string(typeName), bare})
+    const std::string_view bare = LastScopeSegment(typeName);
+    for (const std::string_view candidate : {typeName, bare})
     {
         const auto bucket = table.FindSymbolsPtr(candidate);
         if (bucket)
@@ -468,7 +467,7 @@ std::vector<Symbol> FindSymbolsInScope(std::string_view name, uint32_t byteOffse
     {
         containers = GetEnclosingContainers(IndexedByteRange{byteOffset, byteOffset}, *nodeIndex, sourceCode);
     }
-    return FindSymbolsInScope(symbolTable, containers, std::string(name),
+    return FindSymbolsInScope(symbolTable, containers, name,
                               CollectVisibleUsingNamespaces(byteOffset, sourceCode, nodeIndex));
 }
 
@@ -501,7 +500,7 @@ bool IsVariableType(std::string_view typeName)
 }
 
 std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable,
-                                                                                  const std::string& fileUri,
+                                                                                  std::string_view fileUri,
                                                                                   std::string_view declaringNamespace)
 {
     std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
@@ -574,12 +573,12 @@ bool NamesAFunctionNotAType(std::string_view name, const SymbolTable& table)
     return isFunction;
 }
 
-std::vector<Symbol> LookupTypeCandidateSymbols(const std::string& name, const SymbolTable& symbolTable)
+std::vector<Symbol> LookupTypeCandidateSymbols(std::string_view name, const SymbolTable& symbolTable)
 {
     auto syms = symbolTable.FindSymbols(name);
     if (syms.empty())
     {
-        const std::string shortName = std::string(LastScopeSegment(name));
+        const std::string_view shortName = LastScopeSegment(name);
         if (shortName != name)
         {
             syms = symbolTable.FindSymbols(shortName);
@@ -643,7 +642,7 @@ std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOf
         }
     }
 
-    const auto syms = LookupTypeCandidateSymbols(std::string(name), ctx.symbolTable);
+    const auto syms = LookupTypeCandidateSymbols(name, ctx.symbolTable);
     if (AreAllSymbolsPureTypes(syms))
     {
         return std::string(name);

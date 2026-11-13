@@ -67,11 +67,11 @@ std::vector<Symbol> FindSymbolsInScope(std::string_view name, uint32_t byteOffse
                                        const SymbolTable& symbolTable, const NodeIndex* nodeIndex = nullptr);
 std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> found, ContainerKind expected);
 std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable,
-                                                                                  const std::string& fileUri,
+                                                                                  std::string_view fileUri,
                                                                                   std::string_view declaringNamespace);
 
 bool NamesAFunctionNotAType(std::string_view name, const SymbolTable& table);
-std::vector<Symbol> LookupTypeCandidateSymbols(const std::string& name, const SymbolTable& symbolTable);
+std::vector<Symbol> LookupTypeCandidateSymbols(std::string_view name, const SymbolTable& symbolTable);
 bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms);
 /// Identifies a bare type used in a value expression, accounting for local shadowing.
 [[nodiscard]] std::optional<std::string> IsBareDataType(std::string_view name, uint32_t byteOffset,
