@@ -115,7 +115,7 @@ std::vector<Symbol> FindGlobalPropertyAccessors(std::string_view propertyName, c
     return accessors;
 }
 
-std::string PropertyTypeFromAccessors(const std::vector<Symbol>& accessors)
+std::string PropertyTypeFromAccessors(std::span<const Symbol> accessors)
 {
     for (const auto& sym : accessors)
     {

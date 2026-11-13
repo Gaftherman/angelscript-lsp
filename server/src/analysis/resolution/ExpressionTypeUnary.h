@@ -2,6 +2,7 @@
 
 #include "analysis/index/SymbolTable.h"
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,7 +17,7 @@ namespace angel_lsp::analysis
  * @param[in] symbolTable Symbol table to query.
  * @return True if targetName refers to a function.
  */
-[[nodiscard]] bool IsFunctionHandleTargetName(std::string_view targetName, const std::vector<Symbol>& inScopeSymbols,
+[[nodiscard]] bool IsFunctionHandleTargetName(std::string_view targetName, std::span<const Symbol> inScopeSymbols,
                                               const SymbolTable& symbolTable);
 
 /**

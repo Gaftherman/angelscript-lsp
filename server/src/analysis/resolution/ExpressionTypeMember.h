@@ -13,13 +13,13 @@ namespace angel_lsp::analysis
 /**
  * @brief Builds the property search order for member expressions, prioritizing non-mixins.
  */
-[[nodiscard]] std::vector<std::string> OrderMemberPropertySearchHierarchy(const std::string& cleanObj,
+[[nodiscard]] std::vector<std::string> OrderMemberPropertySearchHierarchy(std::string_view cleanObj,
                                                                           const SymbolTable& symbolTable);
 
 /**
  * @brief Finds candidate member symbols in a specific type.
  */
-[[nodiscard]] std::vector<Symbol> FindMemberSymbolsInType(const std::string& typeName, const std::string& memName,
+[[nodiscard]] std::vector<Symbol> FindMemberSymbolsInType(std::string_view typeName, std::string_view memName,
                                                           const SymbolTable& symbolTable);
 
 /**
@@ -41,9 +41,13 @@ namespace angel_lsp::analysis
 /**
  * @brief Resolves return type from candidate method overloads, substituting template arguments.
  */
-[[nodiscard]] std::string ResolveCandidateMethodReturn(const std::vector<Symbol>& candidates,
+[[nodiscard]] std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates,
+                                                       std::span<const std::string_view> argTypes,
+                                                       std::string_view objType, const SymbolTable& symbolTable);
+
+[[nodiscard]] std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates,
                                                        const std::vector<std::string>& argTypes,
-                                                       const std::string& objType, const SymbolTable& symbolTable);
+                                                       std::string_view objType, const SymbolTable& symbolTable);
 
 /**
  * @brief Appends candidate function if not already overridden by signature.
@@ -54,7 +58,7 @@ void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
  * @brief Collects candidate member methods along the type inheritance hierarchy.
  */
 [[nodiscard]] std::vector<Symbol>
-CollectMemberMethodCandidates(const std::string& ownerType, const std::string& memName, const SymbolTable& symbolTable);
+CollectMemberMethodCandidates(std::string_view ownerType, std::string_view memName, const SymbolTable& symbolTable);
 
 /**
  * @brief Resolves member property type from object type and member name.

@@ -22,16 +22,16 @@ static bool IsFloatOrIntPrimitive(std::string_view type)
     return type == "float" || type == "double" || type == "int" || type == "uint";
 }
 
-static std::string ResolveBinaryShift(const std::string& cleanLeft)
+static std::string ResolveBinaryShift(std::string_view cleanLeft)
 {
     if (cleanLeft == "int64" || cleanLeft == "uint64")
     {
-        return cleanLeft;
+        return std::string(cleanLeft);
     }
     return IsUnsignedInteger(cleanLeft) ? "uint" : "int";
 }
 
-static std::string ResolveBinaryBitwiseLogic(const std::string& cleanLeft, const std::string& cleanRight,
+static std::string ResolveBinaryBitwiseLogic(std::string_view cleanLeft, std::string_view cleanRight,
                                              const SymbolTable* symbolTable)
 {
     if (symbolTable && (ResolvesToEnum(cleanLeft, *symbolTable) || ResolvesToEnum(cleanRight, *symbolTable)))
@@ -56,7 +56,7 @@ static std::string ResolveBinaryBitwiseLogic(const std::string& cleanLeft, const
     }
     if (cleanLeft == cleanRight)
     {
-        return cleanLeft;
+        return std::string(cleanLeft);
     }
     if (IsUnsignedInteger(cleanLeft) || IsUnsignedInteger(cleanRight))
     {
@@ -65,8 +65,8 @@ static std::string ResolveBinaryBitwiseLogic(const std::string& cleanLeft, const
     return "int";
 }
 
-static std::string ResolveBinaryShiftBitwise(std::string_view op, const std::string& cleanLeft,
-                                             const std::string& cleanRight, const SymbolTable* symbolTable = nullptr)
+static std::string ResolveBinaryShiftBitwise(std::string_view op, std::string_view cleanLeft,
+                                             std::string_view cleanRight, const SymbolTable* symbolTable = nullptr)
 {
     if (op == "<<" || op == ">>" || op == ">>>")
     {
@@ -79,7 +79,7 @@ static std::string ResolveBinaryShiftBitwise(std::string_view op, const std::str
     return "";
 }
 
-static std::string ResolveBinary64OrFloat(const std::string& cleanLeft, const std::string& cleanRight)
+static std::string ResolveBinary64OrFloat(std::string_view cleanLeft, std::string_view cleanRight)
 {
     if (cleanLeft == "double" || cleanRight == "double")
     {
@@ -100,7 +100,7 @@ static std::string ResolveBinary64OrFloat(const std::string& cleanLeft, const st
     return "";
 }
 
-static std::string ResolveBinary32OrLess(const std::string& cleanLeft, const std::string& cleanRight)
+static std::string ResolveBinary32OrLess(std::string_view cleanLeft, std::string_view cleanRight)
 {
     if (cleanLeft == "void" || cleanRight == "void")
     {
@@ -117,7 +117,7 @@ static std::string ResolveBinary32OrLess(const std::string& cleanLeft, const std
     return "";
 }
 
-static std::string ResolveBinaryDivisionPromotion(const std::string& cleanLeft, const std::string& cleanRight,
+static std::string ResolveBinaryDivisionPromotion(std::string_view cleanLeft, std::string_view cleanRight,
                                                   bool disableIntegerDivision)
 {
     if (cleanLeft == "double" || cleanRight == "double")
@@ -135,8 +135,8 @@ static std::string ResolveBinaryDivisionPromotion(const std::string& cleanLeft, 
     return "float";
 }
 
-std::string ResolveBinaryPrimitivePromotion(std::string_view op, const std::string& cleanLeft,
-                                            const std::string& cleanRight, bool disableIntegerDivision,
+std::string ResolveBinaryPrimitivePromotion(std::string_view op, std::string_view cleanLeft,
+                                            std::string_view cleanRight, bool disableIntegerDivision,
                                             const SymbolTable* symbolTable)
 {
     if (cleanLeft.empty() || cleanRight.empty() || cleanLeft == "void" || cleanRight == "void")

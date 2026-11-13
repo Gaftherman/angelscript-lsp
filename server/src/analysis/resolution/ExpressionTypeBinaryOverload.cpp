@@ -42,8 +42,8 @@ static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::str
     return {"", ""};
 }
 
-static BinaryOverloadResult ResolveBinaryOverloadMatch(const std::string& typeName, std::string_view opMethod,
-                                                       const std::string& argType, const SymbolTable& symbolTable)
+static BinaryOverloadResult ResolveBinaryOverloadMatch(std::string_view typeName, std::string_view opMethod,
+                                                       std::string_view argType, const SymbolTable& symbolTable)
 {
     if (opMethod.empty() || typeName.empty() || parser::primitives::IsPrimitive(typeName))
     {
@@ -66,7 +66,7 @@ static BinaryOverloadResult ResolveBinaryOverloadMatch(const std::string& typeNa
     }
     if (!candidates.empty())
     {
-        auto match = ResolveBestOverload(candidates, {std::string_view(argType)}, symbolTable);
+        auto match = ResolveBestOverload(candidates, {argType}, symbolTable);
         const Symbol* best = match.bestCandidate ? match.bestCandidate : match.priorityCandidate;
         if (best && std::holds_alternative<FunctionSignature>(best->signature))
         {
@@ -76,7 +76,7 @@ static BinaryOverloadResult ResolveBinaryOverloadMatch(const std::string& typeNa
     return {};
 }
 
-static std::string FindSingleOpImplConvPrimitive(const std::string& typeName, const SymbolTable& symbolTable)
+static std::string FindSingleOpImplConvPrimitive(std::string_view typeName, const SymbolTable& symbolTable)
 {
     if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
     {
@@ -133,8 +133,8 @@ static std::string SelectBestBinaryOverload(const BinaryOverloadResult& forwardM
     return {};
 }
 
-static std::string ResolveBinaryFallbackConv(std::string_view op, const std::string& cleanLeft,
-                                             const std::string& cleanRight, const ExpressionTypeContext& ctx)
+static std::string ResolveBinaryFallbackConv(std::string_view op, std::string_view cleanLeft,
+                                             std::string_view cleanRight, const ExpressionTypeContext& ctx)
 {
     const bool leftIsPrim = parser::primitives::IsPrimitive(cleanLeft);
     const bool rightIsPrim = parser::primitives::IsPrimitive(cleanRight);
@@ -155,8 +155,8 @@ static std::string ResolveBinaryFallbackConv(std::string_view op, const std::str
     return {};
 }
 
-static std::string ResolveStringConcatenation(std::string_view op, const std::string& leftType,
-                                              const std::string& rightType, const ExpressionTypeContext& ctx)
+static std::string ResolveStringConcatenation(std::string_view op, std::string_view leftType,
+                                              std::string_view rightType, const ExpressionTypeContext& ctx)
 {
     if (op != "+")
     {
@@ -164,19 +164,19 @@ static std::string ResolveStringConcatenation(std::string_view op, const std::st
     }
     const std::string_view effectiveStr =
         ctx.stringTypeName.empty() ? ctx.symbolTable.GetStringType() : ctx.stringTypeName;
-    if (CleanBaseType(leftType, ctx.arrayTypeName) == effectiveStr ||
-        CleanBaseType(rightType, ctx.arrayTypeName) == effectiveStr)
+    if (CleanBaseTypeView(leftType, ctx.arrayTypeName) == effectiveStr ||
+        CleanBaseTypeView(rightType, ctx.arrayTypeName) == effectiveStr)
     {
         return std::string(effectiveStr);
     }
     return {};
 }
 
-std::string ResolveBinaryOverload(std::string_view op, const std::string& leftType, const std::string& rightType,
+std::string ResolveBinaryOverload(std::string_view op, std::string_view leftType, std::string_view rightType,
                                   const SymbolTable& symbolTable)
 {
-    const std::string cleanLeft = CleanBaseType(leftType);
-    const std::string cleanRight = CleanBaseType(rightType);
+    const std::string_view cleanLeft = CleanBaseTypeView(leftType);
+    const std::string_view cleanRight = CleanBaseTypeView(rightType);
     const bool leftIsPrim = parser::primitives::IsPrimitive(cleanLeft);
     const bool rightIsPrim = parser::primitives::IsPrimitive(cleanRight);
 
@@ -197,7 +197,7 @@ std::string ResolveBinaryOverload(std::string_view op, const std::string& leftTy
     return SelectBestBinaryOverload(forwardMatch, reverseMatch);
 }
 
-std::string EvaluateBinaryResultType(std::string_view op, const std::string& leftType, const std::string& rightType,
+std::string EvaluateBinaryResultType(std::string_view op, std::string_view leftType, std::string_view rightType,
                                      const ExpressionTypeContext& ctx)
 {
     if (IsBooleanBinaryOp(op))
@@ -209,8 +209,8 @@ std::string EvaluateBinaryResultType(std::string_view op, const std::string& lef
         return strType;
     }
 
-    std::string cleanLeft = CleanBaseType(leftType);
-    std::string cleanRight = CleanBaseType(rightType);
+    const std::string_view cleanLeft = CleanBaseTypeView(leftType);
+    const std::string_view cleanRight = CleanBaseTypeView(rightType);
 
     if (parser::primitives::IsPrimitive(cleanLeft) && parser::primitives::IsPrimitive(cleanRight))
     {

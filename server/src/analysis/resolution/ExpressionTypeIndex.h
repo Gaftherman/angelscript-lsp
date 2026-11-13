@@ -16,7 +16,7 @@ namespace angel_lsp::analysis
  * @param[in] indexArgType Deduced type of the index argument.
  * @return Return type of the indexed getter, or empty string.
  */
-[[nodiscard]] std::string FindIndexedGetterType(const std::vector<Symbol>& accessors,
+[[nodiscard]] std::string FindIndexedGetterType(std::span<const Symbol> accessors,
                                                 const SymbolTable* symbolTable = nullptr,
                                                 std::string_view indexArgType = "");
 

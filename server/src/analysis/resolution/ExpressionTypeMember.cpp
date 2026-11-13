@@ -16,12 +16,12 @@
 namespace angel_lsp::analysis
 {
 
-std::vector<std::string> OrderMemberPropertySearchHierarchy(const std::string& cleanObj, const SymbolTable& symbolTable)
+std::vector<std::string> OrderMemberPropertySearchHierarchy(std::string_view cleanObj, const SymbolTable& symbolTable)
 {
     auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
     if (hierarchy.empty() && !cleanObj.empty())
     {
-        hierarchy.push_back(cleanObj);
+        hierarchy.emplace_back(cleanObj);
     }
     std::vector<std::string> propSearchOrder;
     if (!hierarchy.empty())
@@ -54,15 +54,25 @@ static bool IsNonEnumSymbol(const Symbol& s)
     return true;
 }
 
-std::vector<Symbol> FindMemberSymbolsInType(const std::string& typeName, const std::string& memName,
+std::vector<Symbol> FindMemberSymbolsInType(std::string_view typeName, std::string_view memName,
                                             const SymbolTable& symbolTable)
 {
     auto found = symbolTable.FindMemberSymbols(typeName, memName);
     const bool hasInstance = std::any_of(found.begin(), found.end(), IsNonEnumSymbol);
     if (!hasInstance)
     {
-        auto getters = symbolTable.FindMemberSymbols(typeName, "get_" + memName);
-        auto setters = symbolTable.FindMemberSymbols(typeName, "set_" + memName);
+        std::string getProp;
+        getProp.reserve(4 + memName.size());
+        getProp.append("get_");
+        getProp.append(memName);
+
+        std::string setProp;
+        setProp.reserve(4 + memName.size());
+        setProp.append("set_");
+        setProp.append(memName);
+
+        auto getters = symbolTable.FindMemberSymbols(typeName, getProp);
+        auto setters = symbolTable.FindMemberSymbols(typeName, setProp);
         if (!getters.empty() || !setters.empty())
         {
             found.insert(found.begin(), setters.begin(), setters.end());
@@ -155,8 +165,8 @@ std::string ResolveContainerMethodFallback(std::string_view memName, const Templ
     return "";
 }
 
-std::string ResolveCandidateMethodReturn(const std::vector<Symbol>& candidates,
-                                         const std::vector<std::string>& argTypes, const std::string& objType,
+std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates,
+                                         std::span<const std::string_view> argTypes, std::string_view objType,
                                          const SymbolTable& symbolTable)
 {
     if (candidates.empty())
@@ -186,6 +196,19 @@ std::string ResolveCandidateMethodReturn(const std::vector<Symbol>& candidates,
     return CleanExpressionType(candidates[0].GetFunction().returnType);
 }
 
+std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates,
+                                         const std::vector<std::string>& argTypes, std::string_view objType,
+                                         const SymbolTable& symbolTable)
+{
+    std::vector<std::string_view> views;
+    views.reserve(argTypes.size());
+    for (const auto& a : argTypes)
+    {
+        views.emplace_back(a);
+    }
+    return ResolveCandidateMethodReturn(candidates, std::span<const std::string_view>(views), objType, symbolTable);
+}
+
 void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
 {
     if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
@@ -199,7 +222,7 @@ void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
     }
 }
 
-std::vector<Symbol> CollectMemberMethodCandidates(const std::string& ownerType, const std::string& memName,
+std::vector<Symbol> CollectMemberMethodCandidates(std::string_view ownerType, std::string_view memName,
                                                   const SymbolTable& symbolTable)
 {
     std::vector<Symbol> candidates;
@@ -226,21 +249,20 @@ std::string ResolveMemberPropertyType(std::string_view objType, std::string_view
     {
         return std::string(ExpressionTypeCache::k_poisonType);
     }
-    std::string cleanObj = CleanBaseType(objType);
+    std::string_view cleanObj = CleanBaseTypeView(objType);
     if (cleanObj.empty())
     {
-        cleanObj = std::string(fallbackObjName);
+        cleanObj = fallbackObjName;
     }
     if (cleanObj.empty())
     {
         return "";
     }
 
-    std::string member(memName);
     auto propSearchOrder = OrderMemberPropertySearchHierarchy(cleanObj, symbolTable);
     for (const auto& typeName : propSearchOrder)
     {
-        auto found = FindMemberSymbolsInType(typeName, member, symbolTable);
+        auto found = FindMemberSymbolsInType(typeName, memName, symbolTable);
         for (const auto& sym : found)
         {
             if (auto resolved = ExtractMemberSymbolType(sym, symbolTable); !resolved.empty())
@@ -249,7 +271,7 @@ std::string ResolveMemberPropertyType(std::string_view objType, std::string_view
             }
         }
     }
-    auto accessors = FindPropertyAccessors(cleanObj, member, symbolTable, false);
+    auto accessors = FindPropertyAccessors(cleanObj, memName, symbolTable, false);
     if (!accessors.empty())
     {
         std::string pType = PropertyTypeFromAccessors(accessors);

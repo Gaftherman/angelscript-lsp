@@ -13,7 +13,7 @@
 namespace angel_lsp::analysis
 {
 
-std::string FindIndexedGetterType(const std::vector<Symbol>& accessors, const SymbolTable* symbolTable,
+std::string FindIndexedGetterType(std::span<const Symbol> accessors, const SymbolTable* symbolTable,
                                   std::string_view indexArgType)
 {
     std::vector<Symbol> getters;
@@ -50,8 +50,8 @@ std::string ResolveMemberIndexedPropertyType(std::string_view recType, std::stri
     {
         return "";
     }
-    return FindIndexedGetterType(FindPropertyAccessors(std::string(recType), std::string(memName), symbolTable, false),
-                                 &symbolTable, indexArgType);
+    return FindIndexedGetterType(FindPropertyAccessors(recType, memName, symbolTable, false), &symbolTable,
+                                 indexArgType);
 }
 
 std::string ResolveScopedIndexedPropertyType(std::string_view scopeName, std::string_view name,
@@ -61,8 +61,8 @@ std::string ResolveScopedIndexedPropertyType(std::string_view scopeName, std::st
     {
         return "";
     }
-    return FindIndexedGetterType(FindPropertyAccessors(std::string(scopeName), std::string(name), symbolTable, false),
-                                 &symbolTable, indexArgType);
+    return FindIndexedGetterType(FindPropertyAccessors(scopeName, name, symbolTable, false), &symbolTable,
+                                 indexArgType);
 }
 
 std::string ResolveBareIndexedPropertyType(std::string_view name, std::string_view enclosingClass,
@@ -72,17 +72,16 @@ std::string ResolveBareIndexedPropertyType(std::string_view name, std::string_vi
     {
         return "";
     }
-    if (std::string hit = FindIndexedGetterType(FindGlobalPropertyAccessors(std::string(name), symbolTable, false),
-                                                &symbolTable, indexArgType);
+    if (std::string hit =
+            FindIndexedGetterType(FindGlobalPropertyAccessors(name, symbolTable, false), &symbolTable, indexArgType);
         !hit.empty())
     {
         return hit;
     }
     if (!enclosingClass.empty())
     {
-        if (std::string hit = FindIndexedGetterType(
-                FindPropertyAccessors(std::string(enclosingClass), std::string(name), symbolTable, false), &symbolTable,
-                indexArgType);
+        if (std::string hit = FindIndexedGetterType(FindPropertyAccessors(enclosingClass, name, symbolTable, false),
+                                                    &symbolTable, indexArgType);
             !hit.empty())
         {
             return hit;

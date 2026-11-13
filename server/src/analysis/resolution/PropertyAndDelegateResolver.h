@@ -5,6 +5,7 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "config/EngineRuleConfig.h"
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -36,7 +37,7 @@ std::vector<Symbol> FindPropertyAccessors(std::string_view typeName, std::string
                                           const SymbolTable& symbolTable, bool keywordRequired);
 std::vector<Symbol> FindGlobalPropertyAccessors(std::string_view propertyName, const SymbolTable& symbolTable,
                                                 bool keywordRequired = false);
-std::string PropertyTypeFromAccessors(const std::vector<Symbol>& accessors);
+std::string PropertyTypeFromAccessors(std::span<const Symbol> accessors);
 bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbolTable,
                                  const config::EngineRuleConfig* engineRules = nullptr);
 std::string ResolveDelegateTargetBaseClass(const DelegateTargetClassRequest& req);

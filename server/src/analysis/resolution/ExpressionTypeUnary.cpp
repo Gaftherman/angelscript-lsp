@@ -12,15 +12,14 @@
 namespace angel_lsp::analysis
 {
 
-bool IsFunctionHandleTargetName(std::string_view targetName, const std::vector<Symbol>& inScopeSymbols,
+bool IsFunctionHandleTargetName(std::string_view targetName, std::span<const Symbol> inScopeSymbols,
                                 const SymbolTable& symbolTable)
 {
     if (targetName.empty() || targetName.find('(') != std::string_view::npos)
     {
         return false;
     }
-    std::string nameStr(targetName);
-    if (const auto bucket = symbolTable.FindSymbolsPtr(nameStr))
+    if (const auto bucket = symbolTable.FindSymbolsPtr(targetName))
     {
         for (const auto& candidate : *bucket)
         {
@@ -31,14 +30,6 @@ bool IsFunctionHandleTargetName(std::string_view targetName, const std::vector<S
         }
     }
     for (const auto& candidate : inScopeSymbols)
-    {
-        if (candidate.type == SymbolType::Function)
-        {
-            return true;
-        }
-    }
-    auto syms = symbolTable.FindSymbols(nameStr);
-    for (const auto& candidate : syms)
     {
         if (candidate.type == SymbolType::Function)
         {
