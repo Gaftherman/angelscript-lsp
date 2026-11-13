@@ -58,10 +58,10 @@ std::string Server::CanonicalPathFromUri(std::string_view uriStr)
     return angel_lsp::utils::IncludeResolver::NormalizePath(path);
 }
 
-std::string Server::DocumentKey(const std::string& uriStr)
+std::string Server::DocumentKey(std::string_view uriStr)
 {
     const std::string path = CanonicalPathFromUri(uriStr);
-    return path.empty() ? uriStr : UriFromPath(path);
+    return path.empty() ? std::string(uriStr) : UriFromPath(path);
 }
 
 std::string Server::UriFromPath(std::string_view path)
@@ -69,7 +69,7 @@ std::string Server::UriFromPath(std::string_view path)
     return angel_lsp::utils::PathToUri(angel_lsp::utils::IncludeResolver::NormalizePath(path));
 }
 
-std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& uri) const
+std::shared_ptr<const std::string> Server::FindDocumentText(std::string_view uri) const
 {
     const std::string key = DocumentKey(uri);
 
@@ -103,9 +103,9 @@ std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& u
 }
 
 std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const std::string& key,
-                                                                         const std::string& uriStr)
+                                                                         std::string_view uriStr)
 {
-    const std::string& targetUri = key.starts_with("angelscript-virtual:") ? key : uriStr;
+    const std::string_view targetUri = key.starts_with("angelscript-virtual:") ? std::string_view(key) : uriStr;
     std::string text = GenerateVirtualMixinDocument(targetUri);
     if (text.empty())
     {
@@ -141,7 +141,7 @@ std::optional<OpenDocument> Server::LookupPreindexedFallback(const std::string& 
     return std::nullopt;
 }
 
-std::optional<OpenDocument> Server::LookupOpenDocument(const std::string& uriStr)
+std::optional<OpenDocument> Server::LookupOpenDocument(std::string_view uriStr)
 {
     const std::string key = DocumentKey(uriStr);
 

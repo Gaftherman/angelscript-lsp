@@ -152,7 +152,7 @@ std::string Server::ReadClosedDocumentContent(std::string_view uriStr)
 {
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        if (const auto cached = m_closureDocuments.find(std::string(uriStr));
+        if (const auto cached = m_closureDocuments.find(uriStr);
             cached != m_closureDocuments.end() && cached->second.text)
         {
             return *cached->second.text;
@@ -212,7 +212,7 @@ void Server::AppendIncludeDiagnostics(std::string_view uriStr, std::string_view 
     }
 
     const auto searchDirectories = SearchDirectories();
-    const auto doc = LookupOpenDocument(std::string(uriStr));
+    const auto doc = LookupOpenDocument(uriStr);
     const auto hasTree = doc && doc->docHandle && doc->docHandle->tree;
     const auto syntax =
         hasTree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax

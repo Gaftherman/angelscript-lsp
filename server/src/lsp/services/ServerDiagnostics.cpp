@@ -16,10 +16,10 @@ namespace angel_lsp
 void Server::PublishDiagnostics(std::string_view uriStr,
                                 const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version)
 {
-    auto docText = FindDocumentText(std::string(uriStr));
+    auto docText = FindDocumentText(uriStr);
     if (version < 0)
     {
-        version = GetDocumentVersion(std::string(uriStr));
+        version = GetDocumentVersion(uriStr);
     }
     PublishDiagnostics(PublishDiagnosticsRequest{
         .uriStr = std::string(uriStr),

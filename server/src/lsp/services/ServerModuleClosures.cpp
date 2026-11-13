@@ -55,7 +55,7 @@ static void AppendIncludeGraphClosure(const Server& server, std::string_view ope
             return;
         }
     }
-    const auto mc = server.GetIncludeGraph().GetModuleClosure(std::string(openPath));
+    const auto mc = server.GetIncludeGraph().GetModuleClosure(openPath);
     closure.insert(closure.end(), mc.begin(), mc.end());
 }
 
@@ -182,7 +182,10 @@ void Server::PurgeUnusedClosureFiles()
 void Server::WithdrawClosedSnapshot(std::string_view uriStr)
 {
     std::lock_guard lock(m_closureMutex);
-    m_closureDocuments.erase(std::string(uriStr));
+    if (const auto it = m_closureDocuments.find(uriStr); it != m_closureDocuments.end())
+    {
+        m_closureDocuments.erase(it);
+    }
 }
 
 void Server::PurgeClosureFile(std::string_view uriStr)

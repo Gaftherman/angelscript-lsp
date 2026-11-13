@@ -104,7 +104,7 @@ void Server::ScheduleAnalysisImmediate(ScheduleAnalysisRequest req)
 
 bool Server::IsClosedRevisionCurrentLocked(std::string_view uri, uint64_t revision) const
 {
-    const auto entry = m_closureDocuments.find(std::string(uri));
+    const auto entry = m_closureDocuments.find(uri);
     return entry != m_closureDocuments.end() && entry->second.revision == revision;
 }
 

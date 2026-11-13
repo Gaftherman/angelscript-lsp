@@ -459,9 +459,9 @@ std::vector<std::string> WorkspaceIncludeGraph::GetReverseDependenciesTopologica
     return SortReachableTopological(reachable, m_includes, m_includedBy);
 }
 
-std::vector<std::string> WorkspaceIncludeGraph::GetModuleClosure(const std::string& filePath) const
+std::vector<std::string> WorkspaceIncludeGraph::GetModuleClosure(std::string_view filePath) const
 {
-    const std::string normalized = IncludeResolver::NormalizePath(filePath);
+    const std::string normalized = IncludeResolver::NormalizePath(std::filesystem::path(filePath));
 
     std::shared_lock<std::shared_mutex> lock(m_mutex);
 

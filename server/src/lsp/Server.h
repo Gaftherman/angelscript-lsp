@@ -90,7 +90,7 @@ class Server
     [[nodiscard]] analysis::SymbolTable& GetMutableSymbolTable() noexcept;
     [[nodiscard]] PredefinedStubManager& GetPredefinedManager() noexcept;
     [[nodiscard]] const analysis::CallGraphIndex& GetCallGraph() const noexcept;
-    [[nodiscard]] std::optional<OpenDocument> LookupOpenDocument(const std::string& uriStr);
+    [[nodiscard]] std::optional<OpenDocument> LookupOpenDocument(std::string_view uriStr);
     void WithdrawStaleModuleDiagnostics();
     void NotifyModuleWarning(std::string_view text);
     [[nodiscard]] WorkspaceSnapshot CreateWorkspaceSnapshot() const;
@@ -110,7 +110,7 @@ class Server
     bool WaitForPredefinedReady(std::chrono::milliseconds timeout) const;
     void ScheduleOpenDocumentsForReanalysis();
     lsp::requests::Initialize::Result HandleRequestsInitialized(lsp::requests::Initialize::Params&& params);
-    static std::string DocumentKey(const std::string& uriStr);
+    static std::string DocumentKey(std::string_view uriStr);
     void ParserPredefined(std::string_view filePath, parser::AngelScriptParser& parser, bool forceReload = false);
     [[nodiscard]] analysis::formatting::BraceStyle CurrentBraceStyle() const;
     [[nodiscard]] bool CurrentSpacesInsideParentheses() const noexcept;
@@ -120,7 +120,7 @@ class Server
     void BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
                                  const std::function<void(std::string_view, int&)>& applyInt);
     [[nodiscard]] std::vector<std::string> IncludeAllowedRoots() const;
-    [[nodiscard]] std::shared_ptr<const std::string> FindDocumentText(const std::string& uri) const;
+    [[nodiscard]] std::shared_ptr<const std::string> FindDocumentText(std::string_view uri) const;
     static std::string UriFromPath(std::string_view path);
     template <typename ResultT, typename FeatureFn>
     ResultT ExecuteOnOpenDocument(const std::string& uriStr, bool featureEnabled, FeatureFn&& fn);
@@ -294,11 +294,14 @@ class Server
         std::shared_ptr<const analysis::Scope> lexicalScopes = {};
     };
 
-    ankerl::unordered_dense::map<std::string, ClosedDocumentSnapshot> m_closureDocuments;
+    ankerl::unordered_dense::map<std::string, ClosedDocumentSnapshot, TransparentStringHash, std::equal_to<>>
+        m_closureDocuments;
     uint64_t m_nextClosedRevision = 0;
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_openDocumentClosures;
-    ankerl::unordered_dense::map<std::string, std::string> m_indexedUriByPath;
-    ankerl::unordered_dense::map<std::string, uint64_t> m_lastSavedInterfaceHash;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        m_openDocumentClosures;
+    ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, std::equal_to<>> m_indexedUriByPath;
+    ankerl::unordered_dense::map<std::string, uint64_t, TransparentStringHash, std::equal_to<>>
+        m_lastSavedInterfaceHash;
     SyntaxRevisionCache m_workerSyntax;   ///< Accessed only by the scheduler callback.
     SyntaxRevisionCache m_protocolSyntax; ///< Accessed only on the LSP message loop.
     analysis::rules::MixinFileCache m_workerMixinCache;
@@ -321,7 +324,7 @@ class Server
     void BeginWorkspaceProgress(const std::string& title);
     void ReportWorkspaceProgress(const std::string& message, unsigned percentage);
     void EndWorkspaceProgress(const std::string& message);
-    [[nodiscard]] int GetDocumentVersion(const std::string& uriStr) const;
+    [[nodiscard]] int GetDocumentVersion(std::string_view uriStr) const;
     void ClearMixinCaches();
     PreparedAnalysisSource PrepareAnalysisSource(const std::string& uriStr, const std::string& text) const;
     [[nodiscard]] ModuleClaim ClaimFor(std::string_view normalizedPath) const;
@@ -431,7 +434,7 @@ class Server
     void ReplaceDeletedPredefinedStub(parser::AngelScriptParser& parser);
     void RefreshOpenDocumentIncludes();
     static std::string CanonicalPathFromUri(std::string_view uriStr);
-    std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, const std::string& uriStr);
+    std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, std::string_view uriStr);
     std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
     [[nodiscard]] std::optional<std::string> OccurrenceModuleFor(const std::string& uri) const;
     features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);
@@ -564,7 +567,7 @@ inline void Server::SetOnBeforeCommitHook(OnBeforeCommitHook hook)
 {
     m_onBeforeCommitHook = std::move(hook);
 }
-inline int Server::GetDocumentVersion(const std::string& uriStr) const
+inline int Server::GetDocumentVersion(std::string_view uriStr) const
 {
     return GetDocumentStore().GetVersion(uriStr);
 }

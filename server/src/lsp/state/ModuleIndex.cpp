@@ -32,7 +32,7 @@ void ModuleIndex::RemoveFile(std::string_view filePath)
 std::vector<std::string> ModuleIndex::GetModuleClosure(std::string_view filePath) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_includeGraph.GetModuleClosure(std::string(filePath));
+    return m_includeGraph.GetModuleClosure(filePath);
 }
 
 void ModuleIndex::AssociateClosure(std::string_view openUri, std::vector<std::string> closureUris)

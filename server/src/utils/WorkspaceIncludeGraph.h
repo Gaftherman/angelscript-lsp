@@ -121,7 +121,7 @@ class WorkspaceIncludeGraph
      * @param[in] filePath Any file in the module; need not be normalized.
      * @return Normalized paths of every file in the module, including filePath itself.
      */
-    std::vector<std::string> GetModuleClosure(const std::string& filePath) const;
+    std::vector<std::string> GetModuleClosure(std::string_view filePath) const;
 
     /**
      * @brief Computes strictly forward dependency closure originating from an entry point.
