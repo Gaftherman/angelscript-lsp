@@ -240,8 +240,7 @@ static std::string ResolveReceiverTypeUncached(IndexedByteRange objRange, std::s
     }
 
     if (auto delRes = ResolveDelegatePropertyReceiver(
-            {objRange, objText, effectiveHostClass, sourceCode, arrayTypeName, ctx.nodeIndex}, symbolTable,
-            ctx);
+            {objRange, objText, effectiveHostClass, sourceCode, arrayTypeName, ctx.nodeIndex}, symbolTable, ctx);
         !delRes.empty())
     {
         return delRes;

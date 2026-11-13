@@ -158,10 +158,10 @@ std::vector<Symbol> CollectHoverScopedSymbols(const ScopedSymbolQuery& query, st
     }
     else if (!typeScope.Empty() && typeScope.endByte <= query.sourceCode.size())
     {
-        std::string prefix(query.sourceCode.substr(typeScope.startByte, typeScope.endByte - typeScope.startByte));
-        if (!utils::EndsWithScopeSeparator(prefix))
+        std::string_view prefix = query.sourceCode.substr(typeScope.startByte, typeScope.endByte - typeScope.startByte);
+        if (utils::EndsWithScopeSeparator(prefix))
         {
-            prefix.append(utils::k_scopeSeparator);
+            prefix.remove_suffix(utils::k_scopeSeparator.size());
         }
         outPathText = query.sourceCode.substr(typeScope.startByte, query.site.targetEndByte - typeScope.startByte);
         symbols = FindSymbolsAtHoverSite(query, utils::JoinScopedName(prefix, query.nodeText));

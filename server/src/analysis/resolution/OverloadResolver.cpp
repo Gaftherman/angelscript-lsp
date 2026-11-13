@@ -271,9 +271,10 @@ static std::vector<const Symbol*> CandidatePtrs(std::span<const Symbol> candidat
 {
     std::vector<const Symbol*> ptrs;
     ptrs.reserve(candidates.size());
-    for (const auto& sym : candidates)
+    const Symbol* const first = candidates.data();
+    for (size_t i = 0; i < candidates.size(); ++i)
     {
-        ptrs.push_back(&sym);
+        ptrs.push_back(first + i);
     }
     return ptrs;
 }
@@ -328,9 +329,8 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                argIsLValue);
 }
 
-OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
-                                        std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue)
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates, std::span<const std::string> argumentTypes,
+                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
 {
     return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
 }

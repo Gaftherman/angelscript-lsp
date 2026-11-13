@@ -9,9 +9,9 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "config/ServerConfig.h"
 
-#include <span>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>

@@ -122,8 +122,8 @@ std::optional<Symbol> ResolveConstructorForDeclarator(uint32_t declStartByte, ui
         return std::nullopt;
     }
 
-    auto candidates = analysis::CollectConstructorCandidates(baseName, declStartByte, ctx.sourceCode,
-                                                             ctx.symbolTable, ctx.nodeIndex);
+    auto candidates =
+        analysis::CollectConstructorCandidates(baseName, declStartByte, ctx.sourceCode, ctx.symbolTable, ctx.nodeIndex);
     if (candidates.empty())
     {
         return std::nullopt;

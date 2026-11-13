@@ -58,8 +58,7 @@ static std::string ResolveTernaryNumericPromotion(std::string_view c1, std::stri
     return "int";
 }
 
-static std::string ResolveTernaryEnumPromotion(std::string_view c1, std::string_view c2,
-                                               const SymbolTable& symbolTable)
+static std::string ResolveTernaryEnumPromotion(std::string_view c1, std::string_view c2, const SymbolTable& symbolTable)
 {
     if (ResolvesToEnum(c1, symbolTable) && IsIntegerPrimitive(c2))
         return std::string(c2);

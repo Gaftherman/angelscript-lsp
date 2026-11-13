@@ -57,8 +57,8 @@ void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
 /**
  * @brief Collects candidate member methods along the type inheritance hierarchy.
  */
-[[nodiscard]] std::vector<Symbol>
-CollectMemberMethodCandidates(std::string_view ownerType, std::string_view memName, const SymbolTable& symbolTable);
+[[nodiscard]] std::vector<Symbol> CollectMemberMethodCandidates(std::string_view ownerType, std::string_view memName,
+                                                                const SymbolTable& symbolTable);
 
 /**
  * @brief Resolves member property type from object type and member name.

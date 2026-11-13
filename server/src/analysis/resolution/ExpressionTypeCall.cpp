@@ -42,9 +42,8 @@ void CollectMixinCallCandidates(std::string_view containerName, std::string_view
     }
 }
 
-std::vector<Symbol> CollectEnclosingCallCandidates(std::span<const ContainerInfo> containers,
-                                                   std::string_view funcName, const SymbolTable& symbolTable,
-                                                   ExpressionTypeCache* cache)
+std::vector<Symbol> CollectEnclosingCallCandidates(std::span<const ContainerInfo> containers, std::string_view funcName,
+                                                   const SymbolTable& symbolTable, ExpressionTypeCache* cache)
 {
     std::vector<Symbol> candidates;
     for (const auto& c : containers)
@@ -71,8 +70,8 @@ std::vector<Symbol> CollectEnclosingCallCandidates(std::span<const ContainerInfo
     return candidates;
 }
 
-std::string ResolveCallOverloadReturn(std::span<const Symbol> candidates,
-                                      std::span<const std::string_view> argTypes, const SymbolTable& symbolTable)
+std::string ResolveCallOverloadReturn(std::span<const Symbol> candidates, std::span<const std::string_view> argTypes,
+                                      const SymbolTable& symbolTable)
 {
     if (candidates.empty())
     {
@@ -140,9 +139,8 @@ void CollectScopeAndGlobalFunctions(std::string_view funcName, std::span<const S
 std::string FindClassOrInterfaceName(std::string_view funcName, const SymbolTable& symbolTable)
 {
     const auto templatePos = funcName.find('<');
-    const std::string_view baseName = (templatePos != std::string_view::npos)
-                                          ? funcName.substr(0, templatePos)
-                                          : funcName;
+    const std::string_view baseName =
+        (templatePos != std::string_view::npos) ? funcName.substr(0, templatePos) : funcName;
 
     if (const auto globalFound = symbolTable.FindSymbolsPtr(baseName))
     {
@@ -173,8 +171,8 @@ std::string FindClassOrInterfaceName(std::string_view funcName, const SymbolTabl
     return "";
 }
 
-std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req,
-                                    std::span<const std::string_view> argTypes, const SymbolTable& symbolTable)
+std::string ResolveMemberCallReturn(const MemberCallResolutionRequest& req, std::span<const std::string_view> argTypes,
+                                    const SymbolTable& symbolTable)
 {
     std::string objType = CanonicalizeArrayType(req.objType, req.arrayTypeName);
     std::string ownerType = MemberOwnerType(objType, req.arrayTypeName);

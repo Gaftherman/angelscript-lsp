@@ -334,9 +334,8 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::initializer_list<std::string_view> argumentTypes,
                                         const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue = {});
 
-OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
-                                        std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue = {});
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates, std::span<const std::string> argumentTypes,
+                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue = {});
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,

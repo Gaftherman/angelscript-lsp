@@ -172,9 +172,8 @@ std::string ResolveContainerMethodFallback(std::string_view memName, const Templ
     return "";
 }
 
-std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates,
-                                         std::span<const std::string_view> argTypes, std::string_view objType,
-                                         const SymbolTable& symbolTable)
+std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates, std::span<const std::string_view> argTypes,
+                                         std::string_view objType, const SymbolTable& symbolTable)
 {
     if (candidates.empty())
     {
@@ -203,9 +202,8 @@ std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates,
     return CleanExpressionType(candidates[0].GetFunction().returnType);
 }
 
-std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates,
-                                         const std::vector<std::string>& argTypes, std::string_view objType,
-                                         const SymbolTable& symbolTable)
+std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates, const std::vector<std::string>& argTypes,
+                                         std::string_view objType, const SymbolTable& symbolTable)
 {
     std::vector<std::string_view> views;
     views.reserve(argTypes.size());

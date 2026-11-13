@@ -39,8 +39,7 @@ std::optional<HoverCandidateSymbols> ResolveMemberAccess(IndexedByteRange receiv
         const int accessorMode = config ? config->engine.propertyAccessorMode : 2;
         if (accessorMode >= 2)
         {
-            memberSymbols = FindPropertyAccessors(receiverTypeName, memberName, exprCtx.symbolTable,
-                                                  accessorMode == 3);
+            memberSymbols = FindPropertyAccessors(receiverTypeName, memberName, exprCtx.symbolTable, accessorMode == 3);
             accessorPropertyType = PropertyTypeFromAccessors(memberSymbols);
         }
     }
