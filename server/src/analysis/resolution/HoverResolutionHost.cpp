@@ -83,15 +83,13 @@ static void MergeHostSymbols(std::vector<Symbol>& symbols, std::vector<Symbol> h
 
 void AppendVirtualHostSymbols(const VirtualHostSymbolQuery& query, HoverCandidateSymbols& candidates)
 {
-    std::string hostClass;
-    if (!query.virtualHostClass.empty())
+    std::string inferredHost;
+    std::string_view hostClass = query.virtualHostClass;
+    if (hostClass.empty() && query.nodeIndex)
     {
-        hostClass = query.virtualHostClass;
-    }
-    else if (query.nodeIndex)
-    {
-        hostClass =
+        inferredHost =
             InferHostClassFromEnclosingMixin(query.targetRange, *query.nodeIndex, query.sourceCode, query.symbolTable);
+        hostClass = inferredHost;
     }
     if (hostClass.empty())
     {

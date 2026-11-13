@@ -16,7 +16,8 @@ namespace angel_lsp::analysis
 
 bool MemberBelongsToClass(const Symbol& classSym, std::string_view memberName, const SymbolTable& table)
 {
-    const std::string qName = classSym.qualifiedName.empty() ? classSym.name : classSym.qualifiedName;
+    const std::string_view qName =
+        classSym.qualifiedName.empty() ? std::string_view(classSym.name) : std::string_view(classSym.qualifiedName);
     auto hierarchy = analysis::GetInheritedTypeHierarchy(qName, table);
     for (const auto& cls : hierarchy)
     {
@@ -36,7 +37,8 @@ bool MemberBelongsToClass(const Symbol& classSym, std::string_view memberName, c
 
 bool MemberBelongsToNamespace(const Symbol& nsSym, std::string_view memberName, const SymbolTable& table)
 {
-    const std::string qName = nsSym.qualifiedName.empty() ? nsSym.name : nsSym.qualifiedName;
+    const std::string_view qName =
+        nsSym.qualifiedName.empty() ? std::string_view(nsSym.name) : std::string_view(nsSym.qualifiedName);
     if (const auto found = table.FindMemberSymbolPtr(qName, memberName))
     {
         for (const auto& sym : *found)

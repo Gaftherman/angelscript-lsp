@@ -57,7 +57,7 @@ ResolvedCallee ExtractCalleeFromSymbol(const Symbol* sym)
     return {sym->fileUri, sym->name, params ? *params : std::vector<ParameterInformation>{}, selRange};
 }
 
-const Symbol* SelectCandidateByArgCount(const std::vector<Symbol>& candidateSymbols, size_t numArgs) noexcept
+const Symbol* SelectCandidateByArgCount(std::span<const Symbol> candidateSymbols, size_t numArgs) noexcept
 {
     const Symbol* bestSym = nullptr;
     for (const auto& sym : candidateSymbols)
@@ -84,7 +84,7 @@ const Symbol* SelectCandidateByArgCount(const std::vector<Symbol>& candidateSymb
     return bestSym;
 }
 
-const Symbol* SelectFallbackCandidate(const std::vector<Symbol>& candidateSymbols) noexcept
+const Symbol* SelectFallbackCandidate(std::span<const Symbol> candidateSymbols) noexcept
 {
     const Symbol* bestSym = nullptr;
     size_t maxParams = 0;

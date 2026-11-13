@@ -40,7 +40,7 @@ struct MatchContext
  * @param[in] symbolTable Symbol table for type scoring.
  * @return Pointer to best matching symbol, or nullptr if none score positively.
  */
-[[nodiscard]] const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates,
+[[nodiscard]] const Symbol* FindBestFallbackOverload(std::span<const Symbol> candidates,
                                                      std::span<const std::string> argTypes,
                                                      const SymbolTable& symbolTable);
 

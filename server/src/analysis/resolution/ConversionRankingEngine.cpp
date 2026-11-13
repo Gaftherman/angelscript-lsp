@@ -568,7 +568,7 @@ static FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig,
     return rank;
 }
 
-const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates, std::span<const std::string> argTypes,
+const Symbol* FindBestFallbackOverload(std::span<const Symbol> candidates, std::span<const std::string> argTypes,
                                        const SymbolTable& symbolTable)
 {
     const Symbol* best = nullptr;

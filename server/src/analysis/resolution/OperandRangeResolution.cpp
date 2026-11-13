@@ -45,7 +45,7 @@ std::optional<std::string> IsBareDataType(IndexedByteRange bytes, const Expressi
     return IsBareDataType(text, bytes.startByte, ctx);
 }
 
-static bool HasFunctionSymbolOnly(const std::vector<Symbol>& syms)
+static bool HasFunctionSymbolOnly(std::span<const Symbol> syms)
 {
     bool hasFunc = false;
     for (const auto& s : syms)

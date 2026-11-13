@@ -36,13 +36,15 @@ MappedLocationTarget MapVirtualMixinLocation(const Symbol& sym, std::string_view
     {
         const std::string mixinPart = SymbolTable::ExtractVirtualMixinName(requestUri);
         const Symbol* mSym = nullptr;
-        auto cand = symbolTable.FindSymbols(mixinPart);
-        for (const auto& c : cand)
+        if (const auto cand = symbolTable.FindSymbolsPtr(mixinPart))
         {
-            if (c.type == SymbolType::Class)
+            for (const auto& c : *cand)
             {
-                mSym = &c;
-                break;
+                if (c.type == SymbolType::Class)
+                {
+                    mSym = &c;
+                    break;
+                }
             }
         }
         if (!mSym)

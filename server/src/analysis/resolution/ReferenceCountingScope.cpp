@@ -30,7 +30,7 @@ std::string_view GetEnclosingClassName(const SymbolTable& symbolTable, std::stri
                     }
                 }
             });
-        it = cache.emplace(std::string(uri), std::move(spans)).first;
+        it = cache.try_emplace(uri, std::move(spans)).first;
     }
     uint32_t bestSpan = UINT32_MAX;
     std::string_view bestClass;

@@ -70,13 +70,15 @@ void DisambiguateCandidateContainers(std::vector<Symbol>& symbols, const Scope* 
         {
             const std::string_view containerName =
                 sym.qualifiedName.empty() ? std::string_view(sym.name) : std::string_view(sym.qualifiedName);
-            auto memberSyms = query.symbolTable.FindMemberSymbols(containerName, memberName);
-            for (const auto& m : memberSyms)
+            if (const auto memberSyms = query.symbolTable.FindMemberSymbolPtr(containerName, memberName))
             {
-                if (ContainerKindMatches(sym.type, m.containerKind))
+                for (const auto& m : *memberSyms)
                 {
-                    matched.push_back(sym);
-                    break;
+                    if (ContainerKindMatches(sym.type, m.containerKind))
+                    {
+                        matched.push_back(sym);
+                        break;
+                    }
                 }
             }
         }
@@ -109,17 +111,19 @@ std::vector<Symbol> ResolveClassMemberSymbols(const TargetDescriptor& target, co
         }
         for (const auto& cls : target.relatedClasses)
         {
-            auto relSyms = query.symbolTable.FindMemberSymbols(cls, target.name);
-            for (const auto& s : relSyms)
+            if (const auto relSyms = query.symbolTable.FindMemberSymbolPtr(cls, target.name))
             {
-                if (s.type == SymbolType::Function && s.GetFunction().parameters.size() == argCount)
+                for (const auto& s : *relSyms)
                 {
-                    arityMatched.push_back(s);
+                    if (s.type == SymbolType::Function && s.GetFunction().parameters.size() == argCount)
+                    {
+                        arityMatched.push_back(s);
+                    }
                 }
-            }
-            if (!arityMatched.empty())
-            {
-                return arityMatched;
+                if (!arityMatched.empty())
+                {
+                    return arityMatched;
+                }
             }
         }
     }
@@ -127,11 +131,13 @@ std::vector<Symbol> ResolveClassMemberSymbols(const TargetDescriptor& target, co
     {
         for (const auto& cls : target.relatedClasses)
         {
-            auto relSyms = query.symbolTable.FindMemberSymbols(cls, target.name);
-            if (!relSyms.empty())
+            if (const auto relSyms = query.symbolTable.FindMemberSymbolPtr(cls, target.name))
             {
-                memberSyms = std::move(relSyms);
-                break;
+                if (!relSyms->empty())
+                {
+                    memberSyms = *relSyms;
+                    break;
+                }
             }
         }
     }
@@ -172,20 +178,28 @@ std::vector<Symbol> TryResolveScopedIdentifier(const DefinitionQuery& query)
                     }
                     if (query.symbolTable.HasScopedSymbol(scope, qualifier))
                     {
-                        auto containers = query.symbolTable.FindMemberSymbols(scope, qualifier);
-                        for (const auto& cont : containers)
+                        if (const auto containers = query.symbolTable.FindMemberSymbolPtr(scope, qualifier))
                         {
-                            const std::string_view contName = cont.qualifiedName.empty()
-                                                                  ? std::string_view(cont.name)
-                                                                  : std::string_view(cont.qualifiedName);
-                            memberSyms = query.symbolTable.FindMemberSymbols(contName, memberName);
-                            if (!memberSyms.empty())
+                            for (const auto& cont : *containers)
                             {
-                                return;
+                                const std::string_view contName = cont.qualifiedName.empty()
+                                                                      ? std::string_view(cont.name)
+                                                                      : std::string_view(cont.qualifiedName);
+                                if (const auto found = query.symbolTable.FindMemberSymbolPtr(contName, memberName))
+                                {
+                                    if (!found->empty())
+                                    {
+                                        memberSyms = *found;
+                                        return;
+                                    }
+                                }
                             }
                         }
                     }
-                    memberSyms = query.symbolTable.FindMemberSymbols(scope, scopedName);
+                    if (const auto scoped = query.symbolTable.FindMemberSymbolPtr(scope, scopedName))
+                    {
+                        memberSyms = *scoped;
+                    }
                 });
         }
     }
@@ -232,22 +246,23 @@ std::vector<Symbol> TryResolveVirtualMixin(std::string_view nodeText, const Defi
     {
         return {};
     }
-    auto memberSyms = query.symbolTable.FindMemberSymbols(vCtx.hostClass, nodeText);
-    if (memberSyms.empty())
+    if (const auto found = query.symbolTable.FindMemberSymbolPtr(vCtx.hostClass, nodeText))
     {
-        auto hierarchy = GetInheritedTypeHierarchy(vCtx.hostClass, query.symbolTable);
-        for (const auto& base : hierarchy)
+        if (!found->empty())
         {
-            memberSyms = query.symbolTable.FindMemberSymbols(base, nodeText);
-            if (!memberSyms.empty())
-            {
-                break;
-            }
+            return *found;
         }
     }
-    if (!memberSyms.empty())
+    auto hierarchy = GetInheritedTypeHierarchy(vCtx.hostClass, query.symbolTable);
+    for (const auto& base : hierarchy)
     {
-        return memberSyms;
+        if (const auto found = query.symbolTable.FindMemberSymbolPtr(base, nodeText))
+        {
+            if (!found->empty())
+            {
+                return *found;
+            }
+        }
     }
     if (nodeText == "this" || IsBaseClassDelegateProperty(nodeText, query.symbolTable, query.engineRules))
     {

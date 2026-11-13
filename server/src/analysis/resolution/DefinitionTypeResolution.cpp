@@ -6,10 +6,10 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TargetResolution.h"
 #include "analysis/types/TypeSanitization.h"
+#include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
-#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -43,7 +43,42 @@ std::string ResolveTargetTypeName(std::string_view nodeText, const DefinitionQue
 
     if (!enclosingNs.empty())
     {
-        for (const auto& sym : query.symbolTable.FindMemberSymbols(enclosingNs, nodeText))
+        if (const auto syms = query.symbolTable.FindMemberSymbolPtr(enclosingNs, nodeText))
+        {
+            for (const auto& sym : *syms)
+            {
+                if (sym.type == SymbolType::Variable && !sym.GetVariable().typeName.empty())
+                {
+                    return CleanBaseType(sym.GetVariable().typeName);
+                }
+                if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
+                {
+                    return CleanBaseType(sym.GetFunction().returnType);
+                }
+            }
+        }
+        char accBuf[128];
+        for (const std::string_view prefix : {utils::k_getterPrefix, utils::k_setterPrefix})
+        {
+            const std::string_view accName = utils::ComposeAccessorName(prefix, nodeText, accBuf);
+            if (accName.empty())
+            {
+                continue;
+            }
+            if (const auto accSyms = query.symbolTable.FindMemberSymbolPtr(enclosingNs, accName))
+            {
+                const std::string pType = PropertyTypeFromAccessors(*accSyms);
+                if (!pType.empty())
+                {
+                    return CleanBaseType(pType);
+                }
+            }
+        }
+    }
+
+    if (const auto symbols = query.symbolTable.FindSymbolsPtr(nodeText))
+    {
+        for (const auto& sym : *symbols)
         {
             if (sym.type == SymbolType::Variable && !sym.GetVariable().typeName.empty())
             {
@@ -53,33 +88,10 @@ std::string ResolveTargetTypeName(std::string_view nodeText, const DefinitionQue
             {
                 return CleanBaseType(sym.GetFunction().returnType);
             }
-        }
-        for (const auto prefix : {"get_", "set_"})
-        {
-            const auto accSyms =
-                query.symbolTable.FindMemberSymbols(enclosingNs, fmt::format("{}{}", prefix, nodeText));
-            const std::string pType = PropertyTypeFromAccessors(accSyms);
-            if (!pType.empty())
+            if (IsTypeDefType(sym.type))
             {
-                return CleanBaseType(pType);
+                return sym.name;
             }
-        }
-    }
-
-    auto symbols = query.symbolTable.FindSymbols(nodeText);
-    for (const auto& sym : symbols)
-    {
-        if (sym.type == SymbolType::Variable && !sym.GetVariable().typeName.empty())
-        {
-            return CleanBaseType(sym.GetVariable().typeName);
-        }
-        if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
-        {
-            return CleanBaseType(sym.GetFunction().returnType);
-        }
-        if (IsTypeDefType(sym.type))
-        {
-            return sym.name;
         }
     }
 

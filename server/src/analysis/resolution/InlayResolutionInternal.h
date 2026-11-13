@@ -43,14 +43,14 @@ ResolvedCallee ExtractCalleeFromSymbol(const Symbol* sym);
  * @param[in] numArgs Number of arguments passed.
  * @return Pointer to best matching candidate symbol, or nullptr.
  */
-const Symbol* SelectCandidateByArgCount(const std::vector<Symbol>& candidateSymbols, size_t numArgs) noexcept;
+const Symbol* SelectCandidateByArgCount(std::span<const Symbol> candidateSymbols, size_t numArgs) noexcept;
 
 /**
  * @brief Selects the candidate with the highest parameter count as a fallback.
  * @param[in] candidateSymbols Available candidate symbols.
  * @return Pointer to fallback symbol, or nullptr.
  */
-const Symbol* SelectFallbackCandidate(const std::vector<Symbol>& candidateSymbols) noexcept;
+const Symbol* SelectFallbackCandidate(std::span<const Symbol> candidateSymbols) noexcept;
 
 /**
  * @brief Resolves constructor parameters for a variable direct-initialization or construct-call.

@@ -50,9 +50,7 @@ std::vector<Symbol> CollectReceiverMemberSymbols(std::string_view receiverTypeNa
     auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, symbolTable);
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedMember = utils::JoinScopedName(typeName, memberName);
-        auto found = symbolTable.FindSymbolsPtr(qualifiedMember);
-        if (found)
+        if (const auto found = symbolTable.FindMemberSymbolPtr(typeName, memberName))
         {
             for (const auto& sym : *found)
             {
