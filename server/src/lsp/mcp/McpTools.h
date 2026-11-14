@@ -69,6 +69,9 @@ class McpToolbox
     lsp::json::Value DocumentSymbols(const lsp::json::Value& args);
     void SendChange(std::string_view uri, lsp::json::Value change);
 
+    /** @throws std::runtime_error when the document was never opened through open_document. */
+    void RequireOpen(std::string_view uri) const;
+
     LspClientSession& m_session;
     std::string m_root;
     i18n::I18n m_i18n;

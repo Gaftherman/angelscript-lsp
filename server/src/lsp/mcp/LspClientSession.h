@@ -8,12 +8,28 @@
 #include <lsp/json/json.h>
 #include <map>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 
 namespace angel_lsp::mcp
 {
+
+/** @brief An error reply from the server, carrying its JSON-RPC code. */
+class LspRequestError : public std::runtime_error
+{
+  public:
+    /// JSON-RPC code the server used for ServerCancelled.
+    static constexpr int k_serverCancelled = -32802;
+
+    LspRequestError(int errorCode, std::string message) : std::runtime_error(std::move(message)), code(errorCode)
+    {
+    }
+
+    /// JSON-RPC error code of the reply.
+    int code;
+};
 
 /**
  * @brief An LSP client that lives in the same process as the Server it drives.

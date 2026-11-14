@@ -7,6 +7,9 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 ### Added
 - `angel_lsp --mcp [--mcp-root <dir>]` serves an MCP bridge over stdio. Tools: `open_document`, `apply_edit`, `replace_document`, `diagnostics`, `hover`, `completion`, `signature_help`, `definition`, `document_symbols`; they drive an in-process language server like an editor would.
 
+### Fixed
+- MCP bridge: `diagnostics` retries only when the server answers ServerCancelled, tools on a document that was never opened fail at once, `completion` is ordered by `sortText` and reports `truncated`, `open_document` reads the file when `text` is null, and `initialize` answers with a protocol version the bridge supports.
+
 ### Removed
 
 - Built-in engine profiles: the `engineProfile` setting key (now ignored if present), the `--engine-profile`/`--profile` server flags and the embedded profile stubs. Predefined API stubs on disk (`.as.predefined`) are the only source of engine types.

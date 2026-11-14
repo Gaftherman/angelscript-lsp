@@ -4,6 +4,8 @@
 #include "lsp/mcp/McpJson.h"
 #include "lsp/mcp/McpTools.h"
 
+#include <algorithm>
+#include <array>
 #include <exception>
 #include <filesystem>
 #include <lsp/uri.h>
@@ -18,8 +20,9 @@ static constexpr int k_invalidRequest = -32600;
 static constexpr int k_methodNotFound = -32601;
 static constexpr int k_invalidParams = -32602;
 
-/// MCP protocol revision the bridge announces when the client asks for none.
-static constexpr std::string_view k_defaultProtocolVersion = "2025-03-26";
+/// MCP protocol revisions the bridge speaks, newest first; the first is the fallback for unknown requests.
+static constexpr std::array<std::string_view, 3> k_supportedProtocolVersions = {"2025-06-18", "2025-03-26",
+                                                                                "2024-11-05"};
 
 /** @brief Writes one message as a single line. */
 static void WriteLine(std::ostream& out, const lsp::json::Value& message)
@@ -62,11 +65,16 @@ static lsp::json::Value MakeToolResult(std::string text, bool isError)
 
 static lsp::json::Value MakeInitializeResult(const lsp::json::Value& params, const config::ServerConfig& config)
 {
-    std::string version(k_defaultProtocolVersion);
+    std::string version(k_supportedProtocolVersions.front());
     if (params.isObject() && params.object().contains("protocolVersion") &&
         params.object().get("protocolVersion").isString())
     {
-        version = params.object().get("protocolVersion").string();
+        const std::string& requested = params.object().get("protocolVersion").string();
+        if (std::find(k_supportedProtocolVersions.begin(), k_supportedProtocolVersions.end(), requested) !=
+            k_supportedProtocolVersions.end())
+        {
+            version = requested;
+        }
     }
     lsp::json::Value result = json::MakeObject();
     result.object()["protocolVersion"] = std::move(version);

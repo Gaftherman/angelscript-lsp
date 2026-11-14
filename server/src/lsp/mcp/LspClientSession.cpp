@@ -233,11 +233,16 @@ void LspClientSession::Dispatch(lsp::json::Value&& message)
     if (const lsp::json::Value* error = obj.find("error"))
     {
         std::string text = "LSP error";
+        int code = 0;
         if (error->isObject() && error->object().contains("message") && error->object().get("message").isString())
         {
             text = error->object().get("message").string();
         }
-        promise.set_exception(std::make_exception_ptr(std::runtime_error(text)));
+        if (error->isObject() && error->object().contains("code") && error->object().get("code").isInteger())
+        {
+            code = error->object().get("code").integer();
+        }
+        promise.set_exception(std::make_exception_ptr(LspRequestError(code, text)));
         return;
     }
     const lsp::json::Value* result = obj.find("result");

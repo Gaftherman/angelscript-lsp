@@ -5,6 +5,8 @@
 #include <fstream>
 #include <iterator>
 #include <lsp/uri.h>
+#include <string_view>
+#include <vector>
 
 namespace angel_lsp::mcp
 {
@@ -42,12 +44,21 @@ void McpToolbox::SendChange(std::string_view uri, lsp::json::Value change)
     m_session.Notify("textDocument/didChange", std::move(params));
 }
 
+void McpToolbox::RequireOpen(std::string_view uri) const
+{
+    if (!m_open.contains(uri))
+    {
+        throw std::runtime_error("document is not open; call open_document first");
+    }
+}
+
 lsp::json::Value McpToolbox::OpenDocument(const lsp::json::Value& args)
 {
     const std::string path = json::GetString(args, "path", true);
     const std::string uri = ResolveUri(path);
     std::string text = json::GetString(args, "text", false);
-    if (!args.object().contains("text"))
+    const lsp::json::Value* given = args.isObject() ? args.object().find("text") : nullptr;
+    if (given == nullptr || given->isNull())
     {
         std::ifstream file(lsp::Uri::parse(uri).fsPath(), std::ios::binary);
         if (!file.is_open())
@@ -79,10 +90,7 @@ lsp::json::Value McpToolbox::OpenDocument(const lsp::json::Value& args)
 lsp::json::Value McpToolbox::ApplyEdit(const lsp::json::Value& args)
 {
     const std::string uri = ResolveUri(json::GetString(args, "path", true));
-    if (!m_open.contains(uri))
-    {
-        throw std::runtime_error("document is not open; call open_document first");
-    }
+    RequireOpen(uri);
     lsp::json::Value range = json::MakeObject();
     range.object()["start"] =
         json::MakePosition(json::GetNonNegativeInt(args, "startLine"), json::GetNonNegativeInt(args, "startCharacter"));
@@ -101,10 +109,7 @@ lsp::json::Value McpToolbox::ApplyEdit(const lsp::json::Value& args)
 lsp::json::Value McpToolbox::ReplaceDocument(const lsp::json::Value& args)
 {
     const std::string uri = ResolveUri(json::GetString(args, "path", true));
-    if (!m_open.contains(uri))
-    {
-        throw std::runtime_error("document is not open; call open_document first");
-    }
+    RequireOpen(uri);
     lsp::json::Value change = json::MakeObject();
     change.object()["text"] = json::GetString(args, "text", true);
     SendChange(uri, std::move(change));
@@ -117,6 +122,7 @@ lsp::json::Value McpToolbox::ReplaceDocument(const lsp::json::Value& args)
 lsp::json::Value McpToolbox::Diagnostics(const lsp::json::Value& args)
 {
     const std::string uri = ResolveUri(json::GetString(args, "path", true));
+    RequireOpen(uri);
     lsp::json::Value params = json::MakeObject();
     params.object()["textDocument"] = json::MakeDocumentId(uri);
     lsp::json::Value report;
@@ -127,10 +133,10 @@ lsp::json::Value McpToolbox::Diagnostics(const lsp::json::Value& args)
             report = m_session.Request("textDocument/diagnostic", params);
             break;
         }
-        catch (const std::runtime_error&)
+        catch (const LspRequestError& error)
         {
-            // The server answers ServerCancelled while it is still computing; ask again a few times.
-            if (attempt >= k_diagnosticRetries)
+            // Only ServerCancelled means "still computing"; any other failure is final.
+            if (error.code != LspRequestError::k_serverCancelled || attempt >= k_diagnosticRetries)
             {
                 throw;
             }
@@ -146,6 +152,7 @@ lsp::json::Value McpToolbox::Diagnostics(const lsp::json::Value& args)
 lsp::json::Value McpToolbox::PositionRequest(std::string_view method, const lsp::json::Value& args)
 {
     const std::string uri = ResolveUri(json::GetString(args, "path", true));
+    RequireOpen(uri);
     lsp::json::Value params = json::MakeObject();
     params.object()["textDocument"] = json::MakeDocumentId(uri);
     params.object()["position"] =
@@ -172,32 +179,60 @@ lsp::json::Value McpToolbox::Completion(const lsp::json::Value& args)
         limit = std::max(1, json::GetNonNegativeInt(args, "limit"));
     }
 
-    lsp::json::Array trimmed;
+    std::vector<const lsp::json::Value*> ranked;
     if (items != nullptr)
     {
         for (const lsp::json::Value& item : *items)
         {
-            if (static_cast<int>(trimmed.size()) >= limit || !item.isObject())
+            if (item.isObject())
             {
-                break;
+                ranked.push_back(&item);
             }
-            lsp::json::Value entry = json::MakeObject();
-            for (const char* key : {"label", "kind", "detail"})
-            {
-                if (const lsp::json::Value* value = item.object().find(key))
-                {
-                    entry.object()[key] = *value;
-                }
-            }
-            trimmed.push_back(std::move(entry));
         }
     }
-    return lsp::json::Value(std::move(trimmed));
+    const auto sortKey = [](const lsp::json::Value* item) -> std::string_view
+    {
+        for (const char* key : {"sortText", "label"})
+        {
+            const lsp::json::Value* value = item->object().find(key);
+            if (value != nullptr && value->isString())
+            {
+                return value->string();
+            }
+        }
+        return {};
+    };
+    std::stable_sort(ranked.begin(), ranked.end(), [&sortKey](const lsp::json::Value* a, const lsp::json::Value* b)
+                     { return sortKey(a) < sortKey(b); });
+
+    lsp::json::Array trimmed;
+    for (const lsp::json::Value* item : ranked)
+    {
+        if (static_cast<int>(trimmed.size()) >= limit)
+        {
+            break;
+        }
+        lsp::json::Value entry = json::MakeObject();
+        for (const char* key : {"label", "kind", "detail"})
+        {
+            if (const lsp::json::Value* value = item->object().find(key))
+            {
+                entry.object()[key] = *value;
+            }
+        }
+        trimmed.push_back(std::move(entry));
+    }
+
+    lsp::json::Value reply = json::MakeObject();
+    reply.object()["truncated"] = ranked.size() > trimmed.size();
+    reply.object()["items"] = lsp::json::Value(std::move(trimmed));
+    return reply;
 }
 
 lsp::json::Value McpToolbox::DocumentSymbols(const lsp::json::Value& args)
 {
     const std::string uri = ResolveUri(json::GetString(args, "path", true));
+    RequireOpen(uri);
     lsp::json::Value params = json::MakeObject();
     params.object()["textDocument"] = json::MakeDocumentId(uri);
     return m_session.Request("textDocument/documentSymbol", std::move(params));
