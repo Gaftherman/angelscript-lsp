@@ -1267,6 +1267,7 @@
     "pretest": "npm run compile && npm run bundle && npm run lint && npm run check-settings",
     "lint": "eslint src",
     "test": "vscode-test --label unit",
+    "test:e2e": "vscode-test --label e2e",
     "test:perf": "vscode-test --label perf",
     "test:all": "vscode-test",
     "check-settings": "node scripts/check-settings-wired.mjs"
