@@ -69,6 +69,11 @@ void DefiniteAssignmentVisitor::MergeIfBranches(AssignmentWorkFrame& frame)
     }
 }
 
+/**
+ * @brief Advances one if statement by one phase of its worklist frame, merging the assigned variables of both branches.
+ * @param[in,out] frame Frame holding the statement's record, current phase and branch states.
+ * @return True when the statement is finished and its frame can be popped.
+ */
 bool DefiniteAssignmentVisitor::StepIf(AssignmentWorkFrame& frame)
 {
     const auto& rec = m_facts.records[frame.recordIndex];
@@ -124,6 +129,12 @@ void DefiniteAssignmentVisitor::MergeLoopBody(AssignmentWorkFrame& frame, bool c
     }
 }
 
+/**
+ * @brief Advances one while, do-while or for statement by one phase of its worklist frame.
+ * @param[in,out] frame Frame holding the statement's record, current phase and variable states.
+ * @param[in] isFor True for a for statement, whose initializer runs before the condition.
+ * @return True when the statement is finished and its frame can be popped.
+ */
 bool DefiniteAssignmentVisitor::StepLoop(AssignmentWorkFrame& frame, bool isFor)
 {
     const auto& rec = m_facts.records[frame.recordIndex];

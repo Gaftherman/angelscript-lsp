@@ -23,7 +23,8 @@ enum class ValueExpressionKind : uint8_t
     Identifier, ///< Identifier or scoped identifier.
     Call,       ///< Call or construct call whose callee was found.
     Cast,       ///< Explicit or functional cast.
-    Member      ///< Member expression.
+    Member,     ///< Member expression.
+    Index       ///< Index expression such as items[0]; its type is the element or opIndex result.
 };
 
 /**

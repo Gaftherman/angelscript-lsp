@@ -64,6 +64,10 @@ static void ClassifyLeaf(TSNode node, const NodeIndex* index, std::string_view s
     {
         fact.kind = ValueExpressionKind::Member;
     }
+    else if (symbol == gs.symIndexExpression)
+    {
+        fact.kind = ValueExpressionKind::Index;
+    }
 }
 
 ValueExpressionFact ReadValueExpression(TSNode node, const NodeIndex* index, std::string_view source)

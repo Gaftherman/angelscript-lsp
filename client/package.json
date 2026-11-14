@@ -1266,7 +1266,9 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run bundle && npm run lint && npm run check-settings",
     "lint": "eslint src",
-    "test": "vscode-test",
+    "test": "vscode-test --label unit",
+    "test:perf": "vscode-test --label perf",
+    "test:all": "vscode-test",
     "check-settings": "node scripts/check-settings-wired.mjs"
   },
   "devDependencies": {

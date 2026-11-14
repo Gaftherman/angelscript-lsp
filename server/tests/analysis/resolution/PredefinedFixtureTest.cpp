@@ -5,6 +5,7 @@
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/Utils.h"
@@ -42,27 +43,10 @@ using namespace angel_lsp::parser;
 namespace
 {
 
+/** @brief Reads the add-on stub through the shared fixture lookup, which does not depend on the working directory. */
 std::string ReadFixture()
 {
-    // The test binary is not run from a fixed directory, so the fixture is looked for relative
-    // to a few plausible roots rather than assumed.
-    static const char* candidates[] = {
-        "tests/fixtures/full-addons.as.predefined",           "../tests/fixtures/full-addons.as.predefined",
-        "../../tests/fixtures/full-addons.as.predefined",     "server/tests/fixtures/full-addons.as.predefined",
-        "../server/tests/fixtures/full-addons.as.predefined", "../../server/tests/fixtures/full-addons.as.predefined",
-    };
-
-    for (const char* candidate : candidates)
-    {
-        std::ifstream in(candidate, std::ios::binary);
-        if (in.is_open())
-        {
-            std::ostringstream ss;
-            ss << in.rdbuf();
-            return ss.str();
-        }
-    }
-    return {};
+    return angel_lsp::test::LoadFixtureText("full-addons.as.predefined");
 }
 
 const std::string& Fixture()
@@ -160,7 +144,7 @@ void RequireSilent(const std::string& script)
 TEST_CASE("PredefinedFixture - The stub is present and parses without diagnostics")
 {
     REQUIRE_MESSAGE(!Fixture().empty(),
-                    "tests/fixtures/full-addons.as.predefined not found from the working directory");
+                    "tests/fixtures/full-addons.as.predefined not found through ANGELSCRIPT_FIXTURE_DIR");
 
     const Result result = Analyze("void main() {}\n");
     const auto errors = ErrorsOnly(result.stubDiagnostics);

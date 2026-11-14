@@ -130,6 +130,12 @@ bool DeclaresOperatorMethod(std::string_view typeName, std::string_view methodNa
     return table.FindMemberSymbolPtr(typeName, methodName) != nullptr;
 }
 
+/**
+ * @brief Tells whether a value can be converted to the type with a plain scalar cast.
+ * @param[in] typeName Target type spelling.
+ * @param[in] table Symbol table used to recognise enums.
+ * @return True for primitive types and enums.
+ */
 bool IsScalarCastTarget(std::string_view typeName, const SymbolTable& table)
 {
     if (IsPrimitiveTypeName(typeName))

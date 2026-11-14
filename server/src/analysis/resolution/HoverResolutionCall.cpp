@@ -110,6 +110,14 @@ std::vector<Symbol> ResolveNamedArgCalleeCandidates(IndexedByteRange callRange, 
     return {};
 }
 
+/**
+ * @brief Finds the constructor a variable declarator with an argument list invokes.
+ * @param[in] declStartByte First byte of the declarator.
+ * @param[in] declEndByte One past the last byte of the declarator.
+ * @param[in] typeName Declared type, possibly with qualifiers or template arguments.
+ * @param[in] ctx Expression type context used to type the arguments.
+ * @return The matching constructor, or std::nullopt for primitives or when no constructor fits.
+ */
 std::optional<Symbol> ResolveConstructorForDeclarator(uint32_t declStartByte, uint32_t declEndByte,
                                                       std::string_view typeName, const ExpressionTypeContext& ctx)
 {
@@ -187,6 +195,14 @@ std::string ResolveConstructorSignature(uint32_t nodeStartByte, uint32_t nodeEnd
     return "";
 }
 
+/**
+ * @brief Picks the overload a call expression binds to.
+ * @param[in] startByte First byte of the call expression.
+ * @param[in] endByte One past the last byte of the call expression.
+ * @param[in] candidates Functions sharing the callee name.
+ * @param[in] ctx Expression type context used to type the arguments.
+ * @return The selected overload, or std::nullopt when there are no candidates or none fits.
+ */
 std::optional<Symbol> ResolveCallOverload(uint32_t startByte, uint32_t endByte, std::span<const Symbol> candidates,
                                           const ExpressionTypeContext& ctx)
 {

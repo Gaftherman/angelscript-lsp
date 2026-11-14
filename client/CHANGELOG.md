@@ -13,6 +13,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Fixed
 
+- Index expressions such as `items[0]` are now type-checked when they initialise a variable: `int x = items[0];` over an `array<Item@>` reports `as-err-no-implicit-conversion`, matching the AngelScript compiler.
+- `vscode-test` runs are split into `unit` (default `npm test`) and `perf` (`npm run test:perf`), and the first settings write no longer trips mocha's 2 s default.
 - The 300 MB peak-memory ceiling test (`Massive Workspace Stress`) now runs as its own `ctest` entry (`angel_lsp_stress_memory`), so it measures only its own process instead of the RSS accumulated by the rest of the suite on Linux and macOS.
 
 ## [1.1.7] - 2026-10-31

@@ -13,6 +13,12 @@
 namespace angel_lsp::analysis
 {
 
+/**
+ * @brief Maps a binary operator spelling to the AngelScript method pair that implements it.
+ * @param[in] op Operator token such as "+" or "<<".
+ * @return The left-operand method (e.g. opAdd) and its reversed-operand counterpart (opAdd_r); both empty when the
+ *         operator has no overloadable method.
+ */
 static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::string_view op)
 {
     if (op == "+")

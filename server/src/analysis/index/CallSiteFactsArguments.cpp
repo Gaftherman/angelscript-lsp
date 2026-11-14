@@ -14,6 +14,11 @@
 namespace angel_lsp::analysis
 {
 
+/**
+ * @brief Converts a node's start and end points into a line/column source range.
+ * @param[in] node Node to measure; a null node yields an empty range.
+ * @return Zero-based range covering the node's text.
+ */
 static SourceRange RangeOf(TSNode node) noexcept
 {
     if (ts_node_is_null(node))

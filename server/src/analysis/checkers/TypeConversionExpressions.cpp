@@ -91,6 +91,12 @@ void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConve
     }
 }
 
+/**
+ * @brief Reports a member access that reads a write-only property.
+ * @param[in] site Member-expression fact; call callees and write or mutation sites are skipped.
+ * @param[in] request Check request giving access to the scope tree.
+ * @param[in,out] ctx Diagnostic sink that receives as-err-write-only-property.
+ */
 void ProcessMemberExpressionSite(const MemberExpressionSiteFact& site, const TypeConversionCheckRequest& request,
                                  DiagnosticContext& ctx)
 {
@@ -107,6 +113,12 @@ void ProcessMemberExpressionSite(const MemberExpressionSiteFact& site, const Typ
     }
 }
 
+/**
+ * @brief Reports an index expression that reads through a write-only indexed property.
+ * @param[in] site Index-expression fact; write or mutation sites are skipped.
+ * @param[in] request Check request giving access to the scope tree.
+ * @param[in,out] ctx Diagnostic sink that receives as-err-write-only-property.
+ */
 void ProcessIndexExpressionSite(const IndexExpressionSiteFact& site, const TypeConversionCheckRequest& request,
                                 DiagnosticContext& ctx)
 {

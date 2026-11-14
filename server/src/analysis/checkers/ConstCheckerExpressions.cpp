@@ -125,6 +125,13 @@ static Constness ResolveConstnessFromLeaf(const ConstChainLeafFact& leaf, const 
     return leafConst;
 }
 
+/**
+ * @brief Resolves whether the target of an assignment is const at its leaf.
+ * @param[in] target Assignment-target fact carrying the leaf byte span, text and member-chain flags.
+ * @param[in] facts Const-site facts of the document being checked.
+ * @param[in] ctx Expression type context used to resolve the leaf's declared type.
+ * @return Constness of the leaf, Unknown when it cannot be resolved.
+ */
 Constness ResolveConstness(const ConstAssignmentTargetFact& target, const ConstSiteFacts& facts,
                            const ExpressionTypeContext& ctx)
 {
@@ -132,6 +139,13 @@ Constness ResolveConstness(const ConstAssignmentTargetFact& target, const ConstS
     return ResolveConstnessFromLeaf(leaf, facts, ctx);
 }
 
+/**
+ * @brief Resolves whether the receiver of a method call is const at its leaf.
+ * @param[in] call Method-call fact carrying the leaf byte span, text and member-chain flags.
+ * @param[in] facts Const-site facts of the document being checked.
+ * @param[in] ctx Expression type context used to resolve the leaf's declared type.
+ * @return Constness of the leaf, Unknown when it cannot be resolved.
+ */
 Constness ResolveConstness(const ConstMethodCallFact& call, const ConstSiteFacts& facts,
                            const ExpressionTypeContext& ctx)
 {

@@ -172,8 +172,8 @@ static ExpressionType ResolveCastValueType(const ValueExpressionFact& value)
 }
 
 /**
- * @brief Resolves the type of a member expression through byte-range expression resolution.
- * @param[in] value Member fact.
+ * @brief Resolves the type of a member or index expression through byte-range expression resolution.
+ * @param[in] value Member or index fact.
  * @param[in] scope Lexical scope at the expression position.
  * @param[in] ctx Diagnostic context.
  * @return The resolved member type, or unknown when it cannot be resolved.
@@ -239,6 +239,7 @@ ExpressionType ResolveValueType(const ValueExpressionFact& value, const Scope* s
         result = ResolveCastValueType(value);
         break;
     case ValueExpressionKind::Member:
+    case ValueExpressionKind::Index:
         result = ResolveMemberValueType(value, scope, ctx);
         break;
     case ValueExpressionKind::None:
