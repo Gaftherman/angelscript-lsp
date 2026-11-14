@@ -255,5 +255,14 @@
   "note-expected-colon-after-default": "Expected ':' after 'default'",
   "note-expected-comma-or-paren": "Expected ',' or ')' before '{}'",
   "note-expected-semicolon-before": "Expected ';' before '{}'",
-  "note-in-mixin-member": "In mixin '{}': Member '{}'"
+  "note-in-mixin-member": "In mixin '{}': Member '{}'",
+  "mcp-tool-open-document": "Opens a script in the language server. Pass text to open unsaved content, or omit it to read the file from disk.",
+  "mcp-tool-apply-edit": "Applies one incremental edit (range plus replacement text) to an open document, like typing in an editor.",
+  "mcp-tool-replace-document": "Replaces the whole text of an open document.",
+  "mcp-tool-diagnostics": "Returns the errors, warnings and hints of a document with their exact ranges.",
+  "mcp-tool-hover": "Returns the hover text the editor would show at a zero-based line and character.",
+  "mcp-tool-completion": "Returns the completion items offered at a zero-based line and character.",
+  "mcp-tool-signature-help": "Returns the signature help shown at a zero-based line and character inside a call.",
+  "mcp-tool-definition": "Returns where the symbol at a zero-based line and character is defined.",
+  "mcp-tool-document-symbols": "Returns the symbol outline of a document."
 }

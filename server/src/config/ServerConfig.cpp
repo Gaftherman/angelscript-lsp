@@ -887,6 +887,20 @@ static bool TryParsePathAndLocaleOptions(ServerConfig& config, ArgParseContext& 
         }
         return true;
     }
+    if (ctx.key == "--mcp")
+    {
+        config.info.mcpMode = ctx.GetBoolValue(true);
+        return true;
+    }
+    if (ctx.key == "--mcp-root")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val))
+        {
+            config.info.mcpRoot = std::string(val);
+        }
+        return true;
+    }
     if (ctx.key == "--define" || ctx.key == "-D")
     {
         std::string_view val;

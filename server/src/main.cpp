@@ -6,6 +6,7 @@
 
 #include "analysis/types/EngineConfigConverter.h"
 #include "lsp/Server.h"
+#include "lsp/mcp/McpBridge.h"
 
 #include <fstream>
 #include <iostream>
@@ -71,6 +72,19 @@ int main(int argc, char** argv)
     if (config.info.showHelp || config.info.showVersion)
     {
         return 0;
+    }
+
+    if (config.info.mcpMode)
+    {
+        try
+        {
+            return angel_lsp::mcp::RunMcpBridge(config, std::cin, std::cout);
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "angel_lsp: fatal error: " << e.what() << '\n';
+            return 1;
+        }
     }
 
     // Run() already recovers from malformed messages and closes cleanly on a dead transport. This

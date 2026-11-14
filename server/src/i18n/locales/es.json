@@ -255,5 +255,14 @@
   "note-expected-colon-after-default": "Se esperaba ':' después de 'default'",
   "note-expected-comma-or-paren": "Se esperaba ',' o ')' antes de '{}'",
   "note-expected-semicolon-before": "Se esperaba ';' antes de '{}'",
-  "note-in-mixin-member": "En el mixin '{}': Miembro '{}'"
+  "note-in-mixin-member": "En el mixin '{}': Miembro '{}'",
+  "mcp-tool-open-document": "Abre un script en el servidor de lenguaje. Pasa text para abrir contenido sin guardar, u omítelo para leer el archivo de disco.",
+  "mcp-tool-apply-edit": "Aplica una edición incremental (rango y texto de reemplazo) a un documento abierto, como al escribir en un editor.",
+  "mcp-tool-replace-document": "Reemplaza todo el texto de un documento abierto.",
+  "mcp-tool-diagnostics": "Devuelve los errores, advertencias y sugerencias de un documento con sus rangos exactos.",
+  "mcp-tool-hover": "Devuelve el texto de hover que mostraría el editor en una línea y carácter base cero.",
+  "mcp-tool-completion": "Devuelve los elementos de autocompletado ofrecidos en una línea y carácter base cero.",
+  "mcp-tool-signature-help": "Devuelve la ayuda de firma mostrada en una línea y carácter base cero dentro de una llamada.",
+  "mcp-tool-definition": "Devuelve dónde está definido el símbolo en una línea y carácter base cero.",
+  "mcp-tool-document-symbols": "Devuelve el esquema de símbolos de un documento."
 }

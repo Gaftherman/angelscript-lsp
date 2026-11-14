@@ -4,6 +4,9 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+### Added
+- `angel_lsp --mcp [--mcp-root <dir>]` serves an MCP bridge over stdio. Tools: `open_document`, `apply_edit`, `replace_document`, `diagnostics`, `hover`, `completion`, `signature_help`, `definition`, `document_symbols`; they drive an in-process language server like an editor would.
+
 ### Removed
 
 - Built-in engine profiles: the `engineProfile` setting key (now ignored if present), the `--engine-profile`/`--profile` server flags and the embedded profile stubs. Predefined API stubs on disk (`.as.predefined`) are the only source of engine types.

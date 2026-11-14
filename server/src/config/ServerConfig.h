@@ -118,6 +118,11 @@ struct Info
 
     bool showHelp = false;
     bool showVersion = false;
+
+    /// Serve MCP tools over stdio (newline-delimited JSON-RPC) instead of the LSP protocol.
+    bool mcpMode = false;
+    /// Directory that relative `path` arguments of the MCP tools resolve against and may not escape.
+    std::string mcpRoot;
 };
 
 /**
