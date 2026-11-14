@@ -1,0 +1,2 @@
+// @expect: reject
+void x;

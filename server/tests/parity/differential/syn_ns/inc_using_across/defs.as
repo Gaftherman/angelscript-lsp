@@ -1,0 +1,1 @@
+namespace Defs { void greet() {} }
