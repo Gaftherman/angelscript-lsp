@@ -7,9 +7,9 @@
 
 using namespace angel_lsp::test;
 
-TEST_SUITE("InitializerListParity")
+TEST_SUITE("oracle/InitializerListParity")
 {
-    TEST_CASE("Anonymous dictionary argument in overloaded function call")
+    TEST_CASE("InitializerListParity - Anonymous dictionary argument in overloaded function call")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
@@ -47,7 +47,8 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Typed initializer list in index assignment (@dict[key] = array<Type@>@ = { @val })")
+    TEST_CASE(
+        "InitializerListParity - Typed initializer list in index assignment (@dict[key] = array<Type@>@ = { @val })")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
@@ -77,7 +78,7 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Typed initializer list in variable declaration and return statement")
+    TEST_CASE("InitializerListParity - Typed initializer list in variable declaration and return statement")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
@@ -110,7 +111,7 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Typed initializer list in class member and chained assignments")
+    TEST_CASE("InitializerListParity - Typed initializer list in class member and chained assignments")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
@@ -144,7 +145,7 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Dynamic rejection of initializer lists on non-container classes")
+    TEST_CASE("InitializerListParity - Dynamic rejection of initializer lists on non-container classes")
     {
         LspSemanticHarnessFixture fixture;
         const std::string clsName = GenerateRandomSymbolName("NotAContainer");
@@ -164,7 +165,8 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertDiagnosticAt(docUri, 5, "as-err-no-implicit-conversion");
     }
 
-    TEST_CASE("Template without list constructor or @listpattern rejects initializer list (asharness parity)")
+    TEST_CASE("InitializerListParity - Template without list constructor or @listpattern rejects initializer list "
+              "(asharness parity)")
     {
         LspSemanticHarnessFixture fixture;
         const std::string templateType = GenerateRandomSymbolName("Optional");
@@ -191,7 +193,7 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertDiagnosticAt(docUri, 2, "as-err-no-implicit-conversion");
     }
 
-    TEST_CASE("Custom template with @listpattern accepts initializer list dynamically")
+    TEST_CASE("InitializerListParity - Custom template with @listpattern accepts initializer list dynamically")
     {
         LspSemanticHarnessFixture fixture;
         const std::string templateType = GenerateRandomSymbolName("MyList");
@@ -218,7 +220,7 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Custom aggregate class with list constructor accepts initializer list")
+    TEST_CASE("InitializerListParity - Custom aggregate class with list constructor accepts initializer list")
     {
         LspSemanticHarnessFixture fixture;
         const std::string vecType = GenerateRandomSymbolName("Vector3");
@@ -241,7 +243,8 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Plain class without list constructor rejects initializer list (asharness parity)")
+    TEST_CASE(
+        "InitializerListParity - Plain class without list constructor rejects initializer list (asharness parity)")
     {
         LspSemanticHarnessFixture fixture;
         const std::string vecType = GenerateRandomSymbolName("PlainVec3");
@@ -274,7 +277,7 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertDiagnosticAt(docUri, 7, "as-err-no-implicit-conversion");
     }
 
-    TEST_CASE("Nested typed dictionary inside dictionary initializer list (asharness parity)")
+    TEST_CASE("InitializerListParity - Nested typed dictionary inside dictionary initializer list (asharness parity)")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
@@ -308,7 +311,8 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Array of dictionaries and dictionary argument to array.insertLast (asharness parity)")
+    TEST_CASE(
+        "InitializerListParity - Array of dictionaries and dictionary argument to array.insertLast (asharness parity)")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
@@ -340,7 +344,8 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Rejection of untyped anonymous initializer list inside dictionary for ? type (asharness parity)")
+    TEST_CASE("InitializerListParity - Rejection of untyped anonymous initializer list inside dictionary for ? type "
+              "(asharness parity)")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
@@ -370,7 +375,7 @@ TEST_SUITE("InitializerListParity")
         fixture.AssertDiagnosticAt(docUri, 2, "as-err-initializer-list-not-supported");
     }
 
-    TEST_CASE("Custom template container with @listpattern containing dictionaries")
+    TEST_CASE("InitializerListParity - Custom template container with @listpattern containing dictionaries")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");

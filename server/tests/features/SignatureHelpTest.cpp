@@ -86,283 +86,286 @@ struct TestEnvironment
 };
 } // namespace
 
-TEST_CASE("SignatureHelpHandler - Basic Function Call")
+TEST_SUITE("features/SignatureHelp")
 {
-    std::string code = "void Test(int a, float b) {}\n"
-                       "void main() {\n"
-                       "    Test(10, 2.5);\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // Active param 0: inside 'Test(10,' at column 10
-    auto sig0 = env.SigHelpAt(2, 10);
-    REQUIRE(sig0.has_value());
-    REQUIRE(!sig0->signatures.empty());
-    CHECK(sig0->signatures[0].label == "void Test(int a, float b)");
-    REQUIRE(sig0->activeParameter.has_value());
-    CHECK(sig0->activeParameter.value().value() == 0u);
-
-    // Active param 1: inside 'Test(10, 2.5)' at column 14 (after comma)
-    auto sig1 = env.SigHelpAt(2, 14);
-    REQUIRE(sig1.has_value());
-    REQUIRE(sig1->activeParameter.has_value());
-    CHECK(sig1->activeParameter.value().value() == 1u);
-}
-
-TEST_CASE("SignatureHelpHandler - Nested Comma Handling")
-{
-    std::string code = "int Inner(int x, int y) { return x + y; }\n"
-                       "void Outer(int a, int b) {}\n"
-                       "void main() {\n"
-                       "    Outer(Inner(1, 2), 3);\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // Active param for Outer after inner call and comma (column 24)
-    auto sig = env.SigHelpAt(3, 24);
-    REQUIRE(sig.has_value());
-    CHECK(sig->signatures[0].label.find("void Outer(int a, int b)") != std::string::npos);
-    REQUIRE(sig->activeParameter.has_value());
-    CHECK(sig->activeParameter.value().value() == 1u);
-}
-
-TEST_CASE("SignatureHelpHandler - Member Function Call")
-{
-    std::string code = "class Player {\n"
-                       "    void SetSpeed(float s, bool boost = false) {}\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Player p;\n"
-                       "    p.SetSpeed(5.0);\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    auto sig = env.SigHelpAt(5, 16);
-    REQUIRE(sig.has_value());
-    REQUIRE(!sig->signatures.empty());
-    CHECK(sig->signatures[0].label == "void Player::SetSpeed(float s, bool boost = false)");
-    REQUIRE(sig->activeParameter.has_value());
-    CHECK(sig->activeParameter.value().value() == 0u);
-}
-
-TEST_CASE("SignatureHelpHandler - Outside Function Call Returns Nullopt")
-{
-    TestEnvironment env("void main() { int x = 10; }");
-    auto sig = env.SigHelpAt(0, 15);
-    CHECK(!sig.has_value());
-}
-
-// =====================================================================================
-// Member calls on an array.
-//
-// Characterisation first, because the answer here was not what reading the code suggested. This
-// file's own CleanBaseType shadows analysis::CleanBaseType and is weaker - it strips `@`, `&` and a
-// leading `const` and stops there - so `array<Foo>` and `Foo[]` reached the hierarchy lookup with
-// their brackets still on. Neither spelling is a key in the symbol table: a template class is
-// registered under its bare name, so `array<Foo>::insertLast` is stored as `array::insertLast`.
-// =====================================================================================
-
-TEST_CASE("SignatureHelpHandler - A member call on an array resolves to the template's member")
-{
-    std::string code = "class array<T> { void insertLast(const T&in value); }\n"
-                       "class Foo {}\n"
-                       "void main() {\n"
-                       "    array<Foo> items;\n"
-                       "    items.insertLast();\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-    auto help = env.SigHelpAt(4, 21);
-
-    REQUIRE(help.has_value());
-    REQUIRE_FALSE(help->signatures.empty());
-    CHECK(help->signatures[0].label.find("insertLast") != std::string::npos);
-}
-
-TEST_CASE("SignatureHelpHandler - The bracket spelling of an array resolves the same way")
-{
-    // `Foo[]` and `array<Foo>` are the same type written two ways, so a member call on one has to
-    // find what a member call on the other finds.
-    std::string code = "class array<T> { void insertLast(const T&in value); }\n"
-                       "class Foo {}\n"
-                       "void main() {\n"
-                       "    Foo[] items;\n"
-                       "    items.insertLast();\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-    auto help = env.SigHelpAt(4, 21);
-
-    REQUIRE(help.has_value());
-    REQUIRE_FALSE(help->signatures.empty());
-    CHECK(help->signatures[0].label.find("insertLast") != std::string::npos);
-}
-
-TEST_CASE("SignatureHelpHandler - Invariant: Active parameter index tracks comma positions")
-{
-    std::mt19937_64 rng(0x1337BEEF);
-    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "MultiParamFunc");
-    const std::string code = "void " + fnName +
-                             "(int a, float b, string c) {}\n"
-                             "void main() {\n"
-                             "    " +
-                             fnName +
-                             "(10, 20.0f, \"text\");\n"
-                             "}\n";
-
-    TestEnvironment env(code);
-    const size_t callLineStart = code.find(fnName + "(10");
-    const size_t argsStart = callLineStart + fnName.size() + 1;
-
-    auto posArg0 = FindPos(code, "10", argsStart);
-    auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
-    REQUIRE(help0.has_value());
-    REQUIRE(help0->activeParameter.has_value());
-    CHECK(help0->activeParameter.value().value() == 0u);
-
-    auto posArg1 = FindPos(code, "20.0f", argsStart);
-    auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
-    REQUIRE(help1.has_value());
-    REQUIRE(help1->activeParameter.has_value());
-    CHECK(help1->activeParameter.value().value() == 1u);
-
-    auto posArg2 = FindPos(code, "\"text\"", argsStart);
-    auto help2 = env.SigHelpAt(posArg2.line, posArg2.character);
-    REQUIRE(help2.has_value());
-    REQUIRE(help2->activeParameter.has_value());
-    CHECK(help2->activeParameter.value().value() == 2u);
-}
-
-TEST_CASE("SignatureHelpHandler - Constructor signature help for direct call and variable declaration")
-{
-    const std::string className = angel_lsp::test::GenerateRandomSymbolName("Widget");
-    const std::string code = "class " + className +
-                             " {\n"
-                             "    " +
-                             className +
-                             "(int count, float speed) {}\n"
-                             "    " +
-                             className +
-                             "(string name) {}\n"
-                             "}\n"
-                             "void main() {\n"
-                             "    " +
-                             className +
-                             "(42, 3.14f);\n"
-                             "    " +
-                             className +
-                             " w(\"test\");\n"
-                             "}\n";
-
-    TestEnvironment env(code);
-
-    // Test 1: Anonymous constructor call ClassName(42, 3.14f)
+    TEST_CASE("SignatureHelpHandler - Basic Function Call")
     {
-        const size_t callPos = code.find(className + "(42");
-        const size_t argsStart = callPos + className.size() + 1;
-        auto posArg0 = FindPos(code, "42", argsStart);
+        std::string code = "void Test(int a, float b) {}\n"
+                           "void main() {\n"
+                           "    Test(10, 2.5);\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        // Active param 0: inside 'Test(10,' at column 10
+        auto sig0 = env.SigHelpAt(2, 10);
+        REQUIRE(sig0.has_value());
+        REQUIRE(!sig0->signatures.empty());
+        CHECK(sig0->signatures[0].label == "void Test(int a, float b)");
+        REQUIRE(sig0->activeParameter.has_value());
+        CHECK(sig0->activeParameter.value().value() == 0u);
+
+        // Active param 1: inside 'Test(10, 2.5)' at column 14 (after comma)
+        auto sig1 = env.SigHelpAt(2, 14);
+        REQUIRE(sig1.has_value());
+        REQUIRE(sig1->activeParameter.has_value());
+        CHECK(sig1->activeParameter.value().value() == 1u);
+    }
+
+    TEST_CASE("SignatureHelpHandler - Nested Comma Handling")
+    {
+        std::string code = "int Inner(int x, int y) { return x + y; }\n"
+                           "void Outer(int a, int b) {}\n"
+                           "void main() {\n"
+                           "    Outer(Inner(1, 2), 3);\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        // Active param for Outer after inner call and comma (column 24)
+        auto sig = env.SigHelpAt(3, 24);
+        REQUIRE(sig.has_value());
+        CHECK(sig->signatures[0].label.find("void Outer(int a, int b)") != std::string::npos);
+        REQUIRE(sig->activeParameter.has_value());
+        CHECK(sig->activeParameter.value().value() == 1u);
+    }
+
+    TEST_CASE("SignatureHelpHandler - Member Function Call")
+    {
+        std::string code = "class Player {\n"
+                           "    void SetSpeed(float s, bool boost = false) {}\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Player p;\n"
+                           "    p.SetSpeed(5.0);\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        auto sig = env.SigHelpAt(5, 16);
+        REQUIRE(sig.has_value());
+        REQUIRE(!sig->signatures.empty());
+        CHECK(sig->signatures[0].label == "void Player::SetSpeed(float s, bool boost = false)");
+        REQUIRE(sig->activeParameter.has_value());
+        CHECK(sig->activeParameter.value().value() == 0u);
+    }
+
+    TEST_CASE("SignatureHelpHandler - Outside Function Call Returns Nullopt")
+    {
+        TestEnvironment env("void main() { int x = 10; }");
+        auto sig = env.SigHelpAt(0, 15);
+        CHECK(!sig.has_value());
+    }
+
+    // =====================================================================================
+    // Member calls on an array.
+    //
+    // Characterisation first, because the answer here was not what reading the code suggested. This
+    // file's own CleanBaseType shadows analysis::CleanBaseType and is weaker - it strips `@`, `&` and a
+    // leading `const` and stops there - so `array<Foo>` and `Foo[]` reached the hierarchy lookup with
+    // their brackets still on. Neither spelling is a key in the symbol table: a template class is
+    // registered under its bare name, so `array<Foo>::insertLast` is stored as `array::insertLast`.
+    // =====================================================================================
+
+    TEST_CASE("SignatureHelpHandler - A member call on an array resolves to the template's member")
+    {
+        std::string code = "class array<T> { void insertLast(const T&in value); }\n"
+                           "class Foo {}\n"
+                           "void main() {\n"
+                           "    array<Foo> items;\n"
+                           "    items.insertLast();\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+        auto help = env.SigHelpAt(4, 21);
+
+        REQUIRE(help.has_value());
+        REQUIRE_FALSE(help->signatures.empty());
+        CHECK(help->signatures[0].label.find("insertLast") != std::string::npos);
+    }
+
+    TEST_CASE("SignatureHelpHandler - The bracket spelling of an array resolves the same way")
+    {
+        // `Foo[]` and `array<Foo>` are the same type written two ways, so a member call on one has to
+        // find what a member call on the other finds.
+        std::string code = "class array<T> { void insertLast(const T&in value); }\n"
+                           "class Foo {}\n"
+                           "void main() {\n"
+                           "    Foo[] items;\n"
+                           "    items.insertLast();\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+        auto help = env.SigHelpAt(4, 21);
+
+        REQUIRE(help.has_value());
+        REQUIRE_FALSE(help->signatures.empty());
+        CHECK(help->signatures[0].label.find("insertLast") != std::string::npos);
+    }
+
+    TEST_CASE("SignatureHelpHandler - Invariant: Active parameter index tracks comma positions")
+    {
+        std::mt19937_64 rng(0x1337BEEF);
+        const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "MultiParamFunc");
+        const std::string code = "void " + fnName +
+                                 "(int a, float b, string c) {}\n"
+                                 "void main() {\n"
+                                 "    " +
+                                 fnName +
+                                 "(10, 20.0f, \"text\");\n"
+                                 "}\n";
+
+        TestEnvironment env(code);
+        const size_t callLineStart = code.find(fnName + "(10");
+        const size_t argsStart = callLineStart + fnName.size() + 1;
+
+        auto posArg0 = FindPos(code, "10", argsStart);
         auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
         REQUIRE(help0.has_value());
-        CHECK_FALSE(help0->signatures.empty());
-        // Verify no "void" in constructor signature label
-        bool foundCtor = false;
-        for (const auto& sig : help0->signatures)
-        {
-            if (sig.label.find(className + "(int count, float speed)") != std::string::npos)
-            {
-                foundCtor = true;
-                CHECK(sig.label.find("void") == std::string::npos);
-            }
-        }
-        CHECK(foundCtor);
+        REQUIRE(help0->activeParameter.has_value());
+        CHECK(help0->activeParameter.value().value() == 0u);
+
+        auto posArg1 = FindPos(code, "20.0f", argsStart);
+        auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
+        REQUIRE(help1.has_value());
+        REQUIRE(help1->activeParameter.has_value());
+        CHECK(help1->activeParameter.value().value() == 1u);
+
+        auto posArg2 = FindPos(code, "\"text\"", argsStart);
+        auto help2 = env.SigHelpAt(posArg2.line, posArg2.character);
+        REQUIRE(help2.has_value());
+        REQUIRE(help2->activeParameter.has_value());
+        CHECK(help2->activeParameter.value().value() == 2u);
     }
 
-    // Test 2: Variable direct-initialization ClassName w("test")
+    TEST_CASE("SignatureHelpHandler - Constructor signature help for direct call and variable declaration")
     {
-        const size_t varPos = code.find("w(\"test\")");
-        auto posArg = FindPos(code, "\"test\"", varPos);
-        auto helpVar = env.SigHelpAt(posArg.line, posArg.character);
-        REQUIRE(helpVar.has_value());
-        CHECK_FALSE(helpVar->signatures.empty());
-        bool foundStrCtor = false;
-        for (const auto& sig : helpVar->signatures)
+        const std::string className = angel_lsp::test::GenerateRandomSymbolName("Widget");
+        const std::string code = "class " + className +
+                                 " {\n"
+                                 "    " +
+                                 className +
+                                 "(int count, float speed) {}\n"
+                                 "    " +
+                                 className +
+                                 "(string name) {}\n"
+                                 "}\n"
+                                 "void main() {\n"
+                                 "    " +
+                                 className +
+                                 "(42, 3.14f);\n"
+                                 "    " +
+                                 className +
+                                 " w(\"test\");\n"
+                                 "}\n";
+
+        TestEnvironment env(code);
+
+        // Test 1: Anonymous constructor call ClassName(42, 3.14f)
         {
-            if (sig.label.find(className + "(string name)") != std::string::npos)
+            const size_t callPos = code.find(className + "(42");
+            const size_t argsStart = callPos + className.size() + 1;
+            auto posArg0 = FindPos(code, "42", argsStart);
+            auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
+            REQUIRE(help0.has_value());
+            CHECK_FALSE(help0->signatures.empty());
+            // Verify no "void" in constructor signature label
+            bool foundCtor = false;
+            for (const auto& sig : help0->signatures)
             {
-                foundStrCtor = true;
+                if (sig.label.find(className + "(int count, float speed)") != std::string::npos)
+                {
+                    foundCtor = true;
+                    CHECK(sig.label.find("void") == std::string::npos);
+                }
             }
+            CHECK(foundCtor);
         }
-        CHECK(foundStrCtor);
+
+        // Test 2: Variable direct-initialization ClassName w("test")
+        {
+            const size_t varPos = code.find("w(\"test\")");
+            auto posArg = FindPos(code, "\"test\"", varPos);
+            auto helpVar = env.SigHelpAt(posArg.line, posArg.character);
+            REQUIRE(helpVar.has_value());
+            CHECK_FALSE(helpVar->signatures.empty());
+            bool foundStrCtor = false;
+            for (const auto& sig : helpVar->signatures)
+            {
+                if (sig.label.find(className + "(string name)") != std::string::npos)
+                {
+                    foundStrCtor = true;
+                }
+            }
+            CHECK(foundStrCtor);
+        }
     }
-}
 
-TEST_CASE("SignatureHelpHandler - Invariant: Local funcdef variable provides signature help")
-{
-    std::mt19937_64 rng(0x1337BEF4);
-    const std::string funcdefName = angel_lsp::test::GenerateIdentifier(rng, "CallbackType");
-    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "callback");
-    const std::string code = "funcdef void " + funcdefName +
-                             "(int player, float option);\n"
-                             "void test(" +
-                             funcdefName + "@ " + varName +
-                             ") {\n"
-                             "    " +
-                             varName +
-                             "(10, 20.0f);\n"
-                             "}\n";
+    TEST_CASE("SignatureHelpHandler - Invariant: Local funcdef variable provides signature help")
+    {
+        std::mt19937_64 rng(0x1337BEF4);
+        const std::string funcdefName = angel_lsp::test::GenerateIdentifier(rng, "CallbackType");
+        const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "callback");
+        const std::string code = "funcdef void " + funcdefName +
+                                 "(int player, float option);\n"
+                                 "void test(" +
+                                 funcdefName + "@ " + varName +
+                                 ") {\n"
+                                 "    " +
+                                 varName +
+                                 "(10, 20.0f);\n"
+                                 "}\n";
 
-    TestEnvironment env(code);
-    const size_t callPos = code.find(varName + "(10");
-    const size_t argsStart = callPos + varName.size() + 1;
-    auto posArg0 = FindPos(code, "10", argsStart);
-    auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
-    REQUIRE(help0.has_value());
-    REQUIRE_FALSE(help0->signatures.empty());
-    CHECK(help0->signatures[0].label.find("void " + varName + "(int player, float option)") != std::string::npos);
-    REQUIRE(help0->signatures[0].parameters.has_value());
-    CHECK(help0->signatures[0].parameters->size() == 2);
-}
+        TestEnvironment env(code);
+        const size_t callPos = code.find(varName + "(10");
+        const size_t argsStart = callPos + varName.size() + 1;
+        auto posArg0 = FindPos(code, "10", argsStart);
+        auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
+        REQUIRE(help0.has_value());
+        REQUIRE_FALSE(help0->signatures.empty());
+        CHECK(help0->signatures[0].label.find("void " + varName + "(int player, float option)") != std::string::npos);
+        REQUIRE(help0->signatures[0].parameters.has_value());
+        CHECK(help0->signatures[0].parameters->size() == 2);
+    }
 
-TEST_CASE("SignatureHelpHandler - Comparison and shift operators in arguments do not suppress comma")
-{
-    std::string code = "void Evaluate(bool flag, bool flag2, float ratio) {}\n"
-                       "void main() {\n"
-                       "    int x = 3;\n"
-                       "    int y = 4;\n"
-                       "    Evaluate(x < 5, y > 2, 0.5f);\n"
-                       "}\n";
+    TEST_CASE("SignatureHelpHandler - Comparison and shift operators in arguments do not suppress comma")
+    {
+        std::string code = "void Evaluate(bool flag, bool flag2, float ratio) {}\n"
+                           "void main() {\n"
+                           "    int x = 3;\n"
+                           "    int y = 4;\n"
+                           "    Evaluate(x < 5, y > 2, 0.5f);\n"
+                           "}\n";
 
-    TestEnvironment env(code);
-    const size_t callPos = code.find("Evaluate(x < 5");
-    auto posArg1 = FindPos(code, "y > 2", callPos);
-    auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
-    REQUIRE(help1.has_value());
-    REQUIRE(help1->activeParameter.has_value());
-    CHECK(help1->activeParameter.value().value() == 1u);
+        TestEnvironment env(code);
+        const size_t callPos = code.find("Evaluate(x < 5");
+        auto posArg1 = FindPos(code, "y > 2", callPos);
+        auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
+        REQUIRE(help1.has_value());
+        REQUIRE(help1->activeParameter.has_value());
+        CHECK(help1->activeParameter.value().value() == 1u);
 
-    auto posArg2 = FindPos(code, "0.5f", callPos);
-    auto help2 = env.SigHelpAt(posArg2.line, posArg2.character);
-    REQUIRE(help2.has_value());
-    REQUIRE(help2->activeParameter.has_value());
-    CHECK(help2->activeParameter.value().value() == 2u);
-}
+        auto posArg2 = FindPos(code, "0.5f", callPos);
+        auto help2 = env.SigHelpAt(posArg2.line, posArg2.character);
+        REQUIRE(help2.has_value());
+        REQUIRE(help2->activeParameter.has_value());
+        CHECK(help2->activeParameter.value().value() == 2u);
+    }
 
-TEST_CASE("SignatureHelpHandler - Heredoc string with parens and commas does not corrupt call frame")
-{
-    std::string code = "void LogMessage(string msg, int level) {}\n"
-                       "void main() {\n"
-                       "    LogMessage(\"\"\"multi (line,\n"
-                       "paren)\"\"\", 5);\n"
-                       "}\n";
+    TEST_CASE("SignatureHelpHandler - Heredoc string with parens and commas does not corrupt call frame")
+    {
+        std::string code = "void LogMessage(string msg, int level) {}\n"
+                           "void main() {\n"
+                           "    LogMessage(\"\"\"multi (line,\n"
+                           "paren)\"\"\", 5);\n"
+                           "}\n";
 
-    TestEnvironment env(code);
-    const size_t callPos = code.find("LogMessage(\"\"\"");
-    auto posArg1 = FindPos(code, "5", callPos);
-    auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
-    REQUIRE(help1.has_value());
-    REQUIRE(help1->activeParameter.has_value());
-    CHECK(help1->activeParameter.value().value() == 1u);
+        TestEnvironment env(code);
+        const size_t callPos = code.find("LogMessage(\"\"\"");
+        auto posArg1 = FindPos(code, "5", callPos);
+        auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
+        REQUIRE(help1.has_value());
+        REQUIRE(help1->activeParameter.has_value());
+        CHECK(help1->activeParameter.value().value() == 1u);
+    }
 }

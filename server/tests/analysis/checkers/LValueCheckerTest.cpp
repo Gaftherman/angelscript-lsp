@@ -59,99 +59,102 @@ bool IsAnyLValueError(const Diagnostic& d)
 }
 } // namespace
 
-TEST_CASE("LValueChecker - Local variable cannot be of type void")
+TEST_SUITE("analysis/checkers/LValueChecker")
 {
-    std::string code = "void main()\n"
-                       "{\n"
-                       "    void v;\n"
-                       "    v = 0;\n"
-                       "}\n";
+    TEST_CASE("LValueChecker - Local variable cannot be of type void")
+    {
+        std::string code = "void main()\n"
+                           "{\n"
+                           "    void v;\n"
+                           "    v = 0;\n"
+                           "}\n";
 
-    auto diags = RunAnalysis(code);
-    bool hasVoidVarError =
-        std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d) { return d.code == "as-err-void-variable"; });
-    CHECK(hasVoidVarError);
-}
+        auto diags = RunAnalysis(code);
+        bool hasVoidVarError = std::any_of(diags.begin(), diags.end(),
+                                           [](const Diagnostic& d) { return d.code == "as-err-void-variable"; });
+        CHECK(hasVoidVarError);
+    }
 
-TEST_CASE("LValueChecker - Cannot assign to void-returning method call")
-{
-    std::string code = "class AnotherClass\n"
-                       "{\n"
-                       "    void AnotherMethod(float f)\n"
-                       "    {\n"
-                       "    }\n"
-                       "}\n"
-                       "void main()\n"
-                       "{\n"
-                       "    AnotherClass myClass;\n"
-                       "    myClass.AnotherMethod(2.0f) = null;\n"
-                       "}\n";
+    TEST_CASE("LValueChecker - Cannot assign to void-returning method call")
+    {
+        std::string code = "class AnotherClass\n"
+                           "{\n"
+                           "    void AnotherMethod(float f)\n"
+                           "    {\n"
+                           "    }\n"
+                           "}\n"
+                           "void main()\n"
+                           "{\n"
+                           "    AnotherClass myClass;\n"
+                           "    myClass.AnotherMethod(2.0f) = null;\n"
+                           "}\n";
 
-    auto diags = RunAnalysis(code);
-    bool hasAssignVoidError = std::any_of(diags.begin(), diags.end(), IsAssignVoidOrNotLValue);
-    CHECK(hasAssignVoidError);
-}
+        auto diags = RunAnalysis(code);
+        bool hasAssignVoidError = std::any_of(diags.begin(), diags.end(), IsAssignVoidOrNotLValue);
+        CHECK(hasAssignVoidError);
+    }
 
-TEST_CASE("LValueChecker - Cannot assign to value-returning namespace function call")
-{
-    std::string code = "namespace MyNamespace\n"
-                       "{\n"
-                       "    float MyNamespaceFunction()\n"
-                       "    {\n"
-                       "        return 0.0f;\n"
-                       "    }\n"
-                       "}\n"
-                       "void main()\n"
-                       "{\n"
-                       "    MyNamespace::MyNamespaceFunction() = \"hola\";\n"
-                       "}\n";
+    TEST_CASE("LValueChecker - Cannot assign to value-returning namespace function call")
+    {
+        std::string code = "namespace MyNamespace\n"
+                           "{\n"
+                           "    float MyNamespaceFunction()\n"
+                           "    {\n"
+                           "        return 0.0f;\n"
+                           "    }\n"
+                           "}\n"
+                           "void main()\n"
+                           "{\n"
+                           "    MyNamespace::MyNamespaceFunction() = \"hola\";\n"
+                           "}\n";
 
-    auto diags = RunAnalysis(code);
-    bool hasAssignNonRefError = std::any_of(diags.begin(), diags.end(), IsAssignNonRefOrNotLValue);
-    CHECK(hasAssignNonRefError);
-}
+        auto diags = RunAnalysis(code);
+        bool hasAssignNonRefError = std::any_of(diags.begin(), diags.end(), IsAssignNonRefOrNotLValue);
+        CHECK(hasAssignNonRefError);
+    }
 
-TEST_CASE("LValueChecker - Assigning to reference-returning function is valid")
-{
-    std::string code = "int g_val = 0;\n"
-                       "int& GetRef()\n"
-                       "{\n"
-                       "    return g_val;\n"
-                       "}\n"
-                       "void main()\n"
-                       "{\n"
-                       "    GetRef() = 42;\n"
-                       "}\n";
+    TEST_CASE("LValueChecker - Assigning to reference-returning function is valid")
+    {
+        std::string code = "int g_val = 0;\n"
+                           "int& GetRef()\n"
+                           "{\n"
+                           "    return g_val;\n"
+                           "}\n"
+                           "void main()\n"
+                           "{\n"
+                           "    GetRef() = 42;\n"
+                           "}\n";
 
-    auto diags = RunAnalysis(code);
-    bool hasLValueError = std::any_of(diags.begin(), diags.end(), IsAnyLValueError);
-    CHECK_FALSE(hasLValueError);
-}
+        auto diags = RunAnalysis(code);
+        bool hasLValueError = std::any_of(diags.begin(), diags.end(), IsAnyLValueError);
+        CHECK_FALSE(hasLValueError);
+    }
 
-TEST_CASE("LValueChecker - Cannot assign to literal")
-{
-    std::string code = "void main()\n"
-                       "{\n"
-                       "    123 = 456;\n"
-                       "}\n";
+    TEST_CASE("LValueChecker - Cannot assign to literal")
+    {
+        std::string code = "void main()\n"
+                           "{\n"
+                           "    123 = 456;\n"
+                           "}\n";
 
-    auto diags = RunAnalysis(code);
-    bool hasNotLValueError =
-        std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d) { return d.code == "as-err-not-lvalue"; });
-    CHECK(hasNotLValueError);
-}
+        auto diags = RunAnalysis(code);
+        bool hasNotLValueError =
+            std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d) { return d.code == "as-err-not-lvalue"; });
+        CHECK(hasNotLValueError);
+    }
 
-TEST_CASE("LValueChecker - Cannot assign to non-reference function call in return statement")
-{
-    std::string code = "class Weapon {\n"
-                       "    bool Deploy(int a, float b) { return true; }\n"
-                       "    bool Test() {\n"
-                       "        return Deploy(1, 2.0f) = true;\n"
-                       "    }\n"
-                       "}\n";
+    TEST_CASE("LValueChecker - Cannot assign to non-reference function call in return statement")
+    {
+        std::string code = "class Weapon {\n"
+                           "    bool Deploy(int a, float b) { return true; }\n"
+                           "    bool Test() {\n"
+                           "        return Deploy(1, 2.0f) = true;\n"
+                           "    }\n"
+                           "}\n";
 
-    auto diags = RunAnalysis(code);
-    bool hasAssignNonRefError = std::any_of(diags.begin(), diags.end(),
-                                            [](const Diagnostic& d) { return d.code == "as-err-assign-non-ref-call"; });
-    CHECK(hasAssignNonRefError);
+        auto diags = RunAnalysis(code);
+        bool hasAssignNonRefError = std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                                                { return d.code == "as-err-assign-non-ref-call"; });
+        CHECK(hasAssignNonRefError);
+    }
 }

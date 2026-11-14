@@ -9,9 +9,9 @@
 
 using namespace angel_lsp;
 
-TEST_SUITE("ServerDomainServices")
+TEST_SUITE("lsp/ServerDomainServices")
 {
-    TEST_CASE("WorkspaceStateStore manages snapshots and defined words")
+    TEST_CASE("ServerDomainServices - WorkspaceStateStore manages snapshots and defined words")
     {
         WorkspaceStateStore store;
         const std::string rootA = "file:///workspace/" + test::GenerateRandomSymbolName("rootA");
@@ -50,7 +50,7 @@ TEST_SUITE("ServerDomainServices")
         CHECK(store.GetWorkspaceRoots().empty());
     }
 
-    TEST_CASE("DiagnosticsPipeline caches and manages snapshots and revisions")
+    TEST_CASE("ServerDomainServices - DiagnosticsPipeline caches and manages snapshots and revisions")
     {
         DiagnosticsPipeline pipeline;
 
@@ -86,7 +86,7 @@ TEST_SUITE("ServerDomainServices")
         CHECK(pipeline.GetDiagnosticSeverities().at("as-err-test") == analysis::DiagnosticSeverity::Warning);
     }
 
-    TEST_CASE("LspSessionCoordinator coordinates session state and readiness barriers")
+    TEST_CASE("ServerDomainServices - LspSessionCoordinator coordinates session state and readiness barriers")
     {
         LspSessionCoordinator session;
         CHECK(!session.IsRunning());

@@ -9,12 +9,15 @@
 #include "analysis/index/SymbolTable.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
 #include <doctest/doctest.h>
 #include <memory>
+#include <string>
+#include <vector>
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
@@ -55,9 +58,19 @@ bool HasUninitializedRead(const std::vector<Diagnostic>& diagnostics)
 }
 } // namespace
 
+static bool MatchesVerdict(const std::vector<Diagnostic>& diagnostics, const std::string& expectedVerdict)
+{
+    if (expectedVerdict == "none")
+    {
+        return !HasUninitializedRead(diagnostics);
+    }
+    return std::any_of(diagnostics.begin(), diagnostics.end(),
+                       [&](const Diagnostic& d) { return d.code == expectedVerdict; });
+}
+
 TEST_SUITE("DefiniteAssignment")
 {
-    TEST_CASE("Direct Uninitialized Read")
+    TEST_CASE("DefiniteAssignmentChecker - Direct Uninitialized Read")
     {
         std::string badCode = "void Print(int v) { }\n"
                               "void main()\n"
@@ -76,7 +89,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(goodCode)));
     }
 
-    TEST_CASE("Recorded statement worklist reaches a deeply nested read")
+    TEST_CASE("DefiniteAssignmentChecker - Recorded statement worklist reaches a deeply nested read")
     {
         constexpr size_t depth = 2048;
         std::string code = "int Deep() { int value; ";
@@ -100,7 +113,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK(HasUninitializedRead(diagnostics));
     }
 
-    TEST_CASE("Recorded expression worklist reaches a deeply parenthesized read")
+    TEST_CASE("DefiniteAssignmentChecker - Recorded expression worklist reaches a deeply parenthesized read")
     {
         constexpr size_t depth = 3072;
         std::string code = "int Deep() { int value; return ";
@@ -124,7 +137,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK(HasUninitializedRead(diagnostics));
     }
 
-    TEST_CASE("A long switch case visits every statement after its label")
+    TEST_CASE("DefiniteAssignmentChecker - A long switch case visits every statement after its label")
     {
         std::string code = "int Read(int selector) { int value; switch (selector) { case 1:\n";
         for (size_t i = 0; i < 255; ++i)
@@ -135,7 +148,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK(HasUninitializedRead(AnalyzeCode(code)));
     }
 
-    TEST_CASE("Branching If Else")
+    TEST_CASE("DefiniteAssignmentChecker - Branching If Else")
     {
         std::string assignedBoth = "void Print(int v) { }\n"
                                    "void main()\n"
@@ -176,7 +189,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK(HasUninitializedRead(AnalyzeCode(readBeforeAnyAssignment)));
     }
 
-    TEST_CASE("Early Return Path")
+    TEST_CASE("DefiniteAssignmentChecker - Early Return Path")
     {
         std::string earlyReturn = "void Print(int v) { }\n"
                                   "void main()\n"
@@ -191,7 +204,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(earlyReturn)));
     }
 
-    TEST_CASE("Out Parameter Assignment")
+    TEST_CASE("DefiniteAssignmentChecker - Out Parameter Assignment")
     {
         std::string outParam = "void Init(int &out val) { val = 10; }\n"
                                "void Print(int v) { }\n"
@@ -204,7 +217,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(outParam)));
     }
 
-    TEST_CASE("Recorded reads respect right hand sides and argument order")
+    TEST_CASE("DefiniteAssignmentChecker - Recorded reads respect right hand sides and argument order")
     {
         const std::string code = "void ReadThenWrite(int input, int &out output) { output = input; }\n"
                                  "void WriteThenRead(int &out output, int input) { output = input; }\n"
@@ -226,7 +239,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK(warningLines == std::vector<uint32_t>{4, 6});
     }
 
-    TEST_CASE("Loops Dataflow")
+    TEST_CASE("DefiniteAssignmentChecker - Loops Dataflow")
     {
         std::string doWhileCode = "void Print(int v) { }\n"
                                   "void main()\n"
@@ -254,7 +267,7 @@ TEST_SUITE("DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(whileCode)));
     }
 
-    TEST_CASE("Switch Statement Dataflow")
+    TEST_CASE("DefiniteAssignmentChecker - Switch Statement Dataflow")
     {
         std::string switchAll = "void Print(int v) { }\n"
                                 "void main()\n"
@@ -354,6 +367,397 @@ TEST_CASE("DefiniteAssignment - Definite Assignment Corpus Audit" * doctest::ski
     CHECK(result.Total() <= k_accountedFindings);
 }
 
+TEST_SUITE("DefiniteAssignmentVariations")
+{
+    TEST_CASE("DefiniteAssignmentChecker - Out param assigned in nested if within for loop read after loop")
+    {
+        const std::string fetchFn = angel_lsp::test::GenerateRandomSymbolName("Fetch");
+        const std::string consumeFn = angel_lsp::test::GenerateRandomSymbolName("Consume");
+        const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+        const std::string dataVar = angel_lsp::test::GenerateRandomSymbolName("data");
+        const std::string iVar = angel_lsp::test::GenerateRandomSymbolName("i");
+        const std::string targetParam = angel_lsp::test::GenerateRandomSymbolName("target");
+        const std::string valueParam = angel_lsp::test::GenerateRandomSymbolName("value");
+
+        const std::string code = "void " + fetchFn + "(int &out " + targetParam + ") { " + targetParam +
+                                 " = 42; }\n"
+                                 "void " +
+                                 consumeFn + "(int " + valueParam +
+                                 ") { }\n"
+                                 "void " +
+                                 testFn +
+                                 "()\n"
+                                 "{\n"
+                                 "    int " +
+                                 dataVar +
+                                 ";\n"
+                                 "    for (int " +
+                                 iVar + " = 0; " + iVar + " < 5; ++" + iVar +
+                                 ")\n"
+                                 "    {\n"
+                                 "        if (" +
+                                 iVar +
+                                 " == 2)\n"
+                                 "        {\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "        }\n"
+                                 "    }\n"
+                                 "    " +
+                                 consumeFn + "(" + dataVar +
+                                 ");\n"
+                                 "}\n";
+
+        const std::string expectedVerdict = "none";
+        const auto diagnostics = AnalyzeCode(code);
+        CHECK(MatchesVerdict(diagnostics, expectedVerdict));
+        CHECK_FALSE(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE("DefiniteAssignmentChecker - Out param read inside nested if within for loop before assignment")
+    {
+        const std::string fetchFn = angel_lsp::test::GenerateRandomSymbolName("Fetch");
+        const std::string consumeFn = angel_lsp::test::GenerateRandomSymbolName("Consume");
+        const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+        const std::string dataVar = angel_lsp::test::GenerateRandomSymbolName("data");
+        const std::string iVar = angel_lsp::test::GenerateRandomSymbolName("i");
+        const std::string targetParam = angel_lsp::test::GenerateRandomSymbolName("target");
+        const std::string valueParam = angel_lsp::test::GenerateRandomSymbolName("value");
+
+        const std::string code = "void " + fetchFn + "(int &out " + targetParam + ") { " + targetParam +
+                                 " = 42; }\n"
+                                 "void " +
+                                 consumeFn + "(int " + valueParam +
+                                 ") { }\n"
+                                 "void " +
+                                 testFn +
+                                 "()\n"
+                                 "{\n"
+                                 "    int " +
+                                 dataVar +
+                                 ";\n"
+                                 "    for (int " +
+                                 iVar + " = 0; " + iVar + " < 5; ++" + iVar +
+                                 ")\n"
+                                 "    {\n"
+                                 "        if (" +
+                                 iVar +
+                                 " == 2)\n"
+                                 "        {\n"
+                                 "            " +
+                                 consumeFn + "(" + dataVar +
+                                 ");\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "        }\n"
+                                 "    }\n"
+                                 "}\n";
+
+        const std::string expectedVerdict = "as-warn-uninitialized-variable-read";
+        const auto diagnostics = AnalyzeCode(code);
+        CHECK(MatchesVerdict(diagnostics, expectedVerdict));
+        CHECK(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE(
+        "DefiniteAssignmentChecker - Out param assigned in nested for loops in both if and else branches read after")
+    {
+        const std::string fetchFn = angel_lsp::test::GenerateRandomSymbolName("Fetch");
+        const std::string consumeFn = angel_lsp::test::GenerateRandomSymbolName("Consume");
+        const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+        const std::string dataVar = angel_lsp::test::GenerateRandomSymbolName("data");
+        const std::string flagParam = angel_lsp::test::GenerateRandomSymbolName("flag");
+        const std::string iVar = angel_lsp::test::GenerateRandomSymbolName("i");
+        const std::string jVar = angel_lsp::test::GenerateRandomSymbolName("j");
+        const std::string targetParam = angel_lsp::test::GenerateRandomSymbolName("target");
+        const std::string valueParam = angel_lsp::test::GenerateRandomSymbolName("value");
+
+        const std::string code = "void " + fetchFn + "(int &out " + targetParam + ") { " + targetParam +
+                                 " = 100; }\n"
+                                 "void " +
+                                 consumeFn + "(int " + valueParam +
+                                 ") { }\n"
+                                 "void " +
+                                 testFn + "(bool " + flagParam +
+                                 ")\n"
+                                 "{\n"
+                                 "    int " +
+                                 dataVar +
+                                 ";\n"
+                                 "    if (" +
+                                 flagParam +
+                                 ")\n"
+                                 "    {\n"
+                                 "        for (int " +
+                                 iVar + " = 0; " + iVar + " < 2; ++" + iVar +
+                                 ")\n"
+                                 "        {\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "        }\n"
+                                 "    }\n"
+                                 "    else\n"
+                                 "    {\n"
+                                 "        for (int " +
+                                 jVar + " = 0; " + jVar + " < 3; ++" + jVar +
+                                 ")\n"
+                                 "        {\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "        }\n"
+                                 "    }\n"
+                                 "    " +
+                                 consumeFn + "(" + dataVar +
+                                 ");\n"
+                                 "}\n";
+
+        const std::string expectedVerdict = "none";
+        const auto diagnostics = AnalyzeCode(code);
+        CHECK(MatchesVerdict(diagnostics, expectedVerdict));
+        CHECK_FALSE(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE("DefiniteAssignmentChecker - Out param assigned in nested do-while within if block read after do-while")
+    {
+        const std::string fetchFn = angel_lsp::test::GenerateRandomSymbolName("Fetch");
+        const std::string consumeFn = angel_lsp::test::GenerateRandomSymbolName("Consume");
+        const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+        const std::string dataVar = angel_lsp::test::GenerateRandomSymbolName("data");
+        const std::string condParam = angel_lsp::test::GenerateRandomSymbolName("cond");
+        const std::string targetParam = angel_lsp::test::GenerateRandomSymbolName("target");
+        const std::string valueParam = angel_lsp::test::GenerateRandomSymbolName("value");
+
+        const std::string code = "void " + fetchFn + "(int &out " + targetParam + ") { " + targetParam +
+                                 " = 99; }\n"
+                                 "void " +
+                                 consumeFn + "(int " + valueParam +
+                                 ") { }\n"
+                                 "void " +
+                                 testFn + "(bool " + condParam +
+                                 ")\n"
+                                 "{\n"
+                                 "    int " +
+                                 dataVar +
+                                 ";\n"
+                                 "    if (" +
+                                 condParam +
+                                 ")\n"
+                                 "    {\n"
+                                 "        do\n"
+                                 "        {\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "        } while (false);\n"
+                                 "        " +
+                                 consumeFn + "(" + dataVar +
+                                 ");\n"
+                                 "    }\n"
+                                 "}\n";
+
+        const std::string expectedVerdict = "none";
+        const auto diagnostics = AnalyzeCode(code);
+        CHECK(MatchesVerdict(diagnostics, expectedVerdict));
+        CHECK_FALSE(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE(
+        "DefiniteAssignmentChecker - Out param read in for loop condition inside switch case before body assignment")
+    {
+        const std::string fetchFn = angel_lsp::test::GenerateRandomSymbolName("Fetch");
+        const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+        const std::string dataVar = angel_lsp::test::GenerateRandomSymbolName("data");
+        const std::string optionParam = angel_lsp::test::GenerateRandomSymbolName("option");
+        const std::string iVar = angel_lsp::test::GenerateRandomSymbolName("i");
+        const std::string targetParam = angel_lsp::test::GenerateRandomSymbolName("target");
+
+        const std::string code = "void " + fetchFn + "(int &out " + targetParam + ") { " + targetParam +
+                                 " = 1; }\n"
+                                 "void " +
+                                 testFn + "(int " + optionParam +
+                                 ")\n"
+                                 "{\n"
+                                 "    int " +
+                                 dataVar +
+                                 ";\n"
+                                 "    switch (" +
+                                 optionParam +
+                                 ")\n"
+                                 "    {\n"
+                                 "    case 1:\n"
+                                 "        for (int " +
+                                 iVar + " = 0; " + iVar + " < " + dataVar + "; ++" + iVar +
+                                 ")\n"
+                                 "        {\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "        }\n"
+                                 "        break;\n"
+                                 "    default:\n"
+                                 "        break;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        const std::string expectedVerdict = "as-warn-uninitialized-variable-read";
+        const auto diagnostics = AnalyzeCode(code);
+        CHECK(MatchesVerdict(diagnostics, expectedVerdict));
+        CHECK(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE("DefiniteAssignmentChecker - Out param assigned in while condition expression read inside nested if")
+    {
+        const std::string tryFetchFn = angel_lsp::test::GenerateRandomSymbolName("TryFetch");
+        const std::string consumeFn = angel_lsp::test::GenerateRandomSymbolName("Consume");
+        const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+        const std::string dataVar = angel_lsp::test::GenerateRandomSymbolName("data");
+        const std::string targetParam = angel_lsp::test::GenerateRandomSymbolName("target");
+        const std::string valueParam = angel_lsp::test::GenerateRandomSymbolName("value");
+
+        const std::string code = "bool " + tryFetchFn + "(int &out " + targetParam +
+                                 ")\n"
+                                 "{\n"
+                                 "    " +
+                                 targetParam +
+                                 " = 42;\n"
+                                 "    return true;\n"
+                                 "}\n"
+                                 "void " +
+                                 consumeFn + "(int " + valueParam +
+                                 ") { }\n"
+                                 "void " +
+                                 testFn +
+                                 "()\n"
+                                 "{\n"
+                                 "    int " +
+                                 dataVar +
+                                 ";\n"
+                                 "    while (" +
+                                 tryFetchFn + "(" + dataVar +
+                                 "))\n"
+                                 "    {\n"
+                                 "        if (" +
+                                 dataVar +
+                                 " > 0)\n"
+                                 "        {\n"
+                                 "            " +
+                                 consumeFn + "(" + dataVar +
+                                 ");\n"
+                                 "        }\n"
+                                 "        break;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        const std::string expectedVerdict = "none";
+        const auto diagnostics = AnalyzeCode(code);
+        CHECK(MatchesVerdict(diagnostics, expectedVerdict));
+        CHECK_FALSE(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE("DefiniteAssignmentChecker - Out param read in outer for loop before nested inner for loop assignment")
+    {
+        const std::string fetchFn = angel_lsp::test::GenerateRandomSymbolName("Fetch");
+        const std::string consumeFn = angel_lsp::test::GenerateRandomSymbolName("Consume");
+        const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+        const std::string dataVar = angel_lsp::test::GenerateRandomSymbolName("data");
+        const std::string iVar = angel_lsp::test::GenerateRandomSymbolName("i");
+        const std::string jVar = angel_lsp::test::GenerateRandomSymbolName("j");
+        const std::string targetParam = angel_lsp::test::GenerateRandomSymbolName("target");
+        const std::string valueParam = angel_lsp::test::GenerateRandomSymbolName("value");
+
+        const std::string code = "void " + fetchFn + "(int &out " + targetParam + ") { " + targetParam +
+                                 " = 5; }\n"
+                                 "void " +
+                                 consumeFn + "(int " + valueParam +
+                                 ") { }\n"
+                                 "void " +
+                                 testFn +
+                                 "()\n"
+                                 "{\n"
+                                 "    int " +
+                                 dataVar +
+                                 ";\n"
+                                 "    for (int " +
+                                 iVar + " = 0; " + iVar + " < 3; ++" + iVar +
+                                 ")\n"
+                                 "    {\n"
+                                 "        " +
+                                 consumeFn + "(" + dataVar +
+                                 ");\n"
+                                 "        for (int " +
+                                 jVar + " = 0; " + jVar + " < 3; ++" + jVar +
+                                 ")\n"
+                                 "        {\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "        }\n"
+                                 "    }\n"
+                                 "}\n";
+
+        const std::string expectedVerdict = "as-warn-uninitialized-variable-read";
+        const auto diagnostics = AnalyzeCode(code);
+        CHECK(MatchesVerdict(diagnostics, expectedVerdict));
+        CHECK(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE(
+        "DefiniteAssignmentChecker - Out param assigned across all switch cases inside do-while read after switch")
+    {
+        const std::string fetchFn = angel_lsp::test::GenerateRandomSymbolName("Fetch");
+        const std::string consumeFn = angel_lsp::test::GenerateRandomSymbolName("Consume");
+        const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+        const std::string dataVar = angel_lsp::test::GenerateRandomSymbolName("data");
+        const std::string tagParam = angel_lsp::test::GenerateRandomSymbolName("tag");
+        const std::string targetParam = angel_lsp::test::GenerateRandomSymbolName("target");
+        const std::string valueParam = angel_lsp::test::GenerateRandomSymbolName("value");
+
+        const std::string code = "void " + fetchFn + "(int &out " + targetParam + ") { " + targetParam +
+                                 " = 12; }\n"
+                                 "void " +
+                                 consumeFn + "(int " + valueParam +
+                                 ") { }\n"
+                                 "void " +
+                                 testFn + "(int " + tagParam +
+                                 ")\n"
+                                 "{\n"
+                                 "    int " +
+                                 dataVar +
+                                 ";\n"
+                                 "    do\n"
+                                 "    {\n"
+                                 "        switch (" +
+                                 tagParam +
+                                 ")\n"
+                                 "        {\n"
+                                 "        case 1:\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "            break;\n"
+                                 "        default:\n"
+                                 "            " +
+                                 fetchFn + "(" + dataVar +
+                                 ");\n"
+                                 "            break;\n"
+                                 "        }\n"
+                                 "        " +
+                                 consumeFn + "(" + dataVar +
+                                 ");\n"
+                                 "    } while (false);\n"
+                                 "}\n";
+
+        const std::string expectedVerdict = "none";
+        const auto diagnostics = AnalyzeCode(code);
+        CHECK(MatchesVerdict(diagnostics, expectedVerdict));
+        CHECK_FALSE(HasUninitializedRead(diagnostics));
+    }
+}
+
 TEST_SUITE("DefiniteAssignmentConditions")
 {
     // The condition of an `if`, `while`, `do`/`while` and `switch` carries NO field name in the
@@ -366,7 +770,7 @@ TEST_SUITE("DefiniteAssignmentConditions")
     // the loop header was skipped and `for (i = 0; i < n; i++)` reported the `i` in its own
     // condition. Together these were 195 of the 749 findings this rule produced over the corpus.
 
-    TEST_CASE("A read inside a condition is checked")
+    TEST_CASE("DefiniteAssignmentChecker - A read inside a condition is checked")
     {
         CHECK(HasUninitializedRead(AnalyzeCode("void main() { int x; if (x > 0) { } }\n")));
 
@@ -377,7 +781,7 @@ TEST_SUITE("DefiniteAssignmentConditions")
         CHECK(HasUninitializedRead(AnalyzeCode("void main() { int x; do { break; } while (x > 0); }\n")));
     }
 
-    TEST_CASE("An out-argument written in a condition counts for the body after it")
+    TEST_CASE("DefiniteAssignmentChecker - An out-argument written in a condition counts for the body after it")
     {
         // The corpus shape: `if (dict.get(key, value) && value != 0) { use(value); }`. The callee
         // is invisible, so whether that parameter is `&out` cannot be established - and `&out` is
@@ -390,7 +794,7 @@ TEST_SUITE("DefiniteAssignmentConditions")
                                                      "void main() { int v; if (HostGet('k', v)) { Use(v); } }\n")));
     }
 
-    TEST_CASE("A for loop header initialises its own counter")
+    TEST_CASE("DefiniteAssignmentChecker - A for loop header initialises its own counter")
     {
         // `for (i = 0; ...)` assigns a variable declared earlier. The header is where `i` becomes
         // initialised, and it was being reported as reading it uninitialised.
@@ -404,7 +808,7 @@ TEST_SUITE("DefiniteAssignmentConditions")
 
 TEST_SUITE("DefiniteAssignmentOverloads")
 {
-    TEST_CASE("An out-parameter is recognised when any candidate declares one")
+    TEST_CASE("DefiniteAssignmentChecker - An out-parameter is recognised when any candidate declares one")
     {
         // Overload resolution picks one candidate; reading `&out` off that pick is a guess whenever
         // the candidates disagree, and a wrong guess reports the line that INITIALISES the
@@ -433,7 +837,8 @@ TEST_SUITE("DefiniteAssignmentStatementOrder")
                                             "Util g_Util;\n"
                                             "float Scale(float v) { return v; }\n";
 
-    TEST_CASE("Good: an out call inside a loop initialises the variables the next statement reads")
+    TEST_CASE("DefiniteAssignmentChecker - Good: an out call inside a loop initialises the variables the next "
+              "statement reads")
     {
         const std::string code = std::string(k_spreadStub) + "void Fire(uint shots)\n"
                                                              "{\n"
@@ -447,7 +852,7 @@ TEST_SUITE("DefiniteAssignmentStatementOrder")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(code)));
     }
 
-    TEST_CASE("Good: the same shape inside a mixin method")
+    TEST_CASE("DefiniteAssignmentChecker - Good: the same shape inside a mixin method")
     {
         const std::string code = std::string(k_spreadStub) + "mixin class Shooter\n"
                                                              "{\n"
@@ -465,7 +870,7 @@ TEST_SUITE("DefiniteAssignmentStatementOrder")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(code)));
     }
 
-    TEST_CASE("Bad: a read before any out call is still reported")
+    TEST_CASE("DefiniteAssignmentChecker - Bad: a read before any out call is still reported")
     {
         const std::string code = std::string(k_spreadStub) + "void Fire(uint shots)\n"
                                                              "{\n"
@@ -479,7 +884,8 @@ TEST_SUITE("DefiniteAssignmentStatementOrder")
         CHECK(HasUninitializedRead(AnalyzeCode(code)));
     }
 
-    TEST_CASE("Neutral: an out call in one branch does not hide a read in the loop that never ran it")
+    TEST_CASE("DefiniteAssignmentChecker - Neutral: an out call in one branch does not hide a read in the loop that "
+              "never ran it")
     {
         const std::string code = std::string(k_spreadStub) + "void Fire(bool aim)\n"
                                                              "{\n"
@@ -491,7 +897,7 @@ TEST_SUITE("DefiniteAssignmentStatementOrder")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(code)));
     }
 
-    TEST_CASE("Invariant: every fact slice of a record lies inside the record")
+    TEST_CASE("DefiniteAssignmentChecker - Invariant: every fact slice of a record lies inside the record")
     {
         const std::string code = std::string(k_spreadStub) +
                                  "void Fire(uint shots, bool a)\n"

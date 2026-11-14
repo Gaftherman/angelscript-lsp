@@ -57,9 +57,10 @@ TSNode FindNodeByType(TSNode root, std::string_view targetType)
 }
 } // namespace
 
-TEST_SUITE("SemanticASTFacade")
+TEST_SUITE("analysis/resolution/SemanticASTFacade")
 {
-    TEST_CASE("AstNodeView and IfStatementView extract condition and branches with randomized identifiers")
+    TEST_CASE("SemanticASTFacade - AstNodeView and IfStatementView extract condition and branches with randomized "
+              "identifiers")
     {
         AngelScriptParser asParser(nullptr);
         const std::string funcName = test::GenerateRandomSymbolName("func");
@@ -92,7 +93,7 @@ TEST_SUITE("SemanticASTFacade")
         CHECK(!ts_node_is_null(ifView.Consequence()));
     }
 
-    TEST_CASE("ReturnStatementView and CallExpressionView extract operands correctly")
+    TEST_CASE("SemanticASTFacade - ReturnStatementView and CallExpressionView extract operands correctly")
     {
         AngelScriptParser asParser(nullptr);
         const std::string callerName = test::GenerateRandomSymbolName("caller");

@@ -212,24 +212,17 @@ void LspSemanticHarnessFixture::DiscoverOracleBinary()
     }
 
     const std::filesystem::path repo(ANGELSCRIPT_REPO_ROOT);
-    const std::vector<std::filesystem::path> candidates = {
+    std::vector<std::filesystem::path> candidates = {
         // Sibling AS-Harness repository builds
         repo / ".." / "AS-Harness" / "build_release" / "Release" / "asharness.exe",
         repo / ".." / "AS-Harness" / "build" / "Release" / "asharness.exe",
         repo / ".." / "AS-Harness" / "build" / "Debug" / "asharness.exe",
         repo / ".." / "AS-Harness" / "asharness.exe",
-        // In-tree oracle executable builds (Windows & Linux/macOS)
-        repo / "server" / "build" / "bin" / "angelscript_oracle.exe",
-        repo / "server" / "build" / "Release" / "angelscript_oracle.exe",
-        repo / "server" / "build" / "Debug" / "angelscript_oracle.exe",
-        repo / "server" / "build" / "bin" / "angelscript_oracle",
-        repo / "server" / "build" / "angelscript_oracle",
-        repo / "build" / "bin" / "angelscript_oracle.exe",
-        repo / "build" / "Release" / "angelscript_oracle.exe",
-        repo / "build" / "Debug" / "angelscript_oracle.exe",
-        repo / "build" / "bin" / "angelscript_oracle",
-        repo / "build" / "angelscript_oracle",
     };
+    for (std::filesystem::path& path : OracleCandidatePaths())
+    {
+        candidates.push_back(std::move(path));
+    }
 
     for (const auto& path : candidates)
     {
@@ -239,6 +232,23 @@ void LspSemanticHarnessFixture::DiscoverOracleBinary()
             return;
         }
     }
+}
+
+std::vector<std::filesystem::path> LspSemanticHarnessFixture::OracleCandidatePaths()
+{
+    const std::filesystem::path repo(ANGELSCRIPT_REPO_ROOT);
+    std::vector<std::filesystem::path> candidates;
+    for (const char* base : {"server/build", "build"})
+    {
+        for (const char* sub : {"bin", "Release", "Debug", ""})
+        {
+            for (const char* name : {"angelscript_oracle.exe", "angelscript_oracle"})
+            {
+                candidates.push_back(repo / base / sub / name);
+            }
+        }
+    }
+    return candidates;
 }
 
 std::string LspSemanticHarnessFixture::SandboxUri(const std::string& relativePath) const

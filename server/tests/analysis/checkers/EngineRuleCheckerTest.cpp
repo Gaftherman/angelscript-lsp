@@ -58,9 +58,11 @@ bool HasCode(const std::vector<Diagnostic>& diagnostics, std::string_view code)
 }
 } // namespace
 
-TEST_CASE("EngineRuleParser - Parses valid rules JSON and properties")
+TEST_SUITE("analysis/checkers/EngineRuleChecker")
 {
-    const std::string jsonText = R"({
+    TEST_CASE("EngineRuleParser - Parses valid rules JSON and properties")
+    {
+        const std::string jsonText = R"({
         "name": "Test Rules",
         "engineProperties": {
             "propertyAccessorMode": 2,
@@ -98,22 +100,22 @@ TEST_CASE("EngineRuleParser - Parses valid rules JSON and properties")
         ]
     })";
 
-    auto parsed = angel_lsp::config::ParseEngineRuleConfigJson(jsonText);
-    REQUIRE(parsed.has_value());
-    CHECK(parsed->name == "Test Rules");
-    CHECK(parsed->engineProperties.propertyAccessorMode == 2);
-    CHECK(parsed->engineProperties.disallowGlobalVars == true);
-    CHECK(parsed->storageRules.size() == 1);
-    CHECK(parsed->storageRules[0].id == "unsafe-handle");
-    CHECK(parsed->typeSuggestions.size() == 1);
-    CHECK(parsed->typeSuggestions[0].fromType == "string_t");
-    CHECK(parsed->schedulerRules.size() == 1);
-    CHECK(parsed->schedulerRules[0].id == "sched-safety");
-}
+        auto parsed = angel_lsp::config::ParseEngineRuleConfigJson(jsonText);
+        REQUIRE(parsed.has_value());
+        CHECK(parsed->name == "Test Rules");
+        CHECK(parsed->engineProperties.propertyAccessorMode == 2);
+        CHECK(parsed->engineProperties.disallowGlobalVars == true);
+        CHECK(parsed->storageRules.size() == 1);
+        CHECK(parsed->storageRules[0].id == "unsafe-handle");
+        CHECK(parsed->typeSuggestions.size() == 1);
+        CHECK(parsed->typeSuggestions[0].fromType == "string_t");
+        CHECK(parsed->schedulerRules.size() == 1);
+        CHECK(parsed->schedulerRules[0].id == "sched-safety");
+    }
 
-TEST_CASE("EngineRuleParser - Parses callRules with schedulerRules backward compatibility")
-{
-    const std::string jsonText = R"({
+    TEST_CASE("EngineRuleParser - Parses callRules with schedulerRules backward compatibility")
+    {
+        const std::string jsonText = R"({
         "name": "Call Rules Test",
         "callRules": [
             {
@@ -125,298 +127,300 @@ TEST_CASE("EngineRuleParser - Parses callRules with schedulerRules backward comp
         ]
     })";
 
-    auto parsed = angel_lsp::config::ParseEngineRuleConfigJson(jsonText);
-    REQUIRE(parsed.has_value());
-    CHECK(parsed->schedulerRules.size() == 1);
-    CHECK(parsed->schedulerRules[0].id == "call-safety");
-}
-
-TEST_CASE("EngineRuleParser - Handles invalid JSON gracefully")
-{
-    CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson("invalid json {").has_value());
-    CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson("12345").has_value());
-    CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson("[]").has_value());
-}
-
-TEST_CASE("EngineRuleChecker - Pure Vanilla AngelScript has zero warnings by default")
-{
-    std::mt19937_64 rng(0x42A110);
-    const std::string className = angel_lsp::test::GenerateIdentifier(rng, "CBaseMonster");
-    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "m_target");
-
-    const std::string code = "class " + className +
-                             " {}\n"
-                             "class Container {\n"
-                             "    " +
-                             className + "@ " + varName +
-                             ";\n"
-                             "}\n";
-
-    auto diags = AnalyzeWithRules(code, nullptr);
-    CHECK_FALSE(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
-    CHECK_FALSE(HasCode(diags, angel_lsp::diagnostics::codes::EngineTypeSuggestion));
-}
-
-TEST_CASE("EngineRuleChecker - Enforces storage constraints on member and array handles")
-{
-    std::mt19937_64 rng(0x42A111);
-    const std::string entityType = angel_lsp::test::GenerateIdentifier(rng, "CBaseEntity");
-    const std::string memberVar = angel_lsp::test::GenerateIdentifier(rng, "m_ent");
-    const std::string arrayVar = angel_lsp::test::GenerateIdentifier(rng, "m_arr");
-    const std::string localVar = angel_lsp::test::GenerateIdentifier(rng, "localEnt");
-
-    angel_lsp::config::EngineRuleConfig config;
-    angel_lsp::config::StorageRule rule;
-    rule.id = "unsafe-entity-handle";
-    rule.typeRegex = "CBase.*";
-    rule.handleOnly = true;
-    rule.disallowInMembers = true;
-    rule.disallowInArrays = true;
-    rule.suggestReplacement = "EHandle";
-    config.storageRules.push_back(rule);
-
-    const std::string code = "class " + entityType +
-                             " {}\n"
-                             "class SafeHolder {\n"
-                             "    " +
-                             entityType + "@ " + memberVar +
-                             ";\n"
-                             "    array<" +
-                             entityType + "@> " + arrayVar +
-                             ";\n"
-                             "    void DoWork() {\n"
-                             "        " +
-                             entityType + "@ " + localVar +
-                             ";\n"
-                             "    }\n"
-                             "}\n";
-
-    auto diags = AnalyzeWithRules(code, &config);
-    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
-}
-
-TEST_CASE("EngineRuleChecker - Enforces local-only storage rules")
-{
-    std::mt19937_64 rng(0x42A112);
-    const std::string typeName = angel_lsp::test::GenerateIdentifier(rng, "CustomKeyvalue");
-    const std::string globalVar = angel_lsp::test::GenerateIdentifier(rng, "g_kv");
-    const std::string memberVar = angel_lsp::test::GenerateIdentifier(rng, "m_kv");
-    const std::string localVar = angel_lsp::test::GenerateIdentifier(rng, "kv");
-
-    angel_lsp::config::EngineRuleConfig config;
-    angel_lsp::config::StorageRule rule;
-    rule.id = "local-only-storage";
-    rule.types = {typeName};
-    rule.disallowInMembers = true;
-    rule.disallowInGlobals = true;
-    config.storageRules.push_back(rule);
-
-    const std::string code = "class " + typeName + " {}\n" + typeName + " " + globalVar +
-                             ";\n"
-                             "class Holder {\n"
-                             "    " +
-                             typeName + " " + memberVar +
-                             ";\n"
-                             "    void Test() {\n"
-                             "        " +
-                             typeName + " " + localVar +
-                             ";\n"
-                             "    }\n"
-                             "}\n";
-
-    auto diags = AnalyzeWithRules(code, &config);
-    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
-}
-
-TEST_CASE("EngineRuleChecker - Suggests type replacement when configured")
-{
-    std::mt19937_64 rng(0x42A113);
-    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "my_str");
-
-    angel_lsp::config::EngineRuleConfig config;
-    angel_lsp::config::TypeSuggestionRule rule;
-    rule.id = "prefer-regular-string";
-    rule.fromType = "string_ts";
-    rule.toType = "string";
-    rule.appliesTo = {"local", "member"};
-    config.typeSuggestions.push_back(rule);
-
-    const std::string code = "class string_ts {}\n"
-                             "class string {}\n"
-                             "void Func() {\n"
-                             "    string_ts " +
-                             varName +
-                             ";\n"
-                             "}\n";
-
-    auto diags = AnalyzeWithRules(code, &config);
-    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineTypeSuggestion));
-}
-
-TEST_CASE("EngineRuleParser - Loads predefined sven rules file from repo")
-{
-    const std::filesystem::path rulesFile =
-        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "predefined" / "sven.angelscript.rules.json";
-    REQUIRE(std::filesystem::exists(rulesFile));
-
-    auto parsed = angel_lsp::config::ParseEngineRuleConfigFile(rulesFile);
-    REQUIRE(parsed.has_value());
-    CHECK(parsed->name == "Sven Co-op Engine Safety Rules");
-    CHECK(parsed->storageRules.size() >= 2);
-    CHECK(parsed->typeSuggestions.size() >= 1);
-    CHECK(parsed->schedulerRules.size() >= 1);
-}
-
-TEST_CASE("EngineRuleChecker - Enforces scheduler argument safety")
-{
-    std::mt19937_64 rng(0x42A114);
-    const std::string entType = angel_lsp::test::GenerateIdentifier(rng, "CBaseEntity");
-    const std::string entVar = angel_lsp::test::GenerateIdentifier(rng, "ent");
-
-    angel_lsp::config::EngineRuleConfig config;
-    angel_lsp::config::SchedulerRule rule;
-    rule.id = "scheduler-safety";
-    rule.receiverTypes = {"g_Scheduler"};
-    rule.methodNames = {"SetTimeout"};
-    rule.disallowArgRegex = "CBase.*";
-    config.schedulerRules.push_back(rule);
-
-    const std::string code = "class " + entType +
-                             " {}\n"
-                             "class Scheduler {\n"
-                             "    void SetTimeout(string fn, float delay, " +
-                             entType +
-                             "@ e) {}\n"
-                             "}\n"
-                             "Scheduler g_Scheduler;\n"
-                             "void Main() {\n"
-                             "    " +
-                             entType + "@ " + entVar +
-                             ";\n"
-                             "    g_Scheduler.SetTimeout(\"cb\", 1.0f, " +
-                             entVar +
-                             ");\n"
-                             "}\n";
-
-    auto diags = AnalyzeWithRules(code, &config);
-    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineSchedulerSafety));
-}
-
-TEST_CASE("EngineRuleChecker - Enforces explicit enum construct on scheduled discriminant")
-{
-    std::mt19937_64 rng(0x42A115);
-    const std::string enumType = angel_lsp::test::GenerateIdentifier(rng, "ActionType");
-
-    angel_lsp::config::EngineRuleConfig config;
-    angel_lsp::config::SchedulerRule rule;
-    rule.id = "scheduler-safety";
-    rule.receiverTypes = {"g_Scheduler"};
-    rule.methodNames = {"SetTimeout"};
-    rule.requireExplicitEnumConstruct = true;
-    config.schedulerRules.push_back(rule);
-
-    const std::string code = "enum " + enumType +
-                             " { Alpha = 1, Beta = 2 }\n"
-                             "class Scheduler {\n"
-                             "    void SetTimeout(string fn, float delay, " +
-                             enumType +
-                             " act) {}\n"
-                             "}\n"
-                             "Scheduler g_Scheduler;\n"
-                             "void Main() {\n"
-                             "    g_Scheduler.SetTimeout(\"cb\", 1.0f, 1);\n"
-                             "}\n";
-
-    auto diags = AnalyzeWithRules(code, &config);
-    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineScheduledEnumDiscriminant));
-}
-
-TEST_CASE("EngineRuleChecker - Custom array-like template and Spanish i18n fallback")
-{
-    std::mt19937_64 rng(0x42A116);
-    const std::string entType = angel_lsp::test::GenerateIdentifier(rng, "EntityBase");
-    const std::string customContainer = angel_lsp::test::GenerateIdentifier(rng, "DynVec");
-    const std::string arrVar = angel_lsp::test::GenerateIdentifier(rng, "m_items");
-
-    angel_lsp::config::EngineRuleConfig ruleCfg;
-    angel_lsp::config::StorageRule rule;
-    rule.id = "custom-vec-rule";
-    rule.types = {entType};
-    rule.handleOnly = true;
-    rule.disallowInArrays = true;
-    rule.suggestReplacement = "SafeRef";
-    ruleCfg.storageRules.push_back(rule);
-
-    const std::string code = "class " + entType +
-                             " {}\n"
-                             "class Holder {\n"
-                             "    " +
-                             customContainer + "<" + entType + "@> " + arrVar +
-                             ";\n"
-                             "}\n";
-
-    AngelScriptParser parser;
-    SymbolCollector collector(nullptr);
-    LocalScopeCollector scopes(nullptr);
-    SymbolTable table;
-    angel_lsp::i18n::I18n esI18n("es");
-    angel_lsp::config::TypeConfig typeCfg;
-    typeCfg.arrayLikeTemplates.insert(customContainer);
-
-    collector.CollectSymbols("file:///custom_vec.as", code, parser, table);
-    SemanticAnalysisRequest request{table, "file:///custom_vec.as", ".as.predefined", &esI18n};
-    request.scopeRoot = scopes.CollectScopes(code, parser);
-    request.sourceCode = code;
-    TSTree* tree = parser.Parse(code);
-    NodeIndex nodeIndex(ts_tree_root_node(tree));
-    request.nodeIndex = &nodeIndex;
-    request.engineRules = &ruleCfg;
-    request.typeConfig = &typeCfg;
-
-    SemanticAnalyzer analyzer(nullptr);
-    auto diags = analyzer.Analyze(request);
-    if (tree)
-    {
-        ts_tree_delete(tree);
+        auto parsed = angel_lsp::config::ParseEngineRuleConfigJson(jsonText);
+        REQUIRE(parsed.has_value());
+        CHECK(parsed->schedulerRules.size() == 1);
+        CHECK(parsed->schedulerRules[0].id == "call-safety");
     }
 
-    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
-    const bool hasSpanishText = std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
-                                            { return d.message.find("infringe la regla") != std::string::npos; });
-    CHECK(hasSpanishText);
-}
-
-TEST_CASE("EngineRuleChecker - Enforces disallowMethod on CustomKeyvalues::SetKeyvalue")
-{
-    angel_lsp::config::EngineRuleConfig config;
-    angel_lsp::config::SchedulerRule rule;
-    rule.id = "custom-keyvalues-setkeyvalue-defect";
-    rule.receiverTypes = {"CustomKeyvalues"};
-    rule.methodNames = {"SetKeyvalue"};
-    rule.disallowMethod = true;
-    rule.suggestReplacement = "g_EntityFuncs.DispatchKeyValue";
-    rule.message = "Calling 'CustomKeyvalues::SetKeyvalue' causes memory corruption and crashes on GetKeyvalue in Sven "
-                   "Co-op <= 5.26. Use 'g_EntityFuncs.DispatchKeyValue' instead.";
-    config.schedulerRules.push_back(rule);
-
-    const std::string code = "class CustomKeyvalues {\n"
-                             "    bool SetKeyvalue(const string& in k, const string& in v) { return true; }\n"
-                             "}\n"
-                             "void Test(CustomKeyvalues@ pCustom) {\n"
-                             "    pCustom.SetKeyvalue(\"$i_test\", \"1\");\n"
-                             "}\n";
-
-    auto diags = AnalyzeWithRules(code, &config);
-    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineCallSafety));
-    bool foundMsg = false;
-    for (const auto& d : diags)
+    TEST_CASE("EngineRuleParser - Handles invalid JSON gracefully")
     {
-        if (d.code == angel_lsp::diagnostics::codes::EngineCallSafety &&
-            d.message.find("g_EntityFuncs.DispatchKeyValue") != std::string::npos)
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson("invalid json {").has_value());
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson("12345").has_value());
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson("[]").has_value());
+    }
+
+    TEST_CASE("EngineRuleChecker - Pure Vanilla AngelScript has zero warnings by default")
+    {
+        std::mt19937_64 rng(0x42A110);
+        const std::string className = angel_lsp::test::GenerateIdentifier(rng, "CBaseMonster");
+        const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "m_target");
+
+        const std::string code = "class " + className +
+                                 " {}\n"
+                                 "class Container {\n"
+                                 "    " +
+                                 className + "@ " + varName +
+                                 ";\n"
+                                 "}\n";
+
+        auto diags = AnalyzeWithRules(code, nullptr);
+        CHECK_FALSE(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
+        CHECK_FALSE(HasCode(diags, angel_lsp::diagnostics::codes::EngineTypeSuggestion));
+    }
+
+    TEST_CASE("EngineRuleChecker - Enforces storage constraints on member and array handles")
+    {
+        std::mt19937_64 rng(0x42A111);
+        const std::string entityType = angel_lsp::test::GenerateIdentifier(rng, "CBaseEntity");
+        const std::string memberVar = angel_lsp::test::GenerateIdentifier(rng, "m_ent");
+        const std::string arrayVar = angel_lsp::test::GenerateIdentifier(rng, "m_arr");
+        const std::string localVar = angel_lsp::test::GenerateIdentifier(rng, "localEnt");
+
+        angel_lsp::config::EngineRuleConfig config;
+        angel_lsp::config::StorageRule rule;
+        rule.id = "unsafe-entity-handle";
+        rule.typeRegex = "CBase.*";
+        rule.handleOnly = true;
+        rule.disallowInMembers = true;
+        rule.disallowInArrays = true;
+        rule.suggestReplacement = "EHandle";
+        config.storageRules.push_back(rule);
+
+        const std::string code = "class " + entityType +
+                                 " {}\n"
+                                 "class SafeHolder {\n"
+                                 "    " +
+                                 entityType + "@ " + memberVar +
+                                 ";\n"
+                                 "    array<" +
+                                 entityType + "@> " + arrayVar +
+                                 ";\n"
+                                 "    void DoWork() {\n"
+                                 "        " +
+                                 entityType + "@ " + localVar +
+                                 ";\n"
+                                 "    }\n"
+                                 "}\n";
+
+        auto diags = AnalyzeWithRules(code, &config);
+        CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
+    }
+
+    TEST_CASE("EngineRuleChecker - Enforces local-only storage rules")
+    {
+        std::mt19937_64 rng(0x42A112);
+        const std::string typeName = angel_lsp::test::GenerateIdentifier(rng, "CustomKeyvalue");
+        const std::string globalVar = angel_lsp::test::GenerateIdentifier(rng, "g_kv");
+        const std::string memberVar = angel_lsp::test::GenerateIdentifier(rng, "m_kv");
+        const std::string localVar = angel_lsp::test::GenerateIdentifier(rng, "kv");
+
+        angel_lsp::config::EngineRuleConfig config;
+        angel_lsp::config::StorageRule rule;
+        rule.id = "local-only-storage";
+        rule.types = {typeName};
+        rule.disallowInMembers = true;
+        rule.disallowInGlobals = true;
+        config.storageRules.push_back(rule);
+
+        const std::string code = "class " + typeName + " {}\n" + typeName + " " + globalVar +
+                                 ";\n"
+                                 "class Holder {\n"
+                                 "    " +
+                                 typeName + " " + memberVar +
+                                 ";\n"
+                                 "    void Test() {\n"
+                                 "        " +
+                                 typeName + " " + localVar +
+                                 ";\n"
+                                 "    }\n"
+                                 "}\n";
+
+        auto diags = AnalyzeWithRules(code, &config);
+        CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
+    }
+
+    TEST_CASE("EngineRuleChecker - Suggests type replacement when configured")
+    {
+        std::mt19937_64 rng(0x42A113);
+        const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "my_str");
+
+        angel_lsp::config::EngineRuleConfig config;
+        angel_lsp::config::TypeSuggestionRule rule;
+        rule.id = "prefer-regular-string";
+        rule.fromType = "string_ts";
+        rule.toType = "string";
+        rule.appliesTo = {"local", "member"};
+        config.typeSuggestions.push_back(rule);
+
+        const std::string code = "class string_ts {}\n"
+                                 "class string {}\n"
+                                 "void Func() {\n"
+                                 "    string_ts " +
+                                 varName +
+                                 ";\n"
+                                 "}\n";
+
+        auto diags = AnalyzeWithRules(code, &config);
+        CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineTypeSuggestion));
+    }
+
+    TEST_CASE("EngineRuleParser - Loads predefined sven rules file from repo")
+    {
+        const std::filesystem::path rulesFile =
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "predefined" / "sven.angelscript.rules.json";
+        REQUIRE(std::filesystem::exists(rulesFile));
+
+        auto parsed = angel_lsp::config::ParseEngineRuleConfigFile(rulesFile);
+        REQUIRE(parsed.has_value());
+        CHECK(parsed->name == "Sven Co-op Engine Safety Rules");
+        CHECK(parsed->storageRules.size() >= 2);
+        CHECK(parsed->typeSuggestions.size() >= 1);
+        CHECK(parsed->schedulerRules.size() >= 1);
+    }
+
+    TEST_CASE("EngineRuleChecker - Enforces scheduler argument safety")
+    {
+        std::mt19937_64 rng(0x42A114);
+        const std::string entType = angel_lsp::test::GenerateIdentifier(rng, "CBaseEntity");
+        const std::string entVar = angel_lsp::test::GenerateIdentifier(rng, "ent");
+
+        angel_lsp::config::EngineRuleConfig config;
+        angel_lsp::config::SchedulerRule rule;
+        rule.id = "scheduler-safety";
+        rule.receiverTypes = {"g_Scheduler"};
+        rule.methodNames = {"SetTimeout"};
+        rule.disallowArgRegex = "CBase.*";
+        config.schedulerRules.push_back(rule);
+
+        const std::string code = "class " + entType +
+                                 " {}\n"
+                                 "class Scheduler {\n"
+                                 "    void SetTimeout(string fn, float delay, " +
+                                 entType +
+                                 "@ e) {}\n"
+                                 "}\n"
+                                 "Scheduler g_Scheduler;\n"
+                                 "void Main() {\n"
+                                 "    " +
+                                 entType + "@ " + entVar +
+                                 ";\n"
+                                 "    g_Scheduler.SetTimeout(\"cb\", 1.0f, " +
+                                 entVar +
+                                 ");\n"
+                                 "}\n";
+
+        auto diags = AnalyzeWithRules(code, &config);
+        CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineSchedulerSafety));
+    }
+
+    TEST_CASE("EngineRuleChecker - Enforces explicit enum construct on scheduled discriminant")
+    {
+        std::mt19937_64 rng(0x42A115);
+        const std::string enumType = angel_lsp::test::GenerateIdentifier(rng, "ActionType");
+
+        angel_lsp::config::EngineRuleConfig config;
+        angel_lsp::config::SchedulerRule rule;
+        rule.id = "scheduler-safety";
+        rule.receiverTypes = {"g_Scheduler"};
+        rule.methodNames = {"SetTimeout"};
+        rule.requireExplicitEnumConstruct = true;
+        config.schedulerRules.push_back(rule);
+
+        const std::string code = "enum " + enumType +
+                                 " { Alpha = 1, Beta = 2 }\n"
+                                 "class Scheduler {\n"
+                                 "    void SetTimeout(string fn, float delay, " +
+                                 enumType +
+                                 " act) {}\n"
+                                 "}\n"
+                                 "Scheduler g_Scheduler;\n"
+                                 "void Main() {\n"
+                                 "    g_Scheduler.SetTimeout(\"cb\", 1.0f, 1);\n"
+                                 "}\n";
+
+        auto diags = AnalyzeWithRules(code, &config);
+        CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineScheduledEnumDiscriminant));
+    }
+
+    TEST_CASE("EngineRuleChecker - Custom array-like template and Spanish i18n fallback")
+    {
+        std::mt19937_64 rng(0x42A116);
+        const std::string entType = angel_lsp::test::GenerateIdentifier(rng, "EntityBase");
+        const std::string customContainer = angel_lsp::test::GenerateIdentifier(rng, "DynVec");
+        const std::string arrVar = angel_lsp::test::GenerateIdentifier(rng, "m_items");
+
+        angel_lsp::config::EngineRuleConfig ruleCfg;
+        angel_lsp::config::StorageRule rule;
+        rule.id = "custom-vec-rule";
+        rule.types = {entType};
+        rule.handleOnly = true;
+        rule.disallowInArrays = true;
+        rule.suggestReplacement = "SafeRef";
+        ruleCfg.storageRules.push_back(rule);
+
+        const std::string code = "class " + entType +
+                                 " {}\n"
+                                 "class Holder {\n"
+                                 "    " +
+                                 customContainer + "<" + entType + "@> " + arrVar +
+                                 ";\n"
+                                 "}\n";
+
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        LocalScopeCollector scopes(nullptr);
+        SymbolTable table;
+        angel_lsp::i18n::I18n esI18n("es");
+        angel_lsp::config::TypeConfig typeCfg;
+        typeCfg.arrayLikeTemplates.insert(customContainer);
+
+        collector.CollectSymbols("file:///custom_vec.as", code, parser, table);
+        SemanticAnalysisRequest request{table, "file:///custom_vec.as", ".as.predefined", &esI18n};
+        request.scopeRoot = scopes.CollectScopes(code, parser);
+        request.sourceCode = code;
+        TSTree* tree = parser.Parse(code);
+        NodeIndex nodeIndex(ts_tree_root_node(tree));
+        request.nodeIndex = &nodeIndex;
+        request.engineRules = &ruleCfg;
+        request.typeConfig = &typeCfg;
+
+        SemanticAnalyzer analyzer(nullptr);
+        auto diags = analyzer.Analyze(request);
+        if (tree)
         {
-            foundMsg = true;
-            break;
+            ts_tree_delete(tree);
         }
+
+        CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
+        const bool hasSpanishText = std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                                                { return d.message.find("infringe la regla") != std::string::npos; });
+        CHECK(hasSpanishText);
     }
-    CHECK(foundMsg);
+
+    TEST_CASE("EngineRuleChecker - Enforces disallowMethod on CustomKeyvalues::SetKeyvalue")
+    {
+        angel_lsp::config::EngineRuleConfig config;
+        angel_lsp::config::SchedulerRule rule;
+        rule.id = "custom-keyvalues-setkeyvalue-defect";
+        rule.receiverTypes = {"CustomKeyvalues"};
+        rule.methodNames = {"SetKeyvalue"};
+        rule.disallowMethod = true;
+        rule.suggestReplacement = "g_EntityFuncs.DispatchKeyValue";
+        rule.message =
+            "Calling 'CustomKeyvalues::SetKeyvalue' causes memory corruption and crashes on GetKeyvalue in Sven "
+            "Co-op <= 5.26. Use 'g_EntityFuncs.DispatchKeyValue' instead.";
+        config.schedulerRules.push_back(rule);
+
+        const std::string code = "class CustomKeyvalues {\n"
+                                 "    bool SetKeyvalue(const string& in k, const string& in v) { return true; }\n"
+                                 "}\n"
+                                 "void Test(CustomKeyvalues@ pCustom) {\n"
+                                 "    pCustom.SetKeyvalue(\"$i_test\", \"1\");\n"
+                                 "}\n";
+
+        auto diags = AnalyzeWithRules(code, &config);
+        CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineCallSafety));
+        bool foundMsg = false;
+        for (const auto& d : diags)
+        {
+            if (d.code == angel_lsp::diagnostics::codes::EngineCallSafety &&
+                d.message.find("g_EntityFuncs.DispatchKeyValue") != std::string::npos)
+            {
+                foundMsg = true;
+                break;
+            }
+        }
+        CHECK(foundMsg);
+    }
 }

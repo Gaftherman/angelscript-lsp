@@ -72,108 +72,111 @@ bool Contains(const lsp::Range& outer, const lsp::Range& inner)
 }
 } // namespace
 
-TEST_CASE("SelectionRange - Each link contains the one before it")
+TEST_SUITE("features/SelectionRange")
 {
-    // The protocol's only hard requirement, and the one a client will misbehave on: parent.range
-    // must contain this.range.
-    Fixture fixture("class Entity\n"
-                    "{\n"
-                    "    void Think()\n"
-                    "    {\n"
-                    "        int ticks = 0;\n"
-                    "    }\n"
-                    "}\n");
-
-    const auto results = fixture.At({lsp::Position{4, 12}});
-    REQUIRE(results.size() == 1);
-
-    const auto ranges = Chain(results[0]);
-    REQUIRE(ranges.size() >= 3);
-    for (size_t i = 1; i < ranges.size(); ++i)
+    TEST_CASE("SelectionRange - Each link contains the one before it")
     {
-        INFO("link ", i);
-        CHECK(Contains(ranges[i], ranges[i - 1]));
+        // The protocol's only hard requirement, and the one a client will misbehave on: parent.range
+        // must contain this.range.
+        Fixture fixture("class Entity\n"
+                        "{\n"
+                        "    void Think()\n"
+                        "    {\n"
+                        "        int ticks = 0;\n"
+                        "    }\n"
+                        "}\n");
+
+        const auto results = fixture.At({lsp::Position{4, 12}});
+        REQUIRE(results.size() == 1);
+
+        const auto ranges = Chain(results[0]);
+        REQUIRE(ranges.size() >= 3);
+        for (size_t i = 1; i < ranges.size(); ++i)
+        {
+            INFO("link ", i);
+            CHECK(Contains(ranges[i], ranges[i - 1]));
+        }
     }
-}
 
-TEST_CASE("SelectionRange - The innermost link is the token under the cursor")
-{
-    Fixture fixture("void Think() { int ticks = 0; }\n");
-
-    const auto results = fixture.At({lsp::Position{0, 20}});
-    REQUIRE(results.size() == 1);
-
-    const auto ranges = Chain(results[0]);
-    REQUIRE_FALSE(ranges.empty());
-    CHECK(ranges.front().start.line == 0);
-    CHECK(ranges.front().start.character == 19);
-    CHECK(ranges.front().end.character == 24);
-}
-
-TEST_CASE("SelectionRange - The chain reaches the whole document")
-{
-    Fixture fixture("void Think() { int ticks = 0; }\n");
-
-    const auto results = fixture.At({lsp::Position{0, 20}});
-    REQUIRE(results.size() == 1);
-
-    const auto ranges = Chain(results[0]);
-    REQUIRE_FALSE(ranges.empty());
-    CHECK(ranges.back().start.line == 0);
-    CHECK(ranges.back().start.character == 0);
-}
-
-TEST_CASE("SelectionRange - No two consecutive links offer the same range")
-{
-    // A chain that repeats a range makes the expand keystroke look broken: the user presses it and
-    // the selection does not move.
-    Fixture fixture("class Entity\n"
-                    "{\n"
-                    "    int health;\n"
-                    "}\n");
-
-    const auto results = fixture.At({lsp::Position{2, 9}});
-    REQUIRE(results.size() == 1);
-
-    const auto ranges = Chain(results[0]);
-    for (size_t i = 1; i < ranges.size(); ++i)
+    TEST_CASE("SelectionRange - The innermost link is the token under the cursor")
     {
-        INFO("link ", i);
-        const bool identical = ranges[i].start.line == ranges[i - 1].start.line &&
-                               ranges[i].start.character == ranges[i - 1].start.character &&
-                               ranges[i].end.line == ranges[i - 1].end.line &&
-                               ranges[i].end.character == ranges[i - 1].end.character;
-        CHECK_FALSE(identical);
+        Fixture fixture("void Think() { int ticks = 0; }\n");
+
+        const auto results = fixture.At({lsp::Position{0, 20}});
+        REQUIRE(results.size() == 1);
+
+        const auto ranges = Chain(results[0]);
+        REQUIRE_FALSE(ranges.empty());
+        CHECK(ranges.front().start.line == 0);
+        CHECK(ranges.front().start.character == 19);
+        CHECK(ranges.front().end.character == 24);
     }
-}
 
-TEST_CASE("SelectionRange - Every requested position is answered, in order")
-{
-    // The client lines the results up with what it sent by index, so a skipped position is worse
-    // than a useless one.
-    Fixture fixture("void Think() { int ticks = 0; }\n");
+    TEST_CASE("SelectionRange - The chain reaches the whole document")
+    {
+        Fixture fixture("void Think() { int ticks = 0; }\n");
 
-    const auto results = fixture.At({lsp::Position{0, 5}, lsp::Position{0, 20}, lsp::Position{0, 26}});
+        const auto results = fixture.At({lsp::Position{0, 20}});
+        REQUIRE(results.size() == 1);
 
-    REQUIRE(results.size() == 3);
-    CHECK(Chain(results[0]).front().start.character == 5);
-    CHECK(Chain(results[1]).front().start.character == 19);
-}
+        const auto ranges = Chain(results[0]);
+        REQUIRE_FALSE(ranges.empty());
+        CHECK(ranges.back().start.line == 0);
+        CHECK(ranges.back().start.character == 0);
+    }
 
-TEST_CASE("SelectionRange - A position past the end still gets an answer")
-{
-    Fixture fixture("void Think() { }\n");
+    TEST_CASE("SelectionRange - No two consecutive links offer the same range")
+    {
+        // A chain that repeats a range makes the expand keystroke look broken: the user presses it and
+        // the selection does not move.
+        Fixture fixture("class Entity\n"
+                        "{\n"
+                        "    int health;\n"
+                        "}\n");
 
-    const auto results = fixture.At({lsp::Position{99, 99}});
-    REQUIRE(results.size() == 1);
-    CHECK_FALSE(Chain(results[0]).empty());
-}
+        const auto results = fixture.At({lsp::Position{2, 9}});
+        REQUIRE(results.size() == 1);
 
-TEST_CASE("SelectionRange - A document with no index yields nothing")
-{
-    const std::string source = "void Think() { }\n";
-    const std::vector<lsp::Position> positions{lsp::Position{0, 5}};
-    const SelectionRangeRequest request{source, positions, nullptr};
+        const auto ranges = Chain(results[0]);
+        for (size_t i = 1; i < ranges.size(); ++i)
+        {
+            INFO("link ", i);
+            const bool identical = ranges[i].start.line == ranges[i - 1].start.line &&
+                                   ranges[i].start.character == ranges[i - 1].start.character &&
+                                   ranges[i].end.line == ranges[i - 1].end.line &&
+                                   ranges[i].end.character == ranges[i - 1].end.character;
+            CHECK_FALSE(identical);
+        }
+    }
 
-    CHECK(GetSelectionRanges(request).empty());
+    TEST_CASE("SelectionRange - Every requested position is answered, in order")
+    {
+        // The client lines the results up with what it sent by index, so a skipped position is worse
+        // than a useless one.
+        Fixture fixture("void Think() { int ticks = 0; }\n");
+
+        const auto results = fixture.At({lsp::Position{0, 5}, lsp::Position{0, 20}, lsp::Position{0, 26}});
+
+        REQUIRE(results.size() == 3);
+        CHECK(Chain(results[0]).front().start.character == 5);
+        CHECK(Chain(results[1]).front().start.character == 19);
+    }
+
+    TEST_CASE("SelectionRange - A position past the end still gets an answer")
+    {
+        Fixture fixture("void Think() { }\n");
+
+        const auto results = fixture.At({lsp::Position{99, 99}});
+        REQUIRE(results.size() == 1);
+        CHECK_FALSE(Chain(results[0]).empty());
+    }
+
+    TEST_CASE("SelectionRange - A document with no index yields nothing")
+    {
+        const std::string source = "void Think() { }\n";
+        const std::vector<lsp::Position> positions{lsp::Position{0, 5}};
+        const SelectionRangeRequest request{source, positions, nullptr};
+
+        CHECK(GetSelectionRanges(request).empty());
+    }
 }

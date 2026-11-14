@@ -50,725 +50,729 @@ bool HasCode(const std::vector<Diagnostic>& diagnostics, const std::string& code
 }
 } // namespace
 
-// =====================================================================================
-// break and continue
-// =====================================================================================
-
-TEST_CASE("ControlFlow - Reports break outside a loop or switch")
+TEST_SUITE("analysis/checkers/ControlFlowChecker")
 {
-    CHECK(HasCode(AnalyzeFlowSnippet("void Think() { break; }\n"), "as-err-break-outside-loop"));
-}
+    // =====================================================================================
+    // break and continue
+    // =====================================================================================
 
-TEST_CASE("ControlFlow - break inside a loop or a switch is accepted")
-{
-    const std::string code = "void Think()\n"
-                             "{\n"
-                             "    for (int i = 0; i < 10; i++) { if (i == 3) break; }\n"
-                             "    while (true) { break; }\n"
-                             "    switch (1) { case 1: break; }\n"
-                             "}\n";
+    TEST_CASE("ControlFlow - Reports break outside a loop or switch")
+    {
+        CHECK(HasCode(AnalyzeFlowSnippet("void Think() { break; }\n"), "as-err-break-outside-loop"));
+    }
 
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-break-outside-loop"));
-}
+    TEST_CASE("ControlFlow - break inside a loop or a switch is accepted")
+    {
+        const std::string code = "void Think()\n"
+                                 "{\n"
+                                 "    for (int i = 0; i < 10; i++) { if (i == 3) break; }\n"
+                                 "    while (true) { break; }\n"
+                                 "    switch (1) { case 1: break; }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - Reports continue outside a loop")
-{
-    CHECK(HasCode(AnalyzeFlowSnippet("void Think() { continue; }\n"), "as-err-continue-outside-loop"));
-}
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-break-outside-loop"));
+    }
 
-TEST_CASE("ControlFlow - Reports continue in a switch that no loop encloses")
-{
-    const std::string code = "void Think()\n"
-                             "{\n"
-                             "    switch (1) { case 1: continue; }\n"
-                             "}\n";
+    TEST_CASE("ControlFlow - Reports continue outside a loop")
+    {
+        CHECK(HasCode(AnalyzeFlowSnippet("void Think() { continue; }\n"), "as-err-continue-outside-loop"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-continue-outside-loop"));
-}
+    TEST_CASE("ControlFlow - Reports continue in a switch that no loop encloses")
+    {
+        const std::string code = "void Think()\n"
+                                 "{\n"
+                                 "    switch (1) { case 1: continue; }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - continue inside a loop is accepted")
-{
-    const std::string code = "void Think()\n"
-                             "{\n"
-                             "    for (int i = 0; i < 10; i++) { if (i == 3) continue; }\n"
-                             "    foreach (int v : g_values) { continue; }\n"
-                             "}\n"
-                             "array<int> g_values;\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-continue-outside-loop"));
+    }
 
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-continue-outside-loop"));
-}
+    TEST_CASE("ControlFlow - continue inside a loop is accepted")
+    {
+        const std::string code = "void Think()\n"
+                                 "{\n"
+                                 "    for (int i = 0; i < 10; i++) { if (i == 3) continue; }\n"
+                                 "    foreach (int v : g_values) { continue; }\n"
+                                 "}\n"
+                                 "array<int> g_values;\n";
 
-TEST_CASE("ControlFlow - A nested function does not inherit the enclosing loop")
-{
-    // The lambda's body is its own flow: the `for` around the declaration cannot make a break in it
-    // legal.
-    const std::string code = "funcdef void Callback();\n"
-                             "void Think()\n"
-                             "{\n"
-                             "    for (int i = 0; i < 10; i++)\n"
-                             "    {\n"
-                             "        Callback@ cb = function() { break; };\n"
-                             "    }\n"
-                             "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-continue-outside-loop"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-break-outside-loop"));
-}
+    TEST_CASE("ControlFlow - A nested function does not inherit the enclosing loop")
+    {
+        // The lambda's body is its own flow: the `for` around the declaration cannot make a break in it
+        // legal.
+        const std::string code = "funcdef void Callback();\n"
+                                 "void Think()\n"
+                                 "{\n"
+                                 "    for (int i = 0; i < 10; i++)\n"
+                                 "    {\n"
+                                 "        Callback@ cb = function() { break; };\n"
+                                 "    }\n"
+                                 "}\n";
 
-// =====================================================================================
-// switch
-// =====================================================================================
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-break-outside-loop"));
+    }
 
-TEST_CASE("ControlFlow - Reports a duplicated case value")
-{
-    const std::string code = "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case 1: break;\n"
-                             "        case 2: break;\n"
-                             "        case 1: break;\n"
-                             "    }\n"
-                             "}\n";
+    // =====================================================================================
+    // switch
+    // =====================================================================================
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
-}
+    TEST_CASE("ControlFlow - Reports a duplicated case value")
+    {
+        const std::string code = "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case 1: break;\n"
+                                 "        case 2: break;\n"
+                                 "        case 1: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - Distinct case values are accepted")
-{
-    const std::string code = "enum Mode { ModeA, ModeB }\n"
-                             "void Think(Mode mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case ModeA: break;\n"
-                             "        case ModeB: break;\n"
-                             "        default: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+    }
 
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
-}
+    TEST_CASE("ControlFlow - Distinct case values are accepted")
+    {
+        const std::string code = "enum Mode { ModeA, ModeB }\n"
+                                 "void Think(Mode mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case ModeA: break;\n"
+                                 "        case ModeB: break;\n"
+                                 "        default: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - Duplicate case values with enum constants are reported")
-{
-    const std::string code = "enum Mode { ModeA = 1, ModeB = 1 }\n"
-                             "void Think(Mode mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case ModeA: break;\n"
-                             "        case ModeB: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
-}
+    TEST_CASE("ControlFlow - Duplicate case values with enum constants are reported")
+    {
+        const std::string code = "enum Mode { ModeA = 1, ModeB = 1 }\n"
+                                 "void Think(Mode mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case ModeA: break;\n"
+                                 "        case ModeB: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - Duplicate case value with enum and literal is reported")
-{
-    const std::string code = "enum Mode { ModeA = 1 }\n"
-                             "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case ModeA: break;\n"
-                             "        case 1: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
-}
+    TEST_CASE("ControlFlow - Duplicate case value with enum and literal is reported")
+    {
+        const std::string code = "enum Mode { ModeA = 1 }\n"
+                                 "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case ModeA: break;\n"
+                                 "        case 1: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - Duplicate case value with qualified enum is reported")
-{
-    const std::string code = "enum Mode { ModeA = 2 }\n"
-                             "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case Mode::ModeA: break;\n"
-                             "        case 2: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
-}
+    TEST_CASE("ControlFlow - Duplicate case value with qualified enum is reported")
+    {
+        const std::string code = "enum Mode { ModeA = 2 }\n"
+                                 "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case Mode::ModeA: break;\n"
+                                 "        case 2: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - Reports a case value that cannot be a label")
-{
-    const std::string code = "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case 'text': break;\n"
-                             "        case 1.5: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-case-type"));
-}
+    TEST_CASE("ControlFlow - Reports a case value that cannot be a label")
+    {
+        const std::string code = "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case 'text': break;\n"
+                                 "        case 1.5: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - An enum constant or a named constant is not judged")
-{
-    const std::string code = "const int MAX = 3;\n"
-                             "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case MAX: break;\n"
-                             "        case 0x10: break;\n"
-                             "        case -1: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-case-type"));
+    }
 
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-case-type"));
-}
+    TEST_CASE("ControlFlow - An enum constant or a named constant is not judged")
+    {
+        const std::string code = "const int MAX = 3;\n"
+                                 "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case MAX: break;\n"
+                                 "        case 0x10: break;\n"
+                                 "        case -1: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - Reports default that is not the last clause")
-{
-    const std::string code = "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        default: break;\n"
-                             "        case 1: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-case-type"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-default-must-be-last"));
-}
+    TEST_CASE("ControlFlow - Reports default that is not the last clause")
+    {
+        const std::string code = "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        default: break;\n"
+                                 "        case 1: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - A comment before the keyword does not hide the clause")
-{
-    // Regression: the clause keyword used to be read by matching the clause's source text, so
-    // anything the parser stepped over on the way to it - a fall-through comment, most obviously -
-    // made a default clause read as a case one and silenced this rule. The keyword is a node type
-    // now, which no amount of trivia can shift.
-    const std::string code = "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        /* fall through */ default: break;\n"
-                             "        case 1: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-default-must-be-last"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-default-must-be-last"));
-}
+    TEST_CASE("ControlFlow - A comment before the keyword does not hide the clause")
+    {
+        // Regression: the clause keyword used to be read by matching the clause's source text, so
+        // anything the parser stepped over on the way to it - a fall-through comment, most obviously -
+        // made a default clause read as a case one and silenced this rule. The keyword is a node type
+        // now, which no amount of trivia can shift.
+        const std::string code = "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        /* fall through */ default: break;\n"
+                                 "        case 1: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - A comment before a case keyword still leaves the label readable")
-{
-    const std::string code = "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        /* first */ case 1: break;\n"
-                             "        case 1: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-default-must-be-last"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
-}
+    TEST_CASE("ControlFlow - A comment before a case keyword still leaves the label readable")
+    {
+        const std::string code = "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        /* first */ case 1: break;\n"
+                                 "        case 1: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - default as the last clause is accepted")
-{
-    const std::string code = "void Think(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case 1: break;\n"
-                             "        default: break;\n"
-                             "    }\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+    }
 
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-default-must-be-last"));
-}
+    TEST_CASE("ControlFlow - default as the last clause is accepted")
+    {
+        const std::string code = "void Think(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case 1: break;\n"
+                                 "        default: break;\n"
+                                 "    }\n"
+                                 "}\n";
 
-// =====================================================================================
-// Returning
-// =====================================================================================
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-default-must-be-last"));
+    }
 
-TEST_CASE("ControlFlow - Reports a non-void function whose body can fall off the end")
-{
-    CHECK(HasCode(AnalyzeFlowSnippet("int Count() { int x = 1; }\n"), "as-err-not-all-paths-return"));
-}
+    // =====================================================================================
+    // Returning
+    // =====================================================================================
 
-TEST_CASE("ControlFlow - Reports an if with no else as the only return")
-{
-    const std::string code = "int Count(bool flag)\n"
-                             "{\n"
-                             "    if (flag) return 1;\n"
-                             "}\n";
+    TEST_CASE("ControlFlow - Reports a non-void function whose body can fall off the end")
+    {
+        CHECK(HasCode(AnalyzeFlowSnippet("int Count() { int x = 1; }\n"), "as-err-not-all-paths-return"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
+    TEST_CASE("ControlFlow - Reports an if with no else as the only return")
+    {
+        const std::string code = "int Count(bool flag)\n"
+                                 "{\n"
+                                 "    if (flag) return 1;\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - An if/else where both branches return is accepted")
-{
-    const std::string code = "int Count(bool flag)\n"
-                             "{\n"
-                             "    if (flag) return 1;\n"
-                             "    else return 0;\n"
-                             "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    }
 
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
+    TEST_CASE("ControlFlow - An if/else where both branches return is accepted")
+    {
+        const std::string code = "int Count(bool flag)\n"
+                                 "{\n"
+                                 "    if (flag) return 1;\n"
+                                 "    else return 0;\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - A void function is not judged")
-{
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("void Think() { int x = 1; }\n"), "as-err-not-all-paths-return"));
-}
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    }
 
-TEST_CASE("ControlFlow - A constructor is not judged")
-{
-    const std::string code = "class Entity\n"
-                             "{\n"
-                             "    Entity() { }\n"
-                             "    ~Entity() { }\n"
-                             "}\n";
+    TEST_CASE("ControlFlow - A void function is not judged")
+    {
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet("void Think() { int x = 1; }\n"), "as-err-not-all-paths-return"));
+    }
 
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
+    TEST_CASE("ControlFlow - A constructor is not judged")
+    {
+        const std::string code = "class Entity\n"
+                                 "{\n"
+                                 "    Entity() { }\n"
+                                 "    ~Entity() { }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - A loop is not a return, whatever its condition says")
-{
-    // This asserted the opposite until it was measured. `while (true)` really does have no normal
-    // exit, and the compiler does not care: its analysis is structural, a loop body may run zero
-    // times as far as it is concerned, and all three of these are rejected -
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    }
+
+    TEST_CASE("ControlFlow - A loop is not a return, whatever its condition says")
+    {
+        // This asserted the opposite until it was measured. `while (true)` really does have no normal
+        // exit, and the compiler does not care: its analysis is structural, a loop body may run zero
+        // times as far as it is concerned, and all three of these are rejected -
+        //
+        //     int f() { while (true) { return 1; } }        Not all paths return a value
+        //     int f() { for (;;) { return 1; } }            Not all paths return a value
+        //     int f() { do { return 1; } while (true); }    Not all paths return a value
+        //
+        // - so believing otherwise cost three errors the compiler gives and this analyzer did not.
+        const std::string code = "int Spin()\n"
+                                 "{\n"
+                                 "    while (true)\n"
+                                 "    {\n"
+                                 "        return 1;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+        CHECK(HasCode(AnalyzeFlowSnippet("int Forever() { for (;;) { return 1; } }\n"), "as-err-not-all-paths-return"));
+        CHECK(
+            HasCode(AnalyzeFlowSnippet("int D() { do { return 1; } while (true); }\n"), "as-err-not-all-paths-return"));
+
+        // And a return after the loop is what makes any of them compile.
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet("int Spin() { while (true) { break; } return 1; }\n"),
+                            "as-err-not-all-paths-return"));
+    }
+
+    TEST_CASE("ControlFlow - A constructor cannot return a value")
+    {
+        // The one function in the language that can only return void was the one nothing checked:
+        // as-err-void-return-value reads the return type node, and a constructor has none.
+        CHECK(HasCode(AnalyzeFlowSnippet("class Widget { Widget() { return 42; } }\n"), "as-err-void-return-value"));
+
+        // A bare return in one is ordinary.
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet("class Widget { Widget() { return; } }\n"), "as-err-void-return-value"));
+    }
+
+    TEST_CASE("ControlFlow - A switch with a default where every clause returns is accepted")
+    {
+        const std::string code = "int Pick(int mode)\n"
+                                 "{\n"
+                                 "    switch (mode)\n"
+                                 "    {\n"
+                                 "        case 1: return 1;\n"
+                                 "        case 2:\n"
+                                 "        case 3: return 2;\n"
+                                 "        default: return 0;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    }
+
+    TEST_CASE("ControlFlow - An interface method has no body to judge")
+    {
+        const std::string code = "interface ICounter\n"
+                                 "{\n"
+                                 "    int Count();\n"
+                                 "}\n";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    }
+
+    // =====================================================================================
+    // Unreachable code
     //
-    //     int f() { while (true) { return 1; } }        Not all paths return a value
-    //     int f() { for (;;) { return 1; } }            Not all paths return a value
-    //     int f() { do { return 1; } while (true); }    Not all paths return a value
+    // Compiled against a real engine first, which warns rather than errors, and warns only for a
+    // terminator and a statement in the *same* block. Code after an `if` whose body returns is not
+    // dead - the false branch still falls through - and the engine says nothing about it.
+    // =====================================================================================
+
+    TEST_CASE("ControlFlow - Reports a statement after a return in the same block")
+    {
+        CHECK(HasCode(AnalyzeFlowSnippet("void A() { return; int dead = 1; }\n"), "as-warn-unreachable-code"));
+    }
+
+    TEST_CASE("ControlFlow - Reports a statement after a break or a continue")
+    {
+        CHECK(HasCode(AnalyzeFlowSnippet("void C() { for (int i = 0; i < 3; i++) { continue; int dead = 1; } }\n"),
+                      "as-warn-unreachable-code"));
+        CHECK(HasCode(AnalyzeFlowSnippet("void D() { while (true) { break; int dead = 1; } }\n"),
+                      "as-warn-unreachable-code"));
+    }
+
+    TEST_CASE("ControlFlow - Code after an if that returns is reachable")
+    {
+        // The case that separates a structural rule from a path analysis, and the engine agrees: the
+        // false branch falls through, so nothing here is dead.
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet("void B(int v) { if (v > 0) { return; } int alive = 1; }\n"),
+                            "as-warn-unreachable-code"));
+    }
+
+    TEST_CASE("ControlFlow - Code after a switch whose cases return is reachable")
+    {
+        const std::string code = "void E(int v)\n"
+                                 "{\n"
+                                 "    switch (v)\n"
+                                 "    {\n"
+                                 "        case 1: return;\n"
+                                 "        case 2: break;\n"
+                                 "    }\n"
+                                 "    int alive = 2;\n"
+                                 "}\n";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+    }
+
+    TEST_CASE("ControlFlow - Nested switches have independent labels")
+    {
+        const std::string code = "void Select(int choice) {\n"
+                                 "    switch (choice) {\n"
+                                 "        case 1: switch (choice) { case 1: break; } break;\n"
+                                 "        case 2: break;\n"
+                                 "    }\n"
+                                 "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+    }
+
+    TEST_CASE("ControlFlow - An oversized decimal case label does not abort diagnostics")
+    {
+        const std::string code = "void Select(int choice) {\n"
+                                 "    switch (choice) {\n"
+                                 "        case 99999999999999999999999999: break;\n"
+                                 "        case 99999999999999999999999999: break;\n"
+                                 "    }\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+    }
+
+    TEST_CASE("ControlFlow - A comment after a return is not unreachable code")
+    {
+        // A comment is an extra rather than a statement, and one after a return is usually what
+        // explains the return.
+        const std::string code = "void A()\n"
+                                 "{\n"
+                                 "    return;\n"
+                                 "    // nothing more to do\n"
+                                 "}\n";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+    }
+
+    TEST_CASE("ControlFlow - A block holding a preprocessor directive is not judged")
+    {
+        // Found by the corpus audit, four times over in two files. `#if` is an opaque line to this
+        // grammar, so a `return` guarded by one reads as live and everything after it as dead. A
+        // `#endif` on its own says nothing about what its `#if` decided, so one directive anywhere in
+        // the block retires the question for the whole block.
+        const std::string code = "int Get(int value)\n"
+                                 "{\n"
+                                 "#if FALSE\n"
+                                 "    return value;\n"
+                                 "#endif\n"
+                                 "    int temp = value;\n"
+                                 "    return temp;\n"
+                                 "}\n";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+    }
+
+    TEST_CASE("ControlFlow - A block the parser could not read is not judged")
+    {
+        // Also from the corpus: a file whose `if(...); return true; else return false;` is not
+        // AngelScript at all. The shape of a recovered block is error recovery's guess rather than the
+        // author's, and reading a terminator out of it says nothing.
+        const std::string code = "bool IsSilent(string s)\n"
+                                 "{\n"
+                                 "    if (s == \"/\");\n"
+                                 "    return true;\n"
+                                 "    else return false;\n"
+                                 "}\n";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+    }
+
+    TEST_CASE("ControlFlow - An ordinary body carries no unreachable finding")
+    {
+        const std::string code = "int Count(int v)\n"
+                                 "{\n"
+                                 "    int total = 0;\n"
+                                 "    for (int i = 0; i < v; i++)\n"
+                                 "    {\n"
+                                 "        total += i;\n"
+                                 "    }\n"
+                                 "    return total;\n"
+                                 "}\n";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+    }
+
+    // =====================================================================================
+    // Corpus audit (opt-in - run via
+    // `angel_lsp_tests.exe --no-skip --test-case="*Control Flow Corpus Audit*"`)
+    // =====================================================================================
+
+    // =====================================================================================
+    // try / catch
     //
-    // - so believing otherwise cost three errors the compiler gives and this analyzer did not.
-    const std::string code = "int Spin()\n"
-                             "{\n"
-                             "    while (true)\n"
-                             "    {\n"
-                             "        return 1;\n"
-                             "    }\n"
-                             "}\n";
+    // Either block can be the path taken - the try block runs to its end, or an exception hands control
+    // to the catch - so a non-void function needs a return in both. Verified against asharness:
+    //
+    //   try { return 1; } catch { return 2; }   accepted
+    //   try { return 1; } catch { }             "Not all paths return a value"
+    //   try { } catch { } return 3;             accepted
+    //
+    // `try_statement` had no arm in DefinitelyReturns at all, so the first of those - correct code -
+    // was reported as not returning.
+    // =====================================================================================
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-    CHECK(HasCode(AnalyzeFlowSnippet("int Forever() { for (;;) { return 1; } }\n"), "as-err-not-all-paths-return"));
-    CHECK(HasCode(AnalyzeFlowSnippet("int D() { do { return 1; } while (true); }\n"), "as-err-not-all-paths-return"));
-
-    // And a return after the loop is what makes any of them compile.
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("int Spin() { while (true) { break; } return 1; }\n"),
-                        "as-err-not-all-paths-return"));
-}
-
-TEST_CASE("ControlFlow - A constructor cannot return a value")
-{
-    // The one function in the language that can only return void was the one nothing checked:
-    // as-err-void-return-value reads the return type node, and a constructor has none.
-    CHECK(HasCode(AnalyzeFlowSnippet("class Widget { Widget() { return 42; } }\n"), "as-err-void-return-value"));
-
-    // A bare return in one is ordinary.
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("class Widget { Widget() { return; } }\n"), "as-err-void-return-value"));
-}
-
-TEST_CASE("ControlFlow - A switch with a default where every clause returns is accepted")
-{
-    const std::string code = "int Pick(int mode)\n"
-                             "{\n"
-                             "    switch (mode)\n"
-                             "    {\n"
-                             "        case 1: return 1;\n"
-                             "        case 2:\n"
-                             "        case 3: return 2;\n"
-                             "        default: return 0;\n"
-                             "    }\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
-
-TEST_CASE("ControlFlow - An interface method has no body to judge")
-{
-    const std::string code = "interface ICounter\n"
-                             "{\n"
-                             "    int Count();\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
-
-// =====================================================================================
-// Unreachable code
-//
-// Compiled against a real engine first, which warns rather than errors, and warns only for a
-// terminator and a statement in the *same* block. Code after an `if` whose body returns is not
-// dead - the false branch still falls through - and the engine says nothing about it.
-// =====================================================================================
-
-TEST_CASE("ControlFlow - Reports a statement after a return in the same block")
-{
-    CHECK(HasCode(AnalyzeFlowSnippet("void A() { return; int dead = 1; }\n"), "as-warn-unreachable-code"));
-}
-
-TEST_CASE("ControlFlow - Reports a statement after a break or a continue")
-{
-    CHECK(HasCode(AnalyzeFlowSnippet("void C() { for (int i = 0; i < 3; i++) { continue; int dead = 1; } }\n"),
-                  "as-warn-unreachable-code"));
-    CHECK(HasCode(AnalyzeFlowSnippet("void D() { while (true) { break; int dead = 1; } }\n"),
-                  "as-warn-unreachable-code"));
-}
-
-TEST_CASE("ControlFlow - Code after an if that returns is reachable")
-{
-    // The case that separates a structural rule from a path analysis, and the engine agrees: the
-    // false branch falls through, so nothing here is dead.
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("void B(int v) { if (v > 0) { return; } int alive = 1; }\n"),
-                        "as-warn-unreachable-code"));
-}
-
-TEST_CASE("ControlFlow - Code after a switch whose cases return is reachable")
-{
-    const std::string code = "void E(int v)\n"
-                             "{\n"
-                             "    switch (v)\n"
-                             "    {\n"
-                             "        case 1: return;\n"
-                             "        case 2: break;\n"
-                             "    }\n"
-                             "    int alive = 2;\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
-}
-
-TEST_CASE("ControlFlow - Nested switches have independent labels")
-{
-    const std::string code = "void Select(int choice) {\n"
-                             "    switch (choice) {\n"
-                             "        case 1: switch (choice) { case 1: break; } break;\n"
-                             "        case 2: break;\n"
-                             "    }\n"
-                             "}\n";
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
-}
-
-TEST_CASE("ControlFlow - An oversized decimal case label does not abort diagnostics")
-{
-    const std::string code = "void Select(int choice) {\n"
-                             "    switch (choice) {\n"
-                             "        case 99999999999999999999999999: break;\n"
-                             "        case 99999999999999999999999999: break;\n"
-                             "    }\n"
-                             "}\n";
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
-}
-
-TEST_CASE("ControlFlow - A comment after a return is not unreachable code")
-{
-    // A comment is an extra rather than a statement, and one after a return is usually what
-    // explains the return.
-    const std::string code = "void A()\n"
-                             "{\n"
-                             "    return;\n"
-                             "    // nothing more to do\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
-}
-
-TEST_CASE("ControlFlow - A block holding a preprocessor directive is not judged")
-{
-    // Found by the corpus audit, four times over in two files. `#if` is an opaque line to this
-    // grammar, so a `return` guarded by one reads as live and everything after it as dead. A
-    // `#endif` on its own says nothing about what its `#if` decided, so one directive anywhere in
-    // the block retires the question for the whole block.
-    const std::string code = "int Get(int value)\n"
-                             "{\n"
-                             "#if FALSE\n"
-                             "    return value;\n"
-                             "#endif\n"
-                             "    int temp = value;\n"
-                             "    return temp;\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
-}
-
-TEST_CASE("ControlFlow - A block the parser could not read is not judged")
-{
-    // Also from the corpus: a file whose `if(...); return true; else return false;` is not
-    // AngelScript at all. The shape of a recovered block is error recovery's guess rather than the
-    // author's, and reading a terminator out of it says nothing.
-    const std::string code = "bool IsSilent(string s)\n"
-                             "{\n"
-                             "    if (s == \"/\");\n"
-                             "    return true;\n"
-                             "    else return false;\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
-}
-
-TEST_CASE("ControlFlow - An ordinary body carries no unreachable finding")
-{
-    const std::string code = "int Count(int v)\n"
-                             "{\n"
-                             "    int total = 0;\n"
-                             "    for (int i = 0; i < v; i++)\n"
-                             "    {\n"
-                             "        total += i;\n"
-                             "    }\n"
-                             "    return total;\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
-}
-
-// =====================================================================================
-// Corpus audit (opt-in - run via
-// `angel_lsp_tests.exe --no-skip --test-case="*Control Flow Corpus Audit*"`)
-// =====================================================================================
-
-// =====================================================================================
-// try / catch
-//
-// Either block can be the path taken - the try block runs to its end, or an exception hands control
-// to the catch - so a non-void function needs a return in both. Verified against asharness:
-//
-//   try { return 1; } catch { return 2; }   accepted
-//   try { return 1; } catch { }             "Not all paths return a value"
-//   try { } catch { } return 3;             accepted
-//
-// `try_statement` had no arm in DefinitelyReturns at all, so the first of those - correct code -
-// was reported as not returning.
-// =====================================================================================
-
-TEST_CASE("ControlFlow - A try and its catch both returning is a returning path")
-{
-    const std::string code = "int Count()\n"
-                             "{\n"
-                             "    try { return 1; }\n"
-                             "    catch { return 2; }\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
-
-TEST_CASE("ControlFlow - Deeply nested branches preserve definite return facts")
-{
-    const std::string openBlocks(512, '{');
-    const std::string closeBlocks(512, '}');
-    const std::string code = "int F(bool value) { if (value) " + openBlocks + "return 1;" + closeBlocks + "else " +
-                             openBlocks + "return 2;" + closeBlocks + " }";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
-
-TEST_CASE("ControlFlow - A catch that falls through does not return")
-{
-    const std::string code = "int Count()\n"
-                             "{\n"
-                             "    try { return 1; }\n"
-                             "    catch { }\n"
-                             "}\n";
-
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
-
-TEST_CASE("ControlFlow - A return after a try that does not return is enough")
-{
-    const std::string code = "int Count()\n"
-                             "{\n"
-                             "    try { }\n"
-                             "    catch { }\n"
-                             "    return 3;\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
-}
-
-TEST_CASE("ControlFlow - A primitive is not a foreach container")
-{
-    // Nothing can register opForBegin/opForEnd/opForNext/opForValue on `int`, so this one is
-    // decidable without seeing the host's C++. The real compiler answers it with
-    // "Type 'int' is not valid type for foreach loops".
-    const std::string code = "void Loop()\n"
-                             "{\n"
-                             "    int total = 5;\n"
-                             "    foreach (auto n : total) { }\n"
-                             "}\n";
-
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-foreach-container"));
-}
-
-TEST_CASE("ControlFlow - A container whose opFor methods are not declared stays silent")
-{
-    // A class may have them registered in C++ with no stub recording it, so an absent declaration
-    // proves nothing - unlike a primitive, which can never have them.
-    const std::string code = "class Bag {}\n"
-                             "void Loop()\n"
-                             "{\n"
-                             "    Bag b;\n"
-                             "    foreach (auto n : b) { }\n"
-                             "}\n";
-
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-foreach-container"));
-}
-
-TEST_CASE("ControlFlow - Control Flow Corpus Audit" * doctest::skip(true))
-{
-    if (!angel_lsp::test::CorpusIsAvailable())
+    TEST_CASE("ControlFlow - A try and its catch both returning is a returning path")
     {
-        MESSAGE(angel_lsp::test::CorpusMissingMessage());
-        return;
+        const std::string code = "int Count()\n"
+                                 "{\n"
+                                 "    try { return 1; }\n"
+                                 "    catch { return 2; }\n"
+                                 "}\n";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
     }
 
-    static const std::vector<std::string> k_codes = {"as-err-break-outside-loop",   "as-err-continue-outside-loop",
-                                                     "as-err-invalid-case-type",    "as-err-duplicate-case-value",
-                                                     "as-err-default-must-be-last", "as-err-not-all-paths-return",
-                                                     "as-warn-unreachable-code"};
-
-    const auto result = angel_lsp::test::RunCorpusAudit(
-        [](const std::string& code) { return std::find(k_codes.begin(), k_codes.end(), code) != k_codes.end(); });
-
-    MESSAGE("Control-flow corpus audit: files=" << result.filesAnalysed << " totalFlagged=" << result.Total()
-                                                << " seconds=" << result.seconds);
-
-    for (const auto& [code, count] : result.countByCode)
+    TEST_CASE("ControlFlow - Deeply nested branches preserve definite return facts")
     {
-        MESSAGE("  " << code << ": " << count);
-    }
-    for (const auto& hit : result.hits)
-    {
-        MESSAGE("  " << hit.fileName << ":" << hit.line << " [" << hit.code << "] " << hit.message);
+        const std::string openBlocks(512, '{');
+        const std::string closeBlocks(512, '}');
+        const std::string code = "int F(bool value) { if (value) " + openBlocks + "return 1;" + closeBlocks + "else " +
+                                 openBlocks + "return 2;" + closeBlocks + " }";
+
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
     }
 
-    CHECK(result.filesAnalysed > 0);
+    TEST_CASE("ControlFlow - A catch that falls through does not return")
+    {
+        const std::string code = "int Count()\n"
+                                 "{\n"
+                                 "    try { return 1; }\n"
+                                 "    catch { }\n"
+                                 "}\n";
 
-    // One finding survives triage and it is genuine: AngelScript_SC_Plugins_ChatTriggers.as
-    // declares `HookReturnCode PlayerSay(SayParameters@ pParams)` with a body that reads one
-    // argument and then ends - an unfinished hook that would leave the caller with no return value.
-    CHECK(result.Total() == 1);
-    REQUIRE(result.hits.size() == 1);
-    CHECK(result.hits[0].code == "as-err-not-all-paths-return");
-    CHECK(result.hits[0].fileName == "AngelScript_SC_Plugins_ChatTriggers.as");
-}
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    }
 
-// =====================================================================================
-// A `return;` in a function that owes a value.
-//
-// Measured: the compiler answers "Must return a value" and rejects the file. Nothing here saw it -
-// as-err-not-all-paths-return asks only whether a return is reached, and one is. Found by hand in
-// real use; see doc_r09 in the parity corpus.
-// =====================================================================================
+    TEST_CASE("ControlFlow - A return after a try that does not return is enough")
+    {
+        const std::string code = "int Count()\n"
+                                 "{\n"
+                                 "    try { }\n"
+                                 "    catch { }\n"
+                                 "    return 3;\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - A bare return in a function that owes a value")
-{
-    const std::string code = "float FS(float f)\n"
-                             "{\n"
-                             "    return;\n"
-                             "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-return-value-required"));
-}
+    TEST_CASE("ControlFlow - A primitive is not a foreach container")
+    {
+        // Nothing can register opForBegin/opForEnd/opForNext/opForValue on `int`, so this one is
+        // decidable without seeing the host's C++. The real compiler answers it with
+        // "Type 'int' is not valid type for foreach loops".
+        const std::string code = "void Loop()\n"
+                                 "{\n"
+                                 "    int total = 5;\n"
+                                 "    foreach (auto n : total) { }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - A bare return is fine where nothing is owed")
-{
-    // void, and a constructor, which has no return type to check against at all.
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("void F() { return; }\n"), "as-err-return-value-required"));
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("class C { C() { return; } }\n"), "as-err-return-value-required"));
-}
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-foreach-container"));
+    }
 
-TEST_CASE("ControlFlow - A return that carries a value is not reported")
-{
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("float FS(float f) { return f; }\n"), "as-err-return-value-required"));
-}
+    TEST_CASE("ControlFlow - A container whose opFor methods are not declared stays silent")
+    {
+        // A class may have them registered in C++ with no stub recording it, so an absent declaration
+        // proves nothing - unlike a primitive, which can never have them.
+        const std::string code = "class Bag {}\n"
+                                 "void Loop()\n"
+                                 "{\n"
+                                 "    Bag b;\n"
+                                 "    foreach (auto n : b) { }\n"
+                                 "}\n";
 
-TEST_CASE("ControlFlow - A bare return inside a lambda owes the funcdef's value")
-{
-    // The requirement comes from the funcdef the lambda is handed to, which is where
-    // as-err-not-all-paths-return already gets it from. Measured: the compiler answers
-    // "Must return a value" at the return inside the lambda body.
-    const std::string code = "funcdef float SomeFuncDefName(float f);\n"
-                             "void SomeFunction()\n"
-                             "{\n"
-                             "    SomeFuncDefName@ func = function(float f)\n"
-                             "    {\n"
-                             "        return;\n"
-                             "    };\n"
-                             "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-foreach-container"));
+    }
 
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-return-value-required"));
-}
+    TEST_CASE("ControlFlow - Control Flow Corpus Audit" * doctest::skip(true))
+    {
+        if (!angel_lsp::test::CorpusIsAvailable())
+        {
+            MESSAGE(angel_lsp::test::CorpusMissingMessage());
+            return;
+        }
 
-// =====================================================================================
-// Variable declaration inside switch cases
-// =====================================================================================
+        static const std::vector<std::string> k_codes = {"as-err-break-outside-loop",   "as-err-continue-outside-loop",
+                                                         "as-err-invalid-case-type",    "as-err-duplicate-case-value",
+                                                         "as-err-default-must-be-last", "as-err-not-all-paths-return",
+                                                         "as-warn-unreachable-code"};
 
-TEST_CASE("ControlFlow - Reports variable declared in switch case without block")
-{
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
-    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
-    const std::string code = "void " + fnName +
-                             "(int x) {\n"
-                             "    switch (x) {\n"
-                             "        case 1:\n"
-                             "            int " +
-                             varName +
-                             " = 1;\n"
-                             "            break;\n"
-                             "    }\n"
-                             "}\n";
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
-}
+        const auto result = angel_lsp::test::RunCorpusAudit(
+            [](const std::string& code) { return std::find(k_codes.begin(), k_codes.end(), code) != k_codes.end(); });
 
-TEST_CASE("ControlFlow - Variable declared in statement block inside switch case is accepted")
-{
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
-    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
-    const std::string code = "void " + fnName +
-                             "(int x) {\n"
-                             "    switch (x) {\n"
-                             "        case 1: {\n"
-                             "            int " +
-                             varName +
-                             " = 1;\n"
-                             "            break;\n"
-                             "        }\n"
-                             "    }\n"
-                             "}\n";
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
-}
+        MESSAGE("Control-flow corpus audit: files=" << result.filesAnalysed << " totalFlagged=" << result.Total()
+                                                    << " seconds=" << result.seconds);
 
-TEST_CASE("ControlFlow - Reports variable declared in default clause without block")
-{
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
-    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
-    const std::string code = "void " + fnName +
-                             "(int x) {\n"
-                             "    switch (x) {\n"
-                             "        default:\n"
-                             "            int " +
-                             varName +
-                             " = 10;\n"
-                             "            break;\n"
-                             "    }\n"
-                             "}\n";
-    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
-}
+        for (const auto& [code, count] : result.countByCode)
+        {
+            MESSAGE("  " << code << ": " << count);
+        }
+        for (const auto& hit : result.hits)
+        {
+            MESSAGE("  " << hit.fileName << ":" << hit.line << " [" << hit.code << "] " << hit.message);
+        }
 
-TEST_CASE("ControlFlow - Variable declared in nested if block inside switch case is accepted")
-{
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
-    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
-    const std::string code = "void " + fnName +
-                             "(int x) {\n"
-                             "    switch (x) {\n"
-                             "        case 1:\n"
-                             "            if (x > 0) {\n"
-                             "                int " +
-                             varName +
-                             " = 5;\n"
-                             "            }\n"
-                             "            break;\n"
-                             "    }\n"
-                             "}\n";
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
+        CHECK(result.filesAnalysed > 0);
+
+        // One finding survives triage and it is genuine: AngelScript_SC_Plugins_ChatTriggers.as
+        // declares `HookReturnCode PlayerSay(SayParameters@ pParams)` with a body that reads one
+        // argument and then ends - an unfinished hook that would leave the caller with no return value.
+        CHECK(result.Total() == 1);
+        REQUIRE(result.hits.size() == 1);
+        CHECK(result.hits[0].code == "as-err-not-all-paths-return");
+        CHECK(result.hits[0].fileName == "AngelScript_SC_Plugins_ChatTriggers.as");
+    }
+
+    // =====================================================================================
+    // A `return;` in a function that owes a value.
+    //
+    // Measured: the compiler answers "Must return a value" and rejects the file. Nothing here saw it -
+    // as-err-not-all-paths-return asks only whether a return is reached, and one is. Found by hand in
+    // real use; see doc_r09 in the parity corpus.
+    // =====================================================================================
+
+    TEST_CASE("ControlFlow - A bare return in a function that owes a value")
+    {
+        const std::string code = "float FS(float f)\n"
+                                 "{\n"
+                                 "    return;\n"
+                                 "}\n";
+
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-return-value-required"));
+    }
+
+    TEST_CASE("ControlFlow - A bare return is fine where nothing is owed")
+    {
+        // void, and a constructor, which has no return type to check against at all.
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet("void F() { return; }\n"), "as-err-return-value-required"));
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet("class C { C() { return; } }\n"), "as-err-return-value-required"));
+    }
+
+    TEST_CASE("ControlFlow - A return that carries a value is not reported")
+    {
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet("float FS(float f) { return f; }\n"), "as-err-return-value-required"));
+    }
+
+    TEST_CASE("ControlFlow - A bare return inside a lambda owes the funcdef's value")
+    {
+        // The requirement comes from the funcdef the lambda is handed to, which is where
+        // as-err-not-all-paths-return already gets it from. Measured: the compiler answers
+        // "Must return a value" at the return inside the lambda body.
+        const std::string code = "funcdef float SomeFuncDefName(float f);\n"
+                                 "void SomeFunction()\n"
+                                 "{\n"
+                                 "    SomeFuncDefName@ func = function(float f)\n"
+                                 "    {\n"
+                                 "        return;\n"
+                                 "    };\n"
+                                 "}\n";
+
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-return-value-required"));
+    }
+
+    // =====================================================================================
+    // Variable declaration inside switch cases
+    // =====================================================================================
+
+    TEST_CASE("ControlFlow - Reports variable declared in switch case without block")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+        const std::string code = "void " + fnName +
+                                 "(int x) {\n"
+                                 "    switch (x) {\n"
+                                 "        case 1:\n"
+                                 "            int " +
+                                 varName +
+                                 " = 1;\n"
+                                 "            break;\n"
+                                 "    }\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
+    }
+
+    TEST_CASE("ControlFlow - Variable declared in statement block inside switch case is accepted")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+        const std::string code = "void " + fnName +
+                                 "(int x) {\n"
+                                 "    switch (x) {\n"
+                                 "        case 1: {\n"
+                                 "            int " +
+                                 varName +
+                                 " = 1;\n"
+                                 "            break;\n"
+                                 "        }\n"
+                                 "    }\n"
+                                 "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
+    }
+
+    TEST_CASE("ControlFlow - Reports variable declared in default clause without block")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+        const std::string code = "void " + fnName +
+                                 "(int x) {\n"
+                                 "    switch (x) {\n"
+                                 "        default:\n"
+                                 "            int " +
+                                 varName +
+                                 " = 10;\n"
+                                 "            break;\n"
+                                 "    }\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
+    }
+
+    TEST_CASE("ControlFlow - Variable declared in nested if block inside switch case is accepted")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+        const std::string code = "void " + fnName +
+                                 "(int x) {\n"
+                                 "    switch (x) {\n"
+                                 "        case 1:\n"
+                                 "            if (x > 0) {\n"
+                                 "                int " +
+                                 varName +
+                                 " = 5;\n"
+                                 "            }\n"
+                                 "            break;\n"
+                                 "    }\n"
+                                 "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
+    }
 }

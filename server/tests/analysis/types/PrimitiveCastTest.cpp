@@ -21,7 +21,7 @@ using namespace angel_lsp;
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
 
-TEST_SUITE("PrimitiveCastAndContextualKeywords")
+TEST_SUITE("analysis/types/PrimitiveCast")
 {
     /**
      * @brief Verifies that constructor-style primitive casting like int(uint8) resolves type correctly.

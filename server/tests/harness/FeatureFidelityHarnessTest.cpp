@@ -5,10 +5,10 @@
 
 using namespace angel_lsp::test;
 
-TEST_SUITE("FeatureFidelityHarness")
+TEST_SUITE("harness/FeatureFidelityHarness")
 {
 
-    TEST_CASE("Hover Inspection on properties displays accessor and documentation")
+    TEST_CASE("FeatureFidelityHarness - Hover Inspection on properties displays accessor and documentation")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "class Clock\n"
@@ -33,7 +33,7 @@ TEST_SUITE("FeatureFidelityHarness")
         fixture.AssertHoverContains(uri, 12, 16, "Minutes");
     }
 
-    TEST_CASE("Hover Inspection on intermediate namespace segments")
+    TEST_CASE("FeatureFidelityHarness - Hover Inspection on intermediate namespace segments")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "namespace meta_api\n"
@@ -62,7 +62,7 @@ TEST_SUITE("FeatureFidelityHarness")
         fixture.AssertHoverContains(uri, 16, 24, "fmt");
     }
 
-    TEST_CASE("Hover Member Disambiguation prioritizes receiver member over global symbol")
+    TEST_CASE("FeatureFidelityHarness - Hover Member Disambiguation prioritizes receiver member over global symbol")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "enum PrintResult\n"
@@ -97,7 +97,7 @@ TEST_SUITE("FeatureFidelityHarness")
         fixture.AssertHoverContains(uri, 19, 17, "ASLogLevel");
     }
 
-    TEST_CASE("Completion Filtering isolates instance members from global and type symbols")
+    TEST_CASE("FeatureFidelityHarness - Completion Filtering isolates instance members from global and type symbols")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "class DataContainer\n"
@@ -123,7 +123,7 @@ TEST_SUITE("FeatureFidelityHarness")
         fixture.AssertCompletionExcludes(uri, 10, 9, "DataContainer");
     }
 
-    TEST_CASE("Completion Filtering in namespace access proposes nested containers and types")
+    TEST_CASE("FeatureFidelityHarness - Completion Filtering in namespace access proposes nested containers and types")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "namespace meta_api\n"
@@ -150,7 +150,8 @@ TEST_SUITE("FeatureFidelityHarness")
         fixture.AssertCompletionExcludes(uri, 12, 20, "localVariable");
     }
 
-    TEST_CASE("Go-To-Definition Precedence prioritizes local workspace declarations over external stubs")
+    TEST_CASE("FeatureFidelityHarness - Go-To-Definition Precedence prioritizes local workspace declarations over "
+              "external stubs")
     {
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
@@ -182,7 +183,7 @@ TEST_SUITE("FeatureFidelityHarness")
         fixture.AssertDefinitionTarget(userUri, 2, 28, "json.as", 4);
     }
 
-    TEST_CASE("Hover Inspection on named argument displays parameter information")
+    TEST_CASE("FeatureFidelityHarness - Hover Inspection on named argument displays parameter information")
     {
         LspSemanticHarnessFixture fixture;
         const std::string clsName = GenerateRandomSymbolName("Spawner");
@@ -219,7 +220,8 @@ TEST_SUITE("FeatureFidelityHarness")
         fixture.AssertHoverContains(uri, 8, charCol + 1, "bool " + paramName);
     }
 
-    TEST_CASE("Hover Inspection on multi-parameter named arguments displays each parameter declaration")
+    TEST_CASE("FeatureFidelityHarness - Hover Inspection on multi-parameter named arguments displays each parameter "
+              "declaration")
     {
         LspSemanticHarnessFixture fixture;
         const std::string fnName = GenerateRandomSymbolName("ProcessData");

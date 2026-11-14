@@ -82,9 +82,9 @@ bool MatchesVerdict(const std::vector<Diagnostic>& diagnostics, const std::strin
 }
 } // namespace
 
-TEST_SUITE("TernaryConversionVariations")
+TEST_SUITE("analysis/checkers/TernaryConversion")
 {
-    TEST_CASE("Variation 01 - Handle consequence and handle alternative of same type")
+    TEST_CASE("TernaryConversion - Handle consequence and handle alternative of same type")
     {
         const std::string classSymbol = angel_lsp::test::GenerateRandomSymbolName("Widget");
         const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("ProcessWidgets");
@@ -114,7 +114,7 @@ TEST_SUITE("TernaryConversionVariations")
         CHECK_FALSE(HasConversionDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 02 - Handle consequence and null alternative")
+    TEST_CASE("TernaryConversion - Handle consequence and null alternative")
     {
         const std::string classSymbol = angel_lsp::test::GenerateRandomSymbolName("Resource");
         const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("AcquireResource");
@@ -141,7 +141,7 @@ TEST_SUITE("TernaryConversionVariations")
         CHECK_FALSE(HasConversionDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 03 - Null consequence and handle alternative")
+    TEST_CASE("TernaryConversion - Null consequence and handle alternative")
     {
         const std::string classSymbol = angel_lsp::test::GenerateRandomSymbolName("Session");
         const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("InitSession");
@@ -168,7 +168,7 @@ TEST_SUITE("TernaryConversionVariations")
         CHECK_FALSE(HasConversionDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 07 - String consequence and string alternative")
+    TEST_CASE("TernaryConversion - String consequence and string alternative")
     {
         const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("FormatMessage");
         const std::string flagParam = angel_lsp::test::GenerateRandomSymbolName("flag");
@@ -191,7 +191,7 @@ TEST_SUITE("TernaryConversionVariations")
         CHECK_FALSE(HasConversionDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 08 - Incompatible handle and string branches emit error")
+    TEST_CASE("TernaryConversion - Incompatible handle and string branches emit error")
     {
         const std::string classSymbol = angel_lsp::test::GenerateRandomSymbolName("Document");
         const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("PrintSummary");
@@ -220,7 +220,7 @@ TEST_SUITE("TernaryConversionVariations")
         CHECK(HasConversionDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 09 - Incompatible string and null branches emit error")
+    TEST_CASE("TernaryConversion - Incompatible string and null branches emit error")
     {
         const std::string testFn = angel_lsp::test::GenerateRandomSymbolName("ReadHeader");
         const std::string flagParam = angel_lsp::test::GenerateRandomSymbolName("flag");

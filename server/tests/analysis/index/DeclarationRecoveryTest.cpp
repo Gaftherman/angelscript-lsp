@@ -19,7 +19,7 @@ using namespace angel_lsp::document;
 TEST_SUITE("DeclarationRecovery")
 {
 
-    TEST_CASE("Cold Start Swallowed Class Recovery")
+    TEST_CASE("DeclarationRecovery - Cold Start Swallowed Class Recovery")
     {
         const std::string className = angel_lsp::test::GenerateRandomSymbolName("ASWeaponConfig");
         const std::string cooldownMethod = angel_lsp::test::GenerateRandomSymbolName("GetCooldown");
@@ -69,7 +69,7 @@ TEST_SUITE("DeclarationRecovery")
         CHECK(methodSymbols.front().startLine >= 6);
     }
 
-    TEST_CASE("Multi-Declaration Swallowed Recovery (Interface, Enum, Class)")
+    TEST_CASE("DeclarationRecovery - Multi-Declaration Swallowed Recovery (Interface, Enum, Class)")
     {
         const std::string interfaceName = angel_lsp::test::GenerateRandomSymbolName("IWorker");
         const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("Status");
@@ -117,7 +117,7 @@ TEST_SUITE("DeclarationRecovery")
         CHECK(classSyms.front().type == SymbolType::Class);
     }
 
-    TEST_CASE("Last-Known-Good Retention on Incremental Edit")
+    TEST_CASE("DeclarationRecovery - Last-Known-Good Retention on Incremental Edit")
     {
         const std::string className = angel_lsp::test::GenerateRandomSymbolName("ConfigClass");
         const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("ExecuteAction");
@@ -165,7 +165,8 @@ TEST_SUITE("DeclarationRecovery")
         CHECK(!activeTable.FindMemberSymbols(className, methodName).empty());
     }
 
-    TEST_CASE("Cross-Document Resolution With Swallowed Class Produces Zero Errors on Dependent File")
+    TEST_CASE(
+        "DeclarationRecovery - Cross-Document Resolution With Swallowed Class Produces Zero Errors on Dependent File")
     {
         const std::string configClass = angel_lsp::test::GenerateRandomSymbolName("WeaponConfig");
         const std::string cooldownFn = angel_lsp::test::GenerateRandomSymbolName("GetCooldown");

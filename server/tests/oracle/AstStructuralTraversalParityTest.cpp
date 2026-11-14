@@ -15,119 +15,122 @@ using namespace angel_lsp;
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
 
-TEST_CASE("AstStructuralTraversal - Null node safety")
+TEST_SUITE("oracle/AstStructuralTraversalParity")
 {
-    TSNode nullNode{};
-    CHECK(ts_node_is_null(parser::GetRootNode(nullNode)));
-    CHECK(ts_node_is_null(parser::GetParent(nullNode)));
-}
-
-TEST_CASE("AstStructuralTraversal - GetRootNode O(1) parity with upward parent climb")
-{
-    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Cls");
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Method");
-    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("myVar");
-
-    const std::string code = std::string("class ") + clsName + "\n{\n" + "    void " + fnName + "()\n    {\n" +
-                             "        int " + varName + " = 42;\n" + "    }\n}\n";
-
-    auto doc = angel_lsp::test::CreateTestDocument("file:///parity_ast_traversal.as", code);
-    REQUIRE(doc->GetTree() != nullptr);
-
-    TSNode expectedRoot = ts_tree_root_node(doc->GetTree());
-    REQUIRE(!ts_node_is_null(expectedRoot));
-
-    NodeIndex index(expectedRoot);
-    auto varDeclarators = index.Nodes(nodes::VariableDeclarator);
-    REQUIRE(!varDeclarators.empty());
-
-    TSNode leaf = varDeclarators.front();
-    REQUIRE(!ts_node_is_null(leaf));
-
-    // O(1) GetRootNode
-    TSNode fastRoot = parser::GetRootNode(leaf);
-    CHECK(!ts_node_is_null(fastRoot));
-    CHECK(ts_node_eq(fastRoot, expectedRoot));
-
-    // Iterative climb
-    TSNode climbRoot = leaf;
-    while (!ts_node_is_null(parser::GetParent(climbRoot)))
+    TEST_CASE("AstStructuralTraversal - Null node safety")
     {
-        climbRoot = parser::GetParent(climbRoot);
+        TSNode nullNode{};
+        CHECK(ts_node_is_null(parser::GetRootNode(nullNode)));
+        CHECK(ts_node_is_null(parser::GetParent(nullNode)));
     }
 
-    CHECK(ts_node_eq(fastRoot, climbRoot));
-}
-
-TEST_CASE("AstStructuralTraversal - Template brackets get templatePunctuation token type")
-{
-    const auto& legend = features::GetSemanticTokensLegend();
-    const auto it = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "templatePunctuation");
-    REQUIRE(it != legend.tokenTypes.end());
-    const uint32_t templatePunctuation = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), it));
-
-    const auto opIt = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "operator");
-    REQUIRE(opIt != legend.tokenTypes.end());
-    const uint32_t operatorType = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), opIt));
-
-    const std::string varArr = angel_lsp::test::GenerateRandomSymbolName("arr");
-    const std::string varA = angel_lsp::test::GenerateRandomSymbolName("a");
-    const std::string varB = angel_lsp::test::GenerateRandomSymbolName("b");
-
-    const std::string code = std::string("void test()\n{\n") + "    array<int> " + varArr + ";\n" +
-                             "    bool cmp = " + varA + " < " + varB + ";\n" + "}\n";
-
-    AngelScriptParser parser;
-    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
-    REQUIRE(tree != nullptr);
-
-    SymbolTable table;
-    test::SemanticTokenFactsFixture semFacts{tree.get(), code};
-    features::SemanticTokensRequest req{"file:///template_punct.as", code, semFacts.facts, table};
-    const auto tokens = features::GetSemanticTokens(req);
-
-    REQUIRE(tokens.data.size() % 5 == 0);
-
-    bool hasTemplatePunctuation = false;
-    bool hasOperator = false;
-    for (size_t i = 0; i + 4 < tokens.data.size(); i += 5)
+    TEST_CASE("AstStructuralTraversal - GetRootNode O(1) parity with upward parent climb")
     {
-        const uint32_t type = tokens.data[i + 3];
-        if (type == templatePunctuation)
+        const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Cls");
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Method");
+        const std::string varName = angel_lsp::test::GenerateRandomSymbolName("myVar");
+
+        const std::string code = std::string("class ") + clsName + "\n{\n" + "    void " + fnName + "()\n    {\n" +
+                                 "        int " + varName + " = 42;\n" + "    }\n}\n";
+
+        auto doc = angel_lsp::test::CreateTestDocument("file:///parity_ast_traversal.as", code);
+        REQUIRE(doc->GetTree() != nullptr);
+
+        TSNode expectedRoot = ts_tree_root_node(doc->GetTree());
+        REQUIRE(!ts_node_is_null(expectedRoot));
+
+        NodeIndex index(expectedRoot);
+        auto varDeclarators = index.Nodes(nodes::VariableDeclarator);
+        REQUIRE(!varDeclarators.empty());
+
+        TSNode leaf = varDeclarators.front();
+        REQUIRE(!ts_node_is_null(leaf));
+
+        // O(1) GetRootNode
+        TSNode fastRoot = parser::GetRootNode(leaf);
+        CHECK(!ts_node_is_null(fastRoot));
+        CHECK(ts_node_eq(fastRoot, expectedRoot));
+
+        // Iterative climb
+        TSNode climbRoot = leaf;
+        while (!ts_node_is_null(parser::GetParent(climbRoot)))
         {
-            hasTemplatePunctuation = true;
+            climbRoot = parser::GetParent(climbRoot);
         }
-        else if (type == operatorType)
-        {
-            hasOperator = true;
-        }
+
+        CHECK(ts_node_eq(fastRoot, climbRoot));
     }
-    CHECK(hasTemplatePunctuation);
-    CHECK(hasOperator);
-}
 
-TEST_CASE("AstStructuralTraversal - Clean file error bypass and O(1) symbols parity")
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    CHECK(gs.tokComma != 0);
-    CHECK(gs.tokCloseParen != 0);
-    CHECK(gs.tokColon != 0);
-    CHECK(gs.tokFunction != 0);
+    TEST_CASE("AstStructuralTraversal - Template brackets get templatePunctuation token type")
+    {
+        const auto& legend = features::GetSemanticTokensLegend();
+        const auto it = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "templatePunctuation");
+        REQUIRE(it != legend.tokenTypes.end());
+        const uint32_t templatePunctuation = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), it));
 
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("CleanFn");
-    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("validVar");
-    const std::string code = std::string("void ") + fnName + "()\n{\n    int " + varName + " = 100;\n}\n";
+        const auto opIt = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "operator");
+        REQUIRE(opIt != legend.tokenTypes.end());
+        const uint32_t operatorType = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), opIt));
 
-    AngelScriptParser parser;
-    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
-    REQUIRE(tree != nullptr);
+        const std::string varArr = angel_lsp::test::GenerateRandomSymbolName("arr");
+        const std::string varA = angel_lsp::test::GenerateRandomSymbolName("a");
+        const std::string varB = angel_lsp::test::GenerateRandomSymbolName("b");
 
-    TSNode root = ts_tree_root_node(tree.get());
-    REQUIRE(!ts_node_has_error(root));
+        const std::string code = std::string("void test()\n{\n") + "    array<int> " + varArr + ";\n" +
+                                 "    bool cmp = " + varA + " < " + varB + ";\n" + "}\n";
 
-    // Verify CleanBaseTypeView has exact parity with CleanBaseType
-    const std::string complexType = "const array<int>@";
-    CHECK(analysis::CleanBaseType(complexType) == std::string(analysis::CleanBaseTypeView(complexType)));
-    CHECK(std::string(analysis::CleanBaseTypeView("int")) == "int");
-    CHECK(std::string(analysis::CleanBaseTypeView("auto")) == "auto");
+        AngelScriptParser parser;
+        parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
+        REQUIRE(tree != nullptr);
+
+        SymbolTable table;
+        test::SemanticTokenFactsFixture semFacts{tree.get(), code};
+        features::SemanticTokensRequest req{"file:///template_punct.as", code, semFacts.facts, table};
+        const auto tokens = features::GetSemanticTokens(req);
+
+        REQUIRE(tokens.data.size() % 5 == 0);
+
+        bool hasTemplatePunctuation = false;
+        bool hasOperator = false;
+        for (size_t i = 0; i + 4 < tokens.data.size(); i += 5)
+        {
+            const uint32_t type = tokens.data[i + 3];
+            if (type == templatePunctuation)
+            {
+                hasTemplatePunctuation = true;
+            }
+            else if (type == operatorType)
+            {
+                hasOperator = true;
+            }
+        }
+        CHECK(hasTemplatePunctuation);
+        CHECK(hasOperator);
+    }
+
+    TEST_CASE("AstStructuralTraversal - Clean file error bypass and O(1) symbols parity")
+    {
+        const auto& gs = parser::GetGrammarSymbols();
+        CHECK(gs.tokComma != 0);
+        CHECK(gs.tokCloseParen != 0);
+        CHECK(gs.tokColon != 0);
+        CHECK(gs.tokFunction != 0);
+
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("CleanFn");
+        const std::string varName = angel_lsp::test::GenerateRandomSymbolName("validVar");
+        const std::string code = std::string("void ") + fnName + "()\n{\n    int " + varName + " = 100;\n}\n";
+
+        AngelScriptParser parser;
+        parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
+        REQUIRE(tree != nullptr);
+
+        TSNode root = ts_tree_root_node(tree.get());
+        REQUIRE(!ts_node_has_error(root));
+
+        // Verify CleanBaseTypeView has exact parity with CleanBaseType
+        const std::string complexType = "const array<int>@";
+        CHECK(analysis::CleanBaseType(complexType) == std::string(analysis::CleanBaseTypeView(complexType)));
+        CHECK(std::string(analysis::CleanBaseTypeView("int")) == "int");
+        CHECK(std::string(analysis::CleanBaseTypeView("auto")) == "auto");
+    }
 }

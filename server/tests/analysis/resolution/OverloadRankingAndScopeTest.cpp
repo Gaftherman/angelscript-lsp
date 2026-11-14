@@ -102,9 +102,10 @@ bool HasDiagCode(const std::vector<Diagnostic>& diags, std::string_view code)
 }
 } // namespace
 
-TEST_SUITE("OverloadRankingAndScope")
+TEST_SUITE("analysis/resolution/OverloadRankingAndScope")
 {
-    TEST_CASE("Container specialization selects exact container type over alternative instantiations")
+    TEST_CASE("OverloadRankingAndScope - Container specialization selects exact container type over alternative "
+              "instantiations")
     {
         const std::string fnName = GenerateRandomSymbolName("ToArray");
         SymbolTable table;
@@ -131,7 +132,8 @@ TEST_SUITE("OverloadRankingAndScope")
         CHECK(matchFloat.viableCandidates.empty());
     }
 
-    TEST_CASE("Pairwise partial ordering marks unorderable candidates as ambiguous with null bestCandidate")
+    TEST_CASE("OverloadRankingAndScope - Pairwise partial ordering marks unorderable candidates as ambiguous with null "
+              "bestCandidate")
     {
         const std::string fnName = GenerateRandomSymbolName("Dispatch");
         SymbolTable table;
@@ -151,7 +153,8 @@ TEST_SUITE("OverloadRankingAndScope")
         CHECK(match.viableCandidates.size() == 2);
     }
 
-    TEST_CASE("Pairwise partial ordering produces ambiguity diagnostic in end-to-end call checking")
+    TEST_CASE(
+        "OverloadRankingAndScope - Pairwise partial ordering produces ambiguity diagnostic in end-to-end call checking")
     {
         const std::string fnName = GenerateRandomSymbolName("OrderAmbiguous");
         const std::string script = "void " + fnName + "(int a, double b) {}\n" + "void " + fnName +
@@ -162,7 +165,8 @@ TEST_SUITE("OverloadRankingAndScope")
         CHECK(HasDiagCode(diags, "as-err-call-ambiguous"));
     }
 
-    TEST_CASE("Cyclic auto resolution eliminates false positives on member access, string literals, and comments")
+    TEST_CASE("OverloadRankingAndScope - Cyclic auto resolution eliminates false positives on member access, string "
+              "literals, and comments")
     {
         const std::string clsName = GenerateRandomSymbolName("PlayerMove");
         const std::string propPlayer = GenerateRandomSymbolName("player");
@@ -222,7 +226,7 @@ TEST_SUITE("OverloadRankingAndScope")
         CHECK(HasDiagCode(cyclicDiags, "as-err-cyclic-auto-dependency"));
     }
 
-    TEST_CASE("Cyclic auto binds only unqualified initializer names to the declarator")
+    TEST_CASE("OverloadRankingAndScope - Cyclic auto binds only unqualified initializer names to the declarator")
     {
         const auto diagnostics = AnalyzeSnippet(R"(
 namespace Storage { int value = 1; }
@@ -246,7 +250,7 @@ void Probe(Container@ object) {
         CHECK(cyclicLines == std::vector<uint32_t>{8});
     }
 
-    TEST_CASE("Scope parent cycle defense terminates safely without recursion or hang")
+    TEST_CASE("OverloadRankingAndScope - Scope parent cycle defense terminates safely without recursion or hang")
     {
         Scope s1;
         s1.startLine = 0;

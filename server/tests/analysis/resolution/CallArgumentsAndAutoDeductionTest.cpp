@@ -122,7 +122,7 @@ std::string GetHintLabel(const lsp::InlayHint& hint)
 
 TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
 {
-    TEST_CASE("Overloaded function calls with varying parameter counts")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Overloaded function calls with varying parameter counts")
     {
         std::string code = "void Log(int level) {}\n"
                            "void Log(int level, string tag) {}\n"
@@ -157,7 +157,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
         CHECK(labels[5] == "verbose:");
     }
 
-    TEST_CASE("Varargs and empty parameter name suppression")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Varargs and empty parameter name suppression")
     {
         std::string code = "void FormatString(string fmt, ...) {}\n"
                            "void main() {\n"
@@ -173,7 +173,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
         CHECK(GetHintLabel(hints->at(0)) == "fmt:");
     }
 
-    TEST_CASE("Mixed named and positional arguments")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Mixed named and positional arguments")
     {
         std::string code = "void Configure(string host, int port, int timeout) {}\n"
                            "void main() {\n"
@@ -189,7 +189,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
         CHECK(GetHintLabel(hints->at(0)) == "port:");
     }
 
-    TEST_CASE("Auto type deduction for all primitive literal variants")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Auto type deduction for all primitive literal variants")
     {
         std::string code = "void main() {\n"
                            "    auto v_int = 100;\n"
@@ -212,7 +212,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
         CHECK(GetHintLabel(hints->at(4)) == ": bool");
     }
 
-    TEST_CASE("C-style integer suffixes are not AngelScript and are not deduced from")
+    TEST_CASE("CallArgumentsAndAutoDeduction - C-style integer suffixes are not AngelScript and are not deduced from")
     {
         // AngelScript defines f/F and d/D on floating-point literals and nothing else - no u, L,
         // ull or u64. The grammar agrees: decimal_int is /[0-9]+/, so "42u" parses as the literal
@@ -232,7 +232,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
         CHECK(GetHintLabel(hints->at(0)) == ": int");
     }
 
-    TEST_CASE("Auto type deduction for constructor and template construct calls")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Auto type deduction for constructor and template construct calls")
     {
         std::string code = "class Vector2 {\n"
                            "    Vector2(float x, float y) {}\n"
@@ -274,7 +274,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
         CHECK(foundYParam);
     }
 
-    TEST_CASE("Auto type deduction for functional casts and cast expressions")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Auto type deduction for functional casts and cast expressions")
     {
         std::string code = "class Target {}\n"
                            "void main() {\n"
@@ -307,7 +307,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
         CHECK(foundTarget);
     }
 
-    TEST_CASE("Auto type deduction for expressions (binary, unary, comparison)")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Auto type deduction for expressions (binary, unary, comparison)")
     {
         std::string code = "void main() {\n"
                            "    int x = 10;\n"
@@ -341,7 +341,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
         CHECK(foundNotVal);
     }
 
-    TEST_CASE("Auto variable with null or unresolved initializer does not crash")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Auto variable with null or unresolved initializer does not crash")
     {
         std::string code = "void main() {\n"
                            "    auto n = null;\n"
@@ -368,7 +368,7 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
 
 TEST_SUITE("Adversarial Phase 3 - Code Actions")
 {
-    TEST_CASE("Multiple unused local variables in the same function")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Multiple unused local variables in the same function")
     {
         std::string code = "void main() {\n"
                            "    int unused1 = 10;\n"
@@ -402,7 +402,7 @@ TEST_SUITE("Adversarial Phase 3 - Code Actions")
         CHECK(!foundActive);
     }
 
-    TEST_CASE("Unused variable removal in multi-declarator lines (head, middle, tail)")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Unused variable removal in multi-declarator lines (head, middle, tail)")
     {
         std::string code = "void main() {\n"
                            "    int firstUnused = 1, middleUsed = 2, lastUnused = 3;\n"
@@ -433,7 +433,7 @@ TEST_SUITE("Adversarial Phase 3 - Code Actions")
         CHECK(!foundMiddle);
     }
 
-    TEST_CASE("Missing interface method stubs with multi-level inheritance")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Missing interface method stubs with multi-level inheritance")
     {
         std::string code = "interface IRoot {\n"
                            "    void RootMethod();\n"
@@ -476,7 +476,8 @@ TEST_SUITE("Adversarial Phase 3 - Code Actions")
         CHECK(foundAction);
     }
 
-    TEST_CASE("Class member variables and global variables are NOT marked as unused local variables")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Class member variables and global variables are NOT marked as unused "
+              "local variables")
     {
         std::string code = "int g_globalVar = 100;\n"
                            "class MyEntity {\n"
@@ -505,7 +506,7 @@ TEST_SUITE("Adversarial Phase 3 - Code Actions")
 
 TEST_SUITE("Adversarial Phase 3 - Formatting")
 {
-    TEST_CASE("Deeply nested control flow (4 levels) Allman brace alignment")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Deeply nested control flow (4 levels) Allman brace alignment")
     {
         std::string code = "void DeepNest(){if(a>0){for(int i=0;i<10;++i){while(running){switch(state){case "
                            "1:doTask();break;default:break;}}}}}";
@@ -539,7 +540,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("Struct and Class with trailing semicolons and member alignment")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Struct and Class with trailing semicolons and member alignment")
     {
         std::string code = "struct Point{float x;float y;};class Widget:Base{int id;void Render(){draw();}};";
 
@@ -565,7 +566,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("Preprocessor directives are indented with the block they sit in")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Preprocessor directives are indented with the block they sit in")
     {
         // This asserted column zero, which is what the formatter used to force unconditionally.
         // AngelScript's only conditional is CScriptBuilder's `#if <word>` ... `#endif`, and it
@@ -599,7 +600,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("A file-scope directive still lands at column zero")
+    TEST_CASE("CallArgumentsAndAutoDeduction - A file-scope directive still lands at column zero")
     {
         std::string code = "#include \"other.as\"\n"
                            "void Main() {\n"
@@ -619,7 +620,8 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
         CHECK(FormatSourceCode(code, options) == expected);
     }
 
-    TEST_CASE("Strings with curly braces, semicolons and operators are preserved verbatim")
+    TEST_CASE(
+        "CallArgumentsAndAutoDeduction - Strings with curly braces, semicolons and operators are preserved verbatim")
     {
         std::string code =
             "void BuildQuery() {\n"
@@ -639,7 +641,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
         CHECK(formatted.find("\"\"\"multi-line") != std::string::npos);
     }
 
-    TEST_CASE("Complex template and handle spacing disambiguation")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Complex template and handle spacing disambiguation")
     {
         std::string code = "array<dictionary<string,array<int>@>>@ complexContainer=null;";
 
@@ -653,7 +655,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("Range formatting preserves surrounding unselected lines")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Range formatting preserves surrounding unselected lines")
     {
         std::string uri = "file:///range_test.as";
         std::string code = "// Header line\n"
@@ -682,7 +684,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
 
 TEST_SUITE("Adversarial Phase 3 - Server Config & Feature Flags")
 {
-    TEST_CASE("All 5 Phase 3 feature flags toggle via CLI flags correctly")
+    TEST_CASE("CallArgumentsAndAutoDeduction - All 5 Phase 3 feature flags toggle via CLI flags correctly")
     {
         ArgvHelper args{"angel_lsp",
                         "--disable-document-highlight",
@@ -699,7 +701,7 @@ TEST_SUITE("Adversarial Phase 3 - Server Config & Feature Flags")
         CHECK(cfg.features.enableFormatting == false);
     }
 
-    TEST_CASE("Alias flags without hyphens (--enable-inlayhints, --disable-codeaction)")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Alias flags without hyphens (--enable-inlayhints, --disable-codeaction)")
     {
         ArgvHelper args{"angel_lsp",
                         "--enable-documenthighlight=false",
@@ -716,7 +718,7 @@ TEST_SUITE("Adversarial Phase 3 - Server Config & Feature Flags")
         CHECK(cfg.features.enableFormatting == false);
     }
 
-    TEST_CASE("Flag overriding and re-enabling")
+    TEST_CASE("CallArgumentsAndAutoDeduction - Flag overriding and re-enabling")
     {
         ArgvHelper args{"angel_lsp",
                         "--disable-inlay-hints",

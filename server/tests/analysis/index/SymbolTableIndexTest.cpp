@@ -49,266 +49,269 @@ bool Contains(const std::vector<std::string>& names, const std::string& name)
 }
 } // namespace
 
-// =====================================================================================
-// Per-file iteration
-// =====================================================================================
-
-TEST_CASE("SymbolTable - The per-file walk visits only that file's buckets")
+TEST_SUITE("analysis/index/SymbolTableIndex")
 {
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "Beta", "file:///b.as"));
+    // =====================================================================================
+    // Per-file iteration
+    // =====================================================================================
 
-    const auto fromA = NamesInFile(table, "file:///a.as");
-    CHECK(fromA.size() == 1);
-    CHECK(Contains(fromA, "Alpha"));
-    CHECK_FALSE(Contains(fromA, "Beta"));
-}
-
-TEST_CASE("SymbolTable - A shared bucket is visited whole from either file")
-{
-    // The point of visiting buckets rather than symbols: the redeclaration rule compares a
-    // document's declarations against every other declaration of the same name, and a sibling file
-    // of the same module is exactly where the interesting collisions come from.
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Function, "Update", "file:///a.as"));
-    table.AddSymbol(MakeSymbol(SymbolType::Function, "Update", "file:///b.as"));
-
-    const auto fromA = NamesInFile(table, "file:///a.as");
-    CHECK(fromA.size() == 2);
-}
-
-TEST_CASE("SymbolTable - An unknown file visits nothing")
-{
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
-
-    CHECK(NamesInFile(table, "file:///never-indexed.as").empty());
-}
-
-TEST_CASE("SymbolTable - Clearing a document removes it from the per-file walk")
-{
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "Beta", "file:///b.as"));
-
-    table.ClearDocumentSymbols("file:///a.as");
-
-    CHECK(NamesInFile(table, "file:///a.as").empty());
-    CHECK(Contains(NamesInFile(table, "file:///b.as"), "Beta"));
-    CHECK_FALSE(table.HasSymbol("Alpha"));
-}
-
-TEST_CASE("SymbolTable - Clearing one file leaves a bucket the other still shares")
-{
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Function, "Update", "file:///a.as"));
-    table.AddSymbol(MakeSymbol(SymbolType::Function, "Update", "file:///b.as"));
-
-    table.ClearDocumentSymbols("file:///a.as");
-
-    CHECK(table.HasSymbol("Update"));
-    CHECK(NamesInFile(table, "file:///b.as").size() == 1);
-}
-
-TEST_CASE("SymbolTable - Replacing a document re-indexes it")
-{
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "Before", "file:///a.as"));
-
-    SymbolTable staging;
-    staging.AddSymbol(MakeSymbol(SymbolType::Class, "After", "file:///a.as"));
-    table.ReplaceDocumentSymbols("file:///a.as", staging);
-
-    const auto names = NamesInFile(table, "file:///a.as");
-    CHECK(Contains(names, "After"));
-    CHECK_FALSE(Contains(names, "Before"));
-    CHECK_FALSE(table.HasSymbol("Before"));
-}
-
-// =====================================================================================
-// Index invalidation
-// =====================================================================================
-
-TEST_CASE("SymbolTable - The rule index is reused while the table is unchanged")
-{
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
-
-    CHECK((table.GetRuleIndex().get() == table.GetRuleIndex().get()));
-}
-
-TEST_CASE("SymbolTable - The rule index is rebuilt after a write")
-{
-    // The failure this guards is silent and nasty: a cached index outliving the edit that
-    // invalidated it means rules answering questions about symbols that no longer exist.
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Function, "Think", "file:///a.as", "Entity"));
-
-    const auto before = table.GetRuleIndex();
-    CHECK(before->Members("Entity").methodNames.contains("Think"));
-    CHECK(before->allNames.contains("Think"));
-
-    table.AddSymbol(MakeSymbol(SymbolType::Function, "Spawn", "file:///a.as", "Entity"));
-
-    const auto after = table.GetRuleIndex();
-    CHECK((after.get() != before.get()));
-    CHECK(after->Members("Entity").methodNames.contains("Spawn"));
-    CHECK(after->allNames.contains("Spawn"));
-}
-
-TEST_CASE("SymbolTable - Clearing a document invalidates the rule index")
-{
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Function, "Think", "file:///a.as", "Entity"));
-    CHECK(table.GetRuleIndex()->allNames.contains("Think"));
-
-    table.ClearDocumentSymbols("file:///a.as");
-
-    CHECK_FALSE(table.GetRuleIndex()->allNames.contains("Think"));
-}
-
-TEST_CASE("SymbolTable - The version moves on every write and holds still otherwise")
-{
-    SymbolTable table;
-    const uint64_t initial = table.Version();
-
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
-    const uint64_t afterAdd = table.Version();
-    CHECK(afterAdd != initial);
-
-    CHECK(table.Version() == afterAdd);
-
-    table.ClearDocumentSymbols("file:///a.as");
-    CHECK(table.Version() != afterAdd);
-}
-
-TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash reflects public signatures and ignores line numbers")
-{
-    SymbolTable table1;
-    Symbol s1 = MakeSymbol(SymbolType::Function, "Shoot", "file:///weapon.as");
-    s1.startLine = 10;
-    s1.endLine = 20;
-    auto& fn1 = s1.GetFunction();
-    fn1.returnType = "void";
-    fn1.parameters.push_back(ParameterInformation("count", "int"));
-    table1.AddSymbol(s1);
-
-    SymbolTable table2;
-    Symbol s2 = MakeSymbol(SymbolType::Function, "Shoot", "file:///weapon.as");
-    s2.startLine = 55;
-    s2.endLine = 75;
-    auto& fn2 = s2.GetFunction();
-    fn2.returnType = "void";
-    fn2.parameters.push_back(ParameterInformation("count", "int"));
-    table2.AddSymbol(s2);
-
-    const uint64_t hash1 = table1.ComputeDocumentInterfaceHash("file:///weapon.as");
-    const uint64_t hash2 = table2.ComputeDocumentInterfaceHash("file:///weapon.as");
-
-    CHECK(hash1 != 0);
-    CHECK(hash1 == hash2);
-}
-
-TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes")
-{
-    SymbolTable tableBase;
-    Symbol sBase = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-    auto& fnBase = sBase.GetFunction();
-    fnBase.returnType = "bool";
-    fnBase.parameters.push_back(ParameterInformation("speed", "float"));
-    tableBase.AddSymbol(sBase);
-    const uint64_t baseHash = tableBase.ComputeDocumentInterfaceHash("file:///weapon.as");
-
-    // Case 1: Change return type
+    TEST_CASE("SymbolTable - The per-file walk visits only that file's buckets")
     {
         SymbolTable table;
-        Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-        auto& fn = s.GetFunction();
-        fn.returnType = "void";
-        fn.parameters.push_back(ParameterInformation("speed", "float"));
-        table.AddSymbol(s);
-        CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "Beta", "file:///b.as"));
+
+        const auto fromA = NamesInFile(table, "file:///a.as");
+        CHECK(fromA.size() == 1);
+        CHECK(Contains(fromA, "Alpha"));
+        CHECK_FALSE(Contains(fromA, "Beta"));
     }
 
-    // Case 2: Change parameter type
+    TEST_CASE("SymbolTable - A shared bucket is visited whole from either file")
+    {
+        // The point of visiting buckets rather than symbols: the redeclaration rule compares a
+        // document's declarations against every other declaration of the same name, and a sibling file
+        // of the same module is exactly where the interesting collisions come from.
+        SymbolTable table;
+        table.AddSymbol(MakeSymbol(SymbolType::Function, "Update", "file:///a.as"));
+        table.AddSymbol(MakeSymbol(SymbolType::Function, "Update", "file:///b.as"));
+
+        const auto fromA = NamesInFile(table, "file:///a.as");
+        CHECK(fromA.size() == 2);
+    }
+
+    TEST_CASE("SymbolTable - An unknown file visits nothing")
     {
         SymbolTable table;
-        Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-        auto& fn = s.GetFunction();
-        fn.returnType = "bool";
-        fn.parameters.push_back(ParameterInformation("speed", "int"));
-        table.AddSymbol(s);
-        CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
+
+        CHECK(NamesInFile(table, "file:///never-indexed.as").empty());
     }
 
-    // Case 3: Add parameter
+    TEST_CASE("SymbolTable - Clearing a document removes it from the per-file walk")
     {
         SymbolTable table;
-        Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-        auto& fn = s.GetFunction();
-        fn.returnType = "bool";
-        fn.parameters.push_back(ParameterInformation("speed", "float"));
-        fn.parameters.push_back(ParameterInformation("forced", "bool"));
-        table.AddSymbol(s);
-        CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "Beta", "file:///b.as"));
+
+        table.ClearDocumentSymbols("file:///a.as");
+
+        CHECK(NamesInFile(table, "file:///a.as").empty());
+        CHECK(Contains(NamesInFile(table, "file:///b.as"), "Beta"));
+        CHECK_FALSE(table.HasSymbol("Alpha"));
     }
 
-    // Case 4: Add another symbol
+    TEST_CASE("SymbolTable - Clearing one file leaves a bucket the other still shares")
     {
         SymbolTable table;
-        Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-        auto& fn = s.GetFunction();
-        fn.returnType = "bool";
-        fn.parameters.push_back(ParameterInformation("speed", "float"));
-        table.AddSymbol(s);
-        table.AddSymbol(MakeSymbol(SymbolType::Variable, "m_ammo", "file:///weapon.as"));
-        CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+        table.AddSymbol(MakeSymbol(SymbolType::Function, "Update", "file:///a.as"));
+        table.AddSymbol(MakeSymbol(SymbolType::Function, "Update", "file:///b.as"));
+
+        table.ClearDocumentSymbols("file:///a.as");
+
+        CHECK(table.HasSymbol("Update"));
+        CHECK(NamesInFile(table, "file:///b.as").size() == 1);
     }
-}
 
-TEST_CASE("SymbolTable - ForEachSymbolWithPrefix matches case-insensitively")
-{
-    const std::string lowerName = "entity_" + angel_lsp::test::GenerateRandomSymbolName("t");
-    const std::string upperPrefix = "ENTITY_";
+    TEST_CASE("SymbolTable - Replacing a document re-indexes it")
+    {
+        SymbolTable table;
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "Before", "file:///a.as"));
 
-    const std::string upperName = "WEAPON_" + angel_lsp::test::GenerateRandomSymbolName("CONF");
-    const std::string lowerPrefix = "weapon_";
+        SymbolTable staging;
+        staging.AddSymbol(MakeSymbol(SymbolType::Class, "After", "file:///a.as"));
+        table.ReplaceDocumentSymbols("file:///a.as", staging);
 
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Class, lowerName, "file:///a.as"));
-    table.AddSymbol(MakeSymbol(SymbolType::Class, upperName, "file:///a.as"));
+        const auto names = NamesInFile(table, "file:///a.as");
+        CHECK(Contains(names, "After"));
+        CHECK_FALSE(Contains(names, "Before"));
+        CHECK_FALSE(table.HasSymbol("Before"));
+    }
 
-    std::vector<std::string> matchesForUpper;
-    table.ForEachSymbolWithPrefix(upperPrefix, [&](const std::string& name, const std::vector<Symbol>&)
-                                  { matchesForUpper.push_back(name); });
-    CHECK(Contains(matchesForUpper, lowerName));
+    // =====================================================================================
+    // Index invalidation
+    // =====================================================================================
 
-    std::vector<std::string> matchesForLower;
-    table.ForEachSymbolWithPrefix(lowerPrefix, [&](const std::string& name, const std::vector<Symbol>&)
-                                  { matchesForLower.push_back(name); });
-    CHECK(Contains(matchesForLower, upperName));
-}
+    TEST_CASE("SymbolTable - The rule index is reused while the table is unchanged")
+    {
+        SymbolTable table;
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
 
-TEST_CASE("SymbolTable - Published document snapshots keep module boundaries")
-{
-    const std::string own = "file:///active/entry.as";
-    const std::string peer = "file:///active/peer.as";
-    const std::string foreign = "file:///other/entry.as";
-    const std::string name = angel_lsp::test::GenerateRandomSymbolName("SharedName");
-    SymbolTable table;
-    table.AddSymbol(MakeSymbol(SymbolType::Function, name, own));
-    table.AddSymbol(MakeSymbol(SymbolType::Function, name, foreign));
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "PeerType", peer));
-    table.AddSymbol(MakeSymbol(SymbolType::Class, "ForeignType", foreign));
+        CHECK((table.GetRuleIndex().get() == table.GetRuleIndex().get()));
+    }
 
-    const angel_lsp::TransparentStringSet module{own, peer};
-    const auto snapshot = table.CreateAnalysisSnapshot({.uriStr = own, .allowedModuleFileUris = &module});
-    REQUIRE(snapshot);
-    const auto functions = snapshot->FindSymbols(name);
-    REQUIRE(functions.size() == 1);
-    CHECK(functions.front().fileUri == own);
-    CHECK(Contains(NamesInFile(*snapshot, peer), "PeerType"));
-    CHECK(NamesInFile(*snapshot, foreign).empty());
-    CHECK(table.FindSymbols(name).size() == 2);
+    TEST_CASE("SymbolTable - The rule index is rebuilt after a write")
+    {
+        // The failure this guards is silent and nasty: a cached index outliving the edit that
+        // invalidated it means rules answering questions about symbols that no longer exist.
+        SymbolTable table;
+        table.AddSymbol(MakeSymbol(SymbolType::Function, "Think", "file:///a.as", "Entity"));
+
+        const auto before = table.GetRuleIndex();
+        CHECK(before->Members("Entity").methodNames.contains("Think"));
+        CHECK(before->allNames.contains("Think"));
+
+        table.AddSymbol(MakeSymbol(SymbolType::Function, "Spawn", "file:///a.as", "Entity"));
+
+        const auto after = table.GetRuleIndex();
+        CHECK((after.get() != before.get()));
+        CHECK(after->Members("Entity").methodNames.contains("Spawn"));
+        CHECK(after->allNames.contains("Spawn"));
+    }
+
+    TEST_CASE("SymbolTable - Clearing a document invalidates the rule index")
+    {
+        SymbolTable table;
+        table.AddSymbol(MakeSymbol(SymbolType::Function, "Think", "file:///a.as", "Entity"));
+        CHECK(table.GetRuleIndex()->allNames.contains("Think"));
+
+        table.ClearDocumentSymbols("file:///a.as");
+
+        CHECK_FALSE(table.GetRuleIndex()->allNames.contains("Think"));
+    }
+
+    TEST_CASE("SymbolTable - The version moves on every write and holds still otherwise")
+    {
+        SymbolTable table;
+        const uint64_t initial = table.Version();
+
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "Alpha", "file:///a.as"));
+        const uint64_t afterAdd = table.Version();
+        CHECK(afterAdd != initial);
+
+        CHECK(table.Version() == afterAdd);
+
+        table.ClearDocumentSymbols("file:///a.as");
+        CHECK(table.Version() != afterAdd);
+    }
+
+    TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash reflects public signatures and ignores line numbers")
+    {
+        SymbolTable table1;
+        Symbol s1 = MakeSymbol(SymbolType::Function, "Shoot", "file:///weapon.as");
+        s1.startLine = 10;
+        s1.endLine = 20;
+        auto& fn1 = s1.GetFunction();
+        fn1.returnType = "void";
+        fn1.parameters.push_back(ParameterInformation("count", "int"));
+        table1.AddSymbol(s1);
+
+        SymbolTable table2;
+        Symbol s2 = MakeSymbol(SymbolType::Function, "Shoot", "file:///weapon.as");
+        s2.startLine = 55;
+        s2.endLine = 75;
+        auto& fn2 = s2.GetFunction();
+        fn2.returnType = "void";
+        fn2.parameters.push_back(ParameterInformation("count", "int"));
+        table2.AddSymbol(s2);
+
+        const uint64_t hash1 = table1.ComputeDocumentInterfaceHash("file:///weapon.as");
+        const uint64_t hash2 = table2.ComputeDocumentInterfaceHash("file:///weapon.as");
+
+        CHECK(hash1 != 0);
+        CHECK(hash1 == hash2);
+    }
+
+    TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes")
+    {
+        SymbolTable tableBase;
+        Symbol sBase = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+        auto& fnBase = sBase.GetFunction();
+        fnBase.returnType = "bool";
+        fnBase.parameters.push_back(ParameterInformation("speed", "float"));
+        tableBase.AddSymbol(sBase);
+        const uint64_t baseHash = tableBase.ComputeDocumentInterfaceHash("file:///weapon.as");
+
+        // Case 1: Change return type
+        {
+            SymbolTable table;
+            Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+            auto& fn = s.GetFunction();
+            fn.returnType = "void";
+            fn.parameters.push_back(ParameterInformation("speed", "float"));
+            table.AddSymbol(s);
+            CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+        }
+
+        // Case 2: Change parameter type
+        {
+            SymbolTable table;
+            Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+            auto& fn = s.GetFunction();
+            fn.returnType = "bool";
+            fn.parameters.push_back(ParameterInformation("speed", "int"));
+            table.AddSymbol(s);
+            CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+        }
+
+        // Case 3: Add parameter
+        {
+            SymbolTable table;
+            Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+            auto& fn = s.GetFunction();
+            fn.returnType = "bool";
+            fn.parameters.push_back(ParameterInformation("speed", "float"));
+            fn.parameters.push_back(ParameterInformation("forced", "bool"));
+            table.AddSymbol(s);
+            CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+        }
+
+        // Case 4: Add another symbol
+        {
+            SymbolTable table;
+            Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+            auto& fn = s.GetFunction();
+            fn.returnType = "bool";
+            fn.parameters.push_back(ParameterInformation("speed", "float"));
+            table.AddSymbol(s);
+            table.AddSymbol(MakeSymbol(SymbolType::Variable, "m_ammo", "file:///weapon.as"));
+            CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+        }
+    }
+
+    TEST_CASE("SymbolTable - ForEachSymbolWithPrefix matches case-insensitively")
+    {
+        const std::string lowerName = "entity_" + angel_lsp::test::GenerateRandomSymbolName("t");
+        const std::string upperPrefix = "ENTITY_";
+
+        const std::string upperName = "WEAPON_" + angel_lsp::test::GenerateRandomSymbolName("CONF");
+        const std::string lowerPrefix = "weapon_";
+
+        SymbolTable table;
+        table.AddSymbol(MakeSymbol(SymbolType::Class, lowerName, "file:///a.as"));
+        table.AddSymbol(MakeSymbol(SymbolType::Class, upperName, "file:///a.as"));
+
+        std::vector<std::string> matchesForUpper;
+        table.ForEachSymbolWithPrefix(upperPrefix, [&](const std::string& name, const std::vector<Symbol>&)
+                                      { matchesForUpper.push_back(name); });
+        CHECK(Contains(matchesForUpper, lowerName));
+
+        std::vector<std::string> matchesForLower;
+        table.ForEachSymbolWithPrefix(lowerPrefix, [&](const std::string& name, const std::vector<Symbol>&)
+                                      { matchesForLower.push_back(name); });
+        CHECK(Contains(matchesForLower, upperName));
+    }
+
+    TEST_CASE("SymbolTable - Published document snapshots keep module boundaries")
+    {
+        const std::string own = "file:///active/entry.as";
+        const std::string peer = "file:///active/peer.as";
+        const std::string foreign = "file:///other/entry.as";
+        const std::string name = angel_lsp::test::GenerateRandomSymbolName("SharedName");
+        SymbolTable table;
+        table.AddSymbol(MakeSymbol(SymbolType::Function, name, own));
+        table.AddSymbol(MakeSymbol(SymbolType::Function, name, foreign));
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "PeerType", peer));
+        table.AddSymbol(MakeSymbol(SymbolType::Class, "ForeignType", foreign));
+
+        const angel_lsp::TransparentStringSet module{own, peer};
+        const auto snapshot = table.CreateAnalysisSnapshot({.uriStr = own, .allowedModuleFileUris = &module});
+        REQUIRE(snapshot);
+        const auto functions = snapshot->FindSymbols(name);
+        REQUIRE(functions.size() == 1);
+        CHECK(functions.front().fileUri == own);
+        CHECK(Contains(NamesInFile(*snapshot, peer), "PeerType"));
+        CHECK(NamesInFile(*snapshot, foreign).empty());
+        CHECK(table.FindSymbols(name).size() == 2);
+    }
 }

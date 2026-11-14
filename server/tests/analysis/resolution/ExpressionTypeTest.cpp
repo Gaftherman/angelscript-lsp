@@ -85,9 +85,9 @@ std::string DeduceTypeInMain(const std::string& code)
 }
 } // namespace
 
-TEST_SUITE("ExpressionTypeDeduction")
+TEST_SUITE("analysis/resolution/ExpressionType")
 {
-    TEST_CASE("Captured operands resolve a global binary chain outside callable bodies")
+    TEST_CASE("ExpressionType - Captured operands resolve a global binary chain outside callable bodies")
     {
         std::string code = "double total = 0.5";
         for (size_t i = 0; i < 2500; ++i)
@@ -110,7 +110,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(CheckIndexedType(binaries.front(), {nullptr, table, code, uri}, index) == "double");
     }
 
-    TEST_CASE("Primitive Arithmetic Promotion")
+    TEST_CASE("ExpressionType - Primitive Arithmetic Promotion")
     {
         CHECK(DeduceTypeInMain("void main() { 10 + 20; }") == "int");
         CHECK(DeduceTypeInMain("void main() { 10 + 2.5f; }") == "float");
@@ -119,7 +119,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain("void main() { int8(1) + int16(2); }") == "int");
     }
 
-    TEST_CASE("Relational and Logical Expressions")
+    TEST_CASE("ExpressionType - Relational and Logical Expressions")
     {
         CHECK(DeduceTypeInMain("void main() { 10 < 20; }") == "bool");
         CHECK(DeduceTypeInMain("void main() { 10 == 20; }") == "bool");
@@ -127,7 +127,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain("void main() { !true; }") == "bool");
     }
 
-    TEST_CASE("String Concatenation")
+    TEST_CASE("ExpressionType - String Concatenation")
     {
         std::string code = "void main()\n"
                            "{\n"
@@ -137,7 +137,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(code) == "string");
     }
 
-    TEST_CASE("User-Defined Operator Overloads")
+    TEST_CASE("ExpressionType - User-Defined Operator Overloads")
     {
         std::string code = "class Vector2\n"
                            "{\n"
@@ -165,7 +165,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(revCode) == "Vector2");
     }
 
-    TEST_CASE("Ternary Expressions")
+    TEST_CASE("ExpressionType - Ternary Expressions")
     {
         CHECK(DeduceTypeInMain("void main() { true ? 1 : 2; }") == "int");
         CHECK(DeduceTypeInMain("void main() { true ? 1 : 2.5f; }") == "float");
@@ -174,7 +174,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain("class Foo {}; void main() { Foo@ f; true ? null : f; }") == "Foo@");
     }
 
-    TEST_CASE("Method and Property Chaining")
+    TEST_CASE("ExpressionType - Method and Property Chaining")
     {
         std::string code = "class Ammo\n"
                            "{\n"
@@ -196,7 +196,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(code) == "int");
     }
 
-    TEST_CASE("Template Indexing and Nested Templates")
+    TEST_CASE("ExpressionType - Template Indexing and Nested Templates")
     {
         std::string code1 = "void main()\n"
                             "{\n"
@@ -227,7 +227,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(code4) == "float");
     }
 
-    TEST_CASE("Custom container with opIndex and template parameter binding")
+    TEST_CASE("ExpressionType - Custom container with opIndex and template parameter binding")
     {
         std::string code1 = "class CustomList<T>\n"
                             "{\n"
@@ -271,7 +271,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(code4) == "int");
     }
 
-    TEST_CASE("Ternary conditional expressions")
+    TEST_CASE("ExpressionType - Ternary conditional expressions")
     {
         CHECK(DeduceTypeInMain("void main() { true ? 10 : 20; }") == "int");
         CHECK(DeduceTypeInMain("void main() { true ? 10 : 2.5f; }") == "float");
@@ -325,7 +325,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(aliasCode) == "int");
     }
 
-    TEST_CASE("Bare type name in expression context is not a value (asharness parity)")
+    TEST_CASE("ExpressionType - Bare type name in expression context is not a value (asharness parity)")
     {
         std::string code = "class Vector {}\n"
                            "void main()\n"
@@ -335,7 +335,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(code) == "");
     }
 
-    TEST_CASE("Unary handle operator (@expr) deduces handle type")
+    TEST_CASE("ExpressionType - Unary handle operator (@expr) deduces handle type")
     {
         const std::string cls = angel_lsp::test::GenerateRandomSymbolName("CustomObj");
         const std::string var = angel_lsp::test::GenerateRandomSymbolName("myVar");
@@ -348,7 +348,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(code2) == cls + "@");
     }
 
-    TEST_CASE("Ternary with unary handle and null deduces handle type")
+    TEST_CASE("ExpressionType - Ternary with unary handle and null deduces handle type")
     {
         const std::string cls = angel_lsp::test::GenerateRandomSymbolName("CustomObj");
         const std::string var = angel_lsp::test::GenerateRandomSymbolName("myVar");

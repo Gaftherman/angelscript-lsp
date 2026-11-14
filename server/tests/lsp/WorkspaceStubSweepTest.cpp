@@ -70,85 +70,88 @@ std::vector<std::filesystem::path> FindStubs()
 }
 } // namespace
 
-TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
+TEST_SUITE("lsp/WorkspaceStubSweep")
 {
-    const auto stubs = FindStubs();
-
-    // Not a vacuous pass. The two fixtures are committed, so finding none means the sweep itself
-    // is broken - a wrong root, an exclusion that swallowed tests/fixtures - rather than that the
-    // repository is clean.
-    REQUIRE_MESSAGE(!stubs.empty(), "No predefined stub found under "
-                                        << ANGELSCRIPT_REPO_ROOT
-                                        << ". Two are committed under server/tests/fixtures, so this means the "
-                                           "sweep is looking in the wrong place.");
-
-    static angel_lsp::i18n::I18n i18n;
-
-    for (const auto& stub : stubs)
+    TEST_CASE("WorkspaceStubSweep - Every predefined stub in this checkout parses and analyses clean")
     {
-        // Read it the way the server reads it. RewriteInlineListPatterns turns the manual's inline
-        // list-factory notation - `array (int& in type, int& in list) {repeat T};` - into the
-        // comment form the grammar accepts, and every path in the server that loads a stub applies
-        // it. Parsing the raw bytes here measured text the server never sees, and reported syntax
-        // errors on notation that is correct.
-        const std::string source = angel_lsp::utils::SanitizePredefinedContent(ReadWholeFile(stub));
-        const std::string uri = "file:///" + stub.generic_string();
+        const auto stubs = FindStubs();
 
-        INFO("stub: " << stub.generic_string() << " (" << source.size() << " bytes)");
-        REQUIRE_FALSE(source.empty());
+        // Not a vacuous pass. The two fixtures are committed, so finding none means the sweep itself
+        // is broken - a wrong root, an exclusion that swallowed tests/fixtures - rather than that the
+        // repository is clean.
+        REQUIRE_MESSAGE(!stubs.empty(), "No predefined stub found under "
+                                            << ANGELSCRIPT_REPO_ROOT
+                                            << ". Two are committed under server/tests/fixtures, so this means the "
+                                               "sweep is looking in the wrong place.");
 
-        AngelScriptParser parser;
-        SymbolCollector collector(nullptr);
-        LocalScopeCollector scopes(nullptr);
-        SymbolTable table;
+        static angel_lsp::i18n::I18n i18n;
 
-        auto diagnostics = collector.CollectSymbols({uri, source, &i18n}, parser, table);
-
-        SemanticAnalysisRequest request{table, uri, ".as.predefined", &i18n};
-        request.sourceCode = source;
-        request.scopeRoot = scopes.CollectScopes(source, parser);
-
-        TSTree* tree = parser.Parse(source);
-        NodeIndex nodeIndex(ts_tree_root_node(tree));
-        request.nodeIndex = &nodeIndex;
-
-        SemanticAnalyzer analyzer(nullptr);
-        for (auto& diagnostic : analyzer.Analyze(request))
-            diagnostics.push_back(std::move(diagnostic));
-
-        if (tree)
-            ts_tree_delete(tree);
-
-        std::vector<std::string> errors;
-        for (const auto& diagnostic : diagnostics)
+        for (const auto& stub : stubs)
         {
-            if (diagnostic.severity != DiagnosticSeverity::Error)
-                continue;
+            // Read it the way the server reads it. RewriteInlineListPatterns turns the manual's inline
+            // list-factory notation - `array (int& in type, int& in list) {repeat T};` - into the
+            // comment form the grammar accepts, and every path in the server that loads a stub applies
+            // it. Parsing the raw bytes here measured text the server never sees, and reported syntax
+            // errors on notation that is correct.
+            const std::string source = angel_lsp::utils::SanitizePredefinedContent(ReadWholeFile(stub));
+            const std::string uri = "file:///" + stub.generic_string();
 
-            errors.push_back("line " + std::to_string(diagnostic.range.start.line + 1) + "  " +
-                             std::string(diagnostic.code) + "  " + diagnostic.message);
+            INFO("stub: " << stub.generic_string() << " (" << source.size() << " bytes)");
+            REQUIRE_FALSE(source.empty());
+
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            LocalScopeCollector scopes(nullptr);
+            SymbolTable table;
+
+            auto diagnostics = collector.CollectSymbols({uri, source, &i18n}, parser, table);
+
+            SemanticAnalysisRequest request{table, uri, ".as.predefined", &i18n};
+            request.sourceCode = source;
+            request.scopeRoot = scopes.CollectScopes(source, parser);
+
+            TSTree* tree = parser.Parse(source);
+            NodeIndex nodeIndex(ts_tree_root_node(tree));
+            request.nodeIndex = &nodeIndex;
+
+            SemanticAnalyzer analyzer(nullptr);
+            for (auto& diagnostic : analyzer.Analyze(request))
+                diagnostics.push_back(std::move(diagnostic));
+
+            if (tree)
+                ts_tree_delete(tree);
+
+            std::vector<std::string> errors;
+            for (const auto& diagnostic : diagnostics)
+            {
+                if (diagnostic.severity != DiagnosticSeverity::Error)
+                    continue;
+
+                errors.push_back("line " + std::to_string(diagnostic.range.start.line + 1) + "  " +
+                                 std::string(diagnostic.code) + "  " + diagnostic.message);
+            }
+
+            // Errors only. A stub legitimately draws warnings and hints - unused declarations are the
+            // whole point of one - and failing on those would make every stub in the world unusable.
+            std::string report;
+            for (const auto& error : errors)
+                report += "\n    " + error;
+
+            INFO(report);
+            CHECK_MESSAGE(errors.empty(), "This stub does not analyse clean, so every type it declares is invisible to "
+                                          "the server that reads it: "
+                                              << stub.filename().generic_string());
+
+            // A stub that produced no symbols parsed as something, but not as declarations - the shape
+            // an unrecognised stub takes, and the one no error would report.
+            size_t declared = 0;
+            table.ForEachSymbol([&declared](const std::string&, const std::vector<Symbol>& symbols)
+                                { declared += symbols.size(); });
+
+            CHECK_MESSAGE(declared > 0,
+                          "This stub declares nothing the analyzer could see: " << stub.filename().generic_string());
         }
 
-        // Errors only. A stub legitimately draws warnings and hints - unused declarations are the
-        // whole point of one - and failing on those would make every stub in the world unusable.
-        std::string report;
-        for (const auto& error : errors)
-            report += "\n    " + error;
-
-        INFO(report);
-        CHECK_MESSAGE(errors.empty(), "This stub does not analyse clean, so every type it declares is invisible to "
-                                      "the server that reads it: "
-                                          << stub.filename().generic_string());
-
-        // A stub that produced no symbols parsed as something, but not as declarations - the shape
-        // an unrecognised stub takes, and the one no error would report.
-        size_t declared = 0;
-        table.ForEachSymbol([&declared](const std::string&, const std::vector<Symbol>& symbols)
-                            { declared += symbols.size(); });
-
-        CHECK_MESSAGE(declared > 0,
-                      "This stub declares nothing the analyzer could see: " << stub.filename().generic_string());
+        MESSAGE("Stubs swept: " << stubs.size());
     }
-
-    MESSAGE("Stubs swept: " << stubs.size());
 }

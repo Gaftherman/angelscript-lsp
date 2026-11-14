@@ -70,7 +70,7 @@ bool HasAnyError(const std::vector<Diagnostic>& diags)
 }
 } // namespace
 
-TEST_SUITE("IndexedProperties")
+TEST_SUITE("analysis/index/IndexedProperty")
 {
     TEST_CASE("IndexedProperties - Global indexed property declaration and element assignment produces zero errors")
     {

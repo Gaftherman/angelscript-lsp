@@ -4,10 +4,10 @@
 
 using namespace angel_lsp::test;
 
-TEST_SUITE("SvenCoopIdiomsHarness")
+TEST_SUITE("oracle/SvenCoopIdiomsHarness")
 {
 
-    TEST_CASE("Exhaustive Switch CFG with terminal default return")
+    TEST_CASE("SvenCoopIdiomsHarness - Exhaustive Switch CFG with terminal default return")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "bool ValidateType(int kind)\n"
@@ -40,7 +40,7 @@ TEST_SUITE("SvenCoopIdiomsHarness")
         fixture.AssertNoDiagnostics(uri);
     }
 
-    TEST_CASE("Implicit Constructor Synthesis for derived classes")
+    TEST_CASE("SvenCoopIdiomsHarness - Implicit Constructor Synthesis for derived classes")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "class Deserializer\n"
@@ -74,7 +74,7 @@ TEST_SUITE("SvenCoopIdiomsHarness")
         fixture.AssertNoDiagnostics(uri);
     }
 
-    TEST_CASE("Scoped Enum as return type and expression value in nested namespaces")
+    TEST_CASE("SvenCoopIdiomsHarness - Scoped Enum as return type and expression value in nested namespaces")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "namespace meta_api\n"
@@ -118,7 +118,7 @@ TEST_SUITE("SvenCoopIdiomsHarness")
         fixture.AssertNoDiagnostics(uri);
     }
 
-    TEST_CASE("Output Reference Handle Binding with this")
+    TEST_CASE("SvenCoopIdiomsHarness - Output Reference Handle Binding with this")
     {
         LspSemanticHarnessFixture fixture;
         const std::string script = "class json\n"
@@ -149,7 +149,7 @@ TEST_SUITE("SvenCoopIdiomsHarness")
         fixture.AssertNoDiagnostics(uri);
     }
 
-    TEST_CASE("Mutating Reference String Semantics")
+    TEST_CASE("SvenCoopIdiomsHarness - Mutating Reference String Semantics")
     {
         LspSemanticHarnessFixture fixture;
         fixture.Config().engine.allowUnsafeReferences = true;
@@ -179,7 +179,7 @@ TEST_SUITE("SvenCoopIdiomsHarness")
         fixture.AssertDiagnosticAt(invalidUri, 2, "as-err-const-method-required");
     }
 
-    TEST_CASE("Preprocessor Lexical Anchoring across functions in namespace")
+    TEST_CASE("SvenCoopIdiomsHarness - Preprocessor Lexical Anchoring across functions in namespace")
     {
         LspSemanticHarnessFixture fixture;
         fixture.Config().preprocessor.defineInScripts = true;
@@ -203,7 +203,7 @@ TEST_SUITE("SvenCoopIdiomsHarness")
         fixture.AssertNoDiagnostics(uri);
     }
 
-    TEST_CASE("Engine weapon fields reached through self navigate to the real stub")
+    TEST_CASE("SvenCoopIdiomsHarness - Engine weapon fields reached through self navigate to the real stub")
     {
         // The stub in the repo, not a stand-in: the fields live in CBasePlayerWeapon and `self` is the
         // get-only property of ScriptBasePlayerWeaponEntity. A class in a namespace that also mixes in

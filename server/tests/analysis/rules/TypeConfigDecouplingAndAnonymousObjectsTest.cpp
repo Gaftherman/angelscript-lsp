@@ -59,7 +59,8 @@ std::string ExtractHintLabel(const lsp::InlayHint& hint)
 
 TEST_SUITE("TypeConfig_Decoupling")
 {
-    TEST_CASE("Decoupled String Config: string literals and type deduction use configured name")
+    TEST_CASE("TypeConfigDecouplingAndAnonymousObjects - Decoupled String Config: string literals and type deduction "
+              "use configured name")
     {
         const std::string customStr = GenerateRandomSymbolName("CustomStr");
         const std::string docUri = "file:///workspace/test_decoupled_str.as";
@@ -91,7 +92,8 @@ TEST_SUITE("TypeConfig_Decoupling")
         CHECK(foundUnresolvedString);
     }
 
-    TEST_CASE("Decoupled Array Config: bracket desugaring and custom container isolation")
+    TEST_CASE("TypeConfigDecouplingAndAnonymousObjects - Decoupled Array Config: bracket desugaring and custom "
+              "container isolation")
     {
         const std::string customArray = GenerateRandomSymbolName("CustomVector");
         const std::string elemType = GenerateRandomSymbolName("DataItem");
@@ -109,7 +111,8 @@ TEST_SUITE("TypeConfig_Decoupling")
         CHECK(canonical == customArray + "<" + elemType + ">");
     }
 
-    TEST_CASE("Decoupled CodeAction QuickFix: Stubs respect configured stringTypeName")
+    TEST_CASE("TypeConfigDecouplingAndAnonymousObjects - Decoupled CodeAction QuickFix: Stubs respect configured "
+              "stringTypeName")
     {
         const std::string customStr = GenerateRandomSymbolName("MyText");
         const std::string ifaceName = GenerateRandomSymbolName("IEntity");
@@ -186,7 +189,8 @@ TEST_SUITE("TypeConfig_Decoupling")
         ts_tree_delete(tree);
     }
 
-    TEST_CASE("Decoupled Inlay Hints: Binary expression wider type uses configured stringTypeName")
+    TEST_CASE("TypeConfigDecouplingAndAnonymousObjects - Decoupled Inlay Hints: Binary expression wider type uses "
+              "configured stringTypeName")
     {
         const std::string customStr = GenerateRandomSymbolName("CustomString");
         const std::string docUri = "file:///workspace/test_inlay_binary.as";
@@ -250,7 +254,8 @@ TEST_SUITE("TypeConfig_Decoupling")
 
 TEST_SUITE("AnonymousObjects_TypedInitializerLists")
 {
-    TEST_CASE("Typed Initializer List: expression type deduction for template and container types")
+    TEST_CASE("TypeConfigDecouplingAndAnonymousObjects - Typed Initializer List: expression type deduction for "
+              "template and container types")
     {
         const std::string containerName = GenerateRandomSymbolName("ArrayContainer");
         const std::string fnName = GenerateRandomSymbolName("Consume");
@@ -320,7 +325,8 @@ TEST_SUITE("AnonymousObjects_TypedInitializerLists")
         ts_tree_delete(tree);
     }
 
-    TEST_CASE("Anonymous Objects: Nested typed initializer lists and weakref handle patterns")
+    TEST_CASE("TypeConfigDecouplingAndAnonymousObjects - Anonymous Objects: Nested typed initializer lists and weakref "
+              "handle patterns")
     {
         const std::string dictName = GenerateRandomSymbolName("CustomDictionary");
         const std::string targetName = GenerateRandomSymbolName("EntityItem");

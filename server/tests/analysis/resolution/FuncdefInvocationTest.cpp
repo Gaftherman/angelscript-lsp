@@ -16,7 +16,7 @@ using namespace angel_lsp;
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
 
-TEST_SUITE("FuncdefInvocation")
+TEST_SUITE("analysis/resolution/FuncdefInvocation")
 {
     /**
      * @brief Verifies that calling a funcdef handle resolves to the funcdef's return type.

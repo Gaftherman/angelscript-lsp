@@ -21,9 +21,9 @@
 namespace angel_lsp::test
 {
 
-TEST_SUITE("RepeatedConversionChecker")
+TEST_SUITE("analysis/checkers/RepeatedConversionChecker")
 {
-    TEST_CASE("Repeated string_t comparison in if-else ladder emits hint")
+    TEST_CASE("RepeatedConversionChecker - Repeated string_t comparison in if-else ladder emits hint")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -45,7 +45,7 @@ TEST_SUITE("RepeatedConversionChecker")
         CHECK(count == 2);
     }
 
-    TEST_CASE("Indexed conversion candidates stay inside each ladder condition")
+    TEST_CASE("RepeatedConversionChecker - Indexed conversion candidates stay inside each ladder condition")
     {
         const std::string script = "class " + GenerateRandomSymbolName() + R"( : ScriptBaseEntity
 {
@@ -72,7 +72,7 @@ TEST_SUITE("RepeatedConversionChecker")
         CHECK(lines == std::vector<uint32_t>{4, 4, 8});
     }
 
-    TEST_CASE("Single string_t comparison emits zero hints")
+    TEST_CASE("RepeatedConversionChecker - Single string_t comparison emits zero hints")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -85,7 +85,7 @@ TEST_SUITE("RepeatedConversionChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::RepeatedConversion));
     }
 
-    TEST_CASE("Ternary expression in snprintf argument matches wildcard ?& in cleanly")
+    TEST_CASE("RepeatedConversionChecker - Ternary expression in snprintf argument matches wildcard ?& in cleanly")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string timeVar = GenerateRandomSymbolName();
@@ -101,7 +101,7 @@ TEST_SUITE("RepeatedConversionChecker")
         CHECK_FALSE(HasDiagnostic(diags, "as-err-no-implicit-conversion"));
     }
 
-    TEST_CASE("Null safety policy: default warns on first dereference, config warns on all")
+    TEST_CASE("RepeatedConversionChecker - Null safety policy: default warns on first dereference, config warns on all")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string paramName = GenerateRandomSymbolName();
@@ -145,7 +145,8 @@ TEST_SUITE("RepeatedConversionChecker")
         }
     }
 
-    TEST_CASE("Class with opCmp cleanly satisfies all comparison operators including == and !=")
+    TEST_CASE(
+        "RepeatedConversionChecker - Class with opCmp cleanly satisfies all comparison operators including == and !=")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -168,7 +169,7 @@ TEST_SUITE("RepeatedConversionChecker")
         CHECK_FALSE(HasDiagnostic(diags, "as-err-no-implicit-conversion"));
     }
 
-    TEST_CASE("Explicit opConv cannot be used for implicit comparison or assignment")
+    TEST_CASE("RepeatedConversionChecker - Explicit opConv cannot be used for implicit comparison or assignment")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();

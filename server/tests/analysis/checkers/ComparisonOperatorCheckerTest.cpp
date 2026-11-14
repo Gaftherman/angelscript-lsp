@@ -19,9 +19,9 @@
 namespace angel_lsp::test
 {
 
-TEST_SUITE("ComparisonOperatorChecker")
+TEST_SUITE("analysis/checkers/ComparisonOperatorChecker")
 {
-    TEST_CASE("Incompatible Equality Comparison: string == int and string == bool")
+    TEST_CASE("ComparisonOperatorChecker - Incompatible Equality Comparison: string == int and string == bool")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string varName = GenerateRandomSymbolName();
@@ -44,7 +44,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK(count == 4);
     }
 
-    TEST_CASE("Incompatible Relational Comparison: string <= int and string >= bool")
+    TEST_CASE("ComparisonOperatorChecker - Incompatible Relational Comparison: string <= int and string >= bool")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string varName = GenerateRandomSymbolName();
@@ -57,7 +57,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Relational Comparison on Boolean Emits IllegalOperation")
+    TEST_CASE("ComparisonOperatorChecker - Relational Comparison on Boolean Emits IllegalOperation")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string b1 = GenerateRandomSymbolName();
@@ -80,7 +80,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK(illegalCount == 3);
     }
 
-    TEST_CASE("Compatible Comparisons Emit Zero Diagnostics")
+    TEST_CASE("ComparisonOperatorChecker - Compatible Comparisons Emit Zero Diagnostics")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string s1 = GenerateRandomSymbolName();
@@ -99,7 +99,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::IllegalOperation));
     }
 
-    TEST_CASE("Implicit Conversion with opImplConv: string_t to string is Valid")
+    TEST_CASE("ComparisonOperatorChecker - Implicit Conversion with opImplConv: string_t to string is Valid")
     {
         const std::string typeName = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -116,7 +116,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Generic ref Equality vs Relational Operators")
+    TEST_CASE("ComparisonOperatorChecker - Generic ref Equality vs Relational Operators")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string strVar = GenerateRandomSymbolName();
@@ -139,7 +139,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK(count == 1);
     }
 
-    TEST_CASE("Compound Logical Expressions with Multiple Errors")
+    TEST_CASE("ComparisonOperatorChecker - Compound Logical Expressions with Multiple Errors")
     {
         const std::string otherClass = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -163,7 +163,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK(count == 3);
     }
 
-    TEST_CASE("Custom Class with opEquals and opCmp Passes Cleanly")
+    TEST_CASE("ComparisonOperatorChecker - Custom Class with opEquals and opCmp Passes Cleanly")
     {
         const std::string cls1 = GenerateRandomSymbolName();
         const std::string cls2 = GenerateRandomSymbolName();
@@ -182,7 +182,8 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Increment and Decrement in Conditions Are Validated Cleanly (asharness parity)")
+    TEST_CASE(
+        "ComparisonOperatorChecker - Increment and Decrement in Conditions Are Validated Cleanly (asharness parity)")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string script = "void " + funcName + "()\n" + "{\n" + "    int i = 0;\n" + "    if (i++ == 0) {}\n" +
@@ -193,7 +194,8 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK(diags.empty());
     }
 
-    TEST_CASE("Overloaded Unary Operators in Conditions: opPostInc, opPreInc, opNeg, opCom (asharness parity)")
+    TEST_CASE("ComparisonOperatorChecker - Overloaded Unary Operators in Conditions: opPostInc, opPreInc, opNeg, opCom "
+              "(asharness parity)")
     {
         const std::string clsName = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -213,7 +215,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Logical Keywords not, and, or, xor in Conditions (asharness parity)")
+    TEST_CASE("ComparisonOperatorChecker - Logical Keywords not, and, or, xor in Conditions (asharness parity)")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string script = "void " + funcName + "()\n" + "{\n" + "    bool a = true;\n" +
@@ -224,7 +226,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK(diags.empty());
     }
 
-    TEST_CASE("Float comparison in expression statement produces no operator diagnostic")
+    TEST_CASE("ComparisonOperatorChecker - Float comparison in expression statement produces no operator diagnostic")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string varName = GenerateRandomSymbolName("restoreAfter");
@@ -236,7 +238,8 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Chained comparison a == b == c fails with NoMatchingOperator (asharness parity)")
+    TEST_CASE(
+        "ComparisonOperatorChecker - Chained comparison a == b == c fails with NoMatchingOperator (asharness parity)")
     {
         const std::string funcName = GenerateRandomSymbolName();
         const std::string script = "void " + funcName + "()\n" + "{\n" + "    float a = 1.0f;\n" +
@@ -247,7 +250,7 @@ TEST_SUITE("ComparisonOperatorChecker")
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Handle identity comparison is and !is are accepted without error")
+    TEST_CASE("ComparisonOperatorChecker - Handle identity comparison is and !is are accepted without error")
     {
         const std::string clsName = GenerateRandomSymbolName("Entity");
         const std::string funcName = GenerateRandomSymbolName();

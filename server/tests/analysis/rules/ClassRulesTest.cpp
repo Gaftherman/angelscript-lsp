@@ -473,9 +473,9 @@ TEST_CASE("ClassRules - Only the analysed document is diagnosed")
     CHECK_FALSE(HasCode(analyzer.Analyze(request), "as-err-circular-inherit"));
 }
 
-TEST_SUITE("AngelScript_ClassConstructors_Verification")
+TEST_SUITE("analysis/rules/ClassRules")
 {
-    TEST_CASE("Auto-generation: Suppress default constructor when custom constructor exists")
+    TEST_CASE("ClassRules - Auto-generation: Suppress default constructor when custom constructor exists")
     {
         const std::string script =
             "class CustomOnly {\n"
@@ -494,7 +494,7 @@ TEST_SUITE("AngelScript_ClassConstructors_Verification")
         CHECK(errors[0].range.start.line == 6);
     }
 
-    TEST_CASE("Conversion Constructors: Implicit vs Explicit decorators")
+    TEST_CASE("ClassRules - Conversion Constructors: Implicit vs Explicit decorators")
     {
         const std::string script = "class NumberWrapper {\n"
                                    "    int m_val;\n"
@@ -522,7 +522,7 @@ TEST_SUITE("AngelScript_ClassConstructors_Verification")
         CHECK(errors[0].range.start.line == 13);
     }
 
-    TEST_CASE("Deleted Constructors: Explicit deletion of default and copy constructors")
+    TEST_CASE("ClassRules - Deleted Constructors: Explicit deletion of default and copy constructors")
     {
         const std::string script = "class NonInstantiable {\n"
                                    "    NonInstantiable() delete;\n"
@@ -540,7 +540,7 @@ TEST_SUITE("AngelScript_ClassConstructors_Verification")
         CHECK(errors[0].range.start.line == 6);
     }
 
-    TEST_CASE("Delegation Restriction: Prohibit constructor calling another constructor")
+    TEST_CASE("ClassRules - Delegation Restriction: Prohibit constructor calling another constructor")
     {
         const std::string script = "class Node {\n"
                                    "    int m_id;\n"
@@ -559,7 +559,7 @@ TEST_SUITE("AngelScript_ClassConstructors_Verification")
         CHECK(errors[0].range.start.line == 3);
     }
 
-    TEST_CASE("Copy Constructor: Verification and member initialization order")
+    TEST_CASE("ClassRules - Copy Constructor: Verification and member initialization order")
     {
         const std::string script = "class Point {\n"
                                    "    int x = 10;\n"

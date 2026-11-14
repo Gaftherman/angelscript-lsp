@@ -49,555 +49,559 @@ struct BreakpointTestFixture
 
 } // namespace
 
-TEST_CASE("Breakpoint Locations - Basic Executable Statements")
+TEST_SUITE("features/BreakpointLocations")
 {
-    const std::string fnName = test::GenerateRandomSymbolName("Execute");
-    const std::string varA = test::GenerateRandomSymbolName("alpha");
-    const std::string varB = test::GenerateRandomSymbolName("beta");
-
-    // Line 0: void Execute()
-    // Line 1: {
-    // Line 2:     int alpha = 42;
-    // Line 3:     int beta = 10;
-    // Line 4:     alpha = alpha + beta;
-    // Line 5:     return;
-    // Line 6: }
-    const std::string code = "void " + fnName +
-                             "()\n"
-                             "{\n"
-                             "    int " +
-                             varA +
-                             " = 42;\n"
-                             "    int " +
-                             varB +
-                             " = 10;\n"
-                             "    " +
-                             varA + " = " + varA + " + " + varB +
-                             ";\n"
-                             "    return;\n"
-                             "}\n";
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query();
-
-    REQUIRE_FALSE(locs.empty());
-
-    // Expect locations on lines 2, 3, 4, 5, and function closing brace on line 6
-    std::vector<uint32_t> lines;
-    for (const auto& loc : locs)
+    TEST_CASE("Breakpoint Locations - Basic Executable Statements")
     {
-        lines.push_back(loc.line);
-    }
+        const std::string fnName = test::GenerateRandomSymbolName("Execute");
+        const std::string varA = test::GenerateRandomSymbolName("alpha");
+        const std::string varB = test::GenerateRandomSymbolName("beta");
 
-    CHECK(std::find(lines.begin(), lines.end(), 2) != lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 3) != lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 4) != lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 6) != lines.end());
+        // Line 0: void Execute()
+        // Line 1: {
+        // Line 2:     int alpha = 42;
+        // Line 3:     int beta = 10;
+        // Line 4:     alpha = alpha + beta;
+        // Line 5:     return;
+        // Line 6: }
+        const std::string code = "void " + fnName +
+                                 "()\n"
+                                 "{\n"
+                                 "    int " +
+                                 varA +
+                                 " = 42;\n"
+                                 "    int " +
+                                 varB +
+                                 " = 10;\n"
+                                 "    " +
+                                 varA + " = " + varA + " + " + varB +
+                                 ";\n"
+                                 "    return;\n"
+                                 "}\n";
 
-    // Function header and opening brace should not be standalone executable statements
-    CHECK(std::find(lines.begin(), lines.end(), 0) == lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 1) == lines.end());
-}
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query();
 
-TEST_CASE("Breakpoint Locations - Uninitialized Variables vs Initialized")
-{
-    const std::string nsName = test::GenerateRandomSymbolName("models");
-    const std::string uninitGlobal = test::GenerateRandomSymbolName("laserbeam");
-    const std::string initGlobal = test::GenerateRandomSymbolName("maxSpread");
-    const std::string clsName = test::GenerateRandomSymbolName("WeaponConfig");
-    const std::string uninitField = test::GenerateRandomSymbolName("damage");
-    const std::string initField = test::GenerateRandomSymbolName("ammo");
-    const std::string fnName = test::GenerateRandomSymbolName("Setup");
-    const std::string uninitLocal = test::GenerateRandomSymbolName("temp");
-    const std::string initLocal = test::GenerateRandomSymbolName("count");
+        REQUIRE_FALSE(locs.empty());
 
-    // Line 0: namespace models {
-    // Line 1:     uint laserbeam;
-    // Line 2:     int maxSpread = 100;
-    // Line 3: }
-    // Line 4: class WeaponConfig {
-    // Line 5:     float damage;
-    // Line 6:     int ammo = 30;
-    // Line 7:     void Setup() {
-    // Line 8:         int temp;
-    // Line 9:         int count = 5;
-    // Line 10:    }
-    // Line 11: }
-    const std::string code = "namespace " + nsName +
-                             " {\n"
-                             "    uint " +
-                             uninitGlobal +
-                             ";\n"
-                             "    int " +
-                             initGlobal +
-                             " = 100;\n"
-                             "}\n"
-                             "class " +
-                             clsName +
-                             " {\n"
-                             "    float " +
-                             uninitField +
-                             ";\n"
-                             "    int " +
-                             initField +
-                             " = 30;\n"
-                             "    void " +
-                             fnName +
-                             "() {\n"
-                             "        int " +
-                             uninitLocal +
-                             ";\n"
-                             "        int " +
-                             initLocal +
-                             " = 5;\n"
-                             "    }\n"
-                             "}\n";
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query();
-
-    std::vector<uint32_t> lines;
-    for (const auto& loc : locs)
-    {
-        lines.push_back(loc.line);
-    }
-
-    // Uninitialized namespace global should NOT have a breakpoint
-    CHECK(std::find(lines.begin(), lines.end(), 1) == lines.end());
-    // Initialized namespace global SHOULD have a breakpoint
-    CHECK(std::find(lines.begin(), lines.end(), 2) != lines.end());
-
-    // Uninitialized class member should NOT have a breakpoint
-    CHECK(std::find(lines.begin(), lines.end(), 5) == lines.end());
-    // Initialized class member SHOULD have a breakpoint
-    CHECK(std::find(lines.begin(), lines.end(), 6) != lines.end());
-
-    // Uninitialized local primitive should NOT have a breakpoint (as_bytecode.cpp:1184 optimizer strips asBC_LINE)
-    CHECK(std::find(lines.begin(), lines.end(), 8) == lines.end());
-    // Initialized local primitive SHOULD have a breakpoint
-    CHECK(std::find(lines.begin(), lines.end(), 9) != lines.end());
-}
-
-TEST_CASE("Breakpoint Locations - Control Flow and Loops")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("ControlFlow");
-    const std::string iterVar = test::GenerateRandomSymbolName("idx");
-
-    // Line 0: void ControlFlow()
-    // Line 1: {
-    // Line 2:     for (int idx = 0; idx < 10; ++idx)
-    // Line 3:     {
-    // Line 4:         if (idx == 5)
-    // Line 5:             break;
-    // Line 6:         else
-    // Line 7:             continue;
-    // Line 8:     }
-    // Line 9: }
-    const std::string code = "void " + fnName +
-                             "()\n"
-                             "{\n"
-                             "    for (int " +
-                             iterVar + " = 0; " + iterVar + " < 10; ++" + iterVar +
-                             ")\n"
-                             "    {\n"
-                             "        if (" +
-                             iterVar +
-                             " == 5)\n"
-                             "            break;\n"
-                             "        else\n"
-                             "            continue;\n"
-                             "    }\n"
-                             "}\n";
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query();
-
-    REQUIRE_FALSE(locs.empty());
-
-    // For statement on line 2 should generate column locations for header, init, condition, update
-    uint32_t line2Count = 0;
-    for (const auto& loc : locs)
-    {
-        if (loc.line == 2)
+        // Expect locations on lines 2, 3, 4, 5, and function closing brace on line 6
+        std::vector<uint32_t> lines;
+        for (const auto& loc : locs)
         {
-            ++line2Count;
+            lines.push_back(loc.line);
+        }
+
+        CHECK(std::find(lines.begin(), lines.end(), 2) != lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 3) != lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 4) != lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 6) != lines.end());
+
+        // Function header and opening brace should not be standalone executable statements
+        CHECK(std::find(lines.begin(), lines.end(), 0) == lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 1) == lines.end());
+    }
+
+    TEST_CASE("Breakpoint Locations - Uninitialized Variables vs Initialized")
+    {
+        const std::string nsName = test::GenerateRandomSymbolName("models");
+        const std::string uninitGlobal = test::GenerateRandomSymbolName("laserbeam");
+        const std::string initGlobal = test::GenerateRandomSymbolName("maxSpread");
+        const std::string clsName = test::GenerateRandomSymbolName("WeaponConfig");
+        const std::string uninitField = test::GenerateRandomSymbolName("damage");
+        const std::string initField = test::GenerateRandomSymbolName("ammo");
+        const std::string fnName = test::GenerateRandomSymbolName("Setup");
+        const std::string uninitLocal = test::GenerateRandomSymbolName("temp");
+        const std::string initLocal = test::GenerateRandomSymbolName("count");
+
+        // Line 0: namespace models {
+        // Line 1:     uint laserbeam;
+        // Line 2:     int maxSpread = 100;
+        // Line 3: }
+        // Line 4: class WeaponConfig {
+        // Line 5:     float damage;
+        // Line 6:     int ammo = 30;
+        // Line 7:     void Setup() {
+        // Line 8:         int temp;
+        // Line 9:         int count = 5;
+        // Line 10:    }
+        // Line 11: }
+        const std::string code = "namespace " + nsName +
+                                 " {\n"
+                                 "    uint " +
+                                 uninitGlobal +
+                                 ";\n"
+                                 "    int " +
+                                 initGlobal +
+                                 " = 100;\n"
+                                 "}\n"
+                                 "class " +
+                                 clsName +
+                                 " {\n"
+                                 "    float " +
+                                 uninitField +
+                                 ";\n"
+                                 "    int " +
+                                 initField +
+                                 " = 30;\n"
+                                 "    void " +
+                                 fnName +
+                                 "() {\n"
+                                 "        int " +
+                                 uninitLocal +
+                                 ";\n"
+                                 "        int " +
+                                 initLocal +
+                                 " = 5;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query();
+
+        std::vector<uint32_t> lines;
+        for (const auto& loc : locs)
+        {
+            lines.push_back(loc.line);
+        }
+
+        // Uninitialized namespace global should NOT have a breakpoint
+        CHECK(std::find(lines.begin(), lines.end(), 1) == lines.end());
+        // Initialized namespace global SHOULD have a breakpoint
+        CHECK(std::find(lines.begin(), lines.end(), 2) != lines.end());
+
+        // Uninitialized class member should NOT have a breakpoint
+        CHECK(std::find(lines.begin(), lines.end(), 5) == lines.end());
+        // Initialized class member SHOULD have a breakpoint
+        CHECK(std::find(lines.begin(), lines.end(), 6) != lines.end());
+
+        // Uninitialized local primitive should NOT have a breakpoint (as_bytecode.cpp:1184 optimizer strips asBC_LINE)
+        CHECK(std::find(lines.begin(), lines.end(), 8) == lines.end());
+        // Initialized local primitive SHOULD have a breakpoint
+        CHECK(std::find(lines.begin(), lines.end(), 9) != lines.end());
+    }
+
+    TEST_CASE("Breakpoint Locations - Control Flow and Loops")
+    {
+        const std::string fnName = test::GenerateRandomSymbolName("ControlFlow");
+        const std::string iterVar = test::GenerateRandomSymbolName("idx");
+
+        // Line 0: void ControlFlow()
+        // Line 1: {
+        // Line 2:     for (int idx = 0; idx < 10; ++idx)
+        // Line 3:     {
+        // Line 4:         if (idx == 5)
+        // Line 5:             break;
+        // Line 6:         else
+        // Line 7:             continue;
+        // Line 8:     }
+        // Line 9: }
+        const std::string code = "void " + fnName +
+                                 "()\n"
+                                 "{\n"
+                                 "    for (int " +
+                                 iterVar + " = 0; " + iterVar + " < 10; ++" + iterVar +
+                                 ")\n"
+                                 "    {\n"
+                                 "        if (" +
+                                 iterVar +
+                                 " == 5)\n"
+                                 "            break;\n"
+                                 "        else\n"
+                                 "            continue;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query();
+
+        REQUIRE_FALSE(locs.empty());
+
+        // For statement on line 2 should generate column locations for header, init, condition, update
+        uint32_t line2Count = 0;
+        for (const auto& loc : locs)
+        {
+            if (loc.line == 2)
+            {
+                ++line2Count;
+            }
+        }
+        CHECK(line2Count >= 1);
+
+        // If, break, continue locations
+        std::vector<uint32_t> lines;
+        for (const auto& loc : locs)
+        {
+            lines.push_back(loc.line);
+        }
+        CHECK(std::find(lines.begin(), lines.end(), 4) != lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 7) != lines.end());
+
+        // Verify compound statement line range does not span into child lines
+        for (const auto& loc : locs)
+        {
+            if (loc.line == 4) // if statement
+            {
+                CHECK(loc.endLine == 4);
+            }
         }
     }
-    CHECK(line2Count >= 1);
 
-    // If, break, continue locations
-    std::vector<uint32_t> lines;
-    for (const auto& loc : locs)
+    TEST_CASE("Breakpoint Locations - Do While Loop and Closing Brace")
     {
-        lines.push_back(loc.line);
-    }
-    CHECK(std::find(lines.begin(), lines.end(), 4) != lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 7) != lines.end());
+        const std::string fnName = test::GenerateRandomSymbolName("DoWhileTest");
+        const std::string countVar = test::GenerateRandomSymbolName("cnt");
 
-    // Verify compound statement line range does not span into child lines
-    for (const auto& loc : locs)
-    {
-        if (loc.line == 4) // if statement
+        // Line 0: void DoWhileTest()
+        // Line 1: {
+        // Line 2:     int cnt = 0;
+        // Line 3:     do
+        // Line 4:     {
+        // Line 5:         cnt++;
+        // Line 6:     } while (cnt < 5);
+        // Line 7: }
+        const std::string code = "void " + fnName +
+                                 "()\n"
+                                 "{\n"
+                                 "    int " +
+                                 countVar +
+                                 " = 0;\n"
+                                 "    do\n"
+                                 "    {\n"
+                                 "        " +
+                                 countVar +
+                                 "++;\n"
+                                 "    } while (" +
+                                 countVar +
+                                 " < 5);\n"
+                                 "}\n";
+
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query();
+
+        std::vector<uint32_t> lines;
+        for (const auto& loc : locs)
         {
-            CHECK(loc.endLine == 4);
+            lines.push_back(loc.line);
+        }
+
+        // Both 'do' start (line 3) and 'while (cond)' end (line 6) must be valid breakpoint locations
+        CHECK(std::find(lines.begin(), lines.end(), 3) != lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
+        CHECK(std::find(lines.begin(), lines.end(), 6) != lines.end());
+        // Function exit brace on line 7
+        CHECK(std::find(lines.begin(), lines.end(), 7) != lines.end());
+    }
+
+    TEST_CASE("Breakpoint Locations - Empty For Loop Clauses")
+    {
+        const std::string fnName = test::GenerateRandomSymbolName("InfiniteLoop");
+
+        // Line 0: void InfiniteLoop()
+        // Line 1: {
+        // Line 2:     for (;;)
+        // Line 3:     {
+        // Line 4:         break;
+        // Line 5:     }
+        // Line 6: }
+        const std::string code = "void " + fnName +
+                                 "()\n"
+                                 "{\n"
+                                 "    for (;;)\n"
+                                 "    {\n"
+                                 "        break;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query();
+
+        // for (;;) should produce only 1 location on line 2 (the header itself, no bogus semicolon column breakpoints)
+        uint32_t line2Count = 0;
+        for (const auto& loc : locs)
+        {
+            if (loc.line == 2)
+            {
+                ++line2Count;
+            }
+        }
+        CHECK(line2Count == 1);
+    }
+
+    TEST_CASE("Breakpoint Locations - Inactive Preprocessor Code Excluded")
+    {
+        const std::string fnName = test::GenerateRandomSymbolName("PrepTest");
+        const std::string deadVar = test::GenerateRandomSymbolName("deadVar");
+        const std::string liveVar = test::GenerateRandomSymbolName("liveVar");
+
+        // Line 0: void PrepTest()
+        // Line 1: {
+        // Line 2: #if 0
+        // Line 3:     int deadVar = 999;
+        // Line 4: #endif
+        // Line 5:     int liveVar = 1;
+        // Line 6: }
+        const std::string code = "void " + fnName +
+                                 "()\n"
+                                 "{\n"
+                                 "#if 0\n"
+                                 "    int " +
+                                 deadVar +
+                                 " = 999;\n"
+                                 "#endif\n"
+                                 "    int " +
+                                 liveVar +
+                                 " = 1;\n"
+                                 "}\n";
+
+        const std::vector<utils::ExcludedLineRange> excluded{{2, 4}};
+
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query(0, 10, &excluded);
+
+        for (const auto& loc : locs)
+        {
+            CHECK(loc.line != 2);
+            CHECK(loc.line != 3);
+            CHECK(loc.line != 4);
+        }
+
+        // Line 5 should have a valid breakpoint
+        bool hasLine5 = false;
+        for (const auto& loc : locs)
+        {
+            if (loc.line == 5)
+            {
+                hasLine5 = true;
+            }
+        }
+        CHECK(hasLine5);
+    }
+
+    TEST_CASE("Breakpoint Locations - Sub-Range Query")
+    {
+        const std::string fnName = test::GenerateRandomSymbolName("RangeCheck");
+        const std::string v1 = test::GenerateRandomSymbolName("v1");
+        const std::string v2 = test::GenerateRandomSymbolName("v2");
+        const std::string v3 = test::GenerateRandomSymbolName("v3");
+
+        // Line 0: void RangeCheck()
+        // Line 1: {
+        // Line 2:     int v1 = 1;
+        // Line 3:     int v2 = 2;
+        // Line 4:     int v3 = 3;
+        // Line 5:     return;
+        // Line 6: }
+        const std::string code = "void " + fnName +
+                                 "()\n"
+                                 "{\n"
+                                 "    int " +
+                                 v1 +
+                                 " = 1;\n"
+                                 "    int " +
+                                 v2 +
+                                 " = 2;\n"
+                                 "    int " +
+                                 v3 +
+                                 " = 3;\n"
+                                 "    return;\n"
+                                 "}\n";
+
+        BreakpointTestFixture fixture(code);
+        // Query only line 3 to 3
+        const auto locs = fixture.Query(3, 3);
+
+        REQUIRE_FALSE(locs.empty());
+        for (const auto& loc : locs)
+        {
+            CHECK(loc.line == 3);
         }
     }
-}
 
-TEST_CASE("Breakpoint Locations - Do While Loop and Closing Brace")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("DoWhileTest");
-    const std::string countVar = test::GenerateRandomSymbolName("cnt");
-
-    // Line 0: void DoWhileTest()
-    // Line 1: {
-    // Line 2:     int cnt = 0;
-    // Line 3:     do
-    // Line 4:     {
-    // Line 5:         cnt++;
-    // Line 6:     } while (cnt < 5);
-    // Line 7: }
-    const std::string code = "void " + fnName +
-                             "()\n"
-                             "{\n"
-                             "    int " +
-                             countVar +
-                             " = 0;\n"
-                             "    do\n"
-                             "    {\n"
-                             "        " +
-                             countVar +
-                             "++;\n"
-                             "    } while (" +
-                             countVar +
-                             " < 5);\n"
-                             "}\n";
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query();
-
-    std::vector<uint32_t> lines;
-    for (const auto& loc : locs)
+    TEST_CASE("Breakpoint Locations - Comments and Class Declarations")
     {
-        lines.push_back(loc.line);
+        const std::string clsName = test::GenerateRandomSymbolName("EntityDef");
+        const std::string propName = test::GenerateRandomSymbolName("prop");
+
+        // Line 0: // Header comment
+        // Line 1: class EntityDef
+        // Line 2: {
+        // Line 3:     int prop;
+        // Line 4: }
+        const std::string code = "// Header comment\n"
+                                 "class " +
+                                 clsName +
+                                 "\n"
+                                 "{\n"
+                                 "    int " +
+                                 propName +
+                                 ";\n"
+                                 "}\n";
+
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query();
+
+        // Field declaration inside class without initializers produces 0 breakpoints
+        CHECK(locs.empty());
     }
 
-    // Both 'do' start (line 3) and 'while (cond)' end (line 6) must be valid breakpoint locations
-    CHECK(std::find(lines.begin(), lines.end(), 3) != lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
-    CHECK(std::find(lines.begin(), lines.end(), 6) != lines.end());
-    // Function exit brace on line 7
-    CHECK(std::find(lines.begin(), lines.end(), 7) != lines.end());
-}
-
-TEST_CASE("Breakpoint Locations - Empty For Loop Clauses")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("InfiniteLoop");
-
-    // Line 0: void InfiniteLoop()
-    // Line 1: {
-    // Line 2:     for (;;)
-    // Line 3:     {
-    // Line 4:         break;
-    // Line 5:     }
-    // Line 6: }
-    const std::string code = "void " + fnName +
-                             "()\n"
-                             "{\n"
-                             "    for (;;)\n"
-                             "    {\n"
-                             "        break;\n"
-                             "    }\n"
-                             "}\n";
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query();
-
-    // for (;;) should produce only 1 location on line 2 (the header itself, no bogus semicolon column breakpoints)
-    uint32_t line2Count = 0;
-    for (const auto& loc : locs)
+    TEST_CASE("Breakpoint Locations - Syntax Errors and Incomplete Code Resilience")
     {
-        if (loc.line == 2)
+        const std::string fnName = test::GenerateRandomSymbolName("BrokenSyntax");
+        const std::string goodVar = test::GenerateRandomSymbolName("goodVar");
+
+        // Line 0: void BrokenSyntax()
+        // Line 1: {
+        // Line 2:     int bad = ;
+        // Line 3:     ;
+        // Line 4:     int goodVar = 42;
+        // Line 5:     Foo(
+        // Line 6: }
+        const std::string code = "void " + fnName +
+                                 "()\n"
+                                 "{\n"
+                                 "    int bad = ;\n"
+                                 "    ;\n"
+                                 "    int " +
+                                 goodVar +
+                                 " = 42;\n"
+                                 "    Foo(\n"
+                                 "}\n";
+
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query();
+
+        // Valid statement on line 4 must still be discovered despite syntax errors on line 2, 3, 5
+        bool foundGoodVar = false;
+        for (const auto& loc : locs)
         {
-            ++line2Count;
+            if (loc.line == 4)
+            {
+                foundGoodVar = true;
+            }
+            // Bare semicolon on line 3 must NOT produce a breakpoint location
+            CHECK(loc.line != 3);
+        }
+        CHECK(foundGoodVar);
+    }
+
+    TEST_CASE("Breakpoint Locations - Single-Line Range Query on Do-While Condition")
+    {
+        const std::string fnName = test::GenerateRandomSymbolName("TestDoWhile");
+        const std::string varName = test::GenerateRandomSymbolName("counter");
+
+        // Line 0: void TestDoWhile()
+        // Line 1: {
+        // Line 2:     int counter = 0;
+        // Line 3:     do
+        // Line 4:     {
+        // Line 5:         counter = counter + 1;
+        // Line 6:     }
+        // Line 7:     while (counter < 5);
+        // Line 8: }
+        const std::string code = "void " + fnName + "()\n{\n    int " + varName + " = 0;\n    do\n    {\n        " +
+                                 varName + " = " + varName + " + 1;\n    }\n    while (" + varName + " < 5);\n}\n";
+
+        BreakpointTestFixture fixture(code);
+
+        // Query SOLELY line 7 (the while condition line)
+        const auto locsLine7 = fixture.Query(7, 7);
+        REQUIRE_FALSE(locsLine7.empty());
+        bool foundLine7 = false;
+        for (const auto& loc : locsLine7)
+        {
+            if (loc.line == 7)
+            {
+                foundLine7 = true;
+            }
+        }
+        CHECK(foundLine7);
+
+        // Query SOLELY line 3 (the do line)
+        const auto locsLine3 = fixture.Query(3, 3);
+        REQUIRE_FALSE(locsLine3.empty());
+        bool foundLine3 = false;
+        for (const auto& loc : locsLine3)
+        {
+            if (loc.line == 3)
+            {
+                foundLine3 = true;
+            }
+        }
+        CHECK(foundLine3);
+    }
+
+    TEST_CASE("Breakpoint Locations - Multi-Line For Header and Multiple Update Expressions")
+    {
+        const std::string fnName = test::GenerateRandomSymbolName("TestMultiFor");
+        const std::string varI = test::GenerateRandomSymbolName("idx");
+        const std::string varJ = test::GenerateRandomSymbolName("jdx");
+
+        // Line 0: void TestMultiFor()
+        // Line 1: {
+        // Line 2:     for (int idx = 0, jdx = 0;
+        // Line 3:          idx < 10;
+        // Line 4:          ++idx, ++jdx)
+        // Line 5:     {
+        // Line 6:     }
+        // Line 7: }
+        const std::string code = "void " + fnName + "()\n{\n    for (int " + varI + " = 0, " + varJ +
+                                 " = 0;\n         " + varI + " < 10;\n         ++" + varI + ", ++" + varJ +
+                                 ")\n    {\n    }\n}\n";
+
+        BreakpointTestFixture fixture(code);
+
+        // Single-line query on line 3 (condition)
+        const auto locsLine3 = fixture.Query(3, 3);
+        REQUIRE_FALSE(locsLine3.empty());
+        CHECK(locsLine3[0].line == 3);
+
+        // Single-line query on line 4 (multiple updates: ++idx, ++jdx)
+        const auto locsLine4 = fixture.Query(4, 4);
+        REQUIRE_FALSE(locsLine4.empty());
+        CHECK(locsLine4.size() >= 2);
+        for (const auto& loc : locsLine4)
+        {
+            CHECK(loc.line == 4);
         }
     }
-    CHECK(line2Count == 1);
-}
 
-TEST_CASE("Breakpoint Locations - Inactive Preprocessor Code Excluded")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("PrepTest");
-    const std::string deadVar = test::GenerateRandomSymbolName("deadVar");
-    const std::string liveVar = test::GenerateRandomSymbolName("liveVar");
-
-    // Line 0: void PrepTest()
-    // Line 1: {
-    // Line 2: #if 0
-    // Line 3:     int deadVar = 999;
-    // Line 4: #endif
-    // Line 5:     int liveVar = 1;
-    // Line 6: }
-    const std::string code = "void " + fnName +
-                             "()\n"
-                             "{\n"
-                             "#if 0\n"
-                             "    int " +
-                             deadVar +
-                             " = 999;\n"
-                             "#endif\n"
-                             "    int " +
-                             liveVar +
-                             " = 1;\n"
-                             "}\n";
-
-    const std::vector<utils::ExcludedLineRange> excluded{{2, 4}};
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query(0, 10, &excluded);
-
-    for (const auto& loc : locs)
+    TEST_CASE("Breakpoint Locations - Object Arrays vs Pure Constants vs Runtime Initializers")
     {
-        CHECK(loc.line != 2);
-        CHECK(loc.line != 3);
-        CHECK(loc.line != 4);
-    }
+        const std::string fnName = test::GenerateRandomSymbolName("TestDeclSemantics");
+        const std::string arrVar = test::GenerateRandomSymbolName("items");
+        const std::string constPure = test::GenerateRandomSymbolName("MAX_COUNT");
+        const std::string constRuntime = test::GenerateRandomSymbolName("seed");
+        const std::string helperFn = test::GenerateRandomSymbolName("GetSeed");
 
-    // Line 5 should have a valid breakpoint
-    bool hasLine5 = false;
-    for (const auto& loc : locs)
-    {
-        if (loc.line == 5)
+        // Line 0: int GetSeed() { return 123; }
+        // Line 1: void TestDeclSemantics()
+        // Line 2: {
+        // Line 3:     int[] items;
+        // Line 4:     const int MAX_COUNT = 42;
+        // Line 5:     const int seed = GetSeed();
+        // Line 6: }
+        const std::string code = "int " + helperFn + "() { return 123; }\n" + "void " + fnName + "()\n" + "{\n" +
+                                 "    int[] " + arrVar + ";\n" + "    const int " + constPure + " = 42;\n" +
+                                 "    const int " + constRuntime + " = " + helperFn + "();\n" + "}\n";
+
+        BreakpointTestFixture fixture(code);
+        const auto locs = fixture.Query();
+
+        std::vector<uint32_t> lines;
+        for (const auto& loc : locs)
         {
-            hasLine5 = true;
+            lines.push_back(loc.line);
         }
+
+        // Line 3: int[] items; (Object array default constructor is called -> executable!)
+        CHECK(std::find(lines.begin(), lines.end(), 3) != lines.end());
+
+        // Line 4: const int MAX_COUNT = 42; (Folded at compile-time as pure constant -> NO runtime bytecode!)
+        CHECK(std::find(lines.begin(), lines.end(), 4) == lines.end());
+
+        // Line 5: const int seed = GetSeed(); (Initialized via function call -> executable!)
+        CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
     }
-    CHECK(hasLine5);
-}
-
-TEST_CASE("Breakpoint Locations - Sub-Range Query")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("RangeCheck");
-    const std::string v1 = test::GenerateRandomSymbolName("v1");
-    const std::string v2 = test::GenerateRandomSymbolName("v2");
-    const std::string v3 = test::GenerateRandomSymbolName("v3");
-
-    // Line 0: void RangeCheck()
-    // Line 1: {
-    // Line 2:     int v1 = 1;
-    // Line 3:     int v2 = 2;
-    // Line 4:     int v3 = 3;
-    // Line 5:     return;
-    // Line 6: }
-    const std::string code = "void " + fnName +
-                             "()\n"
-                             "{\n"
-                             "    int " +
-                             v1 +
-                             " = 1;\n"
-                             "    int " +
-                             v2 +
-                             " = 2;\n"
-                             "    int " +
-                             v3 +
-                             " = 3;\n"
-                             "    return;\n"
-                             "}\n";
-
-    BreakpointTestFixture fixture(code);
-    // Query only line 3 to 3
-    const auto locs = fixture.Query(3, 3);
-
-    REQUIRE_FALSE(locs.empty());
-    for (const auto& loc : locs)
-    {
-        CHECK(loc.line == 3);
-    }
-}
-
-TEST_CASE("Breakpoint Locations - Comments and Class Declarations")
-{
-    const std::string clsName = test::GenerateRandomSymbolName("EntityDef");
-    const std::string propName = test::GenerateRandomSymbolName("prop");
-
-    // Line 0: // Header comment
-    // Line 1: class EntityDef
-    // Line 2: {
-    // Line 3:     int prop;
-    // Line 4: }
-    const std::string code = "// Header comment\n"
-                             "class " +
-                             clsName +
-                             "\n"
-                             "{\n"
-                             "    int " +
-                             propName +
-                             ";\n"
-                             "}\n";
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query();
-
-    // Field declaration inside class without initializers produces 0 breakpoints
-    CHECK(locs.empty());
-}
-
-TEST_CASE("Breakpoint Locations - Syntax Errors and Incomplete Code Resilience")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("BrokenSyntax");
-    const std::string goodVar = test::GenerateRandomSymbolName("goodVar");
-
-    // Line 0: void BrokenSyntax()
-    // Line 1: {
-    // Line 2:     int bad = ;
-    // Line 3:     ;
-    // Line 4:     int goodVar = 42;
-    // Line 5:     Foo(
-    // Line 6: }
-    const std::string code = "void " + fnName +
-                             "()\n"
-                             "{\n"
-                             "    int bad = ;\n"
-                             "    ;\n"
-                             "    int " +
-                             goodVar +
-                             " = 42;\n"
-                             "    Foo(\n"
-                             "}\n";
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query();
-
-    // Valid statement on line 4 must still be discovered despite syntax errors on line 2, 3, 5
-    bool foundGoodVar = false;
-    for (const auto& loc : locs)
-    {
-        if (loc.line == 4)
-        {
-            foundGoodVar = true;
-        }
-        // Bare semicolon on line 3 must NOT produce a breakpoint location
-        CHECK(loc.line != 3);
-    }
-    CHECK(foundGoodVar);
-}
-
-TEST_CASE("Breakpoint Locations - Single-Line Range Query on Do-While Condition")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("TestDoWhile");
-    const std::string varName = test::GenerateRandomSymbolName("counter");
-
-    // Line 0: void TestDoWhile()
-    // Line 1: {
-    // Line 2:     int counter = 0;
-    // Line 3:     do
-    // Line 4:     {
-    // Line 5:         counter = counter + 1;
-    // Line 6:     }
-    // Line 7:     while (counter < 5);
-    // Line 8: }
-    const std::string code = "void " + fnName + "()\n{\n    int " + varName + " = 0;\n    do\n    {\n        " +
-                             varName + " = " + varName + " + 1;\n    }\n    while (" + varName + " < 5);\n}\n";
-
-    BreakpointTestFixture fixture(code);
-
-    // Query SOLELY line 7 (the while condition line)
-    const auto locsLine7 = fixture.Query(7, 7);
-    REQUIRE_FALSE(locsLine7.empty());
-    bool foundLine7 = false;
-    for (const auto& loc : locsLine7)
-    {
-        if (loc.line == 7)
-        {
-            foundLine7 = true;
-        }
-    }
-    CHECK(foundLine7);
-
-    // Query SOLELY line 3 (the do line)
-    const auto locsLine3 = fixture.Query(3, 3);
-    REQUIRE_FALSE(locsLine3.empty());
-    bool foundLine3 = false;
-    for (const auto& loc : locsLine3)
-    {
-        if (loc.line == 3)
-        {
-            foundLine3 = true;
-        }
-    }
-    CHECK(foundLine3);
-}
-
-TEST_CASE("Breakpoint Locations - Multi-Line For Header and Multiple Update Expressions")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("TestMultiFor");
-    const std::string varI = test::GenerateRandomSymbolName("idx");
-    const std::string varJ = test::GenerateRandomSymbolName("jdx");
-
-    // Line 0: void TestMultiFor()
-    // Line 1: {
-    // Line 2:     for (int idx = 0, jdx = 0;
-    // Line 3:          idx < 10;
-    // Line 4:          ++idx, ++jdx)
-    // Line 5:     {
-    // Line 6:     }
-    // Line 7: }
-    const std::string code = "void " + fnName + "()\n{\n    for (int " + varI + " = 0, " + varJ + " = 0;\n         " +
-                             varI + " < 10;\n         ++" + varI + ", ++" + varJ + ")\n    {\n    }\n}\n";
-
-    BreakpointTestFixture fixture(code);
-
-    // Single-line query on line 3 (condition)
-    const auto locsLine3 = fixture.Query(3, 3);
-    REQUIRE_FALSE(locsLine3.empty());
-    CHECK(locsLine3[0].line == 3);
-
-    // Single-line query on line 4 (multiple updates: ++idx, ++jdx)
-    const auto locsLine4 = fixture.Query(4, 4);
-    REQUIRE_FALSE(locsLine4.empty());
-    CHECK(locsLine4.size() >= 2);
-    for (const auto& loc : locsLine4)
-    {
-        CHECK(loc.line == 4);
-    }
-}
-
-TEST_CASE("Breakpoint Locations - Object Arrays vs Pure Constants vs Runtime Initializers")
-{
-    const std::string fnName = test::GenerateRandomSymbolName("TestDeclSemantics");
-    const std::string arrVar = test::GenerateRandomSymbolName("items");
-    const std::string constPure = test::GenerateRandomSymbolName("MAX_COUNT");
-    const std::string constRuntime = test::GenerateRandomSymbolName("seed");
-    const std::string helperFn = test::GenerateRandomSymbolName("GetSeed");
-
-    // Line 0: int GetSeed() { return 123; }
-    // Line 1: void TestDeclSemantics()
-    // Line 2: {
-    // Line 3:     int[] items;
-    // Line 4:     const int MAX_COUNT = 42;
-    // Line 5:     const int seed = GetSeed();
-    // Line 6: }
-    const std::string code = "int " + helperFn + "() { return 123; }\n" + "void " + fnName + "()\n" + "{\n" +
-                             "    int[] " + arrVar + ";\n" + "    const int " + constPure + " = 42;\n" +
-                             "    const int " + constRuntime + " = " + helperFn + "();\n" + "}\n";
-
-    BreakpointTestFixture fixture(code);
-    const auto locs = fixture.Query();
-
-    std::vector<uint32_t> lines;
-    for (const auto& loc : locs)
-    {
-        lines.push_back(loc.line);
-    }
-
-    // Line 3: int[] items; (Object array default constructor is called -> executable!)
-    CHECK(std::find(lines.begin(), lines.end(), 3) != lines.end());
-
-    // Line 4: const int MAX_COUNT = 42; (Folded at compile-time as pure constant -> NO runtime bytecode!)
-    CHECK(std::find(lines.begin(), lines.end(), 4) == lines.end());
-
-    // Line 5: const int seed = GetSeed(); (Initialized via function call -> executable!)
-    CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
 }

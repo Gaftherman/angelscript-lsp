@@ -30,7 +30,7 @@ bool HasItemLabel(const std::vector<lsp::CompletionItem>& items, std::string_vie
 }
 } // namespace
 
-TEST_SUITE("OpIndexParity")
+TEST_SUITE("oracle/OpIndexParity")
 {
     TEST_CASE("OpIndexParity - Overloaded opIndex across int, float, bool, string, and class handles verified with "
               "native engine oracle")

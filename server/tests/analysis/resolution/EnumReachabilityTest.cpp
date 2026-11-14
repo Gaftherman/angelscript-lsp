@@ -86,9 +86,9 @@ bool MatchesVerdict(const std::vector<Diagnostic>& diagnostics, const std::strin
 }
 } // namespace
 
-TEST_SUITE("EnumReachabilityVariations")
+TEST_SUITE("analysis/resolution/EnumReachability")
 {
-    TEST_CASE("Variation 01 - Fully qualified enum member reached across multi-level nested namespaces")
+    TEST_CASE("EnumReachability - Fully qualified enum member reached across multi-level nested namespaces")
     {
         const std::string outerNs = angel_lsp::test::GenerateRandomSymbolName("Outer");
         const std::string innerNs = angel_lsp::test::GenerateRandomSymbolName("Inner");
@@ -136,7 +136,7 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK_FALSE(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 02 - Unqualified enum value accessed from within the same namespace")
+    TEST_CASE("EnumReachability - Unqualified enum value accessed from within the same namespace")
     {
         const std::string workerNs = angel_lsp::test::GenerateRandomSymbolName("Worker");
         const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("JobState");
@@ -178,7 +178,7 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK_FALSE(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 03 - Class member compared with an enum from an enclosing namespace")
+    TEST_CASE("EnumReachability - Class member compared with an enum from an enclosing namespace")
     {
         const std::string gameNs = angel_lsp::test::GenerateRandomSymbolName("Game");
         const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("Difficulty");
@@ -223,7 +223,7 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK_FALSE(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 04 - Enum values reached through using namespace")
+    TEST_CASE("EnumReachability - Enum values reached through using namespace")
     {
         const std::string audioNs = angel_lsp::test::GenerateRandomSymbolName("Audio");
         const std::string mixerNs = angel_lsp::test::GenerateRandomSymbolName("Mixer");
@@ -273,7 +273,7 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK_FALSE(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 05 - Unqualified enum value reached in an inner nested namespace from parent namespace")
+    TEST_CASE("EnumReachability - Unqualified enum value reached in an inner nested namespace from parent namespace")
     {
         const std::string engineNs = angel_lsp::test::GenerateRandomSymbolName("Engine");
         const std::string renderNs = angel_lsp::test::GenerateRandomSymbolName("Renderer");
@@ -320,7 +320,8 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK_FALSE(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 06 - Class member in nested namespace compared with enum from enclosing namespace via mixin")
+    TEST_CASE(
+        "EnumReachability - Class member in nested namespace compared with enum from enclosing namespace via mixin")
     {
         const std::string netNs = angel_lsp::test::GenerateRandomSymbolName("Network");
         const std::string clientNs = angel_lsp::test::GenerateRandomSymbolName("Clients");
@@ -384,7 +385,7 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK_FALSE(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 07 - Unqualified enum value from unrelated foreign namespace without using namespace")
+    TEST_CASE("EnumReachability - Unqualified enum value from unrelated foreign namespace without using namespace")
     {
         const std::string sensorNs = angel_lsp::test::GenerateRandomSymbolName("Sensors");
         const std::string dashNs = angel_lsp::test::GenerateRandomSymbolName("Dashboard");
@@ -426,7 +427,7 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 08 - Enum member accessed with undefined namespace qualifier prefix")
+    TEST_CASE("EnumReachability - Enum member accessed with undefined namespace qualifier prefix")
     {
         const std::string sysNs = angel_lsp::test::GenerateRandomSymbolName("System");
         const std::string unknownNs = angel_lsp::test::GenerateRandomSymbolName("UnknownNS");
@@ -464,7 +465,7 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 09 - Parent namespace attempting to access unqualified enum value in child namespace")
+    TEST_CASE("EnumReachability - Parent namespace attempting to access unqualified enum value in child namespace")
     {
         const std::string gfxNs = angel_lsp::test::GenerateRandomSymbolName("Graphics");
         const std::string shaderNs = angel_lsp::test::GenerateRandomSymbolName("Shader");
@@ -506,7 +507,7 @@ TEST_SUITE("EnumReachabilityVariations")
         CHECK(HasReachabilityDiagnostic(diagnostics));
     }
 
-    TEST_CASE("Variation 10 - Sibling nested namespace attempting to access unqualified enum value from sibling")
+    TEST_CASE("EnumReachability - Sibling nested namespace attempting to access unqualified enum value from sibling")
     {
         const std::string appNs = angel_lsp::test::GenerateRandomSymbolName("App");
         const std::string inputNs = angel_lsp::test::GenerateRandomSymbolName("Input");

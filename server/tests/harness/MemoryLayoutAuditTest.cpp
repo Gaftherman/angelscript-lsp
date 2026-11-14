@@ -27,9 +27,9 @@ static_assert(sizeof(IndexedContainerSpan) <= 24, "IndexedContainerSpan layout m
 static_assert(sizeof(NodeIndex) <= 248, "NodeIndex layout must not exceed 248 bytes");
 static_assert(sizeof(Symbol) <= 504, "Symbol layout must not exceed 504 bytes");
 
-TEST_SUITE("MemoryLayoutAudit")
+TEST_SUITE("harness/MemoryLayoutAudit")
 {
-    TEST_CASE("Hot structure sizes satisfy compact memory invariants")
+    TEST_CASE("MemoryLayoutAudit - Hot structure sizes satisfy compact memory invariants")
     {
         CHECK(sizeof(TypeQualifiers) == 1);
         CHECK(sizeof(SymbolModifiers) <= 4);
@@ -46,7 +46,7 @@ TEST_SUITE("MemoryLayoutAudit")
         CHECK(sizeof(Symbol) <= 504);
     }
 
-    TEST_CASE("Quantify memory savings for 100,000 instances")
+    TEST_CASE("MemoryLayoutAudit - Quantify memory savings for 100,000 instances")
     {
         // Baseline sizes before compaction (bytes on x64):
         constexpr size_t k_preModifiers = 24;
@@ -79,7 +79,7 @@ TEST_SUITE("MemoryLayoutAudit")
         CHECK(mbSavedFor100k >= 20.0);
     }
 
-    TEST_CASE("Randomized fixture verification for compacted structures")
+    TEST_CASE("MemoryLayoutAudit - Randomized fixture verification for compacted structures")
     {
         const std::string randomName = angel_lsp::test::GenerateRandomSymbolName("func");
         const std::string randomType = angel_lsp::test::GenerateRandomSymbolName("Type");
@@ -110,7 +110,8 @@ TEST_SUITE("MemoryLayoutAudit")
         CHECK(static_cast<bool>(modifiers.isFinal));
     }
 
-    TEST_CASE("TypeSanitization view helpers evaluate complex qualifiers accurately without false positives")
+    TEST_CASE("MemoryLayoutAudit - TypeSanitization view helpers evaluate complex qualifiers accurately without false "
+              "positives")
     {
         const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("CustomType");
 

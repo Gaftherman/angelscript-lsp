@@ -19,9 +19,9 @@
 namespace angel_lsp::test
 {
 
-TEST_SUITE("BinaryOperatorChecker")
+TEST_SUITE("analysis/checkers/BinaryOperatorChecker")
 {
-    TEST_CASE("Bitwise OR between integer and string triggers as-err-no-matching-operator")
+    TEST_CASE("BinaryOperatorChecker - Bitwise OR between integer and string triggers as-err-no-matching-operator")
     {
         const std::string varName = GenerateRandomSymbolName();
         const std::string fnName = GenerateRandomSymbolName();
@@ -35,7 +35,8 @@ TEST_SUITE("BinaryOperatorChecker")
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Bitwise OR with const int and string literal in function argument triggers error")
+    TEST_CASE(
+        "BinaryOperatorChecker - Bitwise OR with const int and string literal in function argument triggers error")
     {
         const std::string constName = GenerateRandomSymbolName();
         const std::string fnName = GenerateRandomSymbolName();
@@ -56,7 +57,7 @@ TEST_SUITE("BinaryOperatorChecker")
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Valid bitwise operations between integers produce no diagnostic")
+    TEST_CASE("BinaryOperatorChecker - Valid bitwise operations between integers produce no diagnostic")
     {
         const std::string v1 = GenerateRandomSymbolName();
         const std::string v2 = GenerateRandomSymbolName();
@@ -74,7 +75,7 @@ TEST_SUITE("BinaryOperatorChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Bitwise operations with enums produce no diagnostic")
+    TEST_CASE("BinaryOperatorChecker - Bitwise operations with enums produce no diagnostic")
     {
         const std::string enumName = "E" + GenerateRandomSymbolName();
         const std::string fnName = GenerateRandomSymbolName();
@@ -94,7 +95,7 @@ TEST_SUITE("BinaryOperatorChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Bitwise OR on bool triggers as-err-no-matching-operator")
+    TEST_CASE("BinaryOperatorChecker - Bitwise OR on bool triggers as-err-no-matching-operator")
     {
         const std::string fnName = GenerateRandomSymbolName();
         const std::string code = "void " + fnName +
@@ -105,7 +106,7 @@ TEST_SUITE("BinaryOperatorChecker")
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("Modulo with float triggers as-err-no-matching-operator")
+    TEST_CASE("BinaryOperatorChecker - Modulo with float triggers as-err-no-matching-operator")
     {
         const std::string fnName = GenerateRandomSymbolName();
         const std::string code = "void " + fnName +
@@ -116,7 +117,7 @@ TEST_SUITE("BinaryOperatorChecker")
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("String subtraction triggers as-err-no-matching-operator")
+    TEST_CASE("BinaryOperatorChecker - String subtraction triggers as-err-no-matching-operator")
     {
         const std::string fnName = GenerateRandomSymbolName();
         const std::string code = "void " + fnName +
@@ -127,7 +128,7 @@ TEST_SUITE("BinaryOperatorChecker")
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
 
-    TEST_CASE("String concatenation with int is valid and triggers no operator error")
+    TEST_CASE("BinaryOperatorChecker - String concatenation with int is valid and triggers no operator error")
     {
         const std::string fnName = GenerateRandomSymbolName();
         const std::string code = "void " + fnName +

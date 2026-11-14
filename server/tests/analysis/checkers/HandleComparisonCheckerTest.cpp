@@ -63,9 +63,9 @@ bool HasDiagnosticCode(const std::vector<Diagnostic>& diagnostics, std::string_v
 }
 } // namespace
 
-TEST_SUITE("HandleComparisonChecker")
+TEST_SUITE("analysis/checkers/HandleComparisonChecker")
 {
-    TEST_CASE("Handle Equality Comparison with Null Emits Warning by Default")
+    TEST_CASE("HandleComparisonChecker - Handle Equality Comparison with Null Emits Warning by Default")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -91,7 +91,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK(count == 4);
     }
 
-    TEST_CASE("Handle Identity Comparison with Null Emits Zero Warnings")
+    TEST_CASE("HandleComparisonChecker - Handle Identity Comparison with Null Emits Zero Warnings")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -106,7 +106,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::HandleComparisonEquality));
     }
 
-    TEST_CASE("Configurable Severity: Error Mode (2)")
+    TEST_CASE("HandleComparisonChecker - Configurable Severity: Error Mode (2)")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -123,7 +123,7 @@ TEST_SUITE("HandleComparisonChecker")
             HasDiagnosticWithSeverity(diags, diagnostics::codes::HandleComparisonEquality, DiagnosticSeverity::Error));
     }
 
-    TEST_CASE("Configurable Severity: Disabled Mode (0)")
+    TEST_CASE("HandleComparisonChecker - Configurable Severity: Disabled Mode (0)")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -140,7 +140,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::HandleComparisonEquality));
     }
 
-    TEST_CASE("Relational Comparisons with Null Are Illegal Operations")
+    TEST_CASE("HandleComparisonChecker - Relational Comparisons with Null Are Illegal Operations")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -167,7 +167,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK(count == 8);
     }
 
-    TEST_CASE("Relational Comparison Between Handles Without opCmp Is Illegal")
+    TEST_CASE("HandleComparisonChecker - Relational Comparison Between Handles Without opCmp Is Illegal")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -193,7 +193,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK(count == 4);
     }
 
-    TEST_CASE("Relational Comparison Between Handles With opCmp Is Permitted")
+    TEST_CASE("HandleComparisonChecker - Relational Comparison Between Handles With opCmp Is Permitted")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -211,7 +211,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::IllegalOperation));
     }
 
-    TEST_CASE("Short-Circuit Logic and Flow Assertions")
+    TEST_CASE("HandleComparisonChecker - Short-Circuit Logic and Flow Assertions")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -242,7 +242,8 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK(equalityWarnings == 3);
     }
 
-    TEST_CASE("Array Indexing With Handle Elements: Equality, Identity, and Relational Operations")
+    TEST_CASE(
+        "HandleComparisonChecker - Array Indexing With Handle Elements: Equality, Identity, and Relational Operations")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -278,7 +279,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK(illegalErrors == 3);
     }
 
-    TEST_CASE("Multi-Dimensional Array Handles and Complex Expressions")
+    TEST_CASE("HandleComparisonChecker - Multi-Dimensional Array Handles and Complex Expressions")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string holderName = GenerateRandomSymbolName();
@@ -307,7 +308,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK(equalityWarnings == 4);
     }
 
-    TEST_CASE("Array of Non-Handle Value Classes and Primitives Do Not Emit Handle Warnings")
+    TEST_CASE("HandleComparisonChecker - Array of Non-Handle Value Classes and Primitives Do Not Emit Handle Warnings")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
@@ -323,7 +324,7 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::IllegalOperation));
     }
 
-    TEST_CASE("Funcdef Function Handles Are Validated Properly")
+    TEST_CASE("HandleComparisonChecker - Funcdef Function Handles Are Validated Properly")
     {
         const std::string funcdefName = GenerateRandomSymbolName();
         const std::string testFuncName = GenerateRandomSymbolName();
@@ -346,7 +347,8 @@ TEST_SUITE("HandleComparisonChecker")
         CHECK(equalityWarnings == 2);
     }
 
-    TEST_CASE("Handle Comparison with this: is null accepted clean, == null emits warning (asharness parity)")
+    TEST_CASE("HandleComparisonChecker - Handle Comparison with this: is null accepted clean, == null emits warning "
+              "(asharness parity)")
     {
         const std::string className = GenerateRandomSymbolName();
         const std::string methodName = GenerateRandomSymbolName();

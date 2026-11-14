@@ -10,169 +10,175 @@
 
 using angel_lsp::i18n::I18n;
 
-// =====================================================================================
-// Locale selection
-// =====================================================================================
-
-TEST_CASE("I18n - A region-qualified tag selects the language")
+TEST_SUITE("utils/I18n")
 {
-    // The tag arrives from the client's initialize params, where BCP 47 is the rule, and from
-    // --locale, which this project's own README documents as `es-ES`. Comparing the whole tag sent
-    // every one of these to English.
-    const std::string_view spanish = I18n("es").GetMessageView("as-err-void-variable");
+    // =====================================================================================
+    // Locale selection
+    // =====================================================================================
 
-    CHECK(I18n("es-ES").GetMessageView("as-err-void-variable") == spanish);
-    CHECK(I18n("es-419").GetMessageView("as-err-void-variable") == spanish);
-    CHECK(I18n("es_MX").GetMessageView("as-err-void-variable") == spanish);
-    CHECK(I18n("ES").GetMessageView("as-err-void-variable") == spanish);
-}
-
-TEST_CASE("I18n - Spanish and English differ, so the check above means something")
-{
-    CHECK(I18n("es").GetMessageView("as-err-void-variable") != I18n("en").GetMessageView("as-err-void-variable"));
-}
-
-TEST_CASE("I18n - An unknown language falls back to English")
-{
-    const std::string_view english = I18n("en").GetMessageView("as-err-void-variable");
-
-    CHECK(I18n("fr-FR").GetMessageView("as-err-void-variable") == english);
-    CHECK(I18n("").GetMessageView("as-err-void-variable") == english);
-}
-
-// =====================================================================================
-// Coverage
-// =====================================================================================
-
-TEST_CASE("I18n - Every code the analyzer emits has both languages")
-{
-    // Guards the gap this file was written for: a code added to the English table and forgotten in
-    // the Spanish one falls back silently, so a Spanish user sees a mixed-language problems panel
-    // with nothing to indicate anything is wrong.
-    static const std::vector<std::string> k_codes = {"as-err-declaration-missing-body",
-                                                     "as-err-external-not-shared",
-                                                     "as-err-property-duplicate-accessor",
-                                                     "as-err-not-all-paths-return",
-                                                     "as-err-break-outside-loop",
-                                                     "as-err-continue-outside-loop",
-                                                     "as-err-invalid-case-type",
-                                                     "as-err-duplicate-case-value",
-                                                     "as-err-default-must-be-last",
-                                                     "as-err-class-member-const",
-                                                     "as-err-missing-body",
-                                                     "as-err-out-param-default",
-                                                     "as-err-opcmp-return-int",
-                                                     "as-err-opequals-return-bool",
-                                                     "as-err-op-overload-global",
-                                                     "as-err-binary-operator-arity",
-                                                     "as-err-opindex-no-params",
-                                                     "as-err-const-out-param",
-                                                     "as-err-mixin-final",
-                                                     "as-err-mixin-abstract",
-                                                     "as-err-inherit-final",
-                                                     "as-err-duplicate-symbol",
-                                                     "as-warn-metadata-disabled"};
-
-    const I18n english("en");
-    const I18n spanish("es");
-
-    for (const auto& code : k_codes)
+    TEST_CASE("I18n - A region-qualified tag selects the language")
     {
-        CAPTURE(code);
-        const std::string_view en = english.GetMessageView(code);
-        const std::string_view es = spanish.GetMessageView(code);
+        // The tag arrives from the client's initialize params, where BCP 47 is the rule, and from
+        // --locale, which this project's own README documents as `es-ES`. Comparing the whole tag sent
+        // every one of these to English.
+        const std::string_view spanish = I18n("es").GetMessageView("as-err-void-variable");
 
-        CHECK_FALSE(en.empty());
-        CHECK_FALSE(es.empty());
-        CHECK(en != es);
+        CHECK(I18n("es-ES").GetMessageView("as-err-void-variable") == spanish);
+        CHECK(I18n("es-419").GetMessageView("as-err-void-variable") == spanish);
+        CHECK(I18n("es_MX").GetMessageView("as-err-void-variable") == spanish);
+        CHECK(I18n("ES").GetMessageView("as-err-void-variable") == spanish);
     }
-}
 
-TEST_CASE("I18n - Action message codes exist in both English and Spanish")
-{
-    static const std::vector<std::string> k_actionCodes = {"action-disable-in-workspace-settings",
-                                                           "action-disable-in-settings",
-                                                           "action-add-property-keyword",
-                                                           "action-remove-primitive-handle",
-                                                           "action-call-explicitly",
-                                                           "action-add-const-qualifier",
-                                                           "action-extract-method",
-                                                           "action-extract-variable",
-                                                           "action-did-you-mean",
-                                                           "action-sort-and-clean-includes",
-                                                           "action-implement-interface",
-                                                           "action-declare-funcdef",
-                                                           "action-init-local-variable",
-                                                           "action-suppress-line",
-                                                           "action-suppress-range",
-                                                           "action-suppress-file",
-                                                           "action-remove-unused-variable"};
-
-    const I18n english("en");
-    const I18n spanish("es");
-
-    for (const auto& code : k_actionCodes)
+    TEST_CASE("I18n - Spanish and English differ, so the check above means something")
     {
-        CAPTURE(code);
-        const std::string_view en = english.GetMessageView(code);
-        const std::string_view es = spanish.GetMessageView(code);
-
-        CHECK_FALSE(en.empty());
-        CHECK_FALSE(es.empty());
-        CHECK(en != es);
+        CHECK(I18n("es").GetMessageView("as-err-void-variable") != I18n("en").GetMessageView("as-err-void-variable"));
     }
-}
 
-TEST_CASE("I18n - Hover message codes exist in both English and Spanish")
-{
-    static const std::vector<std::string> k_hoverCodes = {"hover-more-overloads-singular",
-                                                          "hover-more-overloads-plural",
-                                                          "hover-wildcard-type-desc",
-                                                          "hover-string-length",
-                                                          "hover-string-file-not-found",
-                                                          "hover-asset-status-exists",
-                                                          "hover-asset-size",
-                                                          "hover-asset-path"};
-
-    const I18n english("en");
-    const I18n spanish("es");
-
-    for (const auto& code : k_hoverCodes)
+    TEST_CASE("I18n - An unknown language falls back to English")
     {
-        CAPTURE(code);
-        const std::string_view en = english.GetMessageView(code);
-        const std::string_view es = spanish.GetMessageView(code);
+        const std::string_view english = I18n("en").GetMessageView("as-err-void-variable");
 
-        CHECK_FALSE(en.empty());
-        CHECK_FALSE(es.empty());
-        CHECK(en != es);
+        CHECK(I18n("fr-FR").GetMessageView("as-err-void-variable") == english);
+        CHECK(I18n("").GetMessageView("as-err-void-variable") == english);
     }
-}
 
-TEST_CASE("I18n - FormatMessage formats patterns and handles fallbacks dynamically")
-{
-    const std::string randomKey = angel_lsp::test::GenerateRandomSymbolName("settingKey");
-    const I18n spanish("es");
-    const I18n english("en");
+    // =====================================================================================
+    // Coverage
+    // =====================================================================================
 
-    // Spanish formatting
-    const std::string formattedEs = angel_lsp::i18n::FormatMessage(
-        &spanish, "action-disable-in-workspace-settings", "Disable in workspace settings (angelscript.{})", randomKey);
-    CHECK(formattedEs == "Deshabilitar en la configuración del espacio de trabajo (angelscript." + randomKey + ")");
+    TEST_CASE("I18n - Every code the analyzer emits has both languages")
+    {
+        // Guards the gap this file was written for: a code added to the English table and forgotten in
+        // the Spanish one falls back silently, so a Spanish user sees a mixed-language problems panel
+        // with nothing to indicate anything is wrong.
+        static const std::vector<std::string> k_codes = {"as-err-declaration-missing-body",
+                                                         "as-err-external-not-shared",
+                                                         "as-err-property-duplicate-accessor",
+                                                         "as-err-not-all-paths-return",
+                                                         "as-err-break-outside-loop",
+                                                         "as-err-continue-outside-loop",
+                                                         "as-err-invalid-case-type",
+                                                         "as-err-duplicate-case-value",
+                                                         "as-err-default-must-be-last",
+                                                         "as-err-class-member-const",
+                                                         "as-err-missing-body",
+                                                         "as-err-out-param-default",
+                                                         "as-err-opcmp-return-int",
+                                                         "as-err-opequals-return-bool",
+                                                         "as-err-op-overload-global",
+                                                         "as-err-binary-operator-arity",
+                                                         "as-err-opindex-no-params",
+                                                         "as-err-const-out-param",
+                                                         "as-err-mixin-final",
+                                                         "as-err-mixin-abstract",
+                                                         "as-err-inherit-final",
+                                                         "as-err-duplicate-symbol",
+                                                         "as-warn-metadata-disabled"};
 
-    // English formatting
-    const std::string formattedEn = angel_lsp::i18n::FormatMessage(
-        &english, "action-disable-in-workspace-settings", "Disable in workspace settings (angelscript.{})", randomKey);
-    CHECK(formattedEn == "Disable in workspace settings (angelscript." + randomKey + ")");
+        const I18n english("en");
+        const I18n spanish("es");
 
-    // Nullptr fallback
-    const std::string fallbackNull = angel_lsp::i18n::FormatMessage(
-        nullptr, "action-disable-in-workspace-settings", "Disable in workspace settings (angelscript.{})", randomKey);
-    CHECK(fallbackNull == "Disable in workspace settings (angelscript." + randomKey + ")");
+        for (const auto& code : k_codes)
+        {
+            CAPTURE(code);
+            const std::string_view en = english.GetMessageView(code);
+            const std::string_view es = spanish.GetMessageView(code);
 
-    // Unknown key fallback
-    const std::string unknownKey = angel_lsp::test::GenerateRandomSymbolName("unknownKey");
-    const std::string fallbackUnknown =
-        angel_lsp::i18n::FormatMessage(&spanish, unknownKey, "Fallback pattern {}", randomKey);
-    CHECK(fallbackUnknown == "Fallback pattern " + randomKey);
+            CHECK_FALSE(en.empty());
+            CHECK_FALSE(es.empty());
+            CHECK(en != es);
+        }
+    }
+
+    TEST_CASE("I18n - Action message codes exist in both English and Spanish")
+    {
+        static const std::vector<std::string> k_actionCodes = {"action-disable-in-workspace-settings",
+                                                               "action-disable-in-settings",
+                                                               "action-add-property-keyword",
+                                                               "action-remove-primitive-handle",
+                                                               "action-call-explicitly",
+                                                               "action-add-const-qualifier",
+                                                               "action-extract-method",
+                                                               "action-extract-variable",
+                                                               "action-did-you-mean",
+                                                               "action-sort-and-clean-includes",
+                                                               "action-implement-interface",
+                                                               "action-declare-funcdef",
+                                                               "action-init-local-variable",
+                                                               "action-suppress-line",
+                                                               "action-suppress-range",
+                                                               "action-suppress-file",
+                                                               "action-remove-unused-variable"};
+
+        const I18n english("en");
+        const I18n spanish("es");
+
+        for (const auto& code : k_actionCodes)
+        {
+            CAPTURE(code);
+            const std::string_view en = english.GetMessageView(code);
+            const std::string_view es = spanish.GetMessageView(code);
+
+            CHECK_FALSE(en.empty());
+            CHECK_FALSE(es.empty());
+            CHECK(en != es);
+        }
+    }
+
+    TEST_CASE("I18n - Hover message codes exist in both English and Spanish")
+    {
+        static const std::vector<std::string> k_hoverCodes = {"hover-more-overloads-singular",
+                                                              "hover-more-overloads-plural",
+                                                              "hover-wildcard-type-desc",
+                                                              "hover-string-length",
+                                                              "hover-string-file-not-found",
+                                                              "hover-asset-status-exists",
+                                                              "hover-asset-size",
+                                                              "hover-asset-path"};
+
+        const I18n english("en");
+        const I18n spanish("es");
+
+        for (const auto& code : k_hoverCodes)
+        {
+            CAPTURE(code);
+            const std::string_view en = english.GetMessageView(code);
+            const std::string_view es = spanish.GetMessageView(code);
+
+            CHECK_FALSE(en.empty());
+            CHECK_FALSE(es.empty());
+            CHECK(en != es);
+        }
+    }
+
+    TEST_CASE("I18n - FormatMessage formats patterns and handles fallbacks dynamically")
+    {
+        const std::string randomKey = angel_lsp::test::GenerateRandomSymbolName("settingKey");
+        const I18n spanish("es");
+        const I18n english("en");
+
+        // Spanish formatting
+        const std::string formattedEs =
+            angel_lsp::i18n::FormatMessage(&spanish, "action-disable-in-workspace-settings",
+                                           "Disable in workspace settings (angelscript.{})", randomKey);
+        CHECK(formattedEs == "Deshabilitar en la configuración del espacio de trabajo (angelscript." + randomKey + ")");
+
+        // English formatting
+        const std::string formattedEn =
+            angel_lsp::i18n::FormatMessage(&english, "action-disable-in-workspace-settings",
+                                           "Disable in workspace settings (angelscript.{})", randomKey);
+        CHECK(formattedEn == "Disable in workspace settings (angelscript." + randomKey + ")");
+
+        // Nullptr fallback
+        const std::string fallbackNull =
+            angel_lsp::i18n::FormatMessage(nullptr, "action-disable-in-workspace-settings",
+                                           "Disable in workspace settings (angelscript.{})", randomKey);
+        CHECK(fallbackNull == "Disable in workspace settings (angelscript." + randomKey + ")");
+
+        // Unknown key fallback
+        const std::string unknownKey = angel_lsp::test::GenerateRandomSymbolName("unknownKey");
+        const std::string fallbackUnknown =
+            angel_lsp::i18n::FormatMessage(&spanish, unknownKey, "Fallback pattern {}", randomKey);
+        CHECK(fallbackUnknown == "Fallback pattern " + randomKey);
+    }
 }

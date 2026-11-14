@@ -130,60 +130,63 @@ void RunReaderWorker(ReaderContext ctx)
 }
 } // namespace
 
-TEST_CASE("Concurrency - SEC-04 Randomized Concurrent Mutation vs AST Analysis Invariant")
+TEST_SUITE("harness/ConcurrencyHarness")
 {
-    DocumentStore store;
-    const std::string uri = "file:///sandbox/" + test::GenerateRandomSymbolName("doc") + ".as";
-
-    std::mt19937_64 initRng(1337);
-    std::string initialCode = GenerateRandomCode(initRng);
-    parser::AngelScriptParser initParser;
-    TSTree* initTree = initParser.Parse(initialCode);
-    store.OpenDocument(uri, initialCode, 0, parser::MakeTreePtr(initTree));
-
-    constexpr int k_numWriters = 10;
-    constexpr int k_numReaders = 5;
-    constexpr uint32_t k_targetWrites = 1000;
-    constexpr uint32_t k_targetReads = 200;
-
-    std::latch startLatch(k_numWriters + k_numReaders);
-    std::latch readersActiveLatch(k_numReaders);
-    std::atomic<bool> stopFlag{false};
-    std::atomic<uint32_t> totalWrites{0};
-    std::atomic<uint32_t> successfulReads{0};
-    std::atomic<uint32_t> failedReads{0};
-
-    std::vector<std::thread> readers;
-    readers.reserve(k_numReaders);
-    for (int i = 0; i < k_numReaders; ++i)
+    TEST_CASE("Concurrency - SEC-04 Randomized Concurrent Mutation vs AST Analysis Invariant")
     {
-        readers.emplace_back(RunReaderWorker, ReaderContext{store, uri, startLatch, readersActiveLatch, stopFlag,
-                                                            successfulReads, failedReads, k_targetReads});
+        DocumentStore store;
+        const std::string uri = "file:///sandbox/" + test::GenerateRandomSymbolName("doc") + ".as";
+
+        std::mt19937_64 initRng(1337);
+        std::string initialCode = GenerateRandomCode(initRng);
+        parser::AngelScriptParser initParser;
+        TSTree* initTree = initParser.Parse(initialCode);
+        store.OpenDocument(uri, initialCode, 0, parser::MakeTreePtr(initTree));
+
+        constexpr int k_numWriters = 10;
+        constexpr int k_numReaders = 5;
+        constexpr uint32_t k_targetWrites = 1000;
+        constexpr uint32_t k_targetReads = 200;
+
+        std::latch startLatch(k_numWriters + k_numReaders);
+        std::latch readersActiveLatch(k_numReaders);
+        std::atomic<bool> stopFlag{false};
+        std::atomic<uint32_t> totalWrites{0};
+        std::atomic<uint32_t> successfulReads{0};
+        std::atomic<uint32_t> failedReads{0};
+
+        std::vector<std::thread> readers;
+        readers.reserve(k_numReaders);
+        for (int i = 0; i < k_numReaders; ++i)
+        {
+            readers.emplace_back(RunReaderWorker, ReaderContext{store, uri, startLatch, readersActiveLatch, stopFlag,
+                                                                successfulReads, failedReads, k_targetReads});
+        }
+
+        std::vector<std::thread> writers;
+        writers.reserve(k_numWriters);
+        for (int i = 0; i < k_numWriters; ++i)
+        {
+            writers.emplace_back(RunWriterWorker, WriterContext{store, uri, startLatch, readersActiveLatch, stopFlag,
+                                                                totalWrites, k_targetWrites});
+        }
+
+        for (auto& w : writers)
+        {
+            if (w.joinable())
+                w.join();
+        }
+
+        stopFlag.store(true, std::memory_order_release);
+
+        for (auto& r : readers)
+        {
+            if (r.joinable())
+                r.join();
+        }
+
+        CHECK(totalWrites.load() >= k_targetWrites);
+        CHECK(successfulReads.load() >= k_targetReads);
+        CHECK(failedReads.load() == 0);
     }
-
-    std::vector<std::thread> writers;
-    writers.reserve(k_numWriters);
-    for (int i = 0; i < k_numWriters; ++i)
-    {
-        writers.emplace_back(RunWriterWorker, WriterContext{store, uri, startLatch, readersActiveLatch, stopFlag,
-                                                            totalWrites, k_targetWrites});
-    }
-
-    for (auto& w : writers)
-    {
-        if (w.joinable())
-            w.join();
-    }
-
-    stopFlag.store(true, std::memory_order_release);
-
-    for (auto& r : readers)
-    {
-        if (r.joinable())
-            r.join();
-    }
-
-    CHECK(totalWrites.load() >= k_targetWrites);
-    CHECK(successfulReads.load() >= k_targetReads);
-    CHECK(failedReads.load() == 0);
 }

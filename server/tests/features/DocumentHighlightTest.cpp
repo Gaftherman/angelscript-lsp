@@ -56,394 +56,397 @@ struct TestEnvironment
 };
 } // namespace
 
-TEST_CASE("DocumentHighlight - Local Variables and Parameter Read/Write Classification")
+TEST_SUITE("features/DocumentHighlight")
 {
-    std::string code = "void Calculate(int baseValue) {\n"
-                       "    int multiplier = 2;\n"
-                       "    int result = baseValue * multiplier;\n"
-                       "    multiplier = result + multiplier;\n"
-                       "    multiplier += 1;\n"
-                       "    multiplier++;\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    SUBCASE("Parameter baseValue highlights: Write at declaration, Read at usage")
+    TEST_CASE("DocumentHighlight - Local Variables and Parameter Read/Write Classification")
     {
-        // Cursor on 'baseValue' declaration at line 0, col 20
-        auto hls = env.HighlightsAt(0, 20);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 2);
+        std::string code = "void Calculate(int baseValue) {\n"
+                           "    int multiplier = 2;\n"
+                           "    int result = baseValue * multiplier;\n"
+                           "    multiplier = result + multiplier;\n"
+                           "    multiplier += 1;\n"
+                           "    multiplier++;\n"
+                           "}\n";
 
-        // Declaration is Write
-        CHECK((*hls)[0].range.start.line == 0);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        TestEnvironment env(code);
 
-        // Usage is Read
-        CHECK((*hls)[1].range.start.line == 2);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
-    }
+        SUBCASE("Parameter baseValue highlights: Write at declaration, Read at usage")
+        {
+            // Cursor on 'baseValue' declaration at line 0, col 20
+            auto hls = env.HighlightsAt(0, 20);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 2);
 
-    SUBCASE("Local variable multiplier highlights: declaration Write, read, assignment LHS Write, compound LHS Write, "
+            // Declaration is Write
+            CHECK((*hls)[0].range.start.line == 0);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+
+            // Usage is Read
+            CHECK((*hls)[1].range.start.line == 2);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+        }
+
+        SUBCASE(
+            "Local variable multiplier highlights: declaration Write, read, assignment LHS Write, compound LHS Write, "
             "postfix Write")
-    {
-        // Cursor on 'multiplier' declaration at line 1, col 10
-        auto hls = env.HighlightsAt(1, 10);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 6);
+        {
+            // Cursor on 'multiplier' declaration at line 1, col 10
+            auto hls = env.HighlightsAt(1, 10);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 6);
 
-        // 1. Line 1: declaration -> Write
-        CHECK((*hls)[0].range.start.line == 1);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+            // 1. Line 1: declaration -> Write
+            CHECK((*hls)[0].range.start.line == 1);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
 
-        // 2. Line 2: baseValue * multiplier -> Read
-        CHECK((*hls)[1].range.start.line == 2);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+            // 2. Line 2: baseValue * multiplier -> Read
+            CHECK((*hls)[1].range.start.line == 2);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
 
-        // 3. Line 3 LHS: multiplier = ... -> Write
-        CHECK((*hls)[2].range.start.line == 3);
-        CHECK((*hls)[2].range.start.character == 4);
-        CHECK((*hls)[2].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+            // 3. Line 3 LHS: multiplier = ... -> Write
+            CHECK((*hls)[2].range.start.line == 3);
+            CHECK((*hls)[2].range.start.character == 4);
+            CHECK((*hls)[2].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
 
-        // 4. Line 3 RHS: result + multiplier -> Read
-        CHECK((*hls)[3].range.start.line == 3);
-        CHECK((*hls)[3].range.start.character > 15);
-        CHECK((*hls)[3].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+            // 4. Line 3 RHS: result + multiplier -> Read
+            CHECK((*hls)[3].range.start.line == 3);
+            CHECK((*hls)[3].range.start.character > 15);
+            CHECK((*hls)[3].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
 
-        // 5. Line 4: multiplier += 1 -> Write
-        CHECK((*hls)[4].range.start.line == 4);
-        CHECK((*hls)[4].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+            // 5. Line 4: multiplier += 1 -> Write
+            CHECK((*hls)[4].range.start.line == 4);
+            CHECK((*hls)[4].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
 
-        // 6. Line 5: multiplier++ -> Write
-        CHECK((*hls)[5].range.start.line == 5);
-        CHECK((*hls)[5].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
-    }
-}
-
-TEST_CASE("DocumentHighlight - Member Access Read vs Write")
-{
-    std::string code = "class Entity {\n"
-                       "    int hp;\n"
-                       "    void SetHp(int val) {\n"
-                       "        hp = val;\n"
-                       "        this.hp = val + 1;\n"
-                       "    }\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Entity e;\n"
-                       "    e.hp = 100;\n"
-                       "    int current = e.hp;\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    SUBCASE("Highlights on Entity::hp field")
-    {
-        // Cursor on 'hp' declaration at line 1, col 9
-        auto hls = env.HighlightsAt(1, 9);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 5);
-
-        // Line 1: declaration -> Write
-        CHECK((*hls)[0].range.start.line == 1);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
-
-        // Line 3: hp = val -> Write
-        CHECK((*hls)[1].range.start.line == 3);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
-
-        // Line 4: this.hp = val + 1 -> Write
-        CHECK((*hls)[2].range.start.line == 4);
-        CHECK((*hls)[2].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
-
-        // Line 9: e.hp = 100 -> Write
-        CHECK((*hls)[3].range.start.line == 9);
-        CHECK((*hls)[3].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
-
-        // Line 10: int current = e.hp -> Read
-        CHECK((*hls)[4].range.start.line == 10);
-        CHECK((*hls)[4].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+            // 6. Line 5: multiplier++ -> Write
+            CHECK((*hls)[5].range.start.line == 5);
+            CHECK((*hls)[5].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        }
     }
 
-    SUBCASE("Highlights on receiver variable e in e.hp = 100 shows e as Read")
+    TEST_CASE("DocumentHighlight - Member Access Read vs Write")
     {
-        // Cursor on 'e' in e.hp = 100 at line 9, col 4
-        auto hls = env.HighlightsAt(9, 4);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 3);
+        std::string code = "class Entity {\n"
+                           "    int hp;\n"
+                           "    void SetHp(int val) {\n"
+                           "        hp = val;\n"
+                           "        this.hp = val + 1;\n"
+                           "    }\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Entity e;\n"
+                           "    e.hp = 100;\n"
+                           "    int current = e.hp;\n"
+                           "}\n";
 
-        // Line 8: Entity e -> Write
-        CHECK((*hls)[0].range.start.line == 8);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        TestEnvironment env(code);
 
-        // Line 9: e.hp = 100 -> e is Read
-        CHECK((*hls)[1].range.start.line == 9);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+        SUBCASE("Highlights on Entity::hp field")
+        {
+            // Cursor on 'hp' declaration at line 1, col 9
+            auto hls = env.HighlightsAt(1, 9);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 5);
 
-        // Line 10: e.hp -> e is Read
-        CHECK((*hls)[2].range.start.line == 10);
-        CHECK((*hls)[2].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
-    }
-}
+            // Line 1: declaration -> Write
+            CHECK((*hls)[0].range.start.line == 1);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
 
-TEST_CASE("DocumentHighlight - Function & Class Declaration Text Classification")
-{
-    std::string code = "class Player {\n"
-                       "    void Jump() {}\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Player p;\n"
-                       "    p.Jump();\n"
-                       "}\n";
+            // Line 3: hp = val -> Write
+            CHECK((*hls)[1].range.start.line == 3);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
 
-    TestEnvironment env(code);
+            // Line 4: this.hp = val + 1 -> Write
+            CHECK((*hls)[2].range.start.line == 4);
+            CHECK((*hls)[2].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
 
-    SUBCASE("Class Player declaration and type usage are Text")
-    {
-        // Cursor on 'Player' class declaration line 0, col 6
-        auto hls = env.HighlightsAt(0, 6);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 2);
+            // Line 9: e.hp = 100 -> Write
+            CHECK((*hls)[3].range.start.line == 9);
+            CHECK((*hls)[3].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
 
-        // Line 0: class Player declaration -> Text
-        CHECK((*hls)[0].range.start.line == 0);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Write) == lsp::DocumentHighlightKind::Text);
+            // Line 10: int current = e.hp -> Read
+            CHECK((*hls)[4].range.start.line == 10);
+            CHECK((*hls)[4].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+        }
 
-        // Line 4: Player p -> Text
-        CHECK((*hls)[1].range.start.line == 4);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Write) == lsp::DocumentHighlightKind::Text);
-    }
+        SUBCASE("Highlights on receiver variable e in e.hp = 100 shows e as Read")
+        {
+            // Cursor on 'e' in e.hp = 100 at line 9, col 4
+            auto hls = env.HighlightsAt(9, 4);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 3);
 
-    SUBCASE("Method Jump declaration is Text and call site is Read")
-    {
-        // Cursor on 'Jump' declaration line 1, col 9
-        auto hls = env.HighlightsAt(1, 9);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 2);
+            // Line 8: Entity e -> Write
+            CHECK((*hls)[0].range.start.line == 8);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
 
-        // Line 1: void Jump() declaration -> Text
-        CHECK((*hls)[0].range.start.line == 1);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Write) == lsp::DocumentHighlightKind::Text);
+            // Line 9: e.hp = 100 -> e is Read
+            CHECK((*hls)[1].range.start.line == 9);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
 
-        // Line 5: p.Jump() -> Read
-        CHECK((*hls)[1].range.start.line == 5);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
-    }
-}
-
-TEST_CASE("DocumentHighlight - Lexical Scoping and Shadowing Isolation")
-{
-    std::string code = "void TestShadow() {\n"
-                       "    int value = 10;\n"
-                       "    if (true) {\n"
-                       "        int value = 20;\n"
-                       "        value += 5;\n"
-                       "    }\n"
-                       "    value = value + 1;\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    SUBCASE("Outer variable highlights only outer occurrences")
-    {
-        // Cursor on outer 'value' declaration line 1, col 9
-        auto hls = env.HighlightsAt(1, 9);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 3);
-
-        // Line 1: int value = 10 -> Write
-        CHECK((*hls)[0].range.start.line == 1);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
-
-        // Line 6 LHS: value = ... -> Write
-        CHECK((*hls)[1].range.start.line == 6);
-        CHECK((*hls)[1].range.start.character == 4);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
-
-        // Line 6 RHS: ... + 1 -> Read
-        CHECK((*hls)[2].range.start.line == 6);
-        CHECK((*hls)[2].range.start.character > 10);
-        CHECK((*hls)[2].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+            // Line 10: e.hp -> e is Read
+            CHECK((*hls)[2].range.start.line == 10);
+            CHECK((*hls)[2].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+        }
     }
 
-    SUBCASE("Inner shadowed variable highlights only inner occurrences")
+    TEST_CASE("DocumentHighlight - Function & Class Declaration Text Classification")
     {
-        // Cursor on inner 'value' declaration line 3, col 13
-        auto hls = env.HighlightsAt(3, 13);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 2);
+        std::string code = "class Player {\n"
+                           "    void Jump() {}\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Player p;\n"
+                           "    p.Jump();\n"
+                           "}\n";
 
-        // Line 3: int value = 20 -> Write
-        CHECK((*hls)[0].range.start.line == 3);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        TestEnvironment env(code);
 
-        // Line 4: value += 5 -> Write
-        CHECK((*hls)[1].range.start.line == 4);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
-    }
-}
+        SUBCASE("Class Player declaration and type usage are Text")
+        {
+            // Cursor on 'Player' class declaration line 0, col 6
+            auto hls = env.HighlightsAt(0, 6);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 2);
 
-TEST_CASE("DocumentHighlight - Out and InOut Parameter Write Classification")
-{
-    std::string code = "void ModifyValues(int &out outVal, int &inout inoutVal, int normalVal) {\n"
-                       "    outVal = 100;\n"
-                       "    inoutVal += 50;\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    int a = 0;\n"
-                       "    int b = 1;\n"
-                       "    int c = 2;\n"
-                       "    ModifyValues(a, b, c);\n"
-                       "}\n";
+            // Line 0: class Player declaration -> Text
+            CHECK((*hls)[0].range.start.line == 0);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Write) == lsp::DocumentHighlightKind::Text);
 
-    TestEnvironment env(code);
+            // Line 4: Player p -> Text
+            CHECK((*hls)[1].range.start.line == 4);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Write) == lsp::DocumentHighlightKind::Text);
+        }
 
-    SUBCASE("Argument a passed to &out is classified as Write")
-    {
-        // Cursor on 'a' declaration at line 5, col 9
-        auto hls = env.HighlightsAt(5, 9);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 2);
+        SUBCASE("Method Jump declaration is Text and call site is Read")
+        {
+            // Cursor on 'Jump' declaration line 1, col 9
+            auto hls = env.HighlightsAt(1, 9);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 2);
 
-        CHECK((*hls)[0].range.start.line == 5);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+            // Line 1: void Jump() declaration -> Text
+            CHECK((*hls)[0].range.start.line == 1);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Write) == lsp::DocumentHighlightKind::Text);
 
-        // Line 8: ModifyValues(a, b, c) -> a is passed to outVal (&out) -> Write
-        CHECK((*hls)[1].range.start.line == 8);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+            // Line 5: p.Jump() -> Read
+            CHECK((*hls)[1].range.start.line == 5);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+        }
     }
 
-    SUBCASE("Argument b passed to &inout is classified as Write")
+    TEST_CASE("DocumentHighlight - Lexical Scoping and Shadowing Isolation")
     {
-        // Cursor on 'b' declaration at line 6, col 9
-        auto hls = env.HighlightsAt(6, 9);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 2);
+        std::string code = "void TestShadow() {\n"
+                           "    int value = 10;\n"
+                           "    if (true) {\n"
+                           "        int value = 20;\n"
+                           "        value += 5;\n"
+                           "    }\n"
+                           "    value = value + 1;\n"
+                           "}\n";
 
-        CHECK((*hls)[0].range.start.line == 6);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        TestEnvironment env(code);
 
-        // Line 8: ModifyValues(a, b, c) -> b is passed to inoutVal (&inout) -> Write
-        CHECK((*hls)[1].range.start.line == 8);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        SUBCASE("Outer variable highlights only outer occurrences")
+        {
+            // Cursor on outer 'value' declaration line 1, col 9
+            auto hls = env.HighlightsAt(1, 9);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 3);
+
+            // Line 1: int value = 10 -> Write
+            CHECK((*hls)[0].range.start.line == 1);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+
+            // Line 6 LHS: value = ... -> Write
+            CHECK((*hls)[1].range.start.line == 6);
+            CHECK((*hls)[1].range.start.character == 4);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+
+            // Line 6 RHS: ... + 1 -> Read
+            CHECK((*hls)[2].range.start.line == 6);
+            CHECK((*hls)[2].range.start.character > 10);
+            CHECK((*hls)[2].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+        }
+
+        SUBCASE("Inner shadowed variable highlights only inner occurrences")
+        {
+            // Cursor on inner 'value' declaration line 3, col 13
+            auto hls = env.HighlightsAt(3, 13);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 2);
+
+            // Line 3: int value = 20 -> Write
+            CHECK((*hls)[0].range.start.line == 3);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+
+            // Line 4: value += 5 -> Write
+            CHECK((*hls)[1].range.start.line == 4);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        }
     }
 
-    SUBCASE("Argument c passed by value is classified as Read")
+    TEST_CASE("DocumentHighlight - Out and InOut Parameter Write Classification")
     {
-        // Cursor on 'c' declaration at line 7, col 9
-        auto hls = env.HighlightsAt(7, 9);
-        REQUIRE(hls.has_value());
-        REQUIRE(hls->size() == 2);
+        std::string code = "void ModifyValues(int &out outVal, int &inout inoutVal, int normalVal) {\n"
+                           "    outVal = 100;\n"
+                           "    inoutVal += 50;\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    int a = 0;\n"
+                           "    int b = 1;\n"
+                           "    int c = 2;\n"
+                           "    ModifyValues(a, b, c);\n"
+                           "}\n";
 
-        CHECK((*hls)[0].range.start.line == 7);
-        CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        TestEnvironment env(code);
 
-        // Line 8: ModifyValues(a, b, c) -> c is passed by value -> Read
-        CHECK((*hls)[1].range.start.line == 8);
-        CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+        SUBCASE("Argument a passed to &out is classified as Write")
+        {
+            // Cursor on 'a' declaration at line 5, col 9
+            auto hls = env.HighlightsAt(5, 9);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 2);
+
+            CHECK((*hls)[0].range.start.line == 5);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+
+            // Line 8: ModifyValues(a, b, c) -> a is passed to outVal (&out) -> Write
+            CHECK((*hls)[1].range.start.line == 8);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        }
+
+        SUBCASE("Argument b passed to &inout is classified as Write")
+        {
+            // Cursor on 'b' declaration at line 6, col 9
+            auto hls = env.HighlightsAt(6, 9);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 2);
+
+            CHECK((*hls)[0].range.start.line == 6);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+
+            // Line 8: ModifyValues(a, b, c) -> b is passed to inoutVal (&inout) -> Write
+            CHECK((*hls)[1].range.start.line == 8);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+        }
+
+        SUBCASE("Argument c passed by value is classified as Read")
+        {
+            // Cursor on 'c' declaration at line 7, col 9
+            auto hls = env.HighlightsAt(7, 9);
+            REQUIRE(hls.has_value());
+            REQUIRE(hls->size() == 2);
+
+            CHECK((*hls)[0].range.start.line == 7);
+            CHECK((*hls)[0].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Write);
+
+            // Line 8: ModifyValues(a, b, c) -> c is passed by value -> Read
+            CHECK((*hls)[1].range.start.line == 8);
+            CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
+        }
     }
-}
 
-TEST_CASE("DocumentHighlight - Non-Identifier & Edge Cases")
-{
-    std::string code = "// Comment here\n"
-                       "void main() {\n"
-                       "    int x = 10;\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // Comment at line 0
-    auto hlComment = env.HighlightsAt(0, 5);
-    CHECK(!hlComment.has_value());
-
-    // Keyword 'void' at line 1, col 2
-    auto hlVoid = env.HighlightsAt(1, 2);
-    CHECK(!hlVoid.has_value());
-
-    // Keyword 'int' at line 2, col 5
-    auto hlInt = env.HighlightsAt(2, 5);
-    CHECK(!hlInt.has_value());
-
-    // Out of bounds
-    auto hlOob = env.HighlightsAt(100, 100);
-    CHECK(!hlOob.has_value());
-}
-
-// =====================================================================================
-// Class fields. LOCALS_QUERY used to capture a member variable twice - once as a
-// variable, once as a field - and ResolveInScope returned whichever landed first, so
-// which branch these handlers took was decided by query-match order. Anchoring the
-// variable pattern away from class_body leaves exactly one definition, of kind Field.
-// =====================================================================================
-
-TEST_CASE("DocumentHighlight - a class field is highlighted from its declaration through its uses")
-{
-    std::string code = "class Weapon\n"
-                       "{\n"
-                       "    int ammo;\n"
-                       "\n"
-                       "    void Fire()\n"
-                       "    {\n"
-                       "        ammo = ammo - 1;\n"
-                       "    }\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // From the declaration.
-    auto fromDecl = env.HighlightsAt(2, 8);
-    REQUIRE(fromDecl.has_value());
-    CHECK(fromDecl->size() == 3);
-
-    // From a use inside the method, the same three occurrences come back.
-    auto fromUse = env.HighlightsAt(6, 8);
-    REQUIRE(fromUse.has_value());
-    CHECK(fromUse->size() == 3);
-}
-
-TEST_CASE("DocumentHighlight - a local shadowing a field highlights only the local")
-{
-    std::string code = "class Weapon\n"
-                       "{\n"
-                       "    int ammo;\n"
-                       "\n"
-                       "    void Reload()\n"
-                       "    {\n"
-                       "        int ammo = 30;\n"
-                       "        ammo = ammo + 1;\n"
-                       "    }\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // The local declaration plus its two uses on the next line - never the field on line 2.
-    auto highlights = env.HighlightsAt(6, 12);
-    REQUIRE(highlights.has_value());
-    CHECK(highlights->size() == 3);
-
-    for (const auto& highlight : *highlights)
+    TEST_CASE("DocumentHighlight - Non-Identifier & Edge Cases")
     {
-        INFO("highlight on line ", highlight.range.start.line);
-        CHECK(highlight.range.start.line >= 6);
+        std::string code = "// Comment here\n"
+                           "void main() {\n"
+                           "    int x = 10;\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        // Comment at line 0
+        auto hlComment = env.HighlightsAt(0, 5);
+        CHECK(!hlComment.has_value());
+
+        // Keyword 'void' at line 1, col 2
+        auto hlVoid = env.HighlightsAt(1, 2);
+        CHECK(!hlVoid.has_value());
+
+        // Keyword 'int' at line 2, col 5
+        auto hlInt = env.HighlightsAt(2, 5);
+        CHECK(!hlInt.has_value());
+
+        // Out of bounds
+        auto hlOob = env.HighlightsAt(100, 100);
+        CHECK(!hlOob.has_value());
     }
-}
 
-// =====================================================================================
-// The walk that finds the member expression a reference belongs to is bounded by a check for
-// `class_declaration || function_declaration`. This grammar has no node called
-// `function_declaration` - it is `func_declaration`, and `function_declaration` is the C grammar's
-// name - so half that boundary never held. Found by scripts/check-grammar-names.py.
-//
-// Whether it was ever observable is the question these cases answer, and the answer decides what
-// the fix has to be. A `member_expression` cannot enclose a function declaration, so climbing past
-// one only reaches the root; but a LAMBDA can sit inside one - `obj.Method(function() { ... })` -
-// and neither name in that check stops the walk there.
-// =====================================================================================
+    // =====================================================================================
+    // Class fields. LOCALS_QUERY used to capture a member variable twice - once as a
+    // variable, once as a field - and ResolveInScope returned whichever landed first, so
+    // which branch these handlers took was decided by query-match order. Anchoring the
+    // variable pattern away from class_body leaves exactly one definition, of kind Field.
+    // =====================================================================================
 
-TEST_CASE("DocumentHighlight - a name inside a lambda is not a member of the enclosing call")
-{
-    const std::string code = R"(
+    TEST_CASE("DocumentHighlight - a class field is highlighted from its declaration through its uses")
+    {
+        std::string code = "class Weapon\n"
+                           "{\n"
+                           "    int ammo;\n"
+                           "\n"
+                           "    void Fire()\n"
+                           "    {\n"
+                           "        ammo = ammo - 1;\n"
+                           "    }\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        // From the declaration.
+        auto fromDecl = env.HighlightsAt(2, 8);
+        REQUIRE(fromDecl.has_value());
+        CHECK(fromDecl->size() == 3);
+
+        // From a use inside the method, the same three occurrences come back.
+        auto fromUse = env.HighlightsAt(6, 8);
+        REQUIRE(fromUse.has_value());
+        CHECK(fromUse->size() == 3);
+    }
+
+    TEST_CASE("DocumentHighlight - a local shadowing a field highlights only the local")
+    {
+        std::string code = "class Weapon\n"
+                           "{\n"
+                           "    int ammo;\n"
+                           "\n"
+                           "    void Reload()\n"
+                           "    {\n"
+                           "        int ammo = 30;\n"
+                           "        ammo = ammo + 1;\n"
+                           "    }\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        // The local declaration plus its two uses on the next line - never the field on line 2.
+        auto highlights = env.HighlightsAt(6, 12);
+        REQUIRE(highlights.has_value());
+        CHECK(highlights->size() == 3);
+
+        for (const auto& highlight : *highlights)
+        {
+            INFO("highlight on line ", highlight.range.start.line);
+            CHECK(highlight.range.start.line >= 6);
+        }
+    }
+
+    // =====================================================================================
+    // The walk that finds the member expression a reference belongs to is bounded by a check for
+    // `class_declaration || function_declaration`. This grammar has no node called
+    // `function_declaration` - it is `func_declaration`, and `function_declaration` is the C grammar's
+    // name - so half that boundary never held. Found by scripts/check-grammar-names.py.
+    //
+    // Whether it was ever observable is the question these cases answer, and the answer decides what
+    // the fix has to be. A `member_expression` cannot enclose a function declaration, so climbing past
+    // one only reaches the root; but a LAMBDA can sit inside one - `obj.Method(function() { ... })` -
+    // and neither name in that check stops the walk there.
+    // =====================================================================================
+
+    TEST_CASE("DocumentHighlight - a name inside a lambda is not a member of the enclosing call")
+    {
+        const std::string code = R"(
 class Holder
 {
     int field;
@@ -464,49 +467,50 @@ void run()
 }
 )";
 
-    TestEnvironment env(code);
+        TestEnvironment env(code);
 
-    // The `field` written inside the lambda is the LOCAL - line 16, the assignment. It has nothing
-    // to do with Holder::field, and the only thing between it and `h.Each(...)` is the lambda.
-    const auto highlights = env.HighlightsAt(16, 8);
-    REQUIRE(highlights.has_value());
+        // The `field` written inside the lambda is the LOCAL - line 16, the assignment. It has nothing
+        // to do with Holder::field, and the only thing between it and `h.Each(...)` is the lambda.
+        const auto highlights = env.HighlightsAt(16, 8);
+        REQUIRE(highlights.has_value());
 
-    // The declaration on line 12 and the write on line 16: two, and only those. Picking up
-    // Holder::field on line 3 would mean the walk climbed out of the lambda and read the reference
-    // as a member of `h`.
-    for (const auto& highlight : *highlights)
-    {
-        INFO("highlight at line " << highlight.range.start.line);
-        CHECK(highlight.range.start.line != 3);
+        // The declaration on line 12 and the write on line 16: two, and only those. Picking up
+        // Holder::field on line 3 would mean the walk climbed out of the lambda and read the reference
+        // as a member of `h`.
+        for (const auto& highlight : *highlights)
+        {
+            INFO("highlight at line " << highlight.range.start.line);
+            CHECK(highlight.range.start.line != 3);
+        }
+
+        CHECK(highlights->size() == 2);
     }
 
-    CHECK(highlights->size() == 2);
-}
-
-TEST_CASE("DocumentHighlight - GAP-VISIBILITY-01: Local variable does not highlight pre-declaration occurrences")
-{
-    const std::string varName = GenerateRandomSymbolName("localVar");
-
-    const std::string code = "int " + varName +
-                             " = 0;\n"
-                             "void test() {\n"
-                             "    " +
-                             varName +
-                             " = 10;\n"
-                             "    int " +
-                             varName +
-                             " = 20;\n"
-                             "    " +
-                             varName +
-                             " = 30;\n"
-                             "}\n";
-
-    TestEnvironment env(code);
-    const auto highlights = env.HighlightsAt(3, 9);
-    REQUIRE(highlights.has_value());
-    CHECK(highlights->size() == 2);
-    for (const auto& h : *highlights)
+    TEST_CASE("DocumentHighlight - GAP-VISIBILITY-01: Local variable does not highlight pre-declaration occurrences")
     {
-        CHECK(h.range.start.line >= 3);
+        const std::string varName = GenerateRandomSymbolName("localVar");
+
+        const std::string code = "int " + varName +
+                                 " = 0;\n"
+                                 "void test() {\n"
+                                 "    " +
+                                 varName +
+                                 " = 10;\n"
+                                 "    int " +
+                                 varName +
+                                 " = 20;\n"
+                                 "    " +
+                                 varName +
+                                 " = 30;\n"
+                                 "}\n";
+
+        TestEnvironment env(code);
+        const auto highlights = env.HighlightsAt(3, 9);
+        REQUIRE(highlights.has_value());
+        CHECK(highlights->size() == 2);
+        for (const auto& h : *highlights)
+        {
+            CHECK(h.range.start.line >= 3);
+        }
     }
 }

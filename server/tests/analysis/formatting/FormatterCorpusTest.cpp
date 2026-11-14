@@ -134,9 +134,9 @@ std::string NormalizeToken(std::string token)
 }
 } // namespace
 
-TEST_SUITE("Formatting")
+TEST_SUITE("analysis/formatting/FormatterCorpus")
 {
-    TEST_CASE("The formatter corpus keeps every token and settles in one pass")
+    TEST_CASE("FormatterCorpus - The formatter corpus keeps every token and settles in one pass")
     {
         const std::filesystem::path parityDir{ANGELSCRIPT_PARITY_DIR};
         REQUIRE_MESSAGE(std::filesystem::exists(parityDir), "parity corpus directory is missing");
@@ -211,7 +211,7 @@ TEST_SUITE("Formatting")
      *
      *     Debug/angel_lsp_tests.exe --no-skip --test-case="*full corpus*"
      */
-    TEST_CASE("The formatter keeps every token across the full corpus" * doctest::skip())
+    TEST_CASE("FormatterCorpus - The formatter keeps every token across the full corpus" * doctest::skip())
     {
         if (!angel_lsp::test::CorpusIsAvailable())
         {

@@ -83,292 +83,297 @@ double Milliseconds(const std::chrono::steady_clock::time_point& start)
 }
 } // namespace
 
-// =====================================================================================
-// Rule cost measurement (opt-in - run via
-// `angel_lsp_tests.exe --no-skip --test-case="*Rule Cost*"`)
-//
-// Answers the one question a new rule set has to answer before it ships: analysis runs debounced
-// on a background thread, but 300 files' worth of it still has to be affordable. Each pass is timed
-// on its own, over the same already-parsed trees and symbol tables, so the numbers say what the
-// rules cost rather than what parsing costs.
-// =====================================================================================
-
-TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
+TEST_SUITE("harness/RuleCost")
 {
-    if (!angel_lsp::test::CorpusIsAvailable())
+    // =====================================================================================
+    // Rule cost measurement (opt-in - run via
+    // `angel_lsp_tests.exe --no-skip --test-case="*Rule Cost*"`)
+    //
+    // Answers the one question a new rule set has to answer before it ships: analysis runs debounced
+    // on a background thread, but 300 files' worth of it still has to be affordable. Each pass is timed
+    // on its own, over the same already-parsed trees and symbol tables, so the numbers say what the
+    // rules cost rather than what parsing costs.
+    // =====================================================================================
+
+    TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
     {
-        MESSAGE(angel_lsp::test::CorpusMissingMessage());
-        return;
-    }
-
-    const auto samples = LoadSamples();
-    REQUIRE(!samples.empty());
-
-    angel_lsp::i18n::I18n i18n;
-    AngelScriptParser parser;
-    SymbolCollector collector(nullptr);
-    LocalScopeCollector scopeCollector(nullptr);
-
-    SymbolTable table;
-    std::vector<TSTree*> trees;
-    std::vector<NodeIndex> indexes;
-    std::vector<std::shared_ptr<const Scope>> scopes;
-
-    // Front-end cost, measured but not attributed to any rule: this has to happen whether or not a
-    // single rule exists.
-    const auto frontEndStart = std::chrono::steady_clock::now();
-    for (const auto& sample : samples)
-    {
-        collector.CollectSymbols(sample.fileUri, sample.sourceCode, parser, table);
-        trees.push_back(parser.Parse(sample.sourceCode));
-        indexes.emplace_back(ts_tree_root_node(trees.back()));
-        scopes.push_back(std::shared_ptr<const Scope>(scopeCollector.CollectScopes(sample.sourceCode, parser)));
-    }
-    const double frontEndMs = Milliseconds(frontEndStart);
-
-    const auto makeRequest = [&](size_t index)
-    {
-        SemanticAnalysisRequest request{table, samples[index].fileUri, "", &i18n};
-        request.scopeRoot = scopes[index];
-        request.sourceCode = samples[index].sourceCode;
-        NodeIndex nodeIndex(ts_tree_root_node(trees[index]));
-        request.nodeIndex = &nodeIndex;
-        return request;
-    };
-
-    // One timed pass per module. Timing each rule call individually was tried first and measured
-    // the clock rather than the rules: at fifteen million calls, two steady_clock reads apiece cost
-    // more than the work between them.
-    const auto timeModule = [&](auto&& validate)
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
+        if (!angel_lsp::test::CorpusIsAvailable())
         {
-            std::vector<Diagnostic> diagnostics;
-            SemanticAnalysisRequest request = makeRequest(i);
-            DiagnosticContext ctx{request, diagnostics, nullptr};
-
-            table.ForEachSymbolInFile(request.fileUri, [&](const std::string&, const std::vector<Symbol>& symbols)
-                                      { validate(symbols, request, ctx); });
+            MESSAGE(angel_lsp::test::CorpusMissingMessage());
+            return;
         }
-        return Milliseconds(start);
-    };
 
-    const auto perSymbol = [](auto&& rule)
-    {
-        return [rule](const std::vector<Symbol>& symbols, const SemanticAnalysisRequest& request,
-                      const DiagnosticContext& ctx)
+        const auto samples = LoadSamples();
+        REQUIRE(!samples.empty());
+
+        angel_lsp::i18n::I18n i18n;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        LocalScopeCollector scopeCollector(nullptr);
+
+        SymbolTable table;
+        std::vector<TSTree*> trees;
+        std::vector<NodeIndex> indexes;
+        std::vector<std::shared_ptr<const Scope>> scopes;
+
+        // Front-end cost, measured but not attributed to any rule: this has to happen whether or not a
+        // single rule exists.
+        const auto frontEndStart = std::chrono::steady_clock::now();
+        for (const auto& sample : samples)
         {
-            for (const auto& sym : symbols)
-            {
-                if (sym.fileUri == request.fileUri)
-                {
-                    rule(sym, ctx);
-                }
-            }
+            collector.CollectSymbols(sample.fileUri, sample.sourceCode, parser, table);
+            trees.push_back(parser.Parse(sample.sourceCode));
+            indexes.emplace_back(ts_tree_root_node(trees.back()));
+            scopes.push_back(std::shared_ptr<const Scope>(scopeCollector.CollectScopes(sample.sourceCode, parser)));
+        }
+        const double frontEndMs = Milliseconds(frontEndStart);
+
+        const auto makeRequest = [&](size_t index)
+        {
+            SemanticAnalysisRequest request{table, samples[index].fileUri, "", &i18n};
+            request.scopeRoot = scopes[index];
+            request.sourceCode = samples[index].sourceCode;
+            NodeIndex nodeIndex(ts_tree_root_node(trees[index]));
+            request.nodeIndex = &nodeIndex;
+            return request;
         };
-    };
 
-    const double duplicateMs =
-        timeModule([](const std::vector<Symbol>& symbols, const SemanticAnalysisRequest&, const DiagnosticContext& ctx)
-                   { rules::ValidateDuplicates(symbols, ctx); });
-    const double classMs = timeModule(perSymbol(
-        [](const Symbol& sym, const DiagnosticContext& ctx)
+        // One timed pass per module. Timing each rule call individually was tried first and measured
+        // the clock rather than the rules: at fifteen million calls, two steady_clock reads apiece cost
+        // more than the work between them.
+        const auto timeModule = [&](auto&& validate)
         {
-            if (sym.type == SymbolType::Class)
-                rules::ValidateClass(sym, ctx);
-        }));
-    const double variableMs = timeModule(perSymbol(
-        [](const Symbol& sym, const DiagnosticContext& ctx)
-        {
-            if (sym.type == SymbolType::Variable || sym.type == SymbolType::Property)
-                rules::ValidateVariable(sym, ctx);
-        }));
-    const double functionMs = timeModule(perSymbol(
-        [](const Symbol& sym, const DiagnosticContext& ctx)
-        {
-            if (sym.type == SymbolType::Function)
-                rules::ValidateFunction(sym, ctx);
-        }));
-    const double operatorMs = timeModule(perSymbol(
-        [](const Symbol& sym, const DiagnosticContext& ctx)
-        {
-            if (sym.type == SymbolType::Function)
-                rules::ValidateOperator(sym, ctx);
-        }));
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                std::vector<Diagnostic> diagnostics;
+                SemanticAnalysisRequest request = makeRequest(i);
+                DiagnosticContext ctx{request, diagnostics, nullptr};
 
-    // Declaration rules, driven directly rather than through Analyze so the symbol-table walk is
-    // the only thing shared with the other passes.
-    double declarationMs = 0.0;
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
-        {
-            std::vector<Diagnostic> diagnostics;
-            SemanticAnalysisRequest request = makeRequest(i);
-            DiagnosticContext ctx{request, diagnostics, nullptr};
+                table.ForEachSymbolInFile(request.fileUri, [&](const std::string&, const std::vector<Symbol>& symbols)
+                                          { validate(symbols, request, ctx); });
+            }
+            return Milliseconds(start);
+        };
 
-            table.ForEachSymbolInFile(request.fileUri,
-                                      [&](const std::string&, const std::vector<Symbol>& symbols)
-                                      {
-                                          rules::ValidateDuplicates(symbols, ctx);
-                                          for (const auto& sym : symbols)
+        const auto perSymbol = [](auto&& rule)
+        {
+            return [rule](const std::vector<Symbol>& symbols, const SemanticAnalysisRequest& request,
+                          const DiagnosticContext& ctx)
+            {
+                for (const auto& sym : symbols)
+                {
+                    if (sym.fileUri == request.fileUri)
+                    {
+                        rule(sym, ctx);
+                    }
+                }
+            };
+        };
+
+        const double duplicateMs =
+            timeModule([](const std::vector<Symbol>& symbols, const SemanticAnalysisRequest&,
+                          const DiagnosticContext& ctx) { rules::ValidateDuplicates(symbols, ctx); });
+        const double classMs = timeModule(perSymbol(
+            [](const Symbol& sym, const DiagnosticContext& ctx)
+            {
+                if (sym.type == SymbolType::Class)
+                    rules::ValidateClass(sym, ctx);
+            }));
+        const double variableMs = timeModule(perSymbol(
+            [](const Symbol& sym, const DiagnosticContext& ctx)
+            {
+                if (sym.type == SymbolType::Variable || sym.type == SymbolType::Property)
+                    rules::ValidateVariable(sym, ctx);
+            }));
+        const double functionMs = timeModule(perSymbol(
+            [](const Symbol& sym, const DiagnosticContext& ctx)
+            {
+                if (sym.type == SymbolType::Function)
+                    rules::ValidateFunction(sym, ctx);
+            }));
+        const double operatorMs = timeModule(perSymbol(
+            [](const Symbol& sym, const DiagnosticContext& ctx)
+            {
+                if (sym.type == SymbolType::Function)
+                    rules::ValidateOperator(sym, ctx);
+            }));
+
+        // Declaration rules, driven directly rather than through Analyze so the symbol-table walk is
+        // the only thing shared with the other passes.
+        double declarationMs = 0.0;
+        {
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                std::vector<Diagnostic> diagnostics;
+                SemanticAnalysisRequest request = makeRequest(i);
+                DiagnosticContext ctx{request, diagnostics, nullptr};
+
+                table.ForEachSymbolInFile(request.fileUri,
+                                          [&](const std::string&, const std::vector<Symbol>& symbols)
                                           {
-                                              if (sym.fileUri != request.fileUri)
+                                              rules::ValidateDuplicates(symbols, ctx);
+                                              for (const auto& sym : symbols)
                                               {
-                                                  continue;
+                                                  if (sym.fileUri != request.fileUri)
+                                                  {
+                                                      continue;
+                                                  }
+                                                  switch (sym.type)
+                                                  {
+                                                  case SymbolType::Class:
+                                                      rules::ValidateClass(sym, ctx);
+                                                      break;
+                                                  case SymbolType::Interface:
+                                                      rules::ValidateInterfaceMembers(sym, ctx);
+                                                      break;
+                                                  case SymbolType::Typedef:
+                                                      rules::ValidateTypedef(sym, ctx);
+                                                      break;
+                                                  case SymbolType::Funcdef:
+                                                      rules::ValidateFuncdef(sym, ctx);
+                                                      break;
+                                                  case SymbolType::Enum:
+                                                      rules::ValidateEnum(sym, ctx);
+                                                      break;
+                                                  case SymbolType::Variable:
+                                                  case SymbolType::Property:
+                                                      rules::ValidateVariable(sym, ctx);
+                                                      break;
+                                                  case SymbolType::Function:
+                                                      rules::ValidateFunction(sym, ctx);
+                                                      rules::ValidateOperator(sym, ctx);
+                                                      break;
+                                                  default:
+                                                      break;
+                                                  }
                                               }
-                                              switch (sym.type)
-                                              {
-                                              case SymbolType::Class:
-                                                  rules::ValidateClass(sym, ctx);
-                                                  break;
-                                              case SymbolType::Interface:
-                                                  rules::ValidateInterfaceMembers(sym, ctx);
-                                                  break;
-                                              case SymbolType::Typedef:
-                                                  rules::ValidateTypedef(sym, ctx);
-                                                  break;
-                                              case SymbolType::Funcdef:
-                                                  rules::ValidateFuncdef(sym, ctx);
-                                                  break;
-                                              case SymbolType::Enum:
-                                                  rules::ValidateEnum(sym, ctx);
-                                                  break;
-                                              case SymbolType::Variable:
-                                              case SymbolType::Property:
-                                                  rules::ValidateVariable(sym, ctx);
-                                                  break;
-                                              case SymbolType::Function:
-                                                  rules::ValidateFunction(sym, ctx);
-                                                  rules::ValidateOperator(sym, ctx);
-                                                  break;
-                                              default:
-                                                  break;
-                                              }
-                                          }
-                                      });
+                                          });
+            }
+            declarationMs = Milliseconds(start);
         }
-        declarationMs = Milliseconds(start);
-    }
 
-    double controlFlowMs = 0.0;
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
+        double controlFlowMs = 0.0;
         {
-            std::vector<Diagnostic> diagnostics;
-            SemanticAnalysisRequest request = makeRequest(i);
-            DiagnosticContext ctx{request, diagnostics, nullptr};
-            const ControlFlowFacts facts = BuildControlFlowFacts(indexes[i], samples[i].sourceCode);
-            CheckControlFlow(facts, samples[i].sourceCode, ctx);
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                std::vector<Diagnostic> diagnostics;
+                SemanticAnalysisRequest request = makeRequest(i);
+                DiagnosticContext ctx{request, diagnostics, nullptr};
+                const ControlFlowFacts facts = BuildControlFlowFacts(indexes[i], samples[i].sourceCode);
+                CheckControlFlow(facts, samples[i].sourceCode, ctx);
+            }
+            controlFlowMs = Milliseconds(start);
         }
-        controlFlowMs = Milliseconds(start);
-    }
 
-    double conversionMs = 0.0;
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
+        double conversionMs = 0.0;
         {
-            std::vector<Diagnostic> diagnostics;
-            SemanticAnalysisRequest request = makeRequest(i);
-            DiagnosticContext ctx{request, diagnostics, nullptr};
-            request.nodeIndex = &indexes[i];
-            CheckTypeConversions({indexes[i], samples[i].sourceCode, scopes[i].get()}, ctx);
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                std::vector<Diagnostic> diagnostics;
+                SemanticAnalysisRequest request = makeRequest(i);
+                DiagnosticContext ctx{request, diagnostics, nullptr};
+                request.nodeIndex = &indexes[i];
+                CheckTypeConversions({indexes[i], samples[i].sourceCode, scopes[i].get()}, ctx);
+            }
+            conversionMs = Milliseconds(start);
         }
-        conversionMs = Milliseconds(start);
-    }
 
-    double accessMs = 0.0;
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
+        double accessMs = 0.0;
         {
-            std::vector<Diagnostic> diagnostics;
-            SemanticAnalysisRequest request = makeRequest(i);
-            DiagnosticContext ctx{request, diagnostics, nullptr};
-            CheckMemberAccess({samples[i].sourceCode, scopes[i].get(), &indexes[i]}, ctx);
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                std::vector<Diagnostic> diagnostics;
+                SemanticAnalysisRequest request = makeRequest(i);
+                DiagnosticContext ctx{request, diagnostics, nullptr};
+                CheckMemberAccess({samples[i].sourceCode, scopes[i].get(), &indexes[i]}, ctx);
+            }
+            accessMs = Milliseconds(start);
         }
-        accessMs = Milliseconds(start);
-    }
 
-    double constMs = 0.0;
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
+        double constMs = 0.0;
         {
-            std::vector<Diagnostic> diagnostics;
-            SemanticAnalysisRequest request = makeRequest(i);
-            DiagnosticContext ctx{request, diagnostics, nullptr};
-            CheckConstCorrectness({samples[i].sourceCode, scopes[i].get(), &indexes[i]}, ctx);
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                std::vector<Diagnostic> diagnostics;
+                SemanticAnalysisRequest request = makeRequest(i);
+                DiagnosticContext ctx{request, diagnostics, nullptr};
+                CheckConstCorrectness({samples[i].sourceCode, scopes[i].get(), &indexes[i]}, ctx);
+            }
+            constMs = Milliseconds(start);
         }
-        constMs = Milliseconds(start);
-    }
 
-    double callArgumentsMs = 0.0;
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
+        double callArgumentsMs = 0.0;
         {
-            std::vector<Diagnostic> diagnostics;
-            SemanticAnalysisRequest request = makeRequest(i);
-            DiagnosticContext ctx{request, diagnostics, nullptr};
-            CheckCallArguments({samples[i].sourceCode, scopes[i].get(), &indexes[i]}, ctx);
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                std::vector<Diagnostic> diagnostics;
+                SemanticAnalysisRequest request = makeRequest(i);
+                DiagnosticContext ctx{request, diagnostics, nullptr};
+                CheckCallArguments({samples[i].sourceCode, scopes[i].get(), &indexes[i]}, ctx);
+            }
+            callArgumentsMs = Milliseconds(start);
         }
-        callArgumentsMs = Milliseconds(start);
-    }
 
-    // Not part of Analyze(): the call index is built beside the scope tree on the same edit, and
-    // it is the one structure a hierarchy feature added to the per-keystroke path - so what it
-    // costs belongs on this list whether or not the analyzer runs it.
-    double callGraphMs = 0.0;
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
+        // Not part of Analyze(): the call index is built beside the scope tree on the same edit, and
+        // it is the one structure a hierarchy feature added to the per-keystroke path - so what it
+        // costs belongs on this list whether or not the analyzer runs it.
+        double callGraphMs = 0.0;
         {
-            volatile size_t sink = CollectCalls(ts_tree_root_node(trees[i]), samples[i].sourceCode).size();
-            (void)sink;
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                volatile size_t sink = CollectCalls(ts_tree_root_node(trees[i]), samples[i].sourceCode).size();
+                (void)sink;
+            }
+            callGraphMs = Milliseconds(start);
         }
-        callGraphMs = Milliseconds(start);
-    }
 
-    double wholeAnalysisMs = 0.0;
-    {
-        const auto start = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < samples.size(); ++i)
+        double wholeAnalysisMs = 0.0;
         {
-            SemanticAnalyzer analyzer(nullptr);
-            analyzer.Analyze(makeRequest(i));
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < samples.size(); ++i)
+            {
+                SemanticAnalyzer analyzer(nullptr);
+                analyzer.Analyze(makeRequest(i));
+            }
+            wholeAnalysisMs = Milliseconds(start);
         }
-        wholeAnalysisMs = Milliseconds(start);
-    }
 
-    const double files = static_cast<double>(samples.size());
-    MESSAGE("Rule cost over " << samples.size() << " files (totals, then per file):");
-    MESSAGE("  parse + collect + scopes : " << frontEndMs << " ms  (" << frontEndMs / files << " ms/file)");
-    MESSAGE("  declaration rules        : " << declarationMs << " ms  (" << declarationMs / files << " ms/file)");
-    MESSAGE("  control flow             : " << controlFlowMs << " ms  (" << controlFlowMs / files << " ms/file)");
-    MESSAGE("  type conversions         : " << conversionMs << " ms  (" << conversionMs / files << " ms/file)");
-    MESSAGE("  member access            : " << accessMs << " ms  (" << accessMs / files << " ms/file)");
-    MESSAGE("  const correctness        : " << constMs << " ms  (" << constMs / files << " ms/file)");
-    MESSAGE("  call arguments           : " << callArgumentsMs << " ms  (" << callArgumentsMs / files << " ms/file)");
-    MESSAGE("  call index (not in Analyze): " << callGraphMs << " ms  (" << callGraphMs / files << " ms/file)");
-    MESSAGE("  Analyze() as a whole     : " << wholeAnalysisMs << " ms  (" << wholeAnalysisMs / files << " ms/file)");
-    MESSAGE("  by declaration module (each includes the per-file bucket walk it shares):");
-    MESSAGE("    duplicates : " << duplicateMs << " ms");
-    MESSAGE("    class      : " << classMs << " ms");
-    MESSAGE("    variable   : " << variableMs << " ms");
-    MESSAGE("    function   : " << functionMs << " ms");
-    MESSAGE("    operator   : " << operatorMs << " ms");
+        const double files = static_cast<double>(samples.size());
+        MESSAGE("Rule cost over " << samples.size() << " files (totals, then per file):");
+        MESSAGE("  parse + collect + scopes : " << frontEndMs << " ms  (" << frontEndMs / files << " ms/file)");
+        MESSAGE("  declaration rules        : " << declarationMs << " ms  (" << declarationMs / files << " ms/file)");
+        MESSAGE("  control flow             : " << controlFlowMs << " ms  (" << controlFlowMs / files << " ms/file)");
+        MESSAGE("  type conversions         : " << conversionMs << " ms  (" << conversionMs / files << " ms/file)");
+        MESSAGE("  member access            : " << accessMs << " ms  (" << accessMs / files << " ms/file)");
+        MESSAGE("  const correctness        : " << constMs << " ms  (" << constMs / files << " ms/file)");
+        MESSAGE("  call arguments           : " << callArgumentsMs << " ms  (" << callArgumentsMs / files
+                                                << " ms/file)");
+        MESSAGE("  call index (not in Analyze): " << callGraphMs << " ms  (" << callGraphMs / files << " ms/file)");
+        MESSAGE("  Analyze() as a whole     : " << wholeAnalysisMs << " ms  (" << wholeAnalysisMs / files
+                                                << " ms/file)");
+        MESSAGE("  by declaration module (each includes the per-file bucket walk it shares):");
+        MESSAGE("    duplicates : " << duplicateMs << " ms");
+        MESSAGE("    class      : " << classMs << " ms");
+        MESSAGE("    variable   : " << variableMs << " ms");
+        MESSAGE("    function   : " << functionMs << " ms");
+        MESSAGE("    operator   : " << operatorMs << " ms");
 
-    for (TSTree* tree : trees)
-    {
-        if (tree)
+        for (TSTree* tree : trees)
         {
-            ts_tree_delete(tree);
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
         }
-    }
 
-    CHECK(samples.size() > 0);
+        CHECK(samples.size() > 0);
+    }
 }

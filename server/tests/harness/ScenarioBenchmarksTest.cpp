@@ -194,216 +194,219 @@ std::vector<std::string> CreateIncludeProject(const BenchmarkSandbox& sandbox, s
 
 } // namespace
 
-// =========================================================================================
-// Benchmark Suite: Phase 9 Ultra-Performance Tests
-// =========================================================================================
-
-TEST_CASE("Benchmark - Scenario A: Massive Predefined File (sven.as.predefined)" * doctest::skip(true))
+TEST_SUITE("harness/ScenarioBenchmarks")
 {
-    const std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
-    const std::filesystem::path predefinedPath = repoRoot / "predefined" / "sven.as.predefined";
+    // =========================================================================================
+    // Benchmark Suite: Phase 9 Ultra-Performance Tests
+    // =========================================================================================
 
-    if (!std::filesystem::exists(predefinedPath))
+    TEST_CASE("Benchmark - Scenario A: Massive Predefined File (sven.as.predefined)" * doctest::skip(true))
     {
-        MESSAGE("Scenario A skipped: predefined/sven.as.predefined not found at: " << predefinedPath.string());
-        return;
+        const std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
+        const std::filesystem::path predefinedPath = repoRoot / "predefined" / "sven.as.predefined";
+
+        if (!std::filesystem::exists(predefinedPath))
+        {
+            MESSAGE("Scenario A skipped: predefined/sven.as.predefined not found at: " << predefinedPath.string());
+            return;
+        }
+
+        const std::string content = ReadEntireFile(predefinedPath);
+        REQUIRE(content.size() > 500000);
+        const size_t lineCount = static_cast<size_t>(std::count(content.begin(), content.end(), '\n') + 1);
+
+        parser::AngelScriptParser parser;
+        HighResTimer parseTimer;
+        TSTree* tree = parser.Parse(content);
+        const double parseMs = parseTimer.ElapsedMs();
+        REQUIRE(tree != nullptr);
+
+        analysis::SymbolTable symbolTable;
+        analysis::SymbolCollector collector(nullptr);
+
+        HighResTimer collectTimer;
+        collector.CollectSymbolsWithTree(analysis::SymbolCollectRequest("predefined:///sven.as.predefined", content),
+                                         tree, symbolTable);
+        const double collectMs = collectTimer.ElapsedMs();
+
+        MESSAGE("Scenario A (sven.as.predefined: " << content.size() << " bytes, " << lineCount << " lines):");
+        MESSAGE("  - AST Parse: " << parseMs << " ms");
+        MESSAGE("  - CollectSymbols: " << collectMs << " ms");
+        MESSAGE("  - Symbol Count: " << symbolTable.GetAllSymbols().size());
+
+        CHECK(symbolTable.HasSymbol("Vector"));
+        CHECK(symbolTable.HasSymbol("CBasePlayer"));
+
+        analysis::ScopeIndex scopeIndex;
+        analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+        features::HoverRequest hoverReq{
+            "predefined:///sven.as.predefined", content, &nodeIndex, symbolTable, scopeIndex, lsp::Position{200, 7}
+            // "class dictionary" line 201, character 7 (0-indexed line 200)
+        };
+        HighResTimer hoverTimer;
+        auto hoverRes = features::GetHover(hoverReq);
+        const double hoverMs = hoverTimer.ElapsedMs();
+        MESSAGE("  - GetHover (dictionary): " << hoverMs << " ms");
+        CHECK(hoverRes.has_value());
+
+        ts_tree_delete(tree);
     }
 
-    const std::string content = ReadEntireFile(predefinedPath);
-    REQUIRE(content.size() > 500000);
-    const size_t lineCount = static_cast<size_t>(std::count(content.begin(), content.end(), '\n') + 1);
-
-    parser::AngelScriptParser parser;
-    HighResTimer parseTimer;
-    TSTree* tree = parser.Parse(content);
-    const double parseMs = parseTimer.ElapsedMs();
-    REQUIRE(tree != nullptr);
-
-    analysis::SymbolTable symbolTable;
-    analysis::SymbolCollector collector(nullptr);
-
-    HighResTimer collectTimer;
-    collector.CollectSymbolsWithTree(analysis::SymbolCollectRequest("predefined:///sven.as.predefined", content), tree,
-                                     symbolTable);
-    const double collectMs = collectTimer.ElapsedMs();
-
-    MESSAGE("Scenario A (sven.as.predefined: " << content.size() << " bytes, " << lineCount << " lines):");
-    MESSAGE("  - AST Parse: " << parseMs << " ms");
-    MESSAGE("  - CollectSymbols: " << collectMs << " ms");
-    MESSAGE("  - Symbol Count: " << symbolTable.GetAllSymbols().size());
-
-    CHECK(symbolTable.HasSymbol("Vector"));
-    CHECK(symbolTable.HasSymbol("CBasePlayer"));
-
-    analysis::ScopeIndex scopeIndex;
-    analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
-    features::HoverRequest hoverReq{
-        "predefined:///sven.as.predefined", content, &nodeIndex, symbolTable, scopeIndex, lsp::Position{200, 7}
-        // "class dictionary" line 201, character 7 (0-indexed line 200)
-    };
-    HighResTimer hoverTimer;
-    auto hoverRes = features::GetHover(hoverReq);
-    const double hoverMs = hoverTimer.ElapsedMs();
-    MESSAGE("  - GetHover (dictionary): " << hoverMs << " ms");
-    CHECK(hoverRes.has_value());
-
-    ts_tree_delete(tree);
-}
-
-TEST_CASE("Benchmark - Scenario B: Massive Ordinary Script (10k-14k lines)" * doctest::skip(true))
-{
-    std::mt19937_64 rng(1337);
-    constexpr size_t kTargetLines = 10000;
-    const std::string massiveCode = GenerateMassiveScript(kTargetLines, rng);
-    const size_t actualLines = static_cast<size_t>(std::count(massiveCode.begin(), massiveCode.end(), '\n') + 1);
-    REQUIRE(actualLines >= kTargetLines);
-
-    parser::AngelScriptParser parser;
-    HighResTimer parseTimer;
-    TSTree* tree = parser.Parse(massiveCode);
-    const double parseMs = parseTimer.ElapsedMs();
-    REQUIRE(tree != nullptr);
-
-    TSNode rootNode = ts_tree_root_node(tree);
-
-    // 1. NodeIndex::Build
-    analysis::NodeIndex nodeIndex;
-    HighResTimer indexTimer;
-    nodeIndex.Build(rootNode);
-    const double indexMs = indexTimer.ElapsedMs();
-
-    // 2. LocalScopeCollector::CollectScopesFromTree
-    analysis::LocalScopeCollector scopeCollector(nullptr);
-    HighResTimer scopeTimer;
-    auto scopeRoot = scopeCollector.CollectScopesFromTree(rootNode, massiveCode);
-    const double scopeMs = scopeTimer.ElapsedMs();
-    REQUIRE(scopeRoot != nullptr);
-
-    // 3. SymbolCollector
-    analysis::SymbolTable symbolTable;
-    analysis::SymbolCollector symbolCollector(nullptr);
-    HighResTimer symCollectTimer;
-    symbolCollector.CollectSymbolsWithTree(analysis::SymbolCollectRequest("file:///massive_benchmark.as", massiveCode),
-                                           tree, symbolTable);
-    const double symCollectMs = symCollectTimer.ElapsedMs();
-
-    // 4. SemanticAnalyzer::Analyze (All Checkers)
-    i18n::I18n i18n;
-    std::shared_ptr<const analysis::Scope> sharedScope = std::move(scopeRoot);
-    const std::string docUri = "file:///massive_benchmark.as";
-    analysis::SemanticAnalysisRequest semReq(symbolTable, docUri, "", &i18n);
-    semReq.sourceCode = massiveCode;
-    semReq.scopeRoot = sharedScope;
-    semReq.nodeIndex = &nodeIndex;
-
-    analysis::SemanticAnalyzer analyzer(nullptr);
-    HighResTimer semTimer;
-    auto diagnostics = analyzer.Analyze(semReq);
-    const double semMs = semTimer.ElapsedMs();
-
-    const auto semFacts = analysis::CollectSemanticTokenFacts(nodeIndex, massiveCode);
-    // 5. SemanticTokens
-    features::SemanticTokensRequest tokReq(docUri, massiveCode, semFacts, symbolTable);
-    tokReq.scopeRoot = sharedScope;
-
-    HighResTimer tokTimer;
-    auto tokens = features::GetSemanticTokens(tokReq);
-    const double tokMs = tokTimer.ElapsedMs();
-
-    // 6. FindInnermostScope 10,000 queries
-    HighResTimer scopeLookupTimer;
-    const analysis::Scope* foundScope = nullptr;
-    for (uint32_t q = 0; q < 10000; ++q)
+    TEST_CASE("Benchmark - Scenario B: Massive Ordinary Script (10k-14k lines)" * doctest::skip(true))
     {
-        uint32_t line = (q * 17) % static_cast<uint32_t>(actualLines);
-        foundScope = analysis::FindInnermostScope(sharedScope.get(), line, 10);
+        std::mt19937_64 rng(1337);
+        constexpr size_t kTargetLines = 10000;
+        const std::string massiveCode = GenerateMassiveScript(kTargetLines, rng);
+        const size_t actualLines = static_cast<size_t>(std::count(massiveCode.begin(), massiveCode.end(), '\n') + 1);
+        REQUIRE(actualLines >= kTargetLines);
+
+        parser::AngelScriptParser parser;
+        HighResTimer parseTimer;
+        TSTree* tree = parser.Parse(massiveCode);
+        const double parseMs = parseTimer.ElapsedMs();
+        REQUIRE(tree != nullptr);
+
+        TSNode rootNode = ts_tree_root_node(tree);
+
+        // 1. NodeIndex::Build
+        analysis::NodeIndex nodeIndex;
+        HighResTimer indexTimer;
+        nodeIndex.Build(rootNode);
+        const double indexMs = indexTimer.ElapsedMs();
+
+        // 2. LocalScopeCollector::CollectScopesFromTree
+        analysis::LocalScopeCollector scopeCollector(nullptr);
+        HighResTimer scopeTimer;
+        auto scopeRoot = scopeCollector.CollectScopesFromTree(rootNode, massiveCode);
+        const double scopeMs = scopeTimer.ElapsedMs();
+        REQUIRE(scopeRoot != nullptr);
+
+        // 3. SymbolCollector
+        analysis::SymbolTable symbolTable;
+        analysis::SymbolCollector symbolCollector(nullptr);
+        HighResTimer symCollectTimer;
+        symbolCollector.CollectSymbolsWithTree(
+            analysis::SymbolCollectRequest("file:///massive_benchmark.as", massiveCode), tree, symbolTable);
+        const double symCollectMs = symCollectTimer.ElapsedMs();
+
+        // 4. SemanticAnalyzer::Analyze (All Checkers)
+        i18n::I18n i18n;
+        std::shared_ptr<const analysis::Scope> sharedScope = std::move(scopeRoot);
+        const std::string docUri = "file:///massive_benchmark.as";
+        analysis::SemanticAnalysisRequest semReq(symbolTable, docUri, "", &i18n);
+        semReq.sourceCode = massiveCode;
+        semReq.scopeRoot = sharedScope;
+        semReq.nodeIndex = &nodeIndex;
+
+        analysis::SemanticAnalyzer analyzer(nullptr);
+        HighResTimer semTimer;
+        auto diagnostics = analyzer.Analyze(semReq);
+        const double semMs = semTimer.ElapsedMs();
+
+        const auto semFacts = analysis::CollectSemanticTokenFacts(nodeIndex, massiveCode);
+        // 5. SemanticTokens
+        features::SemanticTokensRequest tokReq(docUri, massiveCode, semFacts, symbolTable);
+        tokReq.scopeRoot = sharedScope;
+
+        HighResTimer tokTimer;
+        auto tokens = features::GetSemanticTokens(tokReq);
+        const double tokMs = tokTimer.ElapsedMs();
+
+        // 6. FindInnermostScope 10,000 queries
+        HighResTimer scopeLookupTimer;
+        const analysis::Scope* foundScope = nullptr;
+        for (uint32_t q = 0; q < 10000; ++q)
+        {
+            uint32_t line = (q * 17) % static_cast<uint32_t>(actualLines);
+            foundScope = analysis::FindInnermostScope(sharedScope.get(), line, 10);
+        }
+        const double scopeLookupMs = scopeLookupTimer.ElapsedMs();
+
+        // 7. GetHover in massive file
+        size_t fnPos = massiveCode.find("Compute");
+        REQUIRE(fnPos != std::string::npos);
+        uint32_t fnRow = static_cast<uint32_t>(std::count(massiveCode.begin(), massiveCode.begin() + fnPos, '\n'));
+        size_t lastNl = massiveCode.rfind('\n', fnPos);
+        uint32_t fnCol = static_cast<uint32_t>(fnPos - (lastNl == std::string::npos ? 0 : lastNl + 1));
+        analysis::ScopeIndex bScopeIndex;
+        bScopeIndex.SetScopeTree(docUri, sharedScope);
+        features::HoverRequest bHoverReq{docUri,      massiveCode, &nodeIndex,
+                                         symbolTable, bScopeIndex, lsp::Position{fnRow, fnCol}};
+        HighResTimer bHoverTimer;
+        auto bHoverRes = features::GetHover(bHoverReq);
+        const double bHoverMs = bHoverTimer.ElapsedMs();
+
+        MESSAGE("Scenario B (Massive Script: " << massiveCode.size() << " bytes, " << actualLines << " lines):");
+        MESSAGE("  - AST Parse: " << parseMs << " ms");
+        MESSAGE("  - NodeIndex::Build: " << indexMs << " ms");
+        MESSAGE("  - CollectScopesFromTree: " << scopeMs << " ms");
+        MESSAGE("  - CollectSymbolsWithTree: " << symCollectMs << " ms");
+        MESSAGE("  - SemanticAnalyzer::Analyze: " << semMs << " ms");
+        MESSAGE("  - SemanticTokens: " << tokMs << " ms (Token count: " << tokens.data.size() / 5 << ")");
+        MESSAGE("  - 10,000 FindInnermostScope queries: " << scopeLookupMs << " ms");
+        MESSAGE("  - GetHover (Compute): " << bHoverMs << " ms");
+
+        CHECK(foundScope != nullptr);
+        CHECK(bHoverRes.has_value());
+
+        ts_tree_delete(tree);
     }
-    const double scopeLookupMs = scopeLookupTimer.ElapsedMs();
 
-    // 7. GetHover in massive file
-    size_t fnPos = massiveCode.find("Compute");
-    REQUIRE(fnPos != std::string::npos);
-    uint32_t fnRow = static_cast<uint32_t>(std::count(massiveCode.begin(), massiveCode.begin() + fnPos, '\n'));
-    size_t lastNl = massiveCode.rfind('\n', fnPos);
-    uint32_t fnCol = static_cast<uint32_t>(fnPos - (lastNl == std::string::npos ? 0 : lastNl + 1));
-    analysis::ScopeIndex bScopeIndex;
-    bScopeIndex.SetScopeTree(docUri, sharedScope);
-    features::HoverRequest bHoverReq{docUri,      massiveCode, &nodeIndex,
-                                     symbolTable, bScopeIndex, lsp::Position{fnRow, fnCol}};
-    HighResTimer bHoverTimer;
-    auto bHoverRes = features::GetHover(bHoverReq);
-    const double bHoverMs = bHoverTimer.ElapsedMs();
+    TEST_CASE("Benchmark - Scenario C: Large Multi-File Project with Massive #include DAG" * doctest::skip(true))
+    {
+        BenchmarkSandbox sandbox;
+        std::mt19937_64 rng(777);
+        constexpr size_t kFileCount = 35;
+        const auto files = CreateIncludeProject(sandbox, kFileCount, rng);
+        REQUIRE(files.size() == kFileCount);
 
-    MESSAGE("Scenario B (Massive Script: " << massiveCode.size() << " bytes, " << actualLines << " lines):");
-    MESSAGE("  - AST Parse: " << parseMs << " ms");
-    MESSAGE("  - NodeIndex::Build: " << indexMs << " ms");
-    MESSAGE("  - CollectScopesFromTree: " << scopeMs << " ms");
-    MESSAGE("  - CollectSymbolsWithTree: " << symCollectMs << " ms");
-    MESSAGE("  - SemanticAnalyzer::Analyze: " << semMs << " ms");
-    MESSAGE("  - SemanticTokens: " << tokMs << " ms (Token count: " << tokens.data.size() / 5 << ")");
-    MESSAGE("  - 10,000 FindInnermostScope queries: " << scopeLookupMs << " ms");
-    MESSAGE("  - GetHover (Compute): " << bHoverMs << " ms");
+        WorkspaceIncludeGraph graph;
+        HighResTimer scanTimer;
+        graph.BuildFromFiles(files, {sandbox.rootDir.string()}, {sandbox.rootDir.string()});
+        const double scanMs = scanTimer.ElapsedMs();
 
-    CHECK(foundScope != nullptr);
-    CHECK(bHoverRes.has_value());
+        CHECK(graph.FileCount() == kFileCount);
 
-    ts_tree_delete(tree);
-}
+        // Invalidation traversal
+        HighResTimer invalidationTimer;
+        const auto affected = graph.GetReverseDependenciesTopological(files.front());
+        const double invalidationMs = invalidationTimer.ElapsedMs();
 
-TEST_CASE("Benchmark - Scenario C: Large Multi-File Project with Massive #include DAG" * doctest::skip(true))
-{
-    BenchmarkSandbox sandbox;
-    std::mt19937_64 rng(777);
-    constexpr size_t kFileCount = 35;
-    const auto files = CreateIncludeProject(sandbox, kFileCount, rng);
-    REQUIRE(files.size() == kFileCount);
+        // Cross-#include GetHover
+        const auto sharedPath = sandbox.rootDir / "CoreShared.as";
+        const std::string sharedContent = ReadEntireFile(sharedPath);
+        std::string testScript = "#include \"CoreShared.as\"\nvoid TestHover() { CoreShared cs; cs.Init(); }\n";
+        parser::AngelScriptParser cParser;
+        TSTree* cTree = cParser.Parse(testScript);
+        REQUIRE(cTree != nullptr);
+        TSTree* sharedTree = cParser.Parse(sharedContent);
+        REQUIRE(sharedTree != nullptr);
+        analysis::SymbolTable cTable;
+        analysis::SymbolCollector symbolCollector(nullptr);
+        const std::string sharedUri = utils::PathToUri(IncludeResolver::NormalizePath(sharedPath));
+        symbolCollector.CollectSymbolsWithTree(analysis::SymbolCollectRequest(sharedUri, sharedContent), sharedTree,
+                                               cTable);
+        symbolCollector.CollectSymbolsWithTree(analysis::SymbolCollectRequest("file:///test.as", testScript), cTree,
+                                               cTable);
+        analysis::ScopeIndex cScopeIndex;
+        analysis::NodeIndex cNodeIndex{cTree ? ts_tree_root_node(cTree) : TSNode{}};
+        features::HoverRequest cHoverReq{
+            "file:///test.as", testScript,          &cNodeIndex, cTable,
+            cScopeIndex,       lsp::Position{1, 22} // 'CoreShared' inside TestHover
+        };
+        HighResTimer cHoverTimer;
+        auto cHoverRes = features::GetHover(cHoverReq);
+        const double cHoverMs = cHoverTimer.ElapsedMs();
 
-    WorkspaceIncludeGraph graph;
-    HighResTimer scanTimer;
-    graph.BuildFromFiles(files, {sandbox.rootDir.string()}, {sandbox.rootDir.string()});
-    const double scanMs = scanTimer.ElapsedMs();
+        MESSAGE("Scenario C (DAG with " << kFileCount << " files):");
+        MESSAGE("  - Graph Population: " << scanMs << " ms");
+        MESSAGE("  - Invalidation of Root Node: " << invalidationMs << " ms (Affected: " << affected.size() << ")");
+        MESSAGE("  - Cross-#include GetHover: " << cHoverMs << " ms");
 
-    CHECK(graph.FileCount() == kFileCount);
+        CHECK(affected.size() >= kFileCount - 1);
+        CHECK(cHoverRes.has_value());
 
-    // Invalidation traversal
-    HighResTimer invalidationTimer;
-    const auto affected = graph.GetReverseDependenciesTopological(files.front());
-    const double invalidationMs = invalidationTimer.ElapsedMs();
-
-    // Cross-#include GetHover
-    const auto sharedPath = sandbox.rootDir / "CoreShared.as";
-    const std::string sharedContent = ReadEntireFile(sharedPath);
-    std::string testScript = "#include \"CoreShared.as\"\nvoid TestHover() { CoreShared cs; cs.Init(); }\n";
-    parser::AngelScriptParser cParser;
-    TSTree* cTree = cParser.Parse(testScript);
-    REQUIRE(cTree != nullptr);
-    TSTree* sharedTree = cParser.Parse(sharedContent);
-    REQUIRE(sharedTree != nullptr);
-    analysis::SymbolTable cTable;
-    analysis::SymbolCollector symbolCollector(nullptr);
-    const std::string sharedUri = utils::PathToUri(IncludeResolver::NormalizePath(sharedPath));
-    symbolCollector.CollectSymbolsWithTree(analysis::SymbolCollectRequest(sharedUri, sharedContent), sharedTree,
-                                           cTable);
-    symbolCollector.CollectSymbolsWithTree(analysis::SymbolCollectRequest("file:///test.as", testScript), cTree,
-                                           cTable);
-    analysis::ScopeIndex cScopeIndex;
-    analysis::NodeIndex cNodeIndex{cTree ? ts_tree_root_node(cTree) : TSNode{}};
-    features::HoverRequest cHoverReq{
-        "file:///test.as", testScript,          &cNodeIndex, cTable,
-        cScopeIndex,       lsp::Position{1, 22} // 'CoreShared' inside TestHover
-    };
-    HighResTimer cHoverTimer;
-    auto cHoverRes = features::GetHover(cHoverReq);
-    const double cHoverMs = cHoverTimer.ElapsedMs();
-
-    MESSAGE("Scenario C (DAG with " << kFileCount << " files):");
-    MESSAGE("  - Graph Population: " << scanMs << " ms");
-    MESSAGE("  - Invalidation of Root Node: " << invalidationMs << " ms (Affected: " << affected.size() << ")");
-    MESSAGE("  - Cross-#include GetHover: " << cHoverMs << " ms");
-
-    CHECK(affected.size() >= kFileCount - 1);
-    CHECK(cHoverRes.has_value());
-
-    ts_tree_delete(cTree);
-    ts_tree_delete(sharedTree);
+        ts_tree_delete(cTree);
+        ts_tree_delete(sharedTree);
+    }
 }

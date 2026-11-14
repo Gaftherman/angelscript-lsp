@@ -190,130 +190,133 @@ void RequireAgreement(ParityEnv& env, const std::string& uri)
 }
 } // namespace
 
-TEST_CASE("Rename and references agree on a local variable and its uses")
+TEST_SUITE("oracle/RenameReferencesParity")
 {
-    ParityEnv env;
-    env.AddFile("file:///main.as", "void main()\n"
-                                   "{\n"
-                                   "    int counter = 0;\n"
-                                   "    counter = counter + 1;\n"
-                                   "    Print(counter);\n"
-                                   "}\n"
-                                   "void Print(int v) { }\n");
+    TEST_CASE("RenameReferencesParity - Rename and references agree on a local variable and its uses")
+    {
+        ParityEnv env;
+        env.AddFile("file:///main.as", "void main()\n"
+                                       "{\n"
+                                       "    int counter = 0;\n"
+                                       "    counter = counter + 1;\n"
+                                       "    Print(counter);\n"
+                                       "}\n"
+                                       "void Print(int v) { }\n");
 
-    RequireAgreement(env, "file:///main.as");
-}
+        RequireAgreement(env, "file:///main.as");
+    }
 
-TEST_CASE("Rename and references agree on class members across files")
-{
-    ParityEnv env;
-    env.AddFile("file:///entity.as", "class Entity\n"
+    TEST_CASE("RenameReferencesParity - Rename and references agree on class members across files")
+    {
+        ParityEnv env;
+        env.AddFile("file:///entity.as", "class Entity\n"
+                                         "{\n"
+                                         "    int health;\n"
+                                         "    void Damage(int amount) { health = health - amount; }\n"
+                                         "    void Heal(int amount) { health = health + amount; }\n"
+                                         "}\n");
+        env.AddFile("file:///game.as", "void Update(Entity@ e)\n"
+                                       "{\n"
+                                       "    e.Damage(5);\n"
+                                       "    e.Heal(2);\n"
+                                       "}\n");
+
+        RequireAgreement(env, "file:///entity.as");
+        RequireAgreement(env, "file:///game.as");
+    }
+
+    TEST_CASE("RenameReferencesParity - Rename and references agree through inheritance")
+    {
+        ParityEnv env;
+        env.AddFile("file:///shapes.as", "class Shape\n"
+                                         "{\n"
+                                         "    void Draw() { }\n"
+                                         "}\n"
+                                         "class Circle : Shape\n"
+                                         "{\n"
+                                         "    void Draw() { }\n"
+                                         "}\n"
+                                         "void main()\n"
+                                         "{\n"
+                                         "    Circle c;\n"
+                                         "    c.Draw();\n"
+                                         "}\n");
+
+        RequireAgreement(env, "file:///shapes.as");
+    }
+
+    TEST_CASE("RenameReferencesParity - Rename and references agree on namespaced symbols")
+    {
+        ParityEnv env;
+        env.AddFile("file:///ns.as", "namespace Game\n"
                                      "{\n"
-                                     "    int health;\n"
-                                     "    void Damage(int amount) { health = health - amount; }\n"
-                                     "    void Heal(int amount) { health = health + amount; }\n"
-                                     "}\n");
-    env.AddFile("file:///game.as", "void Update(Entity@ e)\n"
-                                   "{\n"
-                                   "    e.Damage(5);\n"
-                                   "    e.Heal(2);\n"
-                                   "}\n");
-
-    RequireAgreement(env, "file:///entity.as");
-    RequireAgreement(env, "file:///game.as");
-}
-
-TEST_CASE("Rename and references agree through inheritance")
-{
-    ParityEnv env;
-    env.AddFile("file:///shapes.as", "class Shape\n"
-                                     "{\n"
-                                     "    void Draw() { }\n"
-                                     "}\n"
-                                     "class Circle : Shape\n"
-                                     "{\n"
-                                     "    void Draw() { }\n"
+                                     "    int score;\n"
+                                     "    void Reset() { score = 0; }\n"
                                      "}\n"
                                      "void main()\n"
                                      "{\n"
-                                     "    Circle c;\n"
-                                     "    c.Draw();\n"
+                                     "    Game::Reset();\n"
+                                     "    Game::score = 1;\n"
                                      "}\n");
 
-    RequireAgreement(env, "file:///shapes.as");
-}
+        RequireAgreement(env, "file:///ns.as");
+    }
 
-TEST_CASE("Rename and references agree on namespaced symbols")
-{
-    ParityEnv env;
-    env.AddFile("file:///ns.as", "namespace Game\n"
-                                 "{\n"
-                                 "    int score;\n"
-                                 "    void Reset() { score = 0; }\n"
-                                 "}\n"
-                                 "void main()\n"
-                                 "{\n"
-                                 "    Game::Reset();\n"
-                                 "    Game::score = 1;\n"
-                                 "}\n");
+    TEST_CASE("RenameReferencesParity - Rename and references agree on a global function called from several places")
+    {
+        ParityEnv env;
+        env.AddFile("file:///util.as", "int Clamp(int v, int lo, int hi)\n"
+                                       "{\n"
+                                       "    if (v < lo) return lo;\n"
+                                       "    if (v > hi) return hi;\n"
+                                       "    return v;\n"
+                                       "}\n"
+                                       "void main()\n"
+                                       "{\n"
+                                       "    int a = Clamp(1, 0, 2);\n"
+                                       "    int b = Clamp(a, 0, 2);\n"
+                                       "}\n");
 
-    RequireAgreement(env, "file:///ns.as");
-}
+        RequireAgreement(env, "file:///util.as");
+    }
 
-TEST_CASE("Rename and references agree on a global function called from several places")
-{
-    ParityEnv env;
-    env.AddFile("file:///util.as", "int Clamp(int v, int lo, int hi)\n"
-                                   "{\n"
-                                   "    if (v < lo) return lo;\n"
-                                   "    if (v > hi) return hi;\n"
-                                   "    return v;\n"
-                                   "}\n"
-                                   "void main()\n"
-                                   "{\n"
-                                   "    int a = Clamp(1, 0, 2);\n"
-                                   "    int b = Clamp(a, 0, 2);\n"
-                                   "}\n");
+    TEST_CASE("RenameReferencesParity - Rename and references agree where a local shadows a member")
+    {
+        // The case most likely to drift, because it is the one where the two files' scope walks have to
+        // reach the same answer about which declaration the cursor is on.
+        ParityEnv env;
+        env.AddFile("file:///shadow.as", "class Holder\n"
+                                         "{\n"
+                                         "    int value;\n"
+                                         "    void Use()\n"
+                                         "    {\n"
+                                         "        int value = 3;\n"
+                                         "        value = value + 1;\n"
+                                         "    }\n"
+                                         "    void Other() { value = 9; }\n"
+                                         "}\n");
 
-    RequireAgreement(env, "file:///util.as");
-}
+        RequireAgreement(env, "file:///shadow.as");
+    }
 
-TEST_CASE("Rename and references agree where a local shadows a member")
-{
-    // The case most likely to drift, because it is the one where the two files' scope walks have to
-    // reach the same answer about which declaration the cursor is on.
-    ParityEnv env;
-    env.AddFile("file:///shadow.as", "class Holder\n"
-                                     "{\n"
-                                     "    int value;\n"
-                                     "    void Use()\n"
-                                     "    {\n"
-                                     "        int value = 3;\n"
-                                     "        value = value + 1;\n"
-                                     "    }\n"
-                                     "    void Other() { value = 9; }\n"
-                                     "}\n");
+    TEST_CASE("RenameReferencesParity - Rename and references agree on randomized identifiers across multiple scopes")
+    {
+        std::mt19937_64 rng(0x1337BEEF);
+        const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Compute");
+        const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "accum");
 
-    RequireAgreement(env, "file:///shadow.as");
-}
-
-TEST_CASE("Rename and references agree on randomized identifiers across multiple scopes")
-{
-    std::mt19937_64 rng(0x1337BEEF);
-    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Compute");
-    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "accum");
-
-    ParityEnv env;
-    std::string code = "int " + fnName + "(int " + varName +
-                       ")\n"
-                       "{\n"
-                       "    " +
-                       varName + " = " + varName +
-                       " * 2;\n"
-                       "    return " +
-                       varName +
-                       ";\n"
-                       "}\n";
-    env.AddFile("file:///fuzz_parity.as", code);
-    RequireAgreement(env, "file:///fuzz_parity.as");
+        ParityEnv env;
+        std::string code = "int " + fnName + "(int " + varName +
+                           ")\n"
+                           "{\n"
+                           "    " +
+                           varName + " = " + varName +
+                           " * 2;\n"
+                           "    return " +
+                           varName +
+                           ";\n"
+                           "}\n";
+        env.AddFile("file:///fuzz_parity.as", code);
+        RequireAgreement(env, "file:///fuzz_parity.as");
+    }
 }

@@ -64,47 +64,50 @@ std::vector<Diagnostic> AnalyzeStatementSnippet(const std::string& sourceCode)
 }
 } // namespace
 
-TEST_CASE("Statement - Standalone null statement is accepted with 0 errors (asharness parity)")
+TEST_SUITE("analysis/resolution/Statement")
 {
-    // Ground truth: asharness.exe accepts `void main() { null; }` with status ACEPTADO and 0 messages.
-    const std::string code = "void main() {\n"
-                             "    null;\n"
-                             "}\n";
-
-    auto diagnostics = AnalyzeStatementSnippet(code);
-    size_t errorCount = 0;
-    for (const auto& d : diagnostics)
+    TEST_CASE("Statement - Standalone null statement is accepted with 0 errors (asharness parity)")
     {
-        if (d.severity == DiagnosticSeverity::Error)
+        // Ground truth: asharness.exe accepts `void main() { null; }` with status ACEPTADO and 0 messages.
+        const std::string code = "void main() {\n"
+                                 "    null;\n"
+                                 "}\n";
+
+        auto diagnostics = AnalyzeStatementSnippet(code);
+        size_t errorCount = 0;
+        for (const auto& d : diagnostics)
         {
-            ++errorCount;
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                ++errorCount;
+            }
         }
+
+        CHECK(errorCount == 0);
+        CHECK(diagnostics.empty());
     }
 
-    CHECK(errorCount == 0);
-    CHECK(diagnostics.empty());
-}
-
-TEST_CASE("Statement - Standalone literal statements are accepted with 0 errors (asharness parity)")
-{
-    // Ground truth: asharness.exe accepts integer, string, boolean literals as statements.
-    const std::string code = "void main() {\n"
-                             "    123;\n"
-                             "    \"string\";\n"
-                             "    true;\n"
-                             "    3.14f;\n"
-                             "}\n";
-
-    auto diagnostics = AnalyzeStatementSnippet(code);
-    size_t errorCount = 0;
-    for (const auto& d : diagnostics)
+    TEST_CASE("Statement - Standalone literal statements are accepted with 0 errors (asharness parity)")
     {
-        if (d.severity == DiagnosticSeverity::Error)
-        {
-            ++errorCount;
-        }
-    }
+        // Ground truth: asharness.exe accepts integer, string, boolean literals as statements.
+        const std::string code = "void main() {\n"
+                                 "    123;\n"
+                                 "    \"string\";\n"
+                                 "    true;\n"
+                                 "    3.14f;\n"
+                                 "}\n";
 
-    CHECK(errorCount == 0);
-    CHECK(diagnostics.empty());
+        auto diagnostics = AnalyzeStatementSnippet(code);
+        size_t errorCount = 0;
+        for (const auto& d : diagnostics)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                ++errorCount;
+            }
+        }
+
+        CHECK(errorCount == 0);
+        CHECK(diagnostics.empty());
+    }
 }

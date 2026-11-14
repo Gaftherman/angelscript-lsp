@@ -297,203 +297,207 @@ void ExecuteAnalysisReader(AnalysisReaderContext ctx)
 
 } // namespace
 
-TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading Invariant")
+TEST_SUITE("harness/ConcurrencySafetyHarness")
 {
-    DocumentStore store;
-    std::vector<std::string> uris;
-    uris.reserve(3);
-    parser::AngelScriptParser initParser;
-
-    for (int i = 0; i < 3; ++i)
+    TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading Invariant")
     {
-        std::string uri = "file:///stress_" + test::GenerateRandomSymbolName("doc") + ".as";
-        std::string initCode = "int g_val = " + std::to_string(i) + ";\n";
-        TSTree* initTree = initParser.Parse(initCode);
-        store.OpenDocument(uri, initCode, 0, parser::MakeTreePtr(initTree));
-        uris.push_back(std::move(uri));
-    }
+        DocumentStore store;
+        std::vector<std::string> uris;
+        uris.reserve(3);
+        parser::AngelScriptParser initParser;
 
-    constexpr int k_numWriters = 2;
-    constexpr int k_numReaders = 4;
-    constexpr uint32_t k_targetWrites = 1000;
-    constexpr uint32_t k_targetReads = 200;
-
-    std::latch startLatch(k_numWriters + k_numReaders);
-    std::latch readersActiveLatch(k_numReaders);
-    std::atomic<bool> stopFlag{false};
-    std::atomic<uint32_t> totalWrites{0};
-    std::atomic<uint32_t> successReads{0};
-    std::atomic<uint32_t> failedReads{0};
-
-    std::vector<std::thread> readers;
-    readers.reserve(k_numReaders);
-    for (int i = 0; i < k_numReaders; ++i)
-    {
-        readers.emplace_back(ExecuteReaderStress,
-                             ReaderStressContext{store, uris, startLatch, readersActiveLatch, stopFlag, successReads,
-                                                 failedReads, k_targetReads});
-    }
-
-    std::vector<std::thread> writers;
-    writers.reserve(k_numWriters);
-    for (int i = 0; i < k_numWriters; ++i)
-    {
-        writers.emplace_back(ExecuteWriterStress, WriterStressContext{store, uris, startLatch, readersActiveLatch,
-                                                                      stopFlag, totalWrites, k_targetWrites});
-    }
-
-    for (auto& w : writers)
-    {
-        if (w.joinable())
-            w.join();
-    }
-    stopFlag.store(true, std::memory_order_release);
-
-    for (auto& r : readers)
-    {
-        if (r.joinable())
-            r.join();
-    }
-
-    CHECK(totalWrites.load() >= k_targetWrites);
-    CHECK(successReads.load() >= k_targetReads);
-    CHECK(failedReads.load() == 0);
-}
-
-TEST_CASE("ConcurrencySafety - Secondary Thread Exception Containment Invariant")
-{
-    std::promise<void> thrownPromise;
-    auto thrownFuture = thrownPromise.get_future();
-    std::promise<void> safePromise;
-    auto safeFuture = safePromise.get_future();
-
-    std::atomic<bool> thrownSignaled{false};
-    std::atomic<bool> safeSignaled{false};
-
-    const std::string throwUri = "file:///trigger_throw_" + test::GenerateRandomSymbolName() + ".as";
-    const std::string safeUri = "file:///safe_doc_" + test::GenerateRandomSymbolName() + ".as";
-
-    AnalysisScheduler scheduler(
-        [&](AnalyzeRequest req)
+        for (int i = 0; i < 3; ++i)
         {
-            if (req.uriStr == throwUri)
+            std::string uri = "file:///stress_" + test::GenerateRandomSymbolName("doc") + ".as";
+            std::string initCode = "int g_val = " + std::to_string(i) + ";\n";
+            TSTree* initTree = initParser.Parse(initCode);
+            store.OpenDocument(uri, initCode, 0, parser::MakeTreePtr(initTree));
+            uris.push_back(std::move(uri));
+        }
+
+        constexpr int k_numWriters = 2;
+        constexpr int k_numReaders = 4;
+        constexpr uint32_t k_targetWrites = 1000;
+        constexpr uint32_t k_targetReads = 200;
+
+        std::latch startLatch(k_numWriters + k_numReaders);
+        std::latch readersActiveLatch(k_numReaders);
+        std::atomic<bool> stopFlag{false};
+        std::atomic<uint32_t> totalWrites{0};
+        std::atomic<uint32_t> successReads{0};
+        std::atomic<uint32_t> failedReads{0};
+
+        std::vector<std::thread> readers;
+        readers.reserve(k_numReaders);
+        for (int i = 0; i < k_numReaders; ++i)
+        {
+            readers.emplace_back(ExecuteReaderStress,
+                                 ReaderStressContext{store, uris, startLatch, readersActiveLatch, stopFlag,
+                                                     successReads, failedReads, k_targetReads});
+        }
+
+        std::vector<std::thread> writers;
+        writers.reserve(k_numWriters);
+        for (int i = 0; i < k_numWriters; ++i)
+        {
+            writers.emplace_back(ExecuteWriterStress, WriterStressContext{store, uris, startLatch, readersActiveLatch,
+                                                                          stopFlag, totalWrites, k_targetWrites});
+        }
+
+        for (auto& w : writers)
+        {
+            if (w.joinable())
+                w.join();
+        }
+        stopFlag.store(true, std::memory_order_release);
+
+        for (auto& r : readers)
+        {
+            if (r.joinable())
+                r.join();
+        }
+
+        CHECK(totalWrites.load() >= k_targetWrites);
+        CHECK(successReads.load() >= k_targetReads);
+        CHECK(failedReads.load() == 0);
+    }
+
+    TEST_CASE("ConcurrencySafety - Secondary Thread Exception Containment Invariant")
+    {
+        std::promise<void> thrownPromise;
+        auto thrownFuture = thrownPromise.get_future();
+        std::promise<void> safePromise;
+        auto safeFuture = safePromise.get_future();
+
+        std::atomic<bool> thrownSignaled{false};
+        std::atomic<bool> safeSignaled{false};
+
+        const std::string throwUri = "file:///trigger_throw_" + test::GenerateRandomSymbolName() + ".as";
+        const std::string safeUri = "file:///safe_doc_" + test::GenerateRandomSymbolName() + ".as";
+
+        AnalysisScheduler scheduler(
+            [&](AnalyzeRequest req)
             {
-                if (!thrownSignaled.exchange(true))
+                if (req.uriStr == throwUri)
                 {
-                    thrownPromise.set_value();
+                    if (!thrownSignaled.exchange(true))
+                    {
+                        thrownPromise.set_value();
+                    }
+                    throw std::runtime_error("Simulated catastrophic analysis failure");
                 }
-                throw std::runtime_error("Simulated catastrophic analysis failure");
-            }
-            if (req.uriStr == safeUri)
-            {
-                if (!safeSignaled.exchange(true))
+                if (req.uriStr == safeUri)
                 {
-                    safePromise.set_value();
+                    if (!safeSignaled.exchange(true))
+                    {
+                        safePromise.set_value();
+                    }
                 }
-            }
-        },
-        std::chrono::milliseconds(0));
+            },
+            std::chrono::milliseconds(0));
 
-    scheduler.ScheduleImmediate(throwUri, "int a = 1;", true, parser::MakeTreePtr(nullptr));
-    thrownFuture.get();
-    CHECK(thrownSignaled.load());
+        scheduler.ScheduleImmediate(throwUri, "int a = 1;", true, parser::MakeTreePtr(nullptr));
+        thrownFuture.get();
+        CHECK(thrownSignaled.load());
 
-    scheduler.ScheduleImmediate(safeUri, "int b = 2;", true, parser::MakeTreePtr(nullptr));
-    safeFuture.get();
-    CHECK(safeSignaled.load());
+        scheduler.ScheduleImmediate(safeUri, "int b = 2;", true, parser::MakeTreePtr(nullptr));
+        safeFuture.get();
+        CHECK(safeSignaled.load());
 
-    scheduler.Stop();
-}
-
-TEST_CASE("ConcurrencySafety - Tree-Sitter Error Node and Null Tolerance Invariant")
-{
-    SUBCASE("Unterminated string literal")
-    {
-        AssertMalformedSnippetTolerance("string str = \"unterminated string literal;\nint next = 42;", 0, 16);
+        scheduler.Stop();
     }
 
-    SUBCASE("Dangling member access dot")
+    TEST_CASE("ConcurrencySafety - Tree-Sitter Error Node and Null Tolerance Invariant")
     {
-        AssertMalformedSnippetTolerance("void Main() { obj.; }", 0, 18);
+        SUBCASE("Unterminated string literal")
+        {
+            AssertMalformedSnippetTolerance("string str = \"unterminated string literal;\nint next = 42;", 0, 16);
+        }
+
+        SUBCASE("Dangling member access dot")
+        {
+            AssertMalformedSnippetTolerance("void Main() { obj.; }", 0, 18);
+        }
+
+        SUBCASE("Severely corrupted syntax tokens")
+        {
+            AssertMalformedSnippetTolerance("class { int %%% $$$ @@@ void = ; }", 0, 14);
+        }
+
+        SUBCASE("Completely empty document")
+        {
+            AssertMalformedSnippetTolerance("", 0, 0);
+        }
     }
 
-    SUBCASE("Severely corrupted syntax tokens")
+    TEST_CASE("ConcurrencySafety - Concurrent Document Analysis and Predefined Symbol Lookups")
     {
-        AssertMalformedSnippetTolerance("class { int %%% $$$ @@@ void = ; }", 0, 14);
+        analysis::SymbolTable symTable;
+        symTable.Reserve(1024);
+        PredefinedStubManager stubManager;
+        DocumentStore docStore;
+
+        const std::string stubUri = "predefined/sven.as.predefined";
+        stubManager.RegisterStub(stubUri, stubUri,
+                                 "void Print(const string &in); namespace Math { float Cos(float); }");
+
+        std::vector<std::string> predefinedNames = {"Print", "Vector3", "Math", "Cos", "Sin"};
+        for (const auto& name : predefinedNames)
+        {
+            analysis::Symbol s;
+            s.type = analysis::SymbolType::Function;
+            s.name = name;
+            s.containerName = (name == "Cos" || name == "Sin") ? "Math" : "";
+            s.qualifiedName = s.containerName.empty() ? name : s.containerName + "::" + name;
+            s.fileUri = stubUri;
+            s.signature = analysis::FunctionSignature{.returnType = "void"};
+            symTable.AddSymbol(s);
+        }
+
+        constexpr int k_numWriters = 4;
+        constexpr int k_numReaders = 4;
+        constexpr uint32_t k_targetWrites = 200;
+        constexpr uint32_t k_targetReads = 500;
+
+        std::latch startLatch(k_numWriters + k_numReaders);
+        std::atomic<bool> stopFlag{false};
+        std::atomic<uint32_t> totalWrites{0};
+        std::atomic<uint32_t> totalReads{0};
+
+        std::vector<std::thread> readers;
+        readers.reserve(k_numReaders);
+        for (int i = 0; i < k_numReaders; ++i)
+        {
+            readers.emplace_back(ExecuteAnalysisReader,
+                                 AnalysisReaderContext{symTable, stubManager, predefinedNames, startLatch, stopFlag,
+                                                       totalReads, k_targetReads});
+        }
+
+        std::vector<std::thread> writers;
+        writers.reserve(k_numWriters);
+        for (int i = 0; i < k_numWriters; ++i)
+        {
+            writers.emplace_back(ExecuteAnalysisWriter, AnalysisWriterContext{symTable, docStore, startLatch, stopFlag,
+                                                                              totalWrites, k_targetWrites});
+        }
+
+        for (auto& w : writers)
+        {
+            if (w.joinable())
+                w.join();
+        }
+        stopFlag.store(true, std::memory_order_release);
+
+        for (auto& r : readers)
+        {
+            if (r.joinable())
+                r.join();
+        }
+
+        CHECK(totalWrites.load() >= k_targetWrites);
+        CHECK(totalReads.load() >= k_targetReads);
+        CHECK(symTable.HasSymbol("Print"));
+        CHECK(symTable.HasSymbol("Math::Cos"));
+        CHECK(symTable.HasDocumentSymbols(stubUri));
     }
-
-    SUBCASE("Completely empty document")
-    {
-        AssertMalformedSnippetTolerance("", 0, 0);
-    }
-}
-
-TEST_CASE("ConcurrencySafety - Concurrent Document Analysis and Predefined Symbol Lookups")
-{
-    analysis::SymbolTable symTable;
-    symTable.Reserve(1024);
-    PredefinedStubManager stubManager;
-    DocumentStore docStore;
-
-    const std::string stubUri = "predefined/sven.as.predefined";
-    stubManager.RegisterStub(stubUri, stubUri, "void Print(const string &in); namespace Math { float Cos(float); }");
-
-    std::vector<std::string> predefinedNames = {"Print", "Vector3", "Math", "Cos", "Sin"};
-    for (const auto& name : predefinedNames)
-    {
-        analysis::Symbol s;
-        s.type = analysis::SymbolType::Function;
-        s.name = name;
-        s.containerName = (name == "Cos" || name == "Sin") ? "Math" : "";
-        s.qualifiedName = s.containerName.empty() ? name : s.containerName + "::" + name;
-        s.fileUri = stubUri;
-        s.signature = analysis::FunctionSignature{.returnType = "void"};
-        symTable.AddSymbol(s);
-    }
-
-    constexpr int k_numWriters = 4;
-    constexpr int k_numReaders = 4;
-    constexpr uint32_t k_targetWrites = 200;
-    constexpr uint32_t k_targetReads = 500;
-
-    std::latch startLatch(k_numWriters + k_numReaders);
-    std::atomic<bool> stopFlag{false};
-    std::atomic<uint32_t> totalWrites{0};
-    std::atomic<uint32_t> totalReads{0};
-
-    std::vector<std::thread> readers;
-    readers.reserve(k_numReaders);
-    for (int i = 0; i < k_numReaders; ++i)
-    {
-        readers.emplace_back(ExecuteAnalysisReader,
-                             AnalysisReaderContext{symTable, stubManager, predefinedNames, startLatch, stopFlag,
-                                                   totalReads, k_targetReads});
-    }
-
-    std::vector<std::thread> writers;
-    writers.reserve(k_numWriters);
-    for (int i = 0; i < k_numWriters; ++i)
-    {
-        writers.emplace_back(ExecuteAnalysisWriter, AnalysisWriterContext{symTable, docStore, startLatch, stopFlag,
-                                                                          totalWrites, k_targetWrites});
-    }
-
-    for (auto& w : writers)
-    {
-        if (w.joinable())
-            w.join();
-    }
-    stopFlag.store(true, std::memory_order_release);
-
-    for (auto& r : readers)
-    {
-        if (r.joinable())
-            r.join();
-    }
-
-    CHECK(totalWrites.load() >= k_targetWrites);
-    CHECK(totalReads.load() >= k_targetReads);
-    CHECK(symTable.HasSymbol("Print"));
-    CHECK(symTable.HasSymbol("Math::Cos"));
-    CHECK(symTable.HasDocumentSymbols(stubUri));
 }

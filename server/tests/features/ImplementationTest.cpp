@@ -60,245 +60,248 @@ bool HasLine(const std::optional<std::vector<lsp::Location>>& locations, uint32_
 }
 } // namespace
 
-TEST_CASE("Implementation - An interface answers with the classes that implement it")
+TEST_SUITE("features/Implementation")
 {
-    //  0: interface IThinker
-    //  1: {
-    //  2:     void Think();
-    //  3: }
-    //  4: class Robot : IThinker
-    //  5: {
-    //  6:     void Think() { }
-    //  7: }
-    //  8: class Human : IThinker
-    Fixture fixture("interface IThinker\n"
-                    "{\n"
-                    "    void Think();\n"
-                    "}\n"
-                    "class Robot : IThinker\n"
-                    "{\n"
-                    "    void Think() { }\n"
-                    "}\n"
-                    "class Human : IThinker\n"
-                    "{\n"
-                    "    void Think() { }\n"
-                    "}\n");
+    TEST_CASE("Implementation - An interface answers with the classes that implement it")
+    {
+        //  0: interface IThinker
+        //  1: {
+        //  2:     void Think();
+        //  3: }
+        //  4: class Robot : IThinker
+        //  5: {
+        //  6:     void Think() { }
+        //  7: }
+        //  8: class Human : IThinker
+        Fixture fixture("interface IThinker\n"
+                        "{\n"
+                        "    void Think();\n"
+                        "}\n"
+                        "class Robot : IThinker\n"
+                        "{\n"
+                        "    void Think() { }\n"
+                        "}\n"
+                        "class Human : IThinker\n"
+                        "{\n"
+                        "    void Think() { }\n"
+                        "}\n");
 
-    const auto locations = fixture.At(0, 12);
-    REQUIRE(locations.has_value());
-    CHECK(locations->size() == 2);
-    CHECK(HasLine(locations, 4));
-    CHECK(HasLine(locations, 8));
-}
+        const auto locations = fixture.At(0, 12);
+        REQUIRE(locations.has_value());
+        CHECK(locations->size() == 2);
+        CHECK(HasLine(locations, 4));
+        CHECK(HasLine(locations, 8));
+    }
 
-TEST_CASE("Implementation - An interface method answers with the methods that implement it")
-{
-    Fixture fixture("interface IThinker\n"
-                    "{\n"
-                    "    void Think();\n"
-                    "}\n"
-                    "class Robot : IThinker\n"
-                    "{\n"
-                    "    void Think() { }\n"
-                    "}\n");
+    TEST_CASE("Implementation - An interface method answers with the methods that implement it")
+    {
+        Fixture fixture("interface IThinker\n"
+                        "{\n"
+                        "    void Think();\n"
+                        "}\n"
+                        "class Robot : IThinker\n"
+                        "{\n"
+                        "    void Think() { }\n"
+                        "}\n");
 
-    const auto locations = fixture.At(2, 10);
-    REQUIRE(locations.has_value());
-    CHECK(HasLine(locations, 6));
-}
+        const auto locations = fixture.At(2, 10);
+        REQUIRE(locations.has_value());
+        CHECK(HasLine(locations, 6));
+    }
 
-TEST_CASE("Implementation - A base class answers with what derives from it, transitively")
-{
-    //  0: class Base { }
-    //  1: class Middle : Base { }
-    //  2: class Leaf : Middle { }
-    Fixture fixture("class Base { }\n"
-                    "class Middle : Base { }\n"
-                    "class Leaf : Middle { }\n");
+    TEST_CASE("Implementation - A base class answers with what derives from it, transitively")
+    {
+        //  0: class Base { }
+        //  1: class Middle : Base { }
+        //  2: class Leaf : Middle { }
+        Fixture fixture("class Base { }\n"
+                        "class Middle : Base { }\n"
+                        "class Leaf : Middle { }\n");
 
-    const auto locations = fixture.At(0, 8);
-    REQUIRE(locations.has_value());
-    CHECK(locations->size() == 2);
-    CHECK(HasLine(locations, 1));
-    CHECK(HasLine(locations, 2));
-}
+        const auto locations = fixture.At(0, 8);
+        REQUIRE(locations.has_value());
+        CHECK(locations->size() == 2);
+        CHECK(HasLine(locations, 1));
+        CHECK(HasLine(locations, 2));
+    }
 
-TEST_CASE("Implementation - An overridden method answers with its overrides")
-{
-    //  0: class Base
-    //  1: {
-    //  2:     void Think() { }
-    //  3: }
-    //  4: class Derived : Base
-    //  5: {
-    //  6:     void Think() override { }
-    //  7: }
-    Fixture fixture("class Base\n"
-                    "{\n"
-                    "    void Think() { }\n"
-                    "}\n"
-                    "class Derived : Base\n"
-                    "{\n"
-                    "    void Think() override { }\n"
-                    "}\n");
+    TEST_CASE("Implementation - An overridden method answers with its overrides")
+    {
+        //  0: class Base
+        //  1: {
+        //  2:     void Think() { }
+        //  3: }
+        //  4: class Derived : Base
+        //  5: {
+        //  6:     void Think() override { }
+        //  7: }
+        Fixture fixture("class Base\n"
+                        "{\n"
+                        "    void Think() { }\n"
+                        "}\n"
+                        "class Derived : Base\n"
+                        "{\n"
+                        "    void Think() override { }\n"
+                        "}\n");
 
-    const auto locations = fixture.At(2, 10);
-    REQUIRE(locations.has_value());
-    CHECK(HasLine(locations, 6));
-}
+        const auto locations = fixture.At(2, 10);
+        REQUIRE(locations.has_value());
+        CHECK(HasLine(locations, 6));
+    }
 
-TEST_CASE("Implementation - A type nothing derives from answers with definition fallback")
-{
-    Fixture fixture("class Lonely { void Think() { } }\n");
+    TEST_CASE("Implementation - A type nothing derives from answers with definition fallback")
+    {
+        Fixture fixture("class Lonely { void Think() { } }\n");
 
-    const auto locations = fixture.At(0, 8);
-    REQUIRE(locations.has_value());
-    CHECK(HasLine(locations, 0));
-}
+        const auto locations = fixture.At(0, 8);
+        REQUIRE(locations.has_value());
+        CHECK(HasLine(locations, 0));
+    }
 
-TEST_CASE("Implementation - A name with no implementations to speak of answers with nothing")
-{
-    Fixture fixture("int g_count = 0;\n"
-                    "void Spawn()\n"
-                    "{\n"
-                    "    int local = 0;\n"
-                    "}\n");
+    TEST_CASE("Implementation - A name with no implementations to speak of answers with nothing")
+    {
+        Fixture fixture("int g_count = 0;\n"
+                        "void Spawn()\n"
+                        "{\n"
+                        "    int local = 0;\n"
+                        "}\n");
 
-    CHECK_FALSE(fixture.At(0, 5).has_value());
-    const auto locations = fixture.At(1, 6);
-    REQUIRE(locations.has_value());
-    CHECK(HasLine(locations, 1));
-    CHECK_FALSE(fixture.At(3, 9).has_value());
-}
+        CHECK_FALSE(fixture.At(0, 5).has_value());
+        const auto locations = fixture.At(1, 6);
+        REQUIRE(locations.has_value());
+        CHECK(HasLine(locations, 1));
+        CHECK_FALSE(fixture.At(3, 9).has_value());
+    }
 
-TEST_CASE("Implementation - Method with no overrides falls back to definition")
-{
-    Fixture fixture("class Knuckles\n"
-                    "{\n"
-                    "    bool Deploy() { return true; }\n"
-                    "}\n");
+    TEST_CASE("Implementation - Method with no overrides falls back to definition")
+    {
+        Fixture fixture("class Knuckles\n"
+                        "{\n"
+                        "    bool Deploy() { return true; }\n"
+                        "}\n");
 
-    const auto locations = fixture.At(2, 10);
-    REQUIRE(locations.has_value());
-    CHECK(HasLine(locations, 2));
-}
+        const auto locations = fixture.At(2, 10);
+        REQUIRE(locations.has_value());
+        CHECK(HasLine(locations, 2));
+    }
 
-TEST_CASE("Implementation - A cursor that is not on an identifier answers with nothing")
-{
-    Fixture fixture("class Base { }\nclass Derived : Base { }\n");
+    TEST_CASE("Implementation - A cursor that is not on an identifier answers with nothing")
+    {
+        Fixture fixture("class Base { }\nclass Derived : Base { }\n");
 
-    CHECK_FALSE(fixture.At(0, 0).has_value());
-}
+        CHECK_FALSE(fixture.At(0, 0).has_value());
+    }
 
-TEST_CASE("Implementation - An inherited interface is followed too")
-{
-    //  0: interface IBase { void Think(); }
-    //  1: interface IMiddle : IBase { }
-    //  2: class Leaf : IMiddle { void Think() { } }
-    Fixture fixture("interface IBase { void Think(); }\n"
-                    "interface IMiddle : IBase { }\n"
-                    "class Leaf : IMiddle { void Think() { } }\n");
+    TEST_CASE("Implementation - An inherited interface is followed too")
+    {
+        //  0: interface IBase { void Think(); }
+        //  1: interface IMiddle : IBase { }
+        //  2: class Leaf : IMiddle { void Think() { } }
+        Fixture fixture("interface IBase { void Think(); }\n"
+                        "interface IMiddle : IBase { }\n"
+                        "class Leaf : IMiddle { void Think() { } }\n");
 
-    const auto locations = fixture.At(0, 12);
-    REQUIRE(locations.has_value());
-    CHECK(HasLine(locations, 1));
-    CHECK(HasLine(locations, 2));
-}
+        const auto locations = fixture.At(0, 12);
+        REQUIRE(locations.has_value());
+        CHECK(HasLine(locations, 1));
+        CHECK(HasLine(locations, 2));
+    }
 
-TEST_CASE("Implementation - A cycle in the declared bases does not hang the request")
-{
-    // The class rules report circular inheritance; they do not remove it, and a request arriving
-    // while the user is mid-edit has to survive whatever is on screen.
-    Fixture fixture("class A : B { }\n"
-                    "class B : A { }\n");
+    TEST_CASE("Implementation - A cycle in the declared bases does not hang the request")
+    {
+        // The class rules report circular inheritance; they do not remove it, and a request arriving
+        // while the user is mid-edit has to survive whatever is on screen.
+        Fixture fixture("class A : B { }\n"
+                        "class B : A { }\n");
 
-    const auto locations = fixture.At(0, 6);
-    CHECK(locations.has_value());
-}
+        const auto locations = fixture.At(0, 6);
+        CHECK(locations.has_value());
+    }
 
-TEST_CASE("Implementation - Mixin implementation fallback and interface implementation via mixin")
-{
-    Fixture fixture("interface IWalkable\n"
-                    "{\n"
-                    "    void Walk();\n"
-                    "}\n"
-                    "mixin class MWalk\n"
-                    "{\n"
-                    "    void Walk() { }\n"
-                    "}\n"
-                    "class Human : IWalkable, MWalk\n"
-                    "{\n"
-                    "}\n");
+    TEST_CASE("Implementation - Mixin implementation fallback and interface implementation via mixin")
+    {
+        Fixture fixture("interface IWalkable\n"
+                        "{\n"
+                        "    void Walk();\n"
+                        "}\n"
+                        "mixin class MWalk\n"
+                        "{\n"
+                        "    void Walk() { }\n"
+                        "}\n"
+                        "class Human : IWalkable, MWalk\n"
+                        "{\n"
+                        "}\n");
 
-    // Query on IWalkable::Walk at line 2, col 9
-    const auto locs = fixture.At(2, 9);
-    REQUIRE(locs.has_value());
-    CHECK(HasLine(locs, 6));
+        // Query on IWalkable::Walk at line 2, col 9
+        const auto locs = fixture.At(2, 9);
+        REQUIRE(locs.has_value());
+        CHECK(HasLine(locs, 6));
 
-    // Query on MWalk::Walk fallback at line 6, col 9
-    const auto mixinLocs = fixture.At(6, 9);
-    REQUIRE(mixinLocs.has_value());
-    CHECK(HasLine(mixinLocs, 6));
-}
+        // Query on MWalk::Walk fallback at line 6, col 9
+        const auto mixinLocs = fixture.At(6, 9);
+        REQUIRE(mixinLocs.has_value());
+        CHECK(HasLine(mixinLocs, 6));
+    }
 
-TEST_CASE("Implementation - Unqualified call in class with included mixin falls back to mixin definition")
-{
-    Fixture fixture("mixin class PlayerWeaponCommon\n"
-                    "{\n"
-                    "    void CommonAddToPlayer() { }\n"
-                    "}\n"
-                    "class WeaponPython : PlayerWeaponCommon\n"
-                    "{\n"
-                    "    void Deploy()\n"
-                    "    {\n"
-                    "        CommonAddToPlayer();\n"
-                    "    }\n"
-                    "}\n");
+    TEST_CASE("Implementation - Unqualified call in class with included mixin falls back to mixin definition")
+    {
+        Fixture fixture("mixin class PlayerWeaponCommon\n"
+                        "{\n"
+                        "    void CommonAddToPlayer() { }\n"
+                        "}\n"
+                        "class WeaponPython : PlayerWeaponCommon\n"
+                        "{\n"
+                        "    void Deploy()\n"
+                        "    {\n"
+                        "        CommonAddToPlayer();\n"
+                        "    }\n"
+                        "}\n");
 
-    // Query on CommonAddToPlayer(); call at line 8, col 10
-    const auto locs = fixture.At(8, 10);
-    REQUIRE(locs.has_value());
-    CHECK(HasLine(locs, 2));
-}
+        // Query on CommonAddToPlayer(); call at line 8, col 10
+        const auto locs = fixture.At(8, 10);
+        REQUIRE(locs.has_value());
+        CHECK(HasLine(locs, 2));
+    }
 
-TEST_CASE("Implementation - Mixin method declaration queries host classes and overrides")
-{
-    Fixture fixture("mixin class WeaponCommon\n"
-                    "{\n"
-                    "    void AddToPlayer() { }\n"
-                    "}\n"
-                    "class Knife : WeaponCommon\n"
-                    "{\n"
-                    "}\n"
-                    "class Gun : WeaponCommon\n"
-                    "{\n"
-                    "    void AddToPlayer() { }\n"
-                    "}\n");
+    TEST_CASE("Implementation - Mixin method declaration queries host classes and overrides")
+    {
+        Fixture fixture("mixin class WeaponCommon\n"
+                        "{\n"
+                        "    void AddToPlayer() { }\n"
+                        "}\n"
+                        "class Knife : WeaponCommon\n"
+                        "{\n"
+                        "}\n"
+                        "class Gun : WeaponCommon\n"
+                        "{\n"
+                        "    void AddToPlayer() { }\n"
+                        "}\n");
 
-    // Query on AddToPlayer declaration in mixin class (line 2, col 9)
-    const auto locs = fixture.At(2, 9);
-    REQUIRE(locs.has_value());
-    // Knife does not override: Knife class itself is returned (line 4)
-    CHECK(HasLine(locs, 4));
-    // Gun overrides: Gun::AddToPlayer is returned (line 9)
-    CHECK(HasLine(locs, 9));
-}
+        // Query on AddToPlayer declaration in mixin class (line 2, col 9)
+        const auto locs = fixture.At(2, 9);
+        REQUIRE(locs.has_value());
+        // Knife does not override: Knife class itself is returned (line 4)
+        CHECK(HasLine(locs, 4));
+        // Gun overrides: Gun::AddToPlayer is returned (line 9)
+        CHECK(HasLine(locs, 9));
+    }
 
-TEST_CASE("Implementation - An interface inside a namespace answers with its implementations")
-{
-    Fixture fixture("namespace Engine\n"
-                    "{\n"
-                    "    interface IEntity\n"
-                    "    {\n"
-                    "        void Update();\n"
-                    "    }\n"
-                    "    class Bot : IEntity\n"
-                    "    {\n"
-                    "        void Update() { }\n"
-                    "    }\n"
-                    "}\n");
+    TEST_CASE("Implementation - An interface inside a namespace answers with its implementations")
+    {
+        Fixture fixture("namespace Engine\n"
+                        "{\n"
+                        "    interface IEntity\n"
+                        "    {\n"
+                        "        void Update();\n"
+                        "    }\n"
+                        "    class Bot : IEntity\n"
+                        "    {\n"
+                        "        void Update() { }\n"
+                        "    }\n"
+                        "}\n");
 
-    const auto locations = fixture.At(2, 16);
-    REQUIRE(locations.has_value());
-    CHECK(HasLine(locations, 6));
+        const auto locations = fixture.At(2, 16);
+        REQUIRE(locations.has_value());
+        CHECK(HasLine(locations, 6));
+    }
 }

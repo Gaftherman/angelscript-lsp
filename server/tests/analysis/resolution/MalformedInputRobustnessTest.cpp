@@ -126,7 +126,7 @@ ParameterInformation MakeParam(std::string typeName, std::string name, bool isHa
 
 TEST_SUITE("Adversarial_ExpressionTypeResolver")
 {
-    TEST_CASE("Null Node and Empty Source Code Safety")
+    TEST_CASE("MalformedInputRobustness - Null Node and Empty Source Code Safety")
     {
         SymbolTable table;
         TSNode nullNode{};
@@ -134,7 +134,7 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
         CHECK(ResolveExpressionType(IndexedByteRange{0, 0}, {nullptr, table, "int x = 5;"}) == "");
     }
 
-    TEST_CASE("Malformed Incomplete Syntax Does Not Crash")
+    TEST_CASE("MalformedInputRobustness - Malformed Incomplete Syntax Does Not Crash")
     {
         // Trailing operator
         CHECK_NOTHROW(DeduceTypeAtLastExpression("void main() { 10 + ; }"));
@@ -148,14 +148,14 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
         CHECK_NOTHROW(DeduceTypeAtLastExpression("void main() { array<int> a; a[ ; }"));
     }
 
-    TEST_CASE("Unresolvable Types and Missing Symbols Return Gracefully")
+    TEST_CASE("MalformedInputRobustness - Unresolvable Types and Missing Symbols Return Gracefully")
     {
         CHECK(DeduceTypeAtLastExpression("void main() { nonExistentVar + 10; }") == "");
         CHECK(DeduceTypeAtLastExpression("void main() { string s; s.nonExistentMethod(); }") == "");
         CHECK(DeduceTypeAtLastExpression("void main() { a.b.c.d.e(); }") == "");
     }
 
-    TEST_CASE("Template Parsing Edge Cases and Malformed Strings")
+    TEST_CASE("MalformedInputRobustness - Template Parsing Edge Cases and Malformed Strings")
     {
         auto t1 = ParseTemplateType("");
         CHECK(t1.containerName == "");
@@ -191,7 +191,7 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
         CHECK(t7.templateArgs[1] == "map<string, array<float>>");
     }
 
-    TEST_CASE("Deep Cyclic and Self-Referential Method Chains")
+    TEST_CASE("MalformedInputRobustness - Deep Cyclic and Self-Referential Method Chains")
     {
         std::string cyclicCode = "class Node\n"
                                  "{\n"
@@ -223,7 +223,7 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
         CHECK(DeduceTypeAtLastExpression(pingPongCode) == "float");
     }
 
-    TEST_CASE("Deeply Nested Generic Template Indexing")
+    TEST_CASE("MalformedInputRobustness - Deeply Nested Generic Template Indexing")
     {
         std::string code = "void main()\n"
                            "{\n"
@@ -240,7 +240,7 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
         CHECK(DeduceTypeAtLastExpression(dictMapCode) == "string");
     }
 
-    TEST_CASE("CleanBaseType Edge Cases")
+    TEST_CASE("MalformedInputRobustness - CleanBaseType Edge Cases")
     {
         CHECK(CleanBaseType("") == "");
         CHECK(CleanBaseType("   ") == "");
@@ -258,7 +258,7 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
         CHECK(CleanBaseTypeView("CustomArray<int>", "CustomArray") == "int");
     }
 
-    TEST_CASE("Lexical Shadowing In Nested Blocks")
+    TEST_CASE("MalformedInputRobustness - Lexical Shadowing In Nested Blocks")
     {
         std::string shadowCode = "void main()\n"
                                  "{\n"
@@ -271,7 +271,7 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
         CHECK(DeduceTypeAtLastExpression(shadowCode) == "float");
     }
 
-    TEST_CASE("Circular Class Inheritance Does Not Hang")
+    TEST_CASE("MalformedInputRobustness - Circular Class Inheritance Does Not Hang")
     {
         SymbolTable table;
         Symbol symA;
@@ -298,7 +298,7 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
 
 TEST_SUITE("Adversarial_OverloadResolver")
 {
-    TEST_CASE("Argument Count Exceeds Candidate Max Arity")
+    TEST_CASE("MalformedInputRobustness - Argument Count Exceeds Candidate Max Arity")
     {
         SymbolTable table;
         Symbol sym;
@@ -326,7 +326,7 @@ TEST_SUITE("Adversarial_OverloadResolver")
         CHECK(res5.viableCandidates.empty());
     }
 
-    TEST_CASE("Candidate With Empty or Invalid Signatures")
+    TEST_CASE("MalformedInputRobustness - Candidate With Empty or Invalid Signatures")
     {
         SymbolTable table;
         Symbol invalidSym1;
@@ -353,7 +353,7 @@ TEST_SUITE("Adversarial_OverloadResolver")
         CHECK(res.viableCandidates.size() == 1);
     }
 
-    TEST_CASE("Variadic Wildcard Overload Resolution")
+    TEST_CASE("MalformedInputRobustness - Variadic Wildcard Overload Resolution")
     {
         SymbolTable table;
         Symbol symVar;
@@ -378,7 +378,7 @@ TEST_SUITE("Adversarial_OverloadResolver")
         CHECK_FALSE(match4.isAmbiguous);
     }
 
-    TEST_CASE("Tie and Identical Scores Trigger Ambiguity Flag")
+    TEST_CASE("MalformedInputRobustness - Tie and Identical Scores Trigger Ambiguity Flag")
     {
         SymbolTable table;
         Symbol symA;
@@ -405,7 +405,7 @@ TEST_SUITE("Adversarial_OverloadResolver")
         CHECK(res.viableCandidates.size() == 2);
     }
 
-    TEST_CASE("Null Pointer Match to Handle vs Non-Handle")
+    TEST_CASE("MalformedInputRobustness - Null Pointer Match to Handle vs Non-Handle")
     {
         SymbolTable table;
         Symbol symHandle;
@@ -432,7 +432,7 @@ TEST_SUITE("Adversarial_OverloadResolver")
         CHECK(res.viableCandidates.size() == 1);
     }
 
-    TEST_CASE("All Incompatible Candidates Return Nullptr")
+    TEST_CASE("MalformedInputRobustness - All Incompatible Candidates Return Nullptr")
     {
         SymbolTable table;
         Symbol sym;
@@ -450,7 +450,7 @@ TEST_SUITE("Adversarial_OverloadResolver")
         CHECK(res.viableCandidates.empty());
     }
 
-    TEST_CASE("User Defined Conversion In Overload Resolution")
+    TEST_CASE("MalformedInputRobustness - User Defined Conversion In Overload Resolution")
     {
         SymbolTable table;
         // opImplConv method: Fraction -> double
@@ -480,7 +480,7 @@ TEST_SUITE("Adversarial_OverloadResolver")
 
 TEST_SUITE("Adversarial_DefiniteAssignment")
 {
-    TEST_CASE("Uninitialized Read Inside Ternary Expression")
+    TEST_CASE("MalformedInputRobustness - Uninitialized Read Inside Ternary Expression")
     {
         std::string uninitTernary = "void Print(int v) { }\n"
                                     "void main()\n"
@@ -503,7 +503,7 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
         CHECK(HasUninitializedRead(AnalyzeCodeForDiagnostics(uninitTernaryAlt)));
     }
 
-    TEST_CASE("Uninitialized Read Inside Binary and Logical Operators")
+    TEST_CASE("MalformedInputRobustness - Uninitialized Read Inside Binary and Logical Operators")
     {
         std::string binaryRead = "void main()\n"
                                  "{\n"
@@ -520,7 +520,7 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
         CHECK(HasUninitializedRead(AnalyzeCodeForDiagnostics(compoundAssignRead)));
     }
 
-    TEST_CASE("Complex Control Flow With Returns In Nested Branches")
+    TEST_CASE("MalformedInputRobustness - Complex Control Flow With Returns In Nested Branches")
     {
         // Branch 1 assigns, Branch 2 returns early -> post-if is definitely assigned
         std::string nestedReturnAssigned = "void Print(int v) { }\n"
@@ -574,7 +574,7 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(nestedReturnUnassigned)));
     }
 
-    TEST_CASE("Unreachable Code After Return Does Not Emit False Warnings")
+    TEST_CASE("MalformedInputRobustness - Unreachable Code After Return Does Not Emit False Warnings")
     {
         std::string unreachableCode = "void Print(int v) { }\n"
                                       "void main()\n"
@@ -586,7 +586,7 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(unreachableCode)));
     }
 
-    TEST_CASE("For Loop Without Initializer or Variable Reassignment")
+    TEST_CASE("MalformedInputRobustness - For Loop Without Initializer or Variable Reassignment")
     {
         std::string forLoopAssign = "void Print(int v) { }\n"
                                     "void main()\n"
@@ -605,7 +605,7 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(forLoopAssign)));
     }
 
-    TEST_CASE("Do While Guaranteed First Iteration Assigns")
+    TEST_CASE("MalformedInputRobustness - Do While Guaranteed First Iteration Assigns")
     {
         std::string doWhileAssign = "void Print(int v) { }\n"
                                     "void main()\n"
@@ -619,7 +619,7 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(doWhileAssign)));
     }
 
-    TEST_CASE("If-Else Chain Full Coverage")
+    TEST_CASE("MalformedInputRobustness - If-Else Chain Full Coverage")
     {
         std::string ifElseChain = "void Print(int v) { }\n"
                                   "void main()\n"
@@ -637,7 +637,7 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(ifElseChain)));
     }
 
-    TEST_CASE("Lambda and Nested Functions Are Analyzed")
+    TEST_CASE("MalformedInputRobustness - Lambda and Nested Functions Are Analyzed")
     {
         std::string lambdaUninit = "void main()\n"
                                    "{\n"

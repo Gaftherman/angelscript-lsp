@@ -193,6 +193,9 @@ class LspSemanticHarnessFixture
     void AssertDefinitionTarget(const std::string& uri, uint32_t line, uint32_t col,
                                 const std::string& expectedTargetUri, uint32_t expectedTargetLine);
 
+    /** @brief In-tree locations of the angelscript_oracle executable (Windows and POSIX layouts), best match first. */
+    static std::vector<std::filesystem::path> OracleCandidatePaths();
+
     /**
      * @brief Returns true if a native oracle binary was discovered and exists on disk.
      * @return True if oracle binary is available; false otherwise.

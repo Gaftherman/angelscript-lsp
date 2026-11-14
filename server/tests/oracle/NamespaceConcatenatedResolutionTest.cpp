@@ -7,9 +7,9 @@
 
 using namespace angel_lsp::test;
 
-TEST_SUITE("NamespaceConcatenatedResolution")
+TEST_SUITE("oracle/NamespaceConcatenatedResolution")
 {
-    TEST_CASE("Unqualified call to parent namespace function from compound namespace")
+    TEST_CASE("NamespaceConcatenatedResolution - Unqualified call to parent namespace function from compound namespace")
     {
         LspSemanticHarnessFixture fixture;
         const std::string nsA = GenerateRandomSymbolName("NsA");
@@ -52,7 +52,8 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AssertHoverSignature(docUri, callLine, callCol, fmt::format("void {0}::{1}()", nsA, fnFoo));
     }
 
-    TEST_CASE("Shadowing in compound namespace: inner function shadows outer namespace function")
+    TEST_CASE("NamespaceConcatenatedResolution - Shadowing in compound namespace: inner function shadows outer "
+              "namespace function")
     {
         LspSemanticHarnessFixture fixture;
         const std::string nsA = GenerateRandomSymbolName("NsA");
@@ -96,7 +97,8 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AssertHoverSignature(docUri, callLine, callCol, fmt::format("int {0}::{1}::{2}()", nsA, nsB, fnFoo));
     }
 
-    TEST_CASE("Multi-level compound namespace resolution: A::B::C accesses symbols from A and A::B")
+    TEST_CASE("NamespaceConcatenatedResolution - Multi-level compound namespace resolution: A::B::C accesses symbols "
+              "from A and A::B")
     {
         LspSemanticHarnessFixture fixture;
         const std::string nsA = GenerateRandomSymbolName("NsA");
@@ -138,7 +140,8 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Non-function symbols (enums, classes) from parent namespace in compound namespace")
+    TEST_CASE("NamespaceConcatenatedResolution - Non-function symbols (enums, classes) from parent namespace in "
+              "compound namespace")
     {
         LspSemanticHarnessFixture fixture;
         const std::string nsA = GenerateRandomSymbolName("NsA");
@@ -185,7 +188,7 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Unqualified call across included module files in compound namespace")
+    TEST_CASE("NamespaceConcatenatedResolution - Unqualified call across included module files in compound namespace")
     {
         LspSemanticHarnessFixture fixture;
         const std::string nsA = GenerateRandomSymbolName("NsA");
@@ -217,7 +220,8 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AssertNoDiagnostics(weaponUri);
     }
 
-    TEST_CASE("Same-name namespace and class: unqualified type access fails in Oracle and LSP")
+    TEST_CASE("NamespaceConcatenatedResolution - Same-name namespace and class: unqualified type access fails in "
+              "Oracle and LSP")
     {
         LspSemanticHarnessFixture fixture;
         const std::string name = GenerateRandomSymbolName("Logger");
@@ -246,7 +250,7 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AssertDiagnosticAt(docUri, 5, "as-err-unresolved-type");
     }
 
-    TEST_CASE("Same-name namespace and class: qualified type access compiles cleanly")
+    TEST_CASE("NamespaceConcatenatedResolution - Same-name namespace and class: qualified type access compiles cleanly")
     {
         LspSemanticHarnessFixture fixture;
         const std::string name = GenerateRandomSymbolName("Logger");
@@ -274,7 +278,8 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Same-name namespace and class: nested class accesses sibling type cleanly")
+    TEST_CASE(
+        "NamespaceConcatenatedResolution - Same-name namespace and class: nested class accesses sibling type cleanly")
     {
         LspSemanticHarnessFixture fixture;
         const std::string name = GenerateRandomSymbolName("Logger");
@@ -301,7 +306,8 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AssertNoDiagnostics(docUri);
     }
 
-    TEST_CASE("Same-name namespace and class: unqualified function call fails in Oracle and LSP")
+    TEST_CASE("NamespaceConcatenatedResolution - Same-name namespace and class: unqualified function call fails in "
+              "Oracle and LSP")
     {
         LspSemanticHarnessFixture fixture;
         const std::string name = GenerateRandomSymbolName("Logger");

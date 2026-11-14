@@ -12,9 +12,9 @@
 
 namespace angel_lsp::analysis
 {
-TEST_SUITE("TypeSanitization")
+TEST_SUITE("analysis/types/TypeSanitization")
 {
-    TEST_CASE("TrailingReferenceModifierLength handles &in, &out, &inout with whitespace")
+    TEST_CASE("TypeSanitization - TrailingReferenceModifierLength handles &in, &out, &inout with whitespace")
     {
         // 1. Single &
         CHECK(TrailingReferenceModifierLength("&") == 1);
@@ -57,7 +57,7 @@ TEST_SUITE("TypeSanitization")
         CHECK(TrailingReferenceModifierLength("") == 0);
     }
 
-    TEST_CASE("Invariant: StripTrailingDecorationsView never truncates base type")
+    TEST_CASE("TypeSanitization - Invariant: StripTrailingDecorationsView never truncates base type")
     {
         for (int i = 0; i < 20; ++i)
         {
@@ -82,7 +82,7 @@ TEST_SUITE("TypeSanitization")
         }
     }
 
-    TEST_CASE("LocalScopeCollector normalizes parameter reference types")
+    TEST_CASE("TypeSanitization - LocalScopeCollector normalizes parameter reference types")
     {
         const std::string paramA = angel_lsp::test::GenerateRandomSymbolName("paramA");
         const std::string paramB = angel_lsp::test::GenerateRandomSymbolName("paramB");

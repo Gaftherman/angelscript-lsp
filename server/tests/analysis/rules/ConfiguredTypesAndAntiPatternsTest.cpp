@@ -23,9 +23,9 @@ using namespace angel_lsp;
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::test;
 
-TEST_SUITE("ConfiguredTypesAndAntiPatterns")
+TEST_SUITE("analysis/rules/ConfiguredTypesAndAntiPatterns")
 {
-    TEST_CASE("Wildcard Parameter Invariant: strictly '?' and not 'any' add-on class")
+    TEST_CASE("ConfiguredTypesAndAntiPatterns - Wildcard Parameter Invariant: strictly '?' and not 'any' add-on class")
     {
         const std::string randomTypeName = GenerateRandomSymbolName("CustomType");
 
@@ -50,7 +50,8 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         CHECK_FALSE(IsWildcardParameter(regularParam));
     }
 
-    TEST_CASE("Container Parameter Invariant: native bracket syntax and dynamic template resolution")
+    TEST_CASE("ConfiguredTypesAndAntiPatterns - Container Parameter Invariant: native bracket syntax and dynamic "
+              "template resolution")
     {
         const std::string elemType = GenerateRandomSymbolName("Elem");
         const std::string customArrayName = GenerateRandomSymbolName("ArrayContainer");
@@ -111,7 +112,7 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         CHECK_FALSE(IsContainerParameter(plainTemplateParam, &tableWithTemplate, "array"));
     }
 
-    TEST_CASE("Desugar Array Brackets Invariant: respects configured array type name")
+    TEST_CASE("ConfiguredTypesAndAntiPatterns - Desugar Array Brackets Invariant: respects configured array type name")
     {
         const std::string elemType = GenerateRandomSymbolName("DataType");
         const std::string customArray = GenerateRandomSymbolName("ArrayT");
@@ -129,7 +130,8 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         CHECK(multiDesugar == customArray + "<" + customArray + "<" + elemType + ">>");
     }
 
-    TEST_CASE("SemanticAnalysisRequest Invariant: effective getters guarantee non-empty defaults")
+    TEST_CASE("ConfiguredTypesAndAntiPatterns - SemanticAnalysisRequest Invariant: effective getters guarantee "
+              "non-empty defaults")
     {
         const std::string customStr = GenerateRandomSymbolName("CustomString");
         const std::string customArr = GenerateRandomSymbolName("CustomArray");
@@ -155,7 +157,8 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         CHECK(configuredReq.GetEffectiveArrayTypeName() == customArr);
     }
 
-    TEST_CASE("Overload Conversion Invariant: 'any' does not act as wildcard and dynamic container matches init_list")
+    TEST_CASE("ConfiguredTypesAndAntiPatterns - Overload Conversion Invariant: 'any' does not act as wildcard and "
+              "dynamic container matches init_list")
     {
         const std::string elemType = GenerateRandomSymbolName("Item");
         const std::string templateName = GenerateRandomSymbolName("CustomContainer");
@@ -208,7 +211,8 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         CHECK(untaggedConv.rank == ConversionRank::Incompatible);
     }
 
-    TEST_CASE("Configured stringTypeName in constructor conversion and overload ranking")
+    TEST_CASE(
+        "ConfiguredTypesAndAntiPatterns - Configured stringTypeName in constructor conversion and overload ranking")
     {
         const std::string customStringName = GenerateRandomSymbolName("CustomString");
         const std::string customClass = GenerateRandomSymbolName("TargetClass");

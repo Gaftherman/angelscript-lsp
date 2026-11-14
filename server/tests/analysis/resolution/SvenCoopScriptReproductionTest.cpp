@@ -155,11 +155,13 @@ bool HasCode(const std::vector<Diagnostic>& diags, std::string_view code)
 }
 } // namespace
 
-TEST_CASE("SvenCoopScriptReproduction - IsPluginInstalled valid script emits zero diagnostics")
+TEST_SUITE("analysis/resolution/SvenCoopScriptReproduction")
 {
-    SvenTestContext ctx;
+    TEST_CASE("SvenCoopScriptReproduction - IsPluginInstalled valid script emits zero diagnostics")
+    {
+        SvenTestContext ctx;
 
-    const std::string script = R"AS(
+        const std::string script = R"AS(
 namespace Server
 {
     bool IsPluginInstalled( const string&in plugin_name, bool case_sensitive = false )
@@ -182,19 +184,19 @@ namespace Server
 }
 )AS";
 
-    auto diags = ctx.Analyze(script);
-    for (const auto& d : diags)
-    {
-        MESSAGE("Test 1 diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+        auto diags = ctx.Analyze(script);
+        for (const auto& d : diags)
+        {
+            MESSAGE("Test 1 diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+        }
+        CHECK(diags.empty());
     }
-    CHECK(diags.empty());
-}
 
-TEST_CASE("SvenCoopScriptReproduction - Invalid member call on array element emits diagnostic")
-{
-    SvenTestContext ctx;
+    TEST_CASE("SvenCoopScriptReproduction - Invalid member call on array element emits diagnostic")
+    {
+        SvenTestContext ctx;
 
-    const std::string script = R"AS(
+        const std::string script = R"AS(
 void TestInvalidAccess()
 {
     array<string>@ list = g_PluginManager.GetPluginList();
@@ -202,189 +204,165 @@ void TestInvalidAccess()
 }
 )AS";
 
-    auto diags = ctx.Analyze(script, "file:///TestInvalidAccess.as");
-    for (const auto& d : diags)
-    {
-        MESSAGE("Test 2 diagnostic: " << d.code << ": " << d.message);
+        auto diags = ctx.Analyze(script, "file:///TestInvalidAccess.as");
+        for (const auto& d : diags)
+        {
+            MESSAGE("Test 2 diagnostic: " << d.code << ": " << d.message);
+        }
+        bool hasMemberError = HasCode(diags, "as-err-no-matching-symbol") || HasCode(diags, "as-err-not-a-member") ||
+                              HasCode(diags, "as-err-call-no-matching-signature") ||
+                              HasCode(diags, "as-err-member-not-found");
+        CHECK(hasMemberError);
     }
-    bool hasMemberError = HasCode(diags, "as-err-no-matching-symbol") || HasCode(diags, "as-err-not-a-member") ||
-                          HasCode(diags, "as-err-call-no-matching-signature") ||
-                          HasCode(diags, "as-err-member-not-found");
-    CHECK(hasMemberError);
-}
 
-TEST_CASE("SvenCoopScriptReproduction - Hover on global identifier inside namespace")
-{
-    SvenTestContext ctx;
-    const std::string script = "namespace Server\n"
-                               "{\n"
-                               "    void Test()\n"
-                               "    {\n"
-                               "        auto p = g_PluginManager.GetPluginList();\n"
-                               "    }\n"
-                               "}\n";
+    TEST_CASE("SvenCoopScriptReproduction - Hover on global identifier inside namespace")
+    {
+        SvenTestContext ctx;
+        const std::string script = "namespace Server\n"
+                                   "{\n"
+                                   "    void Test()\n"
+                                   "    {\n"
+                                   "        auto p = g_PluginManager.GetPluginList();\n"
+                                   "    }\n"
+                                   "}\n";
 
-    auto hover = ctx.HoverAt(script, 4, 20);
-    REQUIRE(hover.has_value());
-    const auto* content = std::get_if<lsp::MarkupContent>(&hover->contents);
-    REQUIRE(content != nullptr);
-    CHECK(content->value.find("g_PluginManager") != std::string::npos);
-}
+        auto hover = ctx.HoverAt(script, 4, 20);
+        REQUIRE(hover.has_value());
+        const auto* content = std::get_if<lsp::MarkupContent>(&hover->contents);
+        REQUIRE(content != nullptr);
+        CHECK(content->value.find("g_PluginManager") != std::string::npos);
+    }
 
-TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on subscripted array element")
-{
-    SvenTestContext ctx;
-    const std::string script = "void Test()\n"
-                               "{\n"
-                               "    array<string>@ pluginList = g_PluginManager.GetPluginList();\n"
-                               "    string s = pluginList[0].ToLowercase();\n"
-                               "}\n";
+    TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on subscripted array element")
+    {
+        SvenTestContext ctx;
+        const std::string script = "void Test()\n"
+                                   "{\n"
+                                   "    array<string>@ pluginList = g_PluginManager.GetPluginList();\n"
+                                   "    string s = pluginList[0].ToLowercase();\n"
+                                   "}\n";
 
-    auto hover = ctx.HoverAt(script, 3, 32);
-    REQUIRE(hover.has_value());
-    const auto* content = std::get_if<lsp::MarkupContent>(&hover->contents);
-    REQUIRE(content != nullptr);
-    CHECK(content->value.find("ToLowercase") != std::string::npos);
+        auto hover = ctx.HoverAt(script, 3, 32);
+        REQUIRE(hover.has_value());
+        const auto* content = std::get_if<lsp::MarkupContent>(&hover->contents);
+        REQUIRE(content != nullptr);
+        CHECK(content->value.find("ToLowercase") != std::string::npos);
 
-    const std::string completionScript = "void Test()\n"
-                                         "{\n"
-                                         "    array<string>@ pluginList = g_PluginManager.GetPluginList();\n"
-                                         "    pluginList[0].\n"
-                                         "}\n";
+        const std::string completionScript = "void Test()\n"
+                                             "{\n"
+                                             "    array<string>@ pluginList = g_PluginManager.GetPluginList();\n"
+                                             "    pluginList[0].\n"
+                                             "}\n";
 
-    auto items = ctx.CompleteAt(completionScript, 3, 18);
-    CHECK(!items.empty());
-    bool hasToLowercase = std::any_of(items.begin(), items.end(),
-                                      [](const lsp::CompletionItem& item) { return item.label == "ToLowercase"; });
-    CHECK(hasToLowercase);
-}
+        auto items = ctx.CompleteAt(completionScript, 3, 18);
+        CHECK(!items.empty());
+        bool hasToLowercase = std::any_of(items.begin(), items.end(),
+                                          [](const lsp::CompletionItem& item) { return item.label == "ToLowercase"; });
+        CHECK(hasToLowercase);
+    }
 
-TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on typed lambda parameter and member access")
-{
-    SvenTestContext ctx;
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MapActivate");
-    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("player");
-    const std::string script = "void " + fnName +
-                               "()\n"
-                               "{\n"
-                               "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
-                               "    @PlayerPostThinkHook( function( CBasePlayer@ " +
-                               paramName +
-                               " ) {\n"
-                               "        if( " +
-                               paramName +
-                               " !is null ) {\n"
-                               "            " +
-                               paramName +
-                               ".ResetOverriddenPlayerModel( true, true );\n"
-                               "            " +
-                               paramName + ".SetOverriddenPlayerModel( g_EngineFuncs.GetInfoKeyBuffer( " + paramName +
-                               ".edict() ).GetValue( \"model\" ) );\n"
-                               "        }\n"
-                               "        return HOOK_CONTINUE;\n"
-                               "    } ) );\n"
-                               "}\n";
-
-    size_t resetPos = script.find("ResetOverriddenPlayerModel");
-    REQUIRE(resetPos != std::string::npos);
-    size_t lastNewline = script.rfind('\n', resetPos);
-    uint32_t resetCol = static_cast<uint32_t>(resetPos - lastNewline - 1);
-
-    auto hoverReset = ctx.HoverAt(script, 5, resetCol + 4);
-    REQUIRE(hoverReset.has_value());
-    const auto* contentReset = std::get_if<lsp::MarkupContent>(&hoverReset->contents);
-    REQUIRE(contentReset != nullptr);
-    CHECK(contentReset->value.find("ResetOverriddenPlayerModel") != std::string::npos);
-
-    size_t setPos = script.find("SetOverriddenPlayerModel");
-    REQUIRE(setPos != std::string::npos);
-    lastNewline = script.rfind('\n', setPos);
-    uint32_t setCol = static_cast<uint32_t>(setPos - lastNewline - 1);
-
-    auto hoverSet = ctx.HoverAt(script, 6, setCol + 4);
-    REQUIRE(hoverSet.has_value());
-    const auto* contentSet = std::get_if<lsp::MarkupContent>(&hoverSet->contents);
-    REQUIRE(contentSet != nullptr);
-    CHECK(contentSet->value.find("SetOverriddenPlayerModel") != std::string::npos);
-
-    size_t edictPos = script.find("edict()");
-    REQUIRE(edictPos != std::string::npos);
-    lastNewline = script.rfind('\n', edictPos);
-    uint32_t edictCol = static_cast<uint32_t>(edictPos - lastNewline - 1);
-
-    auto hoverEdict = ctx.HoverAt(script, 6, edictCol + 2);
-    REQUIRE(hoverEdict.has_value());
-    const auto* contentEdict = std::get_if<lsp::MarkupContent>(&hoverEdict->contents);
-    REQUIRE(contentEdict != nullptr);
-    CHECK(contentEdict->value.find("edict") != std::string::npos);
-
-    auto hoverParam = ctx.HoverAt(script, 4, 13);
-    REQUIRE(hoverParam.has_value());
-    const auto* contentParam = std::get_if<lsp::MarkupContent>(&hoverParam->contents);
-    REQUIRE(contentParam != nullptr);
-    CHECK(contentParam->value.find("CBasePlayer") != std::string::npos);
-
-    const std::string compScript = "void " + fnName +
+    TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on typed lambda parameter and member access")
+    {
+        SvenTestContext ctx;
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MapActivate");
+        const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("player");
+        const std::string script = "void " + fnName +
                                    "()\n"
                                    "{\n"
                                    "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
                                    "    @PlayerPostThinkHook( function( CBasePlayer@ " +
                                    paramName +
                                    " ) {\n"
-                                   "        " +
+                                   "        if( " +
                                    paramName +
-                                   ".\n"
+                                   " !is null ) {\n"
+                                   "            " +
+                                   paramName +
+                                   ".ResetOverriddenPlayerModel( true, true );\n"
+                                   "            " +
+                                   paramName + ".SetOverriddenPlayerModel( g_EngineFuncs.GetInfoKeyBuffer( " +
+                                   paramName +
+                                   ".edict() ).GetValue( \"model\" ) );\n"
+                                   "        }\n"
+                                   "        return HOOK_CONTINUE;\n"
                                    "    } ) );\n"
                                    "}\n";
-    size_t dotPos = compScript.find(paramName + ".");
-    REQUIRE(dotPos != std::string::npos);
-    lastNewline = compScript.rfind('\n', dotPos);
-    uint32_t compCol = static_cast<uint32_t>(dotPos + paramName.length() + 1 - lastNewline - 1);
 
-    auto items = ctx.CompleteAt(compScript, 4, compCol);
-    CHECK(!items.empty());
-    bool hasReset = std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item)
-                                { return item.label == "ResetOverriddenPlayerModel"; });
-    bool hasSet = std::any_of(items.begin(), items.end(),
-                              [](const lsp::CompletionItem& item) { return item.label == "SetOverriddenPlayerModel"; });
-    bool hasEdict =
-        std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item) { return item.label == "edict"; });
-    CHECK(hasReset);
-    CHECK(hasSet);
-    CHECK(hasEdict);
-}
+        size_t resetPos = script.find("ResetOverriddenPlayerModel");
+        REQUIRE(resetPos != std::string::npos);
+        size_t lastNewline = script.rfind('\n', resetPos);
+        uint32_t resetCol = static_cast<uint32_t>(resetPos - lastNewline - 1);
 
-TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on untyped lambda parameter deduced from funcdef")
-{
-    SvenTestContext ctx;
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MapActivateUntyped");
-    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("player");
-    const std::string script = "void " + fnName +
-                               "()\n"
-                               "{\n"
-                               "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
-                               "    @PlayerPostThinkHook( function( " +
-                               paramName +
-                               " ) {\n"
-                               "        " +
-                               paramName +
-                               ".ResetOverriddenPlayerModel( true, true );\n"
-                               "        return HOOK_CONTINUE;\n"
-                               "    } ) );\n"
-                               "}\n";
+        auto hoverReset = ctx.HoverAt(script, 5, resetCol + 4);
+        REQUIRE(hoverReset.has_value());
+        const auto* contentReset = std::get_if<lsp::MarkupContent>(&hoverReset->contents);
+        REQUIRE(contentReset != nullptr);
+        CHECK(contentReset->value.find("ResetOverriddenPlayerModel") != std::string::npos);
 
-    size_t resetPos = script.find("ResetOverriddenPlayerModel");
-    REQUIRE(resetPos != std::string::npos);
-    size_t lastNewline = script.rfind('\n', resetPos);
-    uint32_t resetCol = static_cast<uint32_t>(resetPos - lastNewline - 1);
+        size_t setPos = script.find("SetOverriddenPlayerModel");
+        REQUIRE(setPos != std::string::npos);
+        lastNewline = script.rfind('\n', setPos);
+        uint32_t setCol = static_cast<uint32_t>(setPos - lastNewline - 1);
 
-    auto hoverReset = ctx.HoverAt(script, 4, resetCol + 4);
-    REQUIRE(hoverReset.has_value());
-    const auto* contentReset = std::get_if<lsp::MarkupContent>(&hoverReset->contents);
-    REQUIRE(contentReset != nullptr);
-    CHECK(contentReset->value.find("ResetOverriddenPlayerModel") != std::string::npos);
+        auto hoverSet = ctx.HoverAt(script, 6, setCol + 4);
+        REQUIRE(hoverSet.has_value());
+        const auto* contentSet = std::get_if<lsp::MarkupContent>(&hoverSet->contents);
+        REQUIRE(contentSet != nullptr);
+        CHECK(contentSet->value.find("SetOverriddenPlayerModel") != std::string::npos);
 
-    const std::string compScript = "void " + fnName +
+        size_t edictPos = script.find("edict()");
+        REQUIRE(edictPos != std::string::npos);
+        lastNewline = script.rfind('\n', edictPos);
+        uint32_t edictCol = static_cast<uint32_t>(edictPos - lastNewline - 1);
+
+        auto hoverEdict = ctx.HoverAt(script, 6, edictCol + 2);
+        REQUIRE(hoverEdict.has_value());
+        const auto* contentEdict = std::get_if<lsp::MarkupContent>(&hoverEdict->contents);
+        REQUIRE(contentEdict != nullptr);
+        CHECK(contentEdict->value.find("edict") != std::string::npos);
+
+        auto hoverParam = ctx.HoverAt(script, 4, 13);
+        REQUIRE(hoverParam.has_value());
+        const auto* contentParam = std::get_if<lsp::MarkupContent>(&hoverParam->contents);
+        REQUIRE(contentParam != nullptr);
+        CHECK(contentParam->value.find("CBasePlayer") != std::string::npos);
+
+        const std::string compScript = "void " + fnName +
+                                       "()\n"
+                                       "{\n"
+                                       "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
+                                       "    @PlayerPostThinkHook( function( CBasePlayer@ " +
+                                       paramName +
+                                       " ) {\n"
+                                       "        " +
+                                       paramName +
+                                       ".\n"
+                                       "    } ) );\n"
+                                       "}\n";
+        size_t dotPos = compScript.find(paramName + ".");
+        REQUIRE(dotPos != std::string::npos);
+        lastNewline = compScript.rfind('\n', dotPos);
+        uint32_t compCol = static_cast<uint32_t>(dotPos + paramName.length() + 1 - lastNewline - 1);
+
+        auto items = ctx.CompleteAt(compScript, 4, compCol);
+        CHECK(!items.empty());
+        bool hasReset = std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item)
+                                    { return item.label == "ResetOverriddenPlayerModel"; });
+        bool hasSet = std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item)
+                                  { return item.label == "SetOverriddenPlayerModel"; });
+        bool hasEdict = std::any_of(items.begin(), items.end(),
+                                    [](const lsp::CompletionItem& item) { return item.label == "edict"; });
+        CHECK(hasReset);
+        CHECK(hasSet);
+        CHECK(hasEdict);
+    }
+
+    TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on untyped lambda parameter deduced from funcdef")
+    {
+        SvenTestContext ctx;
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MapActivateUntyped");
+        const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("player");
+        const std::string script = "void " + fnName +
                                    "()\n"
                                    "{\n"
                                    "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
@@ -393,25 +371,50 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on untyped lambda p
                                    " ) {\n"
                                    "        " +
                                    paramName +
-                                   ".\n"
+                                   ".ResetOverriddenPlayerModel( true, true );\n"
+                                   "        return HOOK_CONTINUE;\n"
                                    "    } ) );\n"
                                    "}\n";
-    size_t dotPos = compScript.find(paramName + ".");
-    REQUIRE(dotPos != std::string::npos);
-    lastNewline = compScript.rfind('\n', dotPos);
-    uint32_t compCol = static_cast<uint32_t>(dotPos + paramName.length() + 1 - lastNewline - 1);
 
-    auto items = ctx.CompleteAt(compScript, 4, compCol);
-    CHECK(!items.empty());
-    bool hasReset = std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item)
-                                { return item.label == "ResetOverriddenPlayerModel"; });
-    CHECK(hasReset);
-}
+        size_t resetPos = script.find("ResetOverriddenPlayerModel");
+        REQUIRE(resetPos != std::string::npos);
+        size_t lastNewline = script.rfind('\n', resetPos);
+        uint32_t resetCol = static_cast<uint32_t>(resetPos - lastNewline - 1);
 
-TEST_CASE("SvenCoopScriptReproduction - User Sven Co-op plugin snippet has zero diagnostics")
-{
-    SvenTestContext ctx;
-    const std::string script = R"AS(
+        auto hoverReset = ctx.HoverAt(script, 4, resetCol + 4);
+        REQUIRE(hoverReset.has_value());
+        const auto* contentReset = std::get_if<lsp::MarkupContent>(&hoverReset->contents);
+        REQUIRE(contentReset != nullptr);
+        CHECK(contentReset->value.find("ResetOverriddenPlayerModel") != std::string::npos);
+
+        const std::string compScript = "void " + fnName +
+                                       "()\n"
+                                       "{\n"
+                                       "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
+                                       "    @PlayerPostThinkHook( function( " +
+                                       paramName +
+                                       " ) {\n"
+                                       "        " +
+                                       paramName +
+                                       ".\n"
+                                       "    } ) );\n"
+                                       "}\n";
+        size_t dotPos = compScript.find(paramName + ".");
+        REQUIRE(dotPos != std::string::npos);
+        lastNewline = compScript.rfind('\n', dotPos);
+        uint32_t compCol = static_cast<uint32_t>(dotPos + paramName.length() + 1 - lastNewline - 1);
+
+        auto items = ctx.CompleteAt(compScript, 4, compCol);
+        CHECK(!items.empty());
+        bool hasReset = std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item)
+                                    { return item.label == "ResetOverriddenPlayerModel"; });
+        CHECK(hasReset);
+    }
+
+    TEST_CASE("SvenCoopScriptReproduction - User Sven Co-op plugin snippet has zero diagnostics")
+    {
+        SvenTestContext ctx;
+        const std::string script = R"AS(
 void PluginInit()
 {
     g_Module.ScriptInfo.SetAuthor( "Mikk" );
@@ -437,23 +440,23 @@ void MapActivate()
 }
 )AS";
 
-    auto diags = ctx.Analyze(script, "file:///UserSnippet.as");
-    for (const auto& d : diags)
-    {
-        MESSAGE("User snippet diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+        auto diags = ctx.Analyze(script, "file:///UserSnippet.as");
+        for (const auto& d : diags)
+        {
+            MESSAGE("User snippet diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+        }
+        CHECK(diags.empty());
     }
-    CHECK(diags.empty());
-}
 
-TEST_CASE("SvenCoopScriptReproduction - Custom entity inheriting ScriptBasePlayerAmmoEntity with sven rules")
-{
-    SvenTestContext ctx;
-    std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
-    auto rulesOpt =
-        angel_lsp::config::ParseEngineRuleConfigFile(repoRoot / "predefined" / "sven.angelscript.rules.json");
-    REQUIRE(rulesOpt.has_value());
+    TEST_CASE("SvenCoopScriptReproduction - Custom entity inheriting ScriptBasePlayerAmmoEntity with sven rules")
+    {
+        SvenTestContext ctx;
+        std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
+        auto rulesOpt =
+            angel_lsp::config::ParseEngineRuleConfigFile(repoRoot / "predefined" / "sven.angelscript.rules.json");
+        REQUIRE(rulesOpt.has_value());
 
-    const std::string script = R"AS(
+        const std::string script = R"AS(
 class custom_ammo : ScriptBasePlayerAmmoEntity
 {
     void Spawn()
@@ -484,10 +487,11 @@ void PluginInit()
 }
 )AS";
 
-    auto diags = ctx.Analyze(script, "file:///custom_ammo.as", &*rulesOpt);
-    for (const auto& d : diags)
-    {
-        MESSAGE("custom_ammo diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+        auto diags = ctx.Analyze(script, "file:///custom_ammo.as", &*rulesOpt);
+        for (const auto& d : diags)
+        {
+            MESSAGE("custom_ammo diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+        }
+        CHECK(diags.empty());
     }
-    CHECK(diags.empty());
 }

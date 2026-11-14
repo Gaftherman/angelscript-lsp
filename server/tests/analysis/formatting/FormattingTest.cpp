@@ -12,9 +12,9 @@ using namespace angel_lsp;
 using namespace angel_lsp::features;
 using namespace angel_lsp::analysis::formatting;
 
-TEST_SUITE("Formatting")
+TEST_SUITE("analysis/formatting/Formatting")
 {
-    TEST_CASE("IndentWithFourSpaces")
+    TEST_CASE("Formatting - IndentWithFourSpaces")
     {
         std::string code = "void main(){\nint a=1;\n}";
         FormatLayoutOptions options;
@@ -26,7 +26,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("IndentWithTwoSpaces")
+    TEST_CASE("Formatting - IndentWithTwoSpaces")
     {
         std::string code = "void main(){\nint a=1;\n}";
         FormatLayoutOptions options;
@@ -38,7 +38,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("IndentWithTabs")
+    TEST_CASE("Formatting - IndentWithTabs")
     {
         std::string code = "void main(){\nint a=1;\n}";
         FormatLayoutOptions options;
@@ -50,7 +50,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("AllmanBraceAlignmentForFunctionsAndControlFlow")
+    TEST_CASE("Formatting - AllmanBraceAlignmentForFunctionsAndControlFlow")
     {
         std::string code = "void test(){if(true){doWork();}}";
         FormatLayoutOptions options;
@@ -68,7 +68,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("AllmanBraceAlignmentForIfElseLadder")
+    TEST_CASE("Formatting - AllmanBraceAlignmentForIfElseLadder")
     {
         std::string code = "if(x>0){a();}else if(x<0){b();}else{c();}";
         FormatLayoutOptions options;
@@ -91,7 +91,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("AllmanBraceAlignmentForClassAndMethods")
+    TEST_CASE("Formatting - AllmanBraceAlignmentForClassAndMethods")
     {
         std::string code =
             "class Bar:IFoo,IBar{int m_val;void DoAction(float dt){if(dt>0.0f){m_val+=1;}else{m_val=0;}}}";
@@ -118,7 +118,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("AllmanBraceAlignmentForEnumAndNamespace")
+    TEST_CASE("Formatting - AllmanBraceAlignmentForEnumAndNamespace")
     {
         std::string code = "namespace Game{enum State{Idle,Running=1,Paused};}";
         FormatLayoutOptions options;
@@ -138,7 +138,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("WhitespaceAndOperatorNormalization")
+    TEST_CASE("Formatting - WhitespaceAndOperatorNormalization")
     {
         std::string code = "int x=5+3*2;if(x>0){foo(1,2,3);}";
         FormatLayoutOptions options;
@@ -154,7 +154,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("ForLoopSemicolonAndIncrement")
+    TEST_CASE("Formatting - ForLoopSemicolonAndIncrement")
     {
         std::string code = "for(int i=0;i<10;++i){sum+=i;}";
         FormatLayoutOptions options;
@@ -169,7 +169,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("UnaryAndTernaryOperators")
+    TEST_CASE("Formatting - UnaryAndTernaryOperators")
     {
         std::string code = "int a=-5;int b=+10;bool c=!flag;int res=c?a:b;";
         FormatLayoutOptions options;
@@ -184,7 +184,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("TemplatesAndHandles")
+    TEST_CASE("Formatting - TemplatesAndHandles")
     {
         std::string code = "array<int>@ arr=null;dictionary<string,int> dict;";
         FormatLayoutOptions options;
@@ -197,7 +197,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("SwitchCaseFormatting")
+    TEST_CASE("Formatting - SwitchCaseFormatting")
     {
         std::string code = "switch(state){case 0:return;case 1:{int x=1;break;}default:break;}";
         FormatLayoutOptions options;
@@ -220,7 +220,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("CommentsAndStringsPreservation")
+    TEST_CASE("Formatting - CommentsAndStringsPreservation")
     {
         std::string code = "// Header comment\n"
                            "void foo() // inline comment   \n"
@@ -244,7 +244,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("PreprocessorDirectivesAtColumnZero")
+    TEST_CASE("Formatting - PreprocessorDirectivesAtColumnZero")
     {
         std::string code = "#include \"header.as\"\n#define MAX 100\nvoid main(){}";
         FormatLayoutOptions options;
@@ -260,7 +260,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("TrailingWhitespaceAndNewlinesCleanup")
+    TEST_CASE("Formatting - TrailingWhitespaceAndNewlinesCleanup")
     {
         std::string code = "void test() {   \n    int x = 10;   \n}   \n\n\n";
         FormatLayoutOptions options;
@@ -278,7 +278,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("FormatDocumentAndFormatRangeAPI")
+    TEST_CASE("Formatting - FormatDocumentAndFormatRangeAPI")
     {
         std::string uri = "file:///test.as";
         std::string code = "void test(){int x=1;}void other(){int y=2;}";
@@ -298,7 +298,7 @@ TEST_SUITE("Formatting")
         REQUIRE(rangeEdits.has_value());
     }
 
-    TEST_CASE("FormatOnTypeAPI")
+    TEST_CASE("Formatting - FormatOnTypeAPI")
     {
         std::string uri = "file:///test.as";
         std::string code = "void test()\n{\n    int x = 1;\n}\n";
@@ -311,7 +311,7 @@ TEST_SUITE("Formatting")
         REQUIRE(edits.has_value());
     }
 
-    TEST_CASE("FormatOnTypeClosingBrace")
+    TEST_CASE("Formatting - FormatOnTypeClosingBrace")
     {
         std::string uri = "file:///test.as";
         std::string code = "void test(){\nint x=1;\n}";
@@ -324,7 +324,7 @@ TEST_SUITE("Formatting")
         REQUIRE(edits.has_value());
     }
 
-    TEST_CASE("EmptyDocumentRobustness")
+    TEST_CASE("Formatting - EmptyDocumentRobustness")
     {
         std::string uri = "file:///empty.as";
         std::string code = "";
@@ -360,29 +360,29 @@ TEST_SUITE("Formatting")
     }
     } // namespace
 
-    TEST_CASE("A list initializer stays on the declaration line")
+    TEST_CASE("Formatting - A list initializer stays on the declaration line")
     {
         CHECK(Format4("void main(){\narray<int> a = {1,2,3};\n}") ==
               "void main()\n{\n    array<int> a = {1, 2, 3};\n}\n");
     }
 
-    TEST_CASE("A list passed as an argument stays inside the call")
+    TEST_CASE("Formatting - A list passed as an argument stays inside the call")
     {
         CHECK(Format4("void main(){\nTake({1,2});\n}") == "void main()\n{\n    Take({1, 2});\n}\n");
     }
 
-    TEST_CASE("A returned list stays on the return line")
+    TEST_CASE("Formatting - A returned list stays on the return line")
     {
         CHECK(Format4("array<int> Make(){\nreturn {1,2};\n}") == "array<int> Make()\n{\n    return {1, 2};\n}\n");
     }
 
-    TEST_CASE("A nested list keeps both levels inline")
+    TEST_CASE("Formatting - A nested list keeps both levels inline")
     {
         CHECK(Format4("void main(){\ndictionary d = {{'a',1},{'b',2}};\n}") ==
               "void main()\n{\n    dictionary d = {{'a', 1}, {'b', 2}};\n}\n");
     }
 
-    TEST_CASE("An omitted list element grows no space where it used to be")
+    TEST_CASE("Formatting - An omitted list element grows no space where it used to be")
     {
         // `{ 0, 1, , 4 }` compiles - the hole takes the type's default - so the formatter has to
         // carry it through unchanged rather than tidy it into something the compiler reads
@@ -391,19 +391,19 @@ TEST_SUITE("Formatting")
               "void main()\n{\n    array<int> a = {0, 1, , 4};\n}\n");
     }
 
-    TEST_CASE("Two declarators each keep their own list")
+    TEST_CASE("Formatting - Two declarators each keep their own list")
     {
         CHECK(Format4("void main(){\narray<int> a = {1}, b = {2};\n}") ==
               "void main()\n{\n    array<int> a = {1}, b = {2};\n}\n");
     }
 
-    TEST_CASE("A lambda passed as an argument keeps its body inline")
+    TEST_CASE("Formatting - A lambda passed as an argument keeps its body inline")
     {
         CHECK(Format4("void main(){\nSubscribe(function(int a){ Log(a); });\n}") ==
               "void main()\n{\n    Subscribe(function(int a) { Log(a); });\n}\n");
     }
 
-    TEST_CASE("A block inside a lambda body is still a block")
+    TEST_CASE("Formatting - A block inside a lambda body is still a block")
     {
         // The reason a value brace is measured against the brace that encloses it rather than
         // against parenDepth zero: both of these open at parenDepth 1.
@@ -411,19 +411,19 @@ TEST_SUITE("Formatting")
               "void main()\n{\n    Run(function() { if (c) { g(); } });\n}\n");
     }
 
-    TEST_CASE("An assignment inside an if condition keeps its block brace")
+    TEST_CASE("Formatting - An assignment inside an if condition keeps its block brace")
     {
         CHECK(Format4("void main(){\nif (x = Next()) {\ng();\n}\n}") ==
               "void main()\n{\n    if (x = Next())\n    {\n        g();\n    }\n}\n");
     }
 
-    TEST_CASE("A for-loop initializer keeps the body's block brace")
+    TEST_CASE("Formatting - A for-loop initializer keeps the body's block brace")
     {
         CHECK(Format4("void main(){\nfor (int i = 0; i < n; i++) {\ng();\n}\n}") ==
               "void main()\n{\n    for (int i = 0; i < n; i++)\n    {\n        g();\n    }\n}\n");
     }
 
-    TEST_CASE("A metadata block keeps its own line")
+    TEST_CASE("Formatting - A metadata block keeps its own line")
     {
         // CScriptBuilder strips these before the compiler sees them and the grammar makes the
         // block a sibling of the declaration, so joining it onto the declaration line was wrong
@@ -432,7 +432,7 @@ TEST_SUITE("Formatting")
               "class C\n{\n    [Property, Category = \"Weapons\"]\n    int damage;\n}\n");
     }
 
-    TEST_CASE("An index expression is not mistaken for metadata")
+    TEST_CASE("Formatting - An index expression is not mistaken for metadata")
     {
         CHECK(Format4("void main(){\narr[0] = 1;\n}") == "void main()\n{\n    arr[0] = 1;\n}\n");
     }
@@ -442,24 +442,24 @@ TEST_SUITE("Formatting")
     // moves the *block* brace and leaves every value brace exactly where it was.
     // ---------------------------------------------------------------------------------------
 
-    TEST_CASE("K&R puts a function's block brace on the signature line")
+    TEST_CASE("Formatting - K&R puts a function's block brace on the signature line")
     {
         CHECK(Format4("void main()\n{\nint a=1;\n}", BraceStyle::KAndR) == "void main() {\n    int a = 1;\n}\n");
     }
 
-    TEST_CASE("K&R puts else beside the brace that closed the if")
+    TEST_CASE("Formatting - K&R puts else beside the brace that closed the if")
     {
         CHECK(Format4("void main(){\nif (c) {\nf();\n} else {\ng();\n}\n}", BraceStyle::KAndR) ==
               "void main() {\n    if (c) {\n        f();\n    } else {\n        g();\n    }\n}\n");
     }
 
-    TEST_CASE("K&R leaves a list initializer exactly where Allman does")
+    TEST_CASE("Formatting - K&R leaves a list initializer exactly where Allman does")
     {
         CHECK(Format4("void main(){\narray<int> a = {1,2,3};\n}", BraceStyle::KAndR) ==
               "void main() {\n    array<int> a = {1, 2, 3};\n}\n");
     }
 
-    TEST_CASE("Allman is what an unspecified style gives")
+    TEST_CASE("Formatting - Allman is what an unspecified style gives")
     {
         const std::string code = "void main(){\nint a=1;\n}";
         CHECK(Format4(code) == Format4(code, BraceStyle::Allman));
@@ -470,7 +470,7 @@ TEST_SUITE("Formatting")
     // corpus and comparing the compiler's verdict before and after - see FormatterCorpusTest.cpp.
     // ---------------------------------------------------------------------------------------
 
-    TEST_CASE("!is does not swallow the front of an identifier")
+    TEST_CASE("Formatting - !is does not swallow the front of an identifier")
     {
         // The worst of the three: `!isdigit(s)` came out as `!is digit(s)`, which does not
         // compile. Twenty-eight of the 1061 corpus scripts were being rewritten this way.
@@ -482,7 +482,7 @@ TEST_SUITE("Formatting")
               "void main()\n{\n    if (a !is b)\n    {\n        f();\n    }\n}\n");
     }
 
-    TEST_CASE("An unterminated string keeps the line break after it")
+    TEST_CASE("Formatting - An unterminated string keeps the line break after it")
     {
         // A plain `"` ends at the line break, matching the default engine. What is left is a
         // literal that ran off its line, and joining the next line onto it pulled that code
@@ -492,7 +492,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted.find("\"onestring") == std::string::npos);
     }
 
-    TEST_CASE("A UTF-8 BOM survives formatting byte for byte")
+    TEST_CASE("Formatting - A UTF-8 BOM survives formatting byte for byte")
     {
         // The compiler accepts a BOM and so does the grammar - doc_p14_utf8_bom.as. Tokenized as
         // three stray bytes it came back out as "\xEF \xBB \xBF", and the file stopped compiling.
@@ -502,7 +502,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted == bom + "void main()\n{\n    int a = 1;\n}\n");
     }
 
-    TEST_CASE("FormatRangePreservesLineAlignmentAcrossBraceShifts")
+    TEST_CASE("Formatting - FormatRangePreservesLineAlignmentAcrossBraceShifts")
     {
         const std::string fnPre1 = angel_lsp::test::GenerateRandomSymbolName("PreFuncA");
         const std::string fnPre2 = angel_lsp::test::GenerateRandomSymbolName("PreFuncB");
@@ -551,7 +551,7 @@ TEST_SUITE("Formatting")
         CHECK((*edits)[0].newText.find(flagVar) == std::string::npos);
     }
 
-    TEST_CASE("FormatRangeReturnsEmptyWhenAlreadyFormatted")
+    TEST_CASE("Formatting - FormatRangeReturnsEmptyWhenAlreadyFormatted")
     {
         const std::string fnPre = angel_lsp::test::GenerateRandomSymbolName("FuncKAndR");
         const std::string fnTarget = angel_lsp::test::GenerateRandomSymbolName("FuncTarget");
@@ -578,7 +578,7 @@ TEST_SUITE("Formatting")
         CHECK(edits->empty());
     }
 
-    TEST_CASE("FormatOnTypeRejectsNewlineTrigger")
+    TEST_CASE("Formatting - FormatOnTypeRejectsNewlineTrigger")
     {
         std::string code = "void main()\n{\n    return;\n}\n";
         FormatLayoutOptions options;
@@ -590,7 +590,7 @@ TEST_SUITE("Formatting")
         CHECK(!edits.has_value());
     }
 
-    TEST_CASE("FormatOnTypeSemicolonFormatsOnlyTargetStatement")
+    TEST_CASE("Formatting - FormatOnTypeSemicolonFormatsOnlyTargetStatement")
     {
         const std::string fnPre = angel_lsp::test::GenerateRandomSymbolName("FuncKAndR");
         const std::string fnTarget = angel_lsp::test::GenerateRandomSymbolName("FuncTarget");
@@ -766,7 +766,7 @@ TEST_SUITE("Formatting")
         ts_tree_delete(tree);
     }
 
-    TEST_CASE("ForeachControlKeywordSpacing")
+    TEST_CASE("Formatting - ForeachControlKeywordSpacing")
     {
         const std::string itemVar = test::GenerateRandomSymbolName("item");
         const std::string listVar = test::GenerateRandomSymbolName("list");
@@ -779,7 +779,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted.find("foreach (auto " + itemVar + " : " + listVar + ")") != std::string::npos);
     }
 
-    TEST_CASE("PrecisionHandleDeclarationsAndPointerAlignment")
+    TEST_CASE("Formatting - PrecisionHandleDeclarationsAndPointerAlignment")
     {
         const std::string typeName = test::GenerateRandomSymbolName("Person");
         const std::string varName = test::GenerateRandomSymbolName("p");
@@ -805,7 +805,7 @@ TEST_SUITE("Formatting")
         CHECK(midFormatted == typeName + " @ " + varName + " = null;\n");
     }
 
-    TEST_CASE("UnaryHandleOperatorFormatting")
+    TEST_CASE("Formatting - UnaryHandleOperatorFormatting")
     {
         const std::string varA = test::GenerateRandomSymbolName("a");
         const std::string varB = test::GenerateRandomSymbolName("b");
@@ -823,7 +823,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted.find("return @" + varA + ";") != std::string::npos);
     }
 
-    TEST_CASE("TemplateCastAndConsecutiveHandles")
+    TEST_CASE("Formatting - TemplateCastAndConsecutiveHandles")
     {
         const std::string typeName = test::GenerateRandomSymbolName("TargetType");
         const std::string objVar = test::GenerateRandomSymbolName("obj");
@@ -840,7 +840,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted.find("cast<" + typeName + "@>(" + objVar + ")") != std::string::npos);
     }
 
-    TEST_CASE("ClangFormatConfigParsing")
+    TEST_CASE("Formatting - ClangFormatConfigParsing")
     {
         std::string yamlConfig = "# Clang format config\n"
                                  "BasedOnStyle: LLVM\n"
@@ -870,7 +870,7 @@ TEST_SUITE("Formatting")
         CHECK(opts.allowShortBlocksOnASingleLine == ShortBlockStyle::Never);
     }
 
-    TEST_CASE("ClangFormatPresetsTest")
+    TEST_CASE("Formatting - ClangFormatPresetsTest")
     {
         auto msStyle = ParseClangFormat("BasedOnStyle: Microsoft\n");
         REQUIRE(msStyle.has_value());
@@ -892,7 +892,7 @@ TEST_SUITE("Formatting")
         CHECK(gnuStyle->spaceBeforeParens == SpaceBeforeParensStyle::Always);
     }
 
-    TEST_CASE("MultiLanguageClangFormatConfigTest")
+    TEST_CASE("Formatting - MultiLanguageClangFormatConfigTest")
     {
         std::string multiDoc = "BasedOnStyle: LLVM\n"
                                "IndentWidth: 2\n"
@@ -950,7 +950,7 @@ TEST_SUITE("Formatting")
         CHECK(style->allowShortFunctionsOnASingleLine == ShortFunctionStyle::None);
     }
 
-    TEST_CASE("CombinatorialBraceStylesTest")
+    TEST_CASE("Formatting - CombinatorialBraceStylesTest")
     {
         const std::string fnName = test::GenerateRandomSymbolName("func");
         std::string code = "void " + fnName + "() { if (true) { int a = 1; } else { int b = 2; } }";
@@ -980,7 +980,7 @@ TEST_SUITE("Formatting")
         CHECK(st.find("    }\n    else {\n") != std::string::npos);
     }
 
-    TEST_CASE("CombinatorialPointerAndReferenceAlignmentTest")
+    TEST_CASE("Formatting - CombinatorialPointerAndReferenceAlignmentTest")
     {
         const std::string typeName = test::GenerateRandomSymbolName("Entity");
         const std::string varName = test::GenerateRandomSymbolName("ent");
@@ -1013,7 +1013,7 @@ TEST_SUITE("Formatting")
         CHECK(FormatSourceCode(refCode, midOpts).find("const " + typeName + " & in " + varName) != std::string::npos);
     }
 
-    TEST_CASE("CombinatorialSpacingRulesTest")
+    TEST_CASE("Formatting - CombinatorialSpacingRulesTest")
     {
         const std::string fn = test::GenerateRandomSymbolName("calc");
         std::string code = "void " + fn + "(int a, int b) { if(a == b) { array<int> arr = {1, 2}; int x = arr[0]; } }";
@@ -1039,7 +1039,7 @@ TEST_SUITE("Formatting")
         CHECK(al.find(fn + " (1, 2);") != std::string::npos);
     }
 
-    TEST_CASE("SwitchCaseAndAccessModifierOffsetTest")
+    TEST_CASE("Formatting - SwitchCaseAndAccessModifierOffsetTest")
     {
         std::string code = "class MyClass { public: int x; private: int y; };";
         FormatLayoutOptions options;
@@ -1059,7 +1059,7 @@ TEST_SUITE("Formatting")
         CHECK(zeroOut.find("\n    public:\n") != std::string::npos);
     }
 
-    TEST_CASE("ClangFormatOffOnPragmaTest")
+    TEST_CASE("Formatting - ClangFormatOffOnPragmaTest")
     {
         std::string code = "// clang-format off\n"
                            "void    messy_func  (   int   x  ,int y)   {return;}\n"
@@ -1074,7 +1074,7 @@ TEST_SUITE("Formatting")
         CHECK(formatted.find("void clean_func(int a, int b)") != std::string::npos);
     }
 
-    TEST_CASE("MaxEmptyLinesAndTrailingCommentsTest")
+    TEST_CASE("Formatting - MaxEmptyLinesAndTrailingCommentsTest")
     {
         std::string code = "int a = 1; // comment 1\n\n\n\n\nint b = 2;";
         FormatLayoutOptions options;

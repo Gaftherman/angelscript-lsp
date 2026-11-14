@@ -35,9 +35,9 @@ struct ArgvHelper
 };
 } // namespace
 
-TEST_SUITE("ServerConfig - CLI Argument Parsing")
+TEST_SUITE("lsp/ServerConfig")
 {
-    TEST_CASE("Default values when no arguments provided")
+    TEST_CASE("ServerConfig - Default values when no arguments provided")
     {
         SUBCASE("Null argv or zero argc")
         {
@@ -101,7 +101,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Boolean feature flags with inline '=' syntax (--flag=value)")
+    TEST_CASE("ServerConfig - Boolean feature flags with inline '=' syntax (--flag=value)")
     {
         SUBCASE("Hover flag")
         {
@@ -329,7 +329,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Boolean feature flags with space-separated syntax (--flag value)")
+    TEST_CASE("ServerConfig - Boolean feature flags with space-separated syntax (--flag value)")
     {
         SUBCASE("Hover flag")
         {
@@ -527,7 +527,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Disable flags (--disable-*)")
+    TEST_CASE("ServerConfig - Disable flags (--disable-*)")
     {
         SUBCASE("Plain disable flags")
         {
@@ -626,7 +626,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Standalone --enable-* flags (without explicit value)")
+    TEST_CASE("ServerConfig - Standalone --enable-* flags (without explicit value)")
     {
         ArgvHelper args{"angel_lsp",
                         "--disable-hover",
@@ -666,7 +666,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         CHECK(config.features.enableFormatting == true);
     }
 
-    TEST_CASE("String options (--locale, --file-ext, --predefined-ext)")
+    TEST_CASE("ServerConfig - String options (--locale, --file-ext, --predefined-ext)")
     {
         SUBCASE("Inline '=' syntax")
         {
@@ -699,7 +699,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Help and version flags")
+    TEST_CASE("ServerConfig - Help and version flags")
     {
         SUBCASE("--help and -h")
         {
@@ -720,7 +720,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Case-insensitivity and alternative boolean spellings")
+    TEST_CASE("ServerConfig - Case-insensitivity and alternative boolean spellings")
     {
         ArgvHelper args1{"angel_lsp",
                          "--enable-hover=FALSE",
@@ -781,7 +781,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         CHECK(config2.features.enableFormatting == true);
     }
 
-    TEST_CASE("Complex combinations of multiple flags")
+    TEST_CASE("ServerConfig - Complex combinations of multiple flags")
     {
         ArgvHelper args{"angel_lsp",
                         "--disable-hover",
@@ -826,7 +826,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         CHECK(config.info.predefinedFileExtension == ".custom.predef");
     }
 
-    TEST_CASE("Robustness and edge cases")
+    TEST_CASE("ServerConfig - Robustness and edge cases")
     {
         SUBCASE("Unknown flags and positional arguments are safely ignored")
         {
@@ -1005,7 +1005,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Type conversion checks flag")
+    TEST_CASE("ServerConfig - Type conversion checks flag")
     {
         SUBCASE("Enabled by default")
         {
@@ -1036,7 +1036,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Implementation and selection range flags")
+    TEST_CASE("ServerConfig - Implementation and selection range flags")
     {
         SUBCASE("Both enabled by default")
         {
@@ -1061,7 +1061,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Hierarchy flags")
+    TEST_CASE("ServerConfig - Hierarchy flags")
     {
         SUBCASE("Both enabled by default")
         {
@@ -1086,7 +1086,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Linked editing flag")
+    TEST_CASE("ServerConfig - Linked editing flag")
     {
         SUBCASE("Enabled by default")
         {
@@ -1102,7 +1102,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Predefined file paths")
+    TEST_CASE("ServerConfig - Predefined file paths")
     {
         SUBCASE("Empty by default")
         {
@@ -1140,7 +1140,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Diagnostic severity overrides")
+    TEST_CASE("ServerConfig - Diagnostic severity overrides")
     {
         SUBCASE("Empty by default")
         {
@@ -1185,7 +1185,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
-    TEST_CASE("Engine properties")
+    TEST_CASE("ServerConfig - Engine properties")
     {
         SUBCASE("Default to the engine's own defaults")
         {

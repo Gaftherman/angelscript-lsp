@@ -4,10 +4,10 @@
 
 using namespace angel_lsp::test;
 
-TEST_SUITE("IncludeGraphHarness")
+TEST_SUITE("harness/IncludeGraphHarness")
 {
 
-    TEST_CASE("Multi-file include graph resolves cross-file declarations and definitions")
+    TEST_CASE("IncludeGraphHarness - Multi-file include graph resolves cross-file declarations and definitions")
     {
         LspSemanticHarnessFixture fixture;
 
@@ -56,7 +56,8 @@ TEST_SUITE("IncludeGraphHarness")
         fixture.AssertHoverContains(v1Uri, 4, 6, "JsonDocument");
     }
 
-    TEST_CASE("Multi-file incremental update reflects modified declarations without cache poisoning")
+    TEST_CASE(
+        "IncludeGraphHarness - Multi-file incremental update reflects modified declarations without cache poisoning")
     {
         LspSemanticHarnessFixture fixture;
 

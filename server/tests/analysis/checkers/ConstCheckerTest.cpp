@@ -274,7 +274,7 @@ std::vector<Diagnostic> FilterErrors(const std::vector<Diagnostic>& diagnostics)
     return errors;
 }
 
-TEST_SUITE("AngelScript_ObjectHandles_Verification")
+TEST_SUITE("analysis/checkers/ConstChecker")
 {
     TEST_CASE("ObjectHandles - Primitive Handles: Disallow handles on primitive data types")
     {

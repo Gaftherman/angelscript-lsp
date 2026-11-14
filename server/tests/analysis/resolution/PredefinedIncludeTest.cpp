@@ -56,7 +56,7 @@ struct TempPredefinedSandbox
 };
 } // namespace
 
-TEST_SUITE("PredefinedIncludesAndScoping")
+TEST_SUITE("analysis/resolution/PredefinedInclude")
 {
     /**
      * @brief Verifies that nested #include directives inside .as.predefined files resolve properly.

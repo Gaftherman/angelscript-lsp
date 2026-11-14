@@ -100,317 +100,320 @@ struct RenameTestEnv
 };
 } // namespace
 
-TEST_CASE("RenameHandler - PrepareRename Validations and Rejections")
+TEST_SUITE("features/Rename")
 {
-    std::string code = "class Player {\n"
-                       "    int score = 0;\n"
-                       "    void AddScore(int delta) {\n"
-                       "        score += delta;\n"
-                       "        return;\n"
-                       "    }\n"
-                       "}\n";
-
-    RenameTestEnv env(code);
-
-    SUBCASE("Valid identifiers produce PrepareRenamePlaceholder")
+    TEST_CASE("RenameHandler - PrepareRename Validations and Rejections")
     {
-        // Cursor on class name 'Player' at line 0, col 7
-        auto prepClass = env.PrepareAt(0, 7);
-        REQUIRE(prepClass.has_value());
-        REQUIRE(std::holds_alternative<lsp::PrepareRenamePlaceholder>(*prepClass));
-        auto placeholder = std::get<lsp::PrepareRenamePlaceholder>(*prepClass);
-        CHECK(placeholder.placeholder == "Player");
-        CHECK(placeholder.range.start.line == 0);
-        CHECK(placeholder.range.start.character == 6);
-        CHECK(placeholder.range.end.character == 12);
-
-        // Cursor on field 'score' at line 1, col 9
-        auto prepField = env.PrepareAt(1, 9);
-        REQUIRE(prepField.has_value());
-        REQUIRE(std::holds_alternative<lsp::PrepareRenamePlaceholder>(*prepField));
-        CHECK(std::get<lsp::PrepareRenamePlaceholder>(*prepField).placeholder == "score");
-
-        // Cursor on method 'AddScore' at line 2, col 10
-        auto prepMethod = env.PrepareAt(2, 10);
-        REQUIRE(prepMethod.has_value());
-        CHECK(std::get<lsp::PrepareRenamePlaceholder>(*prepMethod).placeholder == "AddScore");
-
-        // Cursor on parameter 'delta' at line 2, col 23
-        auto prepParam = env.PrepareAt(2, 23);
-        REQUIRE(prepParam.has_value());
-        CHECK(std::get<lsp::PrepareRenamePlaceholder>(*prepParam).placeholder == "delta");
-    }
-
-    SUBCASE("Keywords and primitive types are rejected by PrepareRename")
-    {
-        // Keyword 'class' at line 0, col 2
-        CHECK(!env.PrepareAt(0, 2).has_value());
-
-        // Primitive type 'int' at line 1, col 5
-        CHECK(!env.PrepareAt(1, 5).has_value());
-
-        // Keyword 'void' at line 2, col 5
-        CHECK(!env.PrepareAt(2, 5).has_value());
-
-        // Keyword 'return' at line 4, col 9
-        CHECK(!env.PrepareAt(4, 9).has_value());
-    }
-
-    SUBCASE("Whitespace and punctuation are rejected")
-    {
-        // Empty line or whitespace
-        CHECK(!env.PrepareAt(0, 0).has_value());
-        // Semicolon
-        CHECK(!env.PrepareAt(1, 17).has_value());
-    }
-}
-
-TEST_CASE("RenameHandler - Predefined Symbols Protection")
-{
-    MultiFileRenameEnv env;
-    std::string predefinedUri = "file:///predefined.as";
-    std::string predefinedCode = "class EngineObject {\n"
-                                 "    void Destroy() {}\n"
-                                 "}\n";
-
-    std::string userUri = "file:///user.as";
-    std::string userCode = "void main() {\n"
-                           "    EngineObject obj;\n"
-                           "    obj.Destroy();\n"
+        std::string code = "class Player {\n"
+                           "    int score = 0;\n"
+                           "    void AddScore(int delta) {\n"
+                           "        score += delta;\n"
+                           "        return;\n"
+                           "    }\n"
                            "}\n";
 
-    env.AddFile(predefinedUri, predefinedCode, true);
-    env.AddFile(userUri, userCode, false);
+        RenameTestEnv env(code);
 
-    SUBCASE("PrepareRename rejects symbols in predefined files")
-    {
-        // Cursor on EngineObject inside predefined file
-        CHECK(!env.PrepareAt(predefinedUri, 0, 7).has_value());
+        SUBCASE("Valid identifiers produce PrepareRenamePlaceholder")
+        {
+            // Cursor on class name 'Player' at line 0, col 7
+            auto prepClass = env.PrepareAt(0, 7);
+            REQUIRE(prepClass.has_value());
+            REQUIRE(std::holds_alternative<lsp::PrepareRenamePlaceholder>(*prepClass));
+            auto placeholder = std::get<lsp::PrepareRenamePlaceholder>(*prepClass);
+            CHECK(placeholder.placeholder == "Player");
+            CHECK(placeholder.range.start.line == 0);
+            CHECK(placeholder.range.start.character == 6);
+            CHECK(placeholder.range.end.character == 12);
 
-        // Cursor on EngineObject usage inside user file
-        CHECK(!env.PrepareAt(userUri, 1, 6).has_value());
+            // Cursor on field 'score' at line 1, col 9
+            auto prepField = env.PrepareAt(1, 9);
+            REQUIRE(prepField.has_value());
+            REQUIRE(std::holds_alternative<lsp::PrepareRenamePlaceholder>(*prepField));
+            CHECK(std::get<lsp::PrepareRenamePlaceholder>(*prepField).placeholder == "score");
 
-        // Cursor on Destroy method call inside user file
-        CHECK(!env.PrepareAt(userUri, 2, 9).has_value());
+            // Cursor on method 'AddScore' at line 2, col 10
+            auto prepMethod = env.PrepareAt(2, 10);
+            REQUIRE(prepMethod.has_value());
+            CHECK(std::get<lsp::PrepareRenamePlaceholder>(*prepMethod).placeholder == "AddScore");
+
+            // Cursor on parameter 'delta' at line 2, col 23
+            auto prepParam = env.PrepareAt(2, 23);
+            REQUIRE(prepParam.has_value());
+            CHECK(std::get<lsp::PrepareRenamePlaceholder>(*prepParam).placeholder == "delta");
+        }
+
+        SUBCASE("Keywords and primitive types are rejected by PrepareRename")
+        {
+            // Keyword 'class' at line 0, col 2
+            CHECK(!env.PrepareAt(0, 2).has_value());
+
+            // Primitive type 'int' at line 1, col 5
+            CHECK(!env.PrepareAt(1, 5).has_value());
+
+            // Keyword 'void' at line 2, col 5
+            CHECK(!env.PrepareAt(2, 5).has_value());
+
+            // Keyword 'return' at line 4, col 9
+            CHECK(!env.PrepareAt(4, 9).has_value());
+        }
+
+        SUBCASE("Whitespace and punctuation are rejected")
+        {
+            // Empty line or whitespace
+            CHECK(!env.PrepareAt(0, 0).has_value());
+            // Semicolon
+            CHECK(!env.PrepareAt(1, 17).has_value());
+        }
     }
 
-    SUBCASE("Rename execution rejects symbols in predefined files")
+    TEST_CASE("RenameHandler - Predefined Symbols Protection")
     {
-        CHECK(!env.RenameAt(userUri, 1, 6, "NewObject").has_value());
-        CHECK(!env.RenameAt(userUri, 2, 9, "Kill").has_value());
+        MultiFileRenameEnv env;
+        std::string predefinedUri = "file:///predefined.as";
+        std::string predefinedCode = "class EngineObject {\n"
+                                     "    void Destroy() {}\n"
+                                     "}\n";
+
+        std::string userUri = "file:///user.as";
+        std::string userCode = "void main() {\n"
+                               "    EngineObject obj;\n"
+                               "    obj.Destroy();\n"
+                               "}\n";
+
+        env.AddFile(predefinedUri, predefinedCode, true);
+        env.AddFile(userUri, userCode, false);
+
+        SUBCASE("PrepareRename rejects symbols in predefined files")
+        {
+            // Cursor on EngineObject inside predefined file
+            CHECK(!env.PrepareAt(predefinedUri, 0, 7).has_value());
+
+            // Cursor on EngineObject usage inside user file
+            CHECK(!env.PrepareAt(userUri, 1, 6).has_value());
+
+            // Cursor on Destroy method call inside user file
+            CHECK(!env.PrepareAt(userUri, 2, 9).has_value());
+        }
+
+        SUBCASE("Rename execution rejects symbols in predefined files")
+        {
+            CHECK(!env.RenameAt(userUri, 1, 6, "NewObject").has_value());
+            CHECK(!env.RenameAt(userUri, 2, 9, "Kill").has_value());
+        }
     }
-}
 
-TEST_CASE("RenameHandler - Local Variable Rename & Shadowing Isolation")
-{
-    std::string code = "void Process() {\n"
-                       "    int counter = 0;\n"
-                       "    if (true) {\n"
-                       "        int counter = 99;\n"
-                       "        counter += 1;\n"
-                       "    }\n"
-                       "    counter += 10;\n"
-                       "}\n";
-
-    RenameTestEnv env(code);
-
-    SUBCASE("Renaming outer counter modifies only outer declaration and outer usages")
+    TEST_CASE("RenameHandler - Local Variable Rename & Shadowing Isolation")
     {
-        auto edit = env.RenameAt(1, 10, "outerCount");
+        std::string code = "void Process() {\n"
+                           "    int counter = 0;\n"
+                           "    if (true) {\n"
+                           "        int counter = 99;\n"
+                           "        counter += 1;\n"
+                           "    }\n"
+                           "    counter += 10;\n"
+                           "}\n";
+
+        RenameTestEnv env(code);
+
+        SUBCASE("Renaming outer counter modifies only outer declaration and outer usages")
+        {
+            auto edit = env.RenameAt(1, 10, "outerCount");
+            REQUIRE(edit.has_value());
+            REQUIRE(edit->changes.has_value());
+            auto& changesMap = *edit->changes;
+            REQUIRE(changesMap.size() == 1);
+
+            auto it = changesMap.find(lsp::DocumentUri::parse(env.uri));
+            REQUIRE(it != changesMap.end());
+            const auto& edits = it->second;
+
+            // Expect 2 edits: line 1 (decl) and line 6 (usage)
+            REQUIRE(edits.size() == 2);
+            CHECK(edits[0].range.start.line == 1);
+            CHECK(edits[0].newText == "outerCount");
+            CHECK(edits[1].range.start.line == 6);
+            CHECK(edits[1].newText == "outerCount");
+        }
+
+        SUBCASE("Renaming inner counter modifies only inner declaration and inner usages")
+        {
+            auto edit = env.RenameAt(3, 14, "innerCount");
+            REQUIRE(edit.has_value());
+            REQUIRE(edit->changes.has_value());
+            auto& changesMap = *edit->changes;
+            REQUIRE(changesMap.size() == 1);
+
+            auto it = changesMap.find(lsp::DocumentUri::parse(env.uri));
+            REQUIRE(it != changesMap.end());
+            const auto& edits = it->second;
+
+            // Expect 2 edits: line 3 (decl) and line 4 (usage)
+            REQUIRE(edits.size() == 2);
+            CHECK(edits[0].range.start.line == 3);
+            CHECK(edits[0].newText == "innerCount");
+            CHECK(edits[1].range.start.line == 4);
+            CHECK(edits[1].newText == "innerCount");
+        }
+
+        SUBCASE("Invalid new names are rejected by Rename")
+        {
+            // Empty name
+            CHECK(!env.RenameAt(1, 10, "").has_value());
+            // Starts with digit
+            CHECK(!env.RenameAt(1, 10, "123invalid").has_value());
+            // Contains invalid character
+            CHECK(!env.RenameAt(1, 10, "invalid-name").has_value());
+            // Reserved keyword
+            CHECK(!env.RenameAt(1, 10, "class").has_value());
+            CHECK(!env.RenameAt(1, 10, "return").has_value());
+            // Primitive type name
+            CHECK(!env.RenameAt(1, 10, "float").has_value());
+        }
+    }
+
+    TEST_CASE("RenameHandler - Class Member Rename")
+    {
+        std::string code = "class Player {\n"
+                           "    int speed = 5;\n"
+                           "    void Move() {\n"
+                           "        speed += 1;\n"
+                           "        this.speed = 10;\n"
+                           "    }\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Player p;\n"
+                           "    p.speed = 20;\n"
+                           "}\n";
+
+        RenameTestEnv env(code);
+
+        // Rename 'speed' to 'velocity'
+        auto edit = env.RenameAt(1, 9, "velocity");
         REQUIRE(edit.has_value());
         REQUIRE(edit->changes.has_value());
-        auto& changesMap = *edit->changes;
-        REQUIRE(changesMap.size() == 1);
 
-        auto it = changesMap.find(lsp::DocumentUri::parse(env.uri));
-        REQUIRE(it != changesMap.end());
+        auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
+        REQUIRE(it != edit->changes->end());
         const auto& edits = it->second;
 
-        // Expect 2 edits: line 1 (decl) and line 6 (usage)
-        REQUIRE(edits.size() == 2);
+        // Line 1 (decl), Line 3 (unqualified), Line 4 (this.speed), Line 9 (p.speed)
+        REQUIRE(edits.size() == 4);
         CHECK(edits[0].range.start.line == 1);
-        CHECK(edits[0].newText == "outerCount");
-        CHECK(edits[1].range.start.line == 6);
-        CHECK(edits[1].newText == "outerCount");
+        CHECK(edits[0].newText == "velocity");
+        CHECK(edits[1].range.start.line == 3);
+        CHECK(edits[1].newText == "velocity");
+        CHECK(edits[2].range.start.line == 4);
+        CHECK(edits[2].newText == "velocity");
+        CHECK(edits[3].range.start.line == 9);
+        CHECK(edits[3].newText == "velocity");
     }
 
-    SUBCASE("Renaming inner counter modifies only inner declaration and inner usages")
+    TEST_CASE("RenameHandler - Multi-File Global Symbol Rename WorkspaceEdit")
     {
-        auto edit = env.RenameAt(3, 14, "innerCount");
+        MultiFileRenameEnv env;
+        std::string fileA = "file:///utils.as";
+        std::string codeA = "void HelperLog(string msg) {\n"
+                            "}\n";
+
+        std::string fileB = "file:///app.as";
+        std::string codeB = "void main() {\n"
+                            "    HelperLog(\"Starting app\");\n"
+                            "    HelperLog(\"Exiting app\");\n"
+                            "}\n";
+
+        env.AddFile(fileA, codeA);
+        env.AddFile(fileB, codeB);
+
+        // Rename HelperLog to LogMessage from call site in app.as at line 1, col 5
+        auto edit = env.RenameAt(fileB, 1, 5, "LogMessage");
         REQUIRE(edit.has_value());
         REQUIRE(edit->changes.has_value());
-        auto& changesMap = *edit->changes;
-        REQUIRE(changesMap.size() == 1);
 
-        auto it = changesMap.find(lsp::DocumentUri::parse(env.uri));
-        REQUIRE(it != changesMap.end());
+        const auto& changesMap = *edit->changes;
+        REQUIRE(changesMap.size() == 2);
+
+        auto itA = changesMap.find(lsp::DocumentUri::parse(fileA));
+        REQUIRE(itA != changesMap.end());
+        const auto& editsA = itA->second;
+        REQUIRE(editsA.size() == 1);
+        CHECK(editsA[0].range.start.line == 0);
+        CHECK(editsA[0].newText == "LogMessage");
+
+        auto itB = changesMap.find(lsp::DocumentUri::parse(fileB));
+        REQUIRE(itB != changesMap.end());
+        const auto& editsB = itB->second;
+        REQUIRE(editsB.size() == 2);
+        CHECK(editsB[0].range.start.line == 1);
+        CHECK(editsB[0].newText == "LogMessage");
+        CHECK(editsB[1].range.start.line == 2);
+        CHECK(editsB[1].newText == "LogMessage");
+    }
+
+    TEST_CASE("RenameHandler - Namespace Function Rename")
+    {
+        std::string code = "namespace Game {\n"
+                           "    void Spawn() {}\n" // line 1
+                           "    void Init() {\n"
+                           "        Spawn();\n" // line 3
+                           "    }\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Game::Spawn();\n" // line 7
+                           "}\n";
+
+        RenameTestEnv env(code);
+
+        // Rename 'Spawn' to 'CreateEntity'
+        auto edit = env.RenameAt(1, 9, "CreateEntity");
+        REQUIRE(edit.has_value());
+        REQUIRE(edit->changes.has_value());
+
+        auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
+        REQUIRE(it != edit->changes->end());
         const auto& edits = it->second;
 
-        // Expect 2 edits: line 3 (decl) and line 4 (usage)
-        REQUIRE(edits.size() == 2);
-        CHECK(edits[0].range.start.line == 3);
-        CHECK(edits[0].newText == "innerCount");
-        CHECK(edits[1].range.start.line == 4);
-        CHECK(edits[1].newText == "innerCount");
+        REQUIRE(edits.size() == 3);
+        CHECK(edits[0].range.start.line == 1);
+        CHECK(edits[0].newText == "CreateEntity");
+        CHECK(edits[1].range.start.line == 3);
+        CHECK(edits[1].newText == "CreateEntity");
+        CHECK(edits[2].range.start.line == 7);
+        CHECK(edits[2].newText == "CreateEntity");
     }
 
-    SUBCASE("Invalid new names are rejected by Rename")
+    TEST_CASE(
+        "RenameHandler - Invariant: Dynamic rename updates 100% of reference sites and rewritten source parses cleanly")
     {
-        // Empty name
-        CHECK(!env.RenameAt(1, 10, "").has_value());
-        // Starts with digit
-        CHECK(!env.RenameAt(1, 10, "123invalid").has_value());
-        // Contains invalid character
-        CHECK(!env.RenameAt(1, 10, "invalid-name").has_value());
-        // Reserved keyword
-        CHECK(!env.RenameAt(1, 10, "class").has_value());
-        CHECK(!env.RenameAt(1, 10, "return").has_value());
-        // Primitive type name
-        CHECK(!env.RenameAt(1, 10, "float").has_value());
-    }
-}
+        std::mt19937_64 rng(0x1337BEEF);
+        const std::string oldName = angel_lsp::test::GenerateIdentifier(rng, "oldVar");
+        const std::string newName = angel_lsp::test::GenerateIdentifier(rng, "newVar");
 
-TEST_CASE("RenameHandler - Class Member Rename")
-{
-    std::string code = "class Player {\n"
-                       "    int speed = 5;\n"
-                       "    void Move() {\n"
-                       "        speed += 1;\n"
-                       "        this.speed = 10;\n"
-                       "    }\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Player p;\n"
-                       "    p.speed = 20;\n"
-                       "}\n";
+        std::string code = "void Runner() {\n"
+                           "    int " +
+                           oldName +
+                           " = 10;\n"
+                           "    " +
+                           oldName +
+                           " += 5;\n"
+                           "    int res = " +
+                           oldName +
+                           " * 2;\n"
+                           "}\n";
 
-    RenameTestEnv env(code);
+        RenameTestEnv env(code);
+        auto edit = env.RenameAt(1, 8, newName);
+        REQUIRE(edit.has_value());
+        REQUIRE(edit->changes.has_value());
 
-    // Rename 'speed' to 'velocity'
-    auto edit = env.RenameAt(1, 9, "velocity");
-    REQUIRE(edit.has_value());
-    REQUIRE(edit->changes.has_value());
+        auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
+        REQUIRE(it != edit->changes->end());
+        const auto& edits = it->second;
 
-    auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
-    REQUIRE(it != edit->changes->end());
-    const auto& edits = it->second;
-
-    // Line 1 (decl), Line 3 (unqualified), Line 4 (this.speed), Line 9 (p.speed)
-    REQUIRE(edits.size() == 4);
-    CHECK(edits[0].range.start.line == 1);
-    CHECK(edits[0].newText == "velocity");
-    CHECK(edits[1].range.start.line == 3);
-    CHECK(edits[1].newText == "velocity");
-    CHECK(edits[2].range.start.line == 4);
-    CHECK(edits[2].newText == "velocity");
-    CHECK(edits[3].range.start.line == 9);
-    CHECK(edits[3].newText == "velocity");
-}
-
-TEST_CASE("RenameHandler - Multi-File Global Symbol Rename WorkspaceEdit")
-{
-    MultiFileRenameEnv env;
-    std::string fileA = "file:///utils.as";
-    std::string codeA = "void HelperLog(string msg) {\n"
-                        "}\n";
-
-    std::string fileB = "file:///app.as";
-    std::string codeB = "void main() {\n"
-                        "    HelperLog(\"Starting app\");\n"
-                        "    HelperLog(\"Exiting app\");\n"
-                        "}\n";
-
-    env.AddFile(fileA, codeA);
-    env.AddFile(fileB, codeB);
-
-    // Rename HelperLog to LogMessage from call site in app.as at line 1, col 5
-    auto edit = env.RenameAt(fileB, 1, 5, "LogMessage");
-    REQUIRE(edit.has_value());
-    REQUIRE(edit->changes.has_value());
-
-    const auto& changesMap = *edit->changes;
-    REQUIRE(changesMap.size() == 2);
-
-    auto itA = changesMap.find(lsp::DocumentUri::parse(fileA));
-    REQUIRE(itA != changesMap.end());
-    const auto& editsA = itA->second;
-    REQUIRE(editsA.size() == 1);
-    CHECK(editsA[0].range.start.line == 0);
-    CHECK(editsA[0].newText == "LogMessage");
-
-    auto itB = changesMap.find(lsp::DocumentUri::parse(fileB));
-    REQUIRE(itB != changesMap.end());
-    const auto& editsB = itB->second;
-    REQUIRE(editsB.size() == 2);
-    CHECK(editsB[0].range.start.line == 1);
-    CHECK(editsB[0].newText == "LogMessage");
-    CHECK(editsB[1].range.start.line == 2);
-    CHECK(editsB[1].newText == "LogMessage");
-}
-
-TEST_CASE("RenameHandler - Namespace Function Rename")
-{
-    std::string code = "namespace Game {\n"
-                       "    void Spawn() {}\n" // line 1
-                       "    void Init() {\n"
-                       "        Spawn();\n" // line 3
-                       "    }\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Game::Spawn();\n" // line 7
-                       "}\n";
-
-    RenameTestEnv env(code);
-
-    // Rename 'Spawn' to 'CreateEntity'
-    auto edit = env.RenameAt(1, 9, "CreateEntity");
-    REQUIRE(edit.has_value());
-    REQUIRE(edit->changes.has_value());
-
-    auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
-    REQUIRE(it != edit->changes->end());
-    const auto& edits = it->second;
-
-    REQUIRE(edits.size() == 3);
-    CHECK(edits[0].range.start.line == 1);
-    CHECK(edits[0].newText == "CreateEntity");
-    CHECK(edits[1].range.start.line == 3);
-    CHECK(edits[1].newText == "CreateEntity");
-    CHECK(edits[2].range.start.line == 7);
-    CHECK(edits[2].newText == "CreateEntity");
-}
-
-TEST_CASE(
-    "RenameHandler - Invariant: Dynamic rename updates 100% of reference sites and rewritten source parses cleanly")
-{
-    std::mt19937_64 rng(0x1337BEEF);
-    const std::string oldName = angel_lsp::test::GenerateIdentifier(rng, "oldVar");
-    const std::string newName = angel_lsp::test::GenerateIdentifier(rng, "newVar");
-
-    std::string code = "void Runner() {\n"
-                       "    int " +
-                       oldName +
-                       " = 10;\n"
-                       "    " +
-                       oldName +
-                       " += 5;\n"
-                       "    int res = " +
-                       oldName +
-                       " * 2;\n"
-                       "}\n";
-
-    RenameTestEnv env(code);
-    auto edit = env.RenameAt(1, 8, newName);
-    REQUIRE(edit.has_value());
-    REQUIRE(edit->changes.has_value());
-
-    auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
-    REQUIRE(it != edit->changes->end());
-    const auto& edits = it->second;
-
-    REQUIRE(edits.size() == 3);
-    for (const auto& e : edits)
-    {
-        CHECK(e.newText == newName);
+        REQUIRE(edits.size() == 3);
+        for (const auto& e : edits)
+        {
+            CHECK(e.newText == newName);
+        }
     }
 }

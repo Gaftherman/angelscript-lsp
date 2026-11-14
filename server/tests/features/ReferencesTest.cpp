@@ -104,1054 +104,1059 @@ struct TestEnvironment
 };
 } // namespace
 
-TEST_CASE("ReferencesHandler - Local Variable and Parameter References")
+TEST_SUITE("features/References")
 {
-    std::string code = "void Calculate(int baseValue) {\n"
-                       "    int multiplier = 2;\n"
-                       "    int result = baseValue * multiplier;\n"
-                       "    multiplier = result + multiplier;\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    SUBCASE("Find references of parameter baseValue with includeDeclaration=true")
+    TEST_CASE("ReferencesHandler - Local Variable and Parameter References")
     {
-        // Cursor on parameter declaration 'baseValue' at line 0, col 20
-        auto refs = env.RefsAt(0, 20, true);
-        REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 2);
-        CHECK((*refs)[0].range.start.line == 0); // Declaration
-        CHECK((*refs)[1].range.start.line == 2); // Usage
-    }
+        std::string code = "void Calculate(int baseValue) {\n"
+                           "    int multiplier = 2;\n"
+                           "    int result = baseValue * multiplier;\n"
+                           "    multiplier = result + multiplier;\n"
+                           "}\n";
 
-    SUBCASE("Find references of parameter baseValue with includeDeclaration=false")
-    {
-        // Cursor on parameter usage 'baseValue' at line 2, col 18
-        auto refs = env.RefsAt(2, 18, false);
-        REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 1);
-        CHECK((*refs)[0].range.start.line == 2);
-    }
+        TestEnvironment env(code);
 
-    SUBCASE("Find references of local variable multiplier with includeDeclaration=true")
-    {
-        // 'multiplier' declared on line 1, used on line 2, line 3 (lhs), line 3 (rhs)
-        auto refs = env.RefsAt(1, 10, true);
-        REQUIRE(refs.has_value());
-        CHECK(refs->size() == 4);
-        CHECK((*refs)[0].range.start.line == 1); // Declaration
-        CHECK((*refs)[1].range.start.line == 2); // Line 2 usage
-        CHECK((*refs)[2].range.start.line == 3); // Line 3 usage (LHS)
-        CHECK((*refs)[3].range.start.line == 3); // Line 3 usage (RHS)
-    }
-
-    SUBCASE("Find references of local variable multiplier with includeDeclaration=false")
-    {
-        auto refs = env.RefsAt(2, 30, false);
-        REQUIRE(refs.has_value());
-        CHECK(refs->size() == 3);
-        for (const auto& loc : *refs)
+        SUBCASE("Find references of parameter baseValue with includeDeclaration=true")
         {
-            CHECK(loc.range.start.line > 1);
+            // Cursor on parameter declaration 'baseValue' at line 0, col 20
+            auto refs = env.RefsAt(0, 20, true);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 2);
+            CHECK((*refs)[0].range.start.line == 0); // Declaration
+            CHECK((*refs)[1].range.start.line == 2); // Usage
+        }
+
+        SUBCASE("Find references of parameter baseValue with includeDeclaration=false")
+        {
+            // Cursor on parameter usage 'baseValue' at line 2, col 18
+            auto refs = env.RefsAt(2, 18, false);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 1);
+            CHECK((*refs)[0].range.start.line == 2);
+        }
+
+        SUBCASE("Find references of local variable multiplier with includeDeclaration=true")
+        {
+            // 'multiplier' declared on line 1, used on line 2, line 3 (lhs), line 3 (rhs)
+            auto refs = env.RefsAt(1, 10, true);
+            REQUIRE(refs.has_value());
+            CHECK(refs->size() == 4);
+            CHECK((*refs)[0].range.start.line == 1); // Declaration
+            CHECK((*refs)[1].range.start.line == 2); // Line 2 usage
+            CHECK((*refs)[2].range.start.line == 3); // Line 3 usage (LHS)
+            CHECK((*refs)[3].range.start.line == 3); // Line 3 usage (RHS)
+        }
+
+        SUBCASE("Find references of local variable multiplier with includeDeclaration=false")
+        {
+            auto refs = env.RefsAt(2, 30, false);
+            REQUIRE(refs.has_value());
+            CHECK(refs->size() == 3);
+            for (const auto& loc : *refs)
+            {
+                CHECK(loc.range.start.line > 1);
+            }
         }
     }
-}
 
-TEST_CASE("ReferencesHandler - Lexical Scope Shadowing Isolation")
-{
-    std::string code = "void TestScope() {\n"
-                       "    int value = 10;\n"
-                       "    if (true) {\n"
-                       "        int value = 20;\n"
-                       "        value += 5;\n"
-                       "    }\n"
-                       "    value += 1;\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    SUBCASE("Outer variable references exclude shadowed inner scope")
+    TEST_CASE("ReferencesHandler - Lexical Scope Shadowing Isolation")
     {
-        // Cursor on outer 'value' at line 1, col 9
-        auto refs = env.RefsAt(1, 9, true);
-        REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 2);
-        CHECK((*refs)[0].range.start.line == 1); // Outer declaration
-        CHECK((*refs)[1].range.start.line == 6); // Outer usage (value += 1)
+        std::string code = "void TestScope() {\n"
+                           "    int value = 10;\n"
+                           "    if (true) {\n"
+                           "        int value = 20;\n"
+                           "        value += 5;\n"
+                           "    }\n"
+                           "    value += 1;\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        SUBCASE("Outer variable references exclude shadowed inner scope")
+        {
+            // Cursor on outer 'value' at line 1, col 9
+            auto refs = env.RefsAt(1, 9, true);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 2);
+            CHECK((*refs)[0].range.start.line == 1); // Outer declaration
+            CHECK((*refs)[1].range.start.line == 6); // Outer usage (value += 1)
+        }
+
+        SUBCASE("Inner variable references include only inner scope")
+        {
+            // Cursor on inner 'value' at line 3, col 13
+            auto refs = env.RefsAt(3, 13, true);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 2);
+            CHECK((*refs)[0].range.start.line == 3); // Inner declaration
+            CHECK((*refs)[1].range.start.line == 4); // Inner usage (value += 5)
+        }
     }
 
-    SUBCASE("Inner variable references include only inner scope")
+    TEST_CASE("ReferencesHandler - Class Field and Method References")
     {
-        // Cursor on inner 'value' at line 3, col 13
-        auto refs = env.RefsAt(3, 13, true);
-        REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 2);
-        CHECK((*refs)[0].range.start.line == 3); // Inner declaration
-        CHECK((*refs)[1].range.start.line == 4); // Inner usage (value += 5)
+        std::string code = "class Hero {\n"
+                           "    int health = 100;\n"
+                           "    void Heal(int amount) {\n"
+                           "        health += amount;\n"
+                           "        this.health += 1;\n"
+                           "    }\n"
+                           "}\n"
+                           "class Villain {\n"
+                           "    int health = 50;\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Hero h;\n"
+                           "    h.health = 200;\n"
+                           "    h.Heal(50);\n"
+                           "    Villain v;\n"
+                           "    v.health = 0;\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        SUBCASE("References to Hero::health correctly finds field usages and ignores Villain::health")
+        {
+            // Cursor on Hero::health declaration at line 1, col 9
+            auto refs = env.RefsAt(1, 9, true);
+            REQUIRE(refs.has_value());
+            // Hero::health decl (line 1), unqualified in Heal (line 3), this.health in Heal (line 4), h.health in main
+            // (line 12)
+            REQUIRE(refs->size() == 4);
+            CHECK((*refs)[0].range.start.line == 1);
+            CHECK((*refs)[1].range.start.line == 3);
+            CHECK((*refs)[2].range.start.line == 4);
+            CHECK((*refs)[3].range.start.line == 12);
+        }
+
+        SUBCASE("References to Hero::Heal finds declaration and method calls")
+        {
+            // Cursor on Hero::Heal at line 2, col 10
+            auto refs = env.RefsAt(2, 10, true);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 2);
+            CHECK((*refs)[0].range.start.line == 2);  // Declaration
+            CHECK((*refs)[1].range.start.line == 13); // Call site: h.Heal(50)
+        }
+
+        SUBCASE("References to Villain::health isolated to Villain")
+        {
+            // Cursor on Villain::health declaration at line 8, col 9
+            auto refs = env.RefsAt(8, 9, true);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 2);
+            CHECK((*refs)[0].range.start.line == 8);  // Declaration
+            CHECK((*refs)[1].range.start.line == 15); // v.health = 0
+        }
     }
-}
 
-TEST_CASE("ReferencesHandler - Class Field and Method References")
-{
-    std::string code = "class Hero {\n"
-                       "    int health = 100;\n"
-                       "    void Heal(int amount) {\n"
-                       "        health += amount;\n"
-                       "        this.health += 1;\n"
-                       "    }\n"
-                       "}\n"
-                       "class Villain {\n"
-                       "    int health = 50;\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Hero h;\n"
-                       "    h.health = 200;\n"
-                       "    h.Heal(50);\n"
-                       "    Villain v;\n"
-                       "    v.health = 0;\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    SUBCASE("References to Hero::health correctly finds field usages and ignores Villain::health")
+    TEST_CASE("ReferencesHandler - Class Inheritance Hierarchy References")
     {
-        // Cursor on Hero::health declaration at line 1, col 9
-        auto refs = env.RefsAt(1, 9, true);
-        REQUIRE(refs.has_value());
-        // Hero::health decl (line 1), unqualified in Heal (line 3), this.health in Heal (line 4), h.health in main
-        // (line 12)
-        REQUIRE(refs->size() == 4);
-        CHECK((*refs)[0].range.start.line == 1);
-        CHECK((*refs)[1].range.start.line == 3);
-        CHECK((*refs)[2].range.start.line == 4);
-        CHECK((*refs)[3].range.start.line == 12);
-    }
+        std::string code = "class Entity {\n"
+                           "    int id = 0;\n"
+                           "    void Reset() { id = 0; }\n"
+                           "}\n"
+                           "class Actor : Entity {\n"
+                           "    void Act() { Reset(); }\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Actor a;\n"
+                           "    a.Reset();\n"
+                           "}\n";
 
-    SUBCASE("References to Hero::Heal finds declaration and method calls")
-    {
-        // Cursor on Hero::Heal at line 2, col 10
+        TestEnvironment env(code);
+
+        // References to Entity::Reset() from declaration at line 2, col 10
         auto refs = env.RefsAt(2, 10, true);
         REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 2);
-        CHECK((*refs)[0].range.start.line == 2);  // Declaration
-        CHECK((*refs)[1].range.start.line == 13); // Call site: h.Heal(50)
-    }
-
-    SUBCASE("References to Villain::health isolated to Villain")
-    {
-        // Cursor on Villain::health declaration at line 8, col 9
-        auto refs = env.RefsAt(8, 9, true);
-        REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 2);
-        CHECK((*refs)[0].range.start.line == 8);  // Declaration
-        CHECK((*refs)[1].range.start.line == 15); // v.health = 0
-    }
-}
-
-TEST_CASE("ReferencesHandler - Class Inheritance Hierarchy References")
-{
-    std::string code = "class Entity {\n"
-                       "    int id = 0;\n"
-                       "    void Reset() { id = 0; }\n"
-                       "}\n"
-                       "class Actor : Entity {\n"
-                       "    void Act() { Reset(); }\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Actor a;\n"
-                       "    a.Reset();\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // References to Entity::Reset() from declaration at line 2, col 10
-    auto refs = env.RefsAt(2, 10, true);
-    REQUIRE(refs.has_value());
-    // Entity::Reset decl (line 2), unqualified in Actor::Act (line 5), a.Reset() in main (line 9)
-    REQUIRE(refs->size() == 3);
-    CHECK((*refs)[0].range.start.line == 2);
-    CHECK((*refs)[1].range.start.line == 5);
-    CHECK((*refs)[2].range.start.line == 9);
-}
-
-TEST_CASE("ReferencesHandler - Global Symbols and Cross-File References")
-{
-    MultiFileTestEnv env;
-    std::string fileA = "file:///a_math.as";
-    std::string codeA = "int GlobalCounter = 0;\n"
-                        "void IncrementCounter() {\n"
-                        "    GlobalCounter += 1;\n"
-                        "}\n";
-
-    std::string fileB = "file:///b_main.as";
-    std::string codeB = "void main() {\n"
-                        "    IncrementCounter();\n"
-                        "    GlobalCounter += 10;\n"
-                        "}\n"
-                        "void ShadowTest() {\n"
-                        "    int GlobalCounter = 99;\n"
-                        "    GlobalCounter += 1;\n"
-                        "}\n";
-
-    env.AddFile(fileA, codeA);
-    env.AddFile(fileB, codeB);
-
-    SUBCASE("Find references of GlobalCounter across files with local shadow protection")
-    {
-        // Cursor on GlobalCounter declaration in a_math.as line 0, col 5
-        auto refs = env.RefsAt(fileA, 0, 5, true);
-        REQUIRE(refs.has_value());
-        // fileA: decl (line 0), usage (line 2); fileB: usage in main (line 2). Shadowed in ShadowTest excluded!
+        // Entity::Reset decl (line 2), unqualified in Actor::Act (line 5), a.Reset() in main (line 9)
         REQUIRE(refs->size() == 3);
-        CHECK((*refs)[0].uri.toString() == fileA);
-        CHECK((*refs)[0].range.start.line == 0);
-        CHECK((*refs)[1].uri.toString() == fileA);
-        CHECK((*refs)[1].range.start.line == 2);
-        CHECK((*refs)[2].uri.toString() == fileB);
-        CHECK((*refs)[2].range.start.line == 2);
+        CHECK((*refs)[0].range.start.line == 2);
+        CHECK((*refs)[1].range.start.line == 5);
+        CHECK((*refs)[2].range.start.line == 9);
     }
 
-    SUBCASE("Find references of IncrementCounter across files")
+    TEST_CASE("ReferencesHandler - Global Symbols and Cross-File References")
     {
-        // Cursor on IncrementCounter call in b_main.as line 1, col 6
-        auto refs = env.RefsAt(fileB, 1, 6, true);
-        REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 2);
-        CHECK((*refs)[0].uri.toString() == fileA);
-        CHECK((*refs)[0].range.start.line == 1); // Declaration in a_math.as
-        CHECK((*refs)[1].uri.toString() == fileB);
-        CHECK((*refs)[1].range.start.line == 1); // Call site in b_main.as
-    }
-}
-
-TEST_CASE("ReferencesHandler - Enum and Enum Member References")
-{
-    std::string code = "enum GameState {\n"
-                       "    State_Idle,\n"
-                       "    State_Running\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    GameState state = State_Idle;\n"
-                       "    if (state == State_Idle) {}\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    SUBCASE("Find references of enum member State_Idle")
-    {
-        // Cursor on State_Idle declaration at line 1, col 5
-        auto refs = env.RefsAt(1, 5, true);
-        REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 3);
-        CHECK((*refs)[0].range.start.line == 1); // Decl
-        CHECK((*refs)[1].range.start.line == 5); // Usage 1
-        CHECK((*refs)[2].range.start.line == 6); // Usage 2
-    }
-
-    SUBCASE("Find references of enum type GameState")
-    {
-        // Cursor on GameState declaration at line 0, col 6
-        auto refs = env.RefsAt(0, 6, true);
-        REQUIRE(refs.has_value());
-        REQUIRE(refs->size() == 2);
-        CHECK((*refs)[0].range.start.line == 0); // Decl
-        CHECK((*refs)[1].range.start.line == 5); // Type usage
-    }
-}
-
-TEST_CASE("ReferencesHandler - Edge Cases & Non-Identifiers")
-{
-    std::string code = "// Some comment\n"
-                       "void main() {\n"
-                       "    int x = 10;\n"
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // Cursor on comment line 0
-    auto refsComment = env.RefsAt(0, 5);
-    CHECK(!refsComment.has_value());
-
-    // Cursor on keyword 'void' line 1, col 1
-    auto refsVoid = env.RefsAt(1, 1);
-    CHECK(!refsVoid.has_value());
-
-    // Cursor on keyword 'int' line 2, col 5
-    auto refsInt = env.RefsAt(2, 5);
-    CHECK(!refsInt.has_value());
-}
-
-TEST_CASE("ReferencesHandler - Class Method References Across Inheritance")
-{
-    std::string code = "class Entity {\n"
-                       "    void TakeDamage(int dmg) {}\n" // line 1
-                       "}\n"
-                       "class Player : Entity {\n"
-                       "    void Attack() {\n"
-                       "        TakeDamage(5);\n" // line 5
-                       "    }\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Player p;\n"
-                       "    p.TakeDamage(10);\n" // line 10
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // References of TakeDamage with includeDeclaration=true
-    auto refs = env.RefsAt(1, 10, true);
-    REQUIRE(refs.has_value());
-    REQUIRE(refs->size() == 3);
-    CHECK((*refs)[0].range.start.line == 1);  // Decl
-    CHECK((*refs)[1].range.start.line == 5);  // Sibling call
-    CHECK((*refs)[2].range.start.line == 10); // Member call
-}
-
-TEST_CASE("ReferencesHandler - Namespace Function References")
-{
-    std::string code = "namespace Game {\n"
-                       "    void Spawn() {}\n" // line 1
-                       "    void Init() {\n"
-                       "        Spawn();\n" // line 3
-                       "    }\n"
-                       "}\n"
-                       "void main() {\n"
-                       "    Game::Spawn();\n" // line 7
-                       "}\n";
-
-    TestEnvironment env(code);
-
-    // References of Spawn declaration with includeDeclaration=true
-    auto refs = env.RefsAt(1, 9, true);
-    REQUIRE(refs.has_value());
-    REQUIRE(refs->size() == 3);
-    CHECK((*refs)[0].range.start.line == 1);
-    CHECK((*refs)[1].range.start.line == 3);
-    CHECK((*refs)[2].range.start.line == 7);
-}
-
-TEST_CASE("ReferencesHandler - Strict Scope Isolation for Sibling Classes with Private Methods")
-{
-    MultiFileTestEnv env;
-
-    std::string baseCode = "class ScriptBasePlayerWeaponEntity {\n"
-                           "    void Spawn() {}\n"
-                           "}\n";
-
-    std::string weaponACode = "class weapon_ins2m40a1 : ScriptBasePlayerWeaponEntity {\n"
-                              "    private int GetBodygroup() { return 1; }\n" // line 1
-                              "    void PrimaryAttack() {\n"
-                              "        GetBodygroup();\n"      // line 3
-                              "        this.GetBodygroup();\n" // line 4
-                              "    }\n"
-                              "}\n";
-
-    std::string weaponBCode = "class weapon_ins2ak47 : ScriptBasePlayerWeaponEntity {\n"
-                              "    private int GetBodygroup() { return 2; }\n" // line 1
-                              "    void PrimaryAttack() {\n"
-                              "        GetBodygroup();\n" // line 3
-                              "    }\n"
-                              "}\n";
-
-    env.AddFile("file:///base.as", baseCode);
-    env.AddFile("file:///weapon_a.as", weaponACode);
-    env.AddFile("file:///weapon_b.as", weaponBCode);
-
-    // References on weapon_ins2m40a1's private GetBodygroup declaration (line 1, col 16)
-    auto refsA = env.RefsAt("file:///weapon_a.as", 1, 16, true);
-    REQUIRE(refsA.has_value());
-    REQUIRE(refsA->size() == 3);
-    for (const auto& ref : *refsA)
-    {
-        CHECK(ref.uri.toString() == "file:///weapon_a.as");
-    }
-    CHECK((*refsA)[0].range.start.line == 1);
-    CHECK((*refsA)[1].range.start.line == 3);
-    CHECK((*refsA)[2].range.start.line == 4);
-
-    // References on weapon_ins2ak47's private GetBodygroup declaration (line 1, col 16)
-    auto refsB = env.RefsAt("file:///weapon_b.as", 1, 16, true);
-    REQUIRE(refsB.has_value());
-    REQUIRE(refsB->size() == 2);
-    for (const auto& ref : *refsB)
-    {
-        CHECK(ref.uri.toString() == "file:///weapon_b.as");
-    }
-    CHECK((*refsB)[0].range.start.line == 1);
-    CHECK((*refsB)[1].range.start.line == 3);
-}
-
-TEST_CASE("ReferencesHandler - Sibling Classes with Coincidental Public Methods Not in Base")
-{
-    MultiFileTestEnv env;
-
-    std::string baseCode = "class BaseWeapon {\n"
-                           "    void Fire() {}\n"
-                           "}\n";
-
-    std::string weaponACode = "class WeaponA : BaseWeapon {\n"
-                              "    void CustomZoom() {}\n" // line 1
-                              "    void Fire() {\n"
-                              "        CustomZoom();\n" // line 3
-                              "    }\n"
-                              "}\n";
-
-    std::string weaponBCode = "class WeaponB : BaseWeapon {\n"
-                              "    void CustomZoom() {}\n" // line 1
-                              "    void Fire() {\n"
-                              "        CustomZoom();\n" // line 3
-                              "    }\n"
-                              "}\n";
-
-    env.AddFile("file:///base.as", baseCode);
-    env.AddFile("file:///weapon_a.as", weaponACode);
-    env.AddFile("file:///weapon_b.as", weaponBCode);
-
-    auto refsA = env.RefsAt("file:///weapon_a.as", 1, 9, true);
-    REQUIRE(refsA.has_value());
-    REQUIRE(refsA->size() == 2);
-    for (const auto& ref : *refsA)
-    {
-        CHECK(ref.uri.toString() == "file:///weapon_a.as");
-    }
-    CHECK((*refsA)[0].range.start.line == 1);
-    CHECK((*refsA)[1].range.start.line == 3);
-}
-
-TEST_CASE("ReferencesHandler - Function and Method Overload Arity Isolation")
-{
-    MultiFileTestEnv env;
-
-    std::string code = "class Knuckles {\n"
-                       "    bool Deploy() { return true; }\n"
-                       "    bool Deploy(string a, string b, int c, string d, float e, bool f) { return false; }\n"
-                       "    void Test() {\n"
-                       "        Deploy();\n"
-                       "        Deploy(\"a\", \"b\", 1, \"d\", 2.0f, true);\n"
-                       "    }\n"
-                       "}\n";
-
-    env.AddFile("file:///knuckles.as", code);
-
-    // References on Deploy() (0 args) declaration at line 1, col 9
-    auto refs0 = env.RefsAt("file:///knuckles.as", 1, 9, true);
-    REQUIRE(refs0.has_value());
-    CHECK(refs0->size() == 2);
-    CHECK((*refs0)[0].range.start.line == 1);
-    CHECK((*refs0)[1].range.start.line == 4);
-
-    // References on Deploy(...) (6 args) declaration at line 2, col 9
-    auto refs6 = env.RefsAt("file:///knuckles.as", 2, 9, true);
-    REQUIRE(refs6.has_value());
-    CHECK(refs6->size() == 2);
-    CHECK((*refs6)[0].range.start.line == 2);
-    CHECK((*refs6)[1].range.start.line == 5);
-}
-
-TEST_CASE("ReferencesHandler - Function Delegate References")
-{
-    MultiFileTestEnv env;
-
-    std::string code = "funcdef void ThinkFunc();\n"
-                       "class Monster {\n"
-                       "    void DoHeavyAttack() {}\n"
-                       "    void Setup() {\n"
-                       "        SetThink(this.DoHeavyAttack);\n"
-                       "        SetThink(DoHeavyAttack);\n"
-                       "        DoHeavyAttack();\n"
-                       "    }\n"
-                       "    void SetThink(ThinkFunc@ fn) {}\n"
-                       "}\n";
-
-    env.AddFile("file:///monster.as", code);
-
-    // References on DoHeavyAttack declaration at line 2, col 9
-    auto refs = env.RefsAt("file:///monster.as", 2, 9, true);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 4);
-    CHECK((*refs)[0].range.start.line == 2);
-    CHECK((*refs)[1].range.start.line == 4);
-    CHECK((*refs)[2].range.start.line == 5);
-    CHECK((*refs)[3].range.start.line == 6);
-}
-
-TEST_CASE("ReferencesHandler - Sibling Method Isolation on Overridden Virtual Hook")
-{
-    MultiFileTestEnv env;
-
-    std::string baseCode = "class BaseWeapon {\n"
-                           "    void PrimaryAttack() {}\n"
-                           "}\n";
-
-    std::string weaponACode = "class WeaponA : BaseWeapon {\n"
-                              "    void PrimaryAttack() override {}\n"
-                              "    void Attack() {\n"
-                              "        PrimaryAttack();\n"
-                              "    }\n"
-                              "}\n";
-
-    std::string weaponBCode = "class WeaponB : BaseWeapon {\n"
-                              "    void PrimaryAttack() override {}\n"
-                              "    void Attack() {\n"
-                              "        PrimaryAttack();\n"
-                              "    }\n"
-                              "}\n";
-
-    env.AddFile("file:///base.as", baseCode);
-    env.AddFile("file:///weapon_a.as", weaponACode);
-    env.AddFile("file:///weapon_b.as", weaponBCode);
-
-    // References on WeaponA's PrimaryAttack override at line 1, col 9
-    auto refsA = env.RefsAt("file:///weapon_a.as", 1, 9, true);
-    REQUIRE(refsA.has_value());
-    REQUIRE(refsA->size() == 2);
-    for (const auto& ref : *refsA)
-    {
-        CHECK(ref.uri.toString() == "file:///weapon_a.as");
-    }
-    CHECK((*refsA)[0].range.start.line == 1);
-    CHECK((*refsA)[1].range.start.line == 3);
-}
-
-TEST_CASE("ReferencesHandler - Invariant: N reference expressions yield exactly N references")
-{
-    std::mt19937_64 rng(0x1337BEEF);
-    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "targetVar");
-    const size_t N = 8;
-
-    std::string code = "void Runner() {\n";
-    code += "    int " + varName + " = 0;\n";
-    for (size_t i = 0; i < N; ++i)
-    {
-        code += "    " + varName + " += " + std::to_string(i + 1) + ";\n";
-    }
-    code += "}\n";
-
-    TestEnvironment env(code);
-    auto refsWithDecl = env.RefsAt(1, 8, true);
-    REQUIRE(refsWithDecl.has_value());
-    CHECK(refsWithDecl->size() == N + 1);
-
-    auto refsWithoutDecl = env.RefsAt(1, 8, false);
-    REQUIRE(refsWithoutDecl.has_value());
-    CHECK(refsWithoutDecl->size() == N);
-}
-
-TEST_CASE("ReferencesHandler - Invariant: Parameter default argument and variable initializer references are counted")
-{
-    std::mt19937_64 rng(0x5EEDCAFE);
-    const std::string funcName = angel_lsp::test::GenerateIdentifier(rng, "DefaultHelper");
-
-    std::string code;
-    code += "int " + funcName + "() { return 42; }\n";
-    code += "int g_global = " + funcName + "();\n";
-    code += "void Consumer(int p = " + funcName + "()) {}\n";
-    code += "void Runner() {\n";
-    code += "    int local = " + funcName + "();\n";
-    code += "}\n";
-
-    TestEnvironment env(code);
-    auto refsWithDecl = env.RefsAt(0, 5, true);
-    REQUIRE(refsWithDecl.has_value());
-    CHECK(refsWithDecl->size() == 4);
-
-    auto refsWithoutDecl = env.RefsAt(0, 5, false);
-    REQUIRE(refsWithoutDecl.has_value());
-    CHECK(refsWithoutDecl->size() == 3);
-
-    std::vector<uint32_t> lines;
-    for (const auto& r : *refsWithoutDecl)
-    {
-        lines.push_back(r.range.start.line);
-    }
-    std::sort(lines.begin(), lines.end());
-    CHECK(lines == std::vector<uint32_t>{1, 2, 4});
-}
-
-TEST_CASE("ReferencesHandler - Cross-File Namespace Variable References")
-{
-    MultiFileTestEnv env;
-    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("btscm");
-    const std::string constName = angel_lsp::test::GenerateRandomSymbolName("HITGROUP_SHIELD");
-    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("someFunction");
-
-    const std::string uri1 = "file:///decl.as";
-    const std::string code1 = "namespace " + nsName +
-                              "\n"
-                              "{\n"
-                              "    const int " +
-                              constName +
-                              " = 15;\n"
-                              "}\n";
-
-    const std::string uri2 = "file:///usage.as";
-    const std::string code2 = "namespace " + nsName +
-                              "\n"
-                              "{\n"
-                              "    void " +
-                              funcName +
-                              "(int iHitGroup) {\n"
-                              "        if (iHitGroup == " +
-                              constName +
-                              ") {}\n"
-                              "    }\n"
-                              "}\n";
-
-    env.AddFile(uri1, code1);
-    env.AddFile(uri2, code2);
-
-    auto refs = env.RefsAt(uri1, 2, 15, false);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 1);
-    CHECK((*refs)[0].uri.toString() == uri2);
-}
-
-TEST_CASE("ReferencesHandler - Enum Member Cross-Enum Isolation (No False Matches)")
-{
-    MultiFileTestEnv env;
-    const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("WeaponShotgunAnim");
-    const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("WeaponFlareAnim");
-    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("Idle");
-    const std::string funcA = angel_lsp::test::GenerateRandomSymbolName("PlayShotgun");
-    const std::string funcB = angel_lsp::test::GenerateRandomSymbolName("PlayFlare");
-
-    const std::string uri1 = "file:///shotgun.as";
-    const std::string code1 = "enum " + enumA +
-                              "\n"
-                              "{\n"
-                              "    " +
-                              memberName +
-                              " = 0,\n"
-                              "    Shoot1\n"
-                              "};\n"
-                              "void " +
-                              funcA +
-                              "() {\n"
-                              "    int a = " +
-                              enumA + "::" + memberName +
-                              ";\n"
-                              "}\n";
-
-    const std::string uri2 = "file:///flare.as";
-    const std::string code2 = "enum " + enumB +
-                              "\n"
-                              "{\n"
-                              "    " +
-                              memberName +
-                              " = 0,\n"
-                              "    Shoot2\n"
-                              "};\n"
-                              "void " +
-                              funcB +
-                              "() {\n"
-                              "    int b = " +
-                              enumB + "::" + memberName +
-                              ";\n"
-                              "}\n";
-
-    const std::string uri3 = "file:///main.as";
-    const std::string code3 = "void Run() {\n"
-                              "    int c = " +
-                              enumA + "::" + memberName +
-                              ";\n"
-                              "    int d = " +
-                              enumB + "::" + memberName +
-                              ";\n"
-                              "}\n";
-
-    env.AddFile(uri1, code1);
-    env.AddFile(uri2, code2);
-    env.AddFile(uri3, code3);
-
-    SUBCASE("References on enumA member declaration only returns enumA occurrences")
-    {
-        auto refs = env.RefsAt(uri1, 2, 5, true);
-        REQUIRE(refs.has_value());
-        CHECK(refs->size() == 3);
-        for (const auto& r : *refs)
-        {
-            CHECK(r.uri.toString() != uri2);
-        }
-    }
-
-    SUBCASE("References on scoped enumA::member returns only enumA occurrences")
-    {
-        auto refs = env.RefsAt(uri3, 1, 15 + static_cast<uint32_t>(enumA.size()), true);
-        REQUIRE(refs.has_value());
-        CHECK(refs->size() == 3);
-        for (const auto& r : *refs)
-        {
-            CHECK(r.uri.toString() != uri2);
-        }
-    }
-
-    SUBCASE("References on enumB member declaration only returns enumB occurrences")
-    {
-        auto refs = env.RefsAt(uri2, 2, 5, true);
-        REQUIRE(refs.has_value());
-        CHECK(refs->size() == 3);
-        for (const auto& r : *refs)
-        {
-            CHECK(r.uri.toString() != uri1);
-        }
-    }
-}
-
-TEST_CASE("ReferencesHandler - GAP-VISIBILITY-01: Sequential local variable does not bind pre-declaration references")
-{
-    MultiFileTestEnv env;
-    const std::string varName = test::GenerateRandomSymbolName("localVar");
-
-    std::string code = "int " + varName +
-                       " = 0;\n"
-                       "void test() {\n"
-                       "    " +
-                       varName +
-                       " = 10;\n"
-                       "    int " +
-                       varName +
-                       " = 20;\n"
-                       "    " +
-                       varName +
-                       " = 30;\n"
-                       "}\n";
-
-    env.AddFile("file:///test.as", code);
-
-    auto refs = env.RefsAt("file:///test.as", 3, 9, true);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 2);
-    for (const auto& ref : *refs)
-    {
-        CHECK(ref.range.start.line >= 3);
-    }
-}
-
-TEST_CASE("ReferencesHandler - Cross-file namespace member references match declaration")
-{
-    MultiFileTestEnv env;
-    const std::string nsName = test::GenerateRandomSymbolName("INS2BASE");
-    const std::string varName = test::GenerateRandomSymbolName("ShouldUseCustomAmmo");
-
-    std::string nsFile = "namespace " + nsName +
-                         " {\n"
-                         "    bool " +
-                         varName +
-                         " = true;\n"
-                         "}\n";
-
-    std::string usageFile = "void WeaponCheck() {\n"
-                            "    if (" +
-                            nsName + "::" + varName +
-                            ") {\n"
-                            "    }\n"
+        MultiFileTestEnv env;
+        std::string fileA = "file:///a_math.as";
+        std::string codeA = "int GlobalCounter = 0;\n"
+                            "void IncrementCounter() {\n"
+                            "    GlobalCounter += 1;\n"
                             "}\n";
 
-    env.AddFile("file:///namespace_def.as", nsFile);
-    env.AddFile("file:///weapon_usage.as", usageFile);
-
-    // References on declaration at line 1, col 9 of file:///namespace_def.as
-    auto refs = env.RefsAt("file:///namespace_def.as", 1, 9, true);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 2);
-
-    bool foundUsage = false;
-    for (const auto& ref : *refs)
-    {
-        if (ref.uri.toString() == "file:///weapon_usage.as")
-        {
-            foundUsage = true;
-            CHECK(ref.range.start.line == 1);
-        }
-    }
-    CHECK(foundUsage);
-}
-
-TEST_CASE("ReferencesHandler - Cross-file namespace-qualified enum member references match declaration")
-{
-    MultiFileTestEnv env;
-    const std::string nsName = test::GenerateRandomSymbolName("INS2BASE");
-    const std::string enumName = test::GenerateRandomSymbolName("INS2_SELECTFIRE_OPTIONS");
-    const std::string memberName = test::GenerateRandomSymbolName("SELECTFIRE_SEMI");
-
-    std::string nsFile = "namespace " + nsName +
-                         "\n"
-                         "{\n"
-                         "    enum " +
-                         enumName +
-                         "\n"
-                         "    {\n"
-                         "        " +
-                         memberName +
-                         " = 0\n"
-                         "    };\n"
-                         "}\n";
-
-    std::string usageFile = "void TestSelectFire()\n"
-                            "{\n"
-                            "    int mode = " +
-                            nsName + "::" + memberName +
-                            ";\n"
+        std::string fileB = "file:///b_main.as";
+        std::string codeB = "void main() {\n"
+                            "    IncrementCounter();\n"
+                            "    GlobalCounter += 10;\n"
+                            "}\n"
+                            "void ShadowTest() {\n"
+                            "    int GlobalCounter = 99;\n"
+                            "    GlobalCounter += 1;\n"
                             "}\n";
 
-    env.AddFile("file:///enum_def.as", nsFile);
-    env.AddFile("file:///enum_usage.as", usageFile);
+        env.AddFile(fileA, codeA);
+        env.AddFile(fileB, codeB);
 
-    // References on declaration of memberName in file:///enum_def.as (line 4)
-    auto refs = env.RefsAt("file:///enum_def.as", 4, 8, true);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 2);
-
-    bool foundUsage = false;
-    for (const auto& ref : *refs)
-    {
-        if (ref.uri.toString() == "file:///enum_usage.as")
+        SUBCASE("Find references of GlobalCounter across files with local shadow protection")
         {
-            foundUsage = true;
-            CHECK(ref.range.start.line == 2);
+            // Cursor on GlobalCounter declaration in a_math.as line 0, col 5
+            auto refs = env.RefsAt(fileA, 0, 5, true);
+            REQUIRE(refs.has_value());
+            // fileA: decl (line 0), usage (line 2); fileB: usage in main (line 2). Shadowed in ShadowTest excluded!
+            REQUIRE(refs->size() == 3);
+            CHECK((*refs)[0].uri.toString() == fileA);
+            CHECK((*refs)[0].range.start.line == 0);
+            CHECK((*refs)[1].uri.toString() == fileA);
+            CHECK((*refs)[1].range.start.line == 2);
+            CHECK((*refs)[2].uri.toString() == fileB);
+            CHECK((*refs)[2].range.start.line == 2);
+        }
+
+        SUBCASE("Find references of IncrementCounter across files")
+        {
+            // Cursor on IncrementCounter call in b_main.as line 1, col 6
+            auto refs = env.RefsAt(fileB, 1, 6, true);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 2);
+            CHECK((*refs)[0].uri.toString() == fileA);
+            CHECK((*refs)[0].range.start.line == 1); // Declaration in a_math.as
+            CHECK((*refs)[1].uri.toString() == fileB);
+            CHECK((*refs)[1].range.start.line == 1); // Call site in b_main.as
         }
     }
-    CHECK(foundUsage);
 
-    // References on usage of nsName::memberName in file:///enum_usage.as (line 2)
-    auto refsFromUsage = env.RefsAt("file:///enum_usage.as", 2, static_cast<uint32_t>(17 + nsName.size()), true);
-    REQUIRE(refsFromUsage.has_value());
-    CHECK(refsFromUsage->size() == 2);
-}
-
-TEST_CASE("ReferencesHandler - Private mixin property references match across host and sibling mixin")
-{
-    MultiFileTestEnv env;
-    const std::string baseMixin = test::GenerateRandomSymbolName("WeaponBase");
-    const std::string siblingMixin = test::GenerateRandomSymbolName("BipodWeaponBase");
-    const std::string hostClass = test::GenerateRandomSymbolName("WeaponHost");
-    const std::string propName = test::GenerateRandomSymbolName("BipodStatePos");
-
-    std::string baseCode = "mixin class " + baseMixin +
-                           "\n"
-                           "{\n"
-                           "    private int " +
-                           propName +
-                           ";\n"
+    TEST_CASE("ReferencesHandler - Enum and Enum Member References")
+    {
+        std::string code = "enum GameState {\n"
+                           "    State_Idle,\n"
+                           "    State_Running\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    GameState state = State_Idle;\n"
+                           "    if (state == State_Idle) {}\n"
                            "}\n";
 
-    std::string sibCode = "mixin class " + siblingMixin +
-                          "\n"
-                          "{\n"
-                          "    void SiblingMethod()\n"
-                          "    {\n"
-                          "        " +
-                          propName +
-                          " = 42;\n"
-                          "    }\n"
-                          "}\n";
+        TestEnvironment env(code);
 
-    std::string hostCode = "class " + hostClass + " : " + baseMixin + ", " + siblingMixin +
-                           "\n"
-                           "{\n"
-                           "    void HostMethod()\n"
-                           "    {\n"
-                           "        int val = " +
-                           propName +
-                           ";\n"
+        SUBCASE("Find references of enum member State_Idle")
+        {
+            // Cursor on State_Idle declaration at line 1, col 5
+            auto refs = env.RefsAt(1, 5, true);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 3);
+            CHECK((*refs)[0].range.start.line == 1); // Decl
+            CHECK((*refs)[1].range.start.line == 5); // Usage 1
+            CHECK((*refs)[2].range.start.line == 6); // Usage 2
+        }
+
+        SUBCASE("Find references of enum type GameState")
+        {
+            // Cursor on GameState declaration at line 0, col 6
+            auto refs = env.RefsAt(0, 6, true);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 2);
+            CHECK((*refs)[0].range.start.line == 0); // Decl
+            CHECK((*refs)[1].range.start.line == 5); // Type usage
+        }
+    }
+
+    TEST_CASE("ReferencesHandler - Edge Cases & Non-Identifiers")
+    {
+        std::string code = "// Some comment\n"
+                           "void main() {\n"
+                           "    int x = 10;\n"
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        // Cursor on comment line 0
+        auto refsComment = env.RefsAt(0, 5);
+        CHECK(!refsComment.has_value());
+
+        // Cursor on keyword 'void' line 1, col 1
+        auto refsVoid = env.RefsAt(1, 1);
+        CHECK(!refsVoid.has_value());
+
+        // Cursor on keyword 'int' line 2, col 5
+        auto refsInt = env.RefsAt(2, 5);
+        CHECK(!refsInt.has_value());
+    }
+
+    TEST_CASE("ReferencesHandler - Class Method References Across Inheritance")
+    {
+        std::string code = "class Entity {\n"
+                           "    void TakeDamage(int dmg) {}\n" // line 1
+                           "}\n"
+                           "class Player : Entity {\n"
+                           "    void Attack() {\n"
+                           "        TakeDamage(5);\n" // line 5
+                           "    }\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Player p;\n"
+                           "    p.TakeDamage(10);\n" // line 10
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        // References of TakeDamage with includeDeclaration=true
+        auto refs = env.RefsAt(1, 10, true);
+        REQUIRE(refs.has_value());
+        REQUIRE(refs->size() == 3);
+        CHECK((*refs)[0].range.start.line == 1);  // Decl
+        CHECK((*refs)[1].range.start.line == 5);  // Sibling call
+        CHECK((*refs)[2].range.start.line == 10); // Member call
+    }
+
+    TEST_CASE("ReferencesHandler - Namespace Function References")
+    {
+        std::string code = "namespace Game {\n"
+                           "    void Spawn() {}\n" // line 1
+                           "    void Init() {\n"
+                           "        Spawn();\n" // line 3
+                           "    }\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    Game::Spawn();\n" // line 7
+                           "}\n";
+
+        TestEnvironment env(code);
+
+        // References of Spawn declaration with includeDeclaration=true
+        auto refs = env.RefsAt(1, 9, true);
+        REQUIRE(refs.has_value());
+        REQUIRE(refs->size() == 3);
+        CHECK((*refs)[0].range.start.line == 1);
+        CHECK((*refs)[1].range.start.line == 3);
+        CHECK((*refs)[2].range.start.line == 7);
+    }
+
+    TEST_CASE("ReferencesHandler - Strict Scope Isolation for Sibling Classes with Private Methods")
+    {
+        MultiFileTestEnv env;
+
+        std::string baseCode = "class ScriptBasePlayerWeaponEntity {\n"
+                               "    void Spawn() {}\n"
+                               "}\n";
+
+        std::string weaponACode = "class weapon_ins2m40a1 : ScriptBasePlayerWeaponEntity {\n"
+                                  "    private int GetBodygroup() { return 1; }\n" // line 1
+                                  "    void PrimaryAttack() {\n"
+                                  "        GetBodygroup();\n"      // line 3
+                                  "        this.GetBodygroup();\n" // line 4
+                                  "    }\n"
+                                  "}\n";
+
+        std::string weaponBCode = "class weapon_ins2ak47 : ScriptBasePlayerWeaponEntity {\n"
+                                  "    private int GetBodygroup() { return 2; }\n" // line 1
+                                  "    void PrimaryAttack() {\n"
+                                  "        GetBodygroup();\n" // line 3
+                                  "    }\n"
+                                  "}\n";
+
+        env.AddFile("file:///base.as", baseCode);
+        env.AddFile("file:///weapon_a.as", weaponACode);
+        env.AddFile("file:///weapon_b.as", weaponBCode);
+
+        // References on weapon_ins2m40a1's private GetBodygroup declaration (line 1, col 16)
+        auto refsA = env.RefsAt("file:///weapon_a.as", 1, 16, true);
+        REQUIRE(refsA.has_value());
+        REQUIRE(refsA->size() == 3);
+        for (const auto& ref : *refsA)
+        {
+            CHECK(ref.uri.toString() == "file:///weapon_a.as");
+        }
+        CHECK((*refsA)[0].range.start.line == 1);
+        CHECK((*refsA)[1].range.start.line == 3);
+        CHECK((*refsA)[2].range.start.line == 4);
+
+        // References on weapon_ins2ak47's private GetBodygroup declaration (line 1, col 16)
+        auto refsB = env.RefsAt("file:///weapon_b.as", 1, 16, true);
+        REQUIRE(refsB.has_value());
+        REQUIRE(refsB->size() == 2);
+        for (const auto& ref : *refsB)
+        {
+            CHECK(ref.uri.toString() == "file:///weapon_b.as");
+        }
+        CHECK((*refsB)[0].range.start.line == 1);
+        CHECK((*refsB)[1].range.start.line == 3);
+    }
+
+    TEST_CASE("ReferencesHandler - Sibling Classes with Coincidental Public Methods Not in Base")
+    {
+        MultiFileTestEnv env;
+
+        std::string baseCode = "class BaseWeapon {\n"
+                               "    void Fire() {}\n"
+                               "}\n";
+
+        std::string weaponACode = "class WeaponA : BaseWeapon {\n"
+                                  "    void CustomZoom() {}\n" // line 1
+                                  "    void Fire() {\n"
+                                  "        CustomZoom();\n" // line 3
+                                  "    }\n"
+                                  "}\n";
+
+        std::string weaponBCode = "class WeaponB : BaseWeapon {\n"
+                                  "    void CustomZoom() {}\n" // line 1
+                                  "    void Fire() {\n"
+                                  "        CustomZoom();\n" // line 3
+                                  "    }\n"
+                                  "}\n";
+
+        env.AddFile("file:///base.as", baseCode);
+        env.AddFile("file:///weapon_a.as", weaponACode);
+        env.AddFile("file:///weapon_b.as", weaponBCode);
+
+        auto refsA = env.RefsAt("file:///weapon_a.as", 1, 9, true);
+        REQUIRE(refsA.has_value());
+        REQUIRE(refsA->size() == 2);
+        for (const auto& ref : *refsA)
+        {
+            CHECK(ref.uri.toString() == "file:///weapon_a.as");
+        }
+        CHECK((*refsA)[0].range.start.line == 1);
+        CHECK((*refsA)[1].range.start.line == 3);
+    }
+
+    TEST_CASE("ReferencesHandler - Function and Method Overload Arity Isolation")
+    {
+        MultiFileTestEnv env;
+
+        std::string code = "class Knuckles {\n"
+                           "    bool Deploy() { return true; }\n"
+                           "    bool Deploy(string a, string b, int c, string d, float e, bool f) { return false; }\n"
+                           "    void Test() {\n"
+                           "        Deploy();\n"
+                           "        Deploy(\"a\", \"b\", 1, \"d\", 2.0f, true);\n"
                            "    }\n"
                            "}\n";
 
-    env.AddFile("file:///base_mixin.as", baseCode);
-    env.AddFile("file:///sibling_mixin.as", sibCode);
-    env.AddFile("file:///host.as", hostCode);
+        env.AddFile("file:///knuckles.as", code);
 
-    // References on declaration of propName in base_mixin.as (line 2, col 16)
-    auto refs = env.RefsAt("file:///base_mixin.as", 2, 16, true);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 3);
+        // References on Deploy() (0 args) declaration at line 1, col 9
+        auto refs0 = env.RefsAt("file:///knuckles.as", 1, 9, true);
+        REQUIRE(refs0.has_value());
+        CHECK(refs0->size() == 2);
+        CHECK((*refs0)[0].range.start.line == 1);
+        CHECK((*refs0)[1].range.start.line == 4);
 
-    bool foundSibling = false;
-    bool foundHost = false;
-    for (const auto& ref : *refs)
+        // References on Deploy(...) (6 args) declaration at line 2, col 9
+        auto refs6 = env.RefsAt("file:///knuckles.as", 2, 9, true);
+        REQUIRE(refs6.has_value());
+        CHECK(refs6->size() == 2);
+        CHECK((*refs6)[0].range.start.line == 2);
+        CHECK((*refs6)[1].range.start.line == 5);
+    }
+
+    TEST_CASE("ReferencesHandler - Function Delegate References")
     {
-        if (ref.uri.toString() == "file:///sibling_mixin.as")
+        MultiFileTestEnv env;
+
+        std::string code = "funcdef void ThinkFunc();\n"
+                           "class Monster {\n"
+                           "    void DoHeavyAttack() {}\n"
+                           "    void Setup() {\n"
+                           "        SetThink(this.DoHeavyAttack);\n"
+                           "        SetThink(DoHeavyAttack);\n"
+                           "        DoHeavyAttack();\n"
+                           "    }\n"
+                           "    void SetThink(ThinkFunc@ fn) {}\n"
+                           "}\n";
+
+        env.AddFile("file:///monster.as", code);
+
+        // References on DoHeavyAttack declaration at line 2, col 9
+        auto refs = env.RefsAt("file:///monster.as", 2, 9, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 4);
+        CHECK((*refs)[0].range.start.line == 2);
+        CHECK((*refs)[1].range.start.line == 4);
+        CHECK((*refs)[2].range.start.line == 5);
+        CHECK((*refs)[3].range.start.line == 6);
+    }
+
+    TEST_CASE("ReferencesHandler - Sibling Method Isolation on Overridden Virtual Hook")
+    {
+        MultiFileTestEnv env;
+
+        std::string baseCode = "class BaseWeapon {\n"
+                               "    void PrimaryAttack() {}\n"
+                               "}\n";
+
+        std::string weaponACode = "class WeaponA : BaseWeapon {\n"
+                                  "    void PrimaryAttack() override {}\n"
+                                  "    void Attack() {\n"
+                                  "        PrimaryAttack();\n"
+                                  "    }\n"
+                                  "}\n";
+
+        std::string weaponBCode = "class WeaponB : BaseWeapon {\n"
+                                  "    void PrimaryAttack() override {}\n"
+                                  "    void Attack() {\n"
+                                  "        PrimaryAttack();\n"
+                                  "    }\n"
+                                  "}\n";
+
+        env.AddFile("file:///base.as", baseCode);
+        env.AddFile("file:///weapon_a.as", weaponACode);
+        env.AddFile("file:///weapon_b.as", weaponBCode);
+
+        // References on WeaponA's PrimaryAttack override at line 1, col 9
+        auto refsA = env.RefsAt("file:///weapon_a.as", 1, 9, true);
+        REQUIRE(refsA.has_value());
+        REQUIRE(refsA->size() == 2);
+        for (const auto& ref : *refsA)
         {
-            foundSibling = true;
-            CHECK(ref.range.start.line == 4);
+            CHECK(ref.uri.toString() == "file:///weapon_a.as");
         }
-        else if (ref.uri.toString() == "file:///host.as")
+        CHECK((*refsA)[0].range.start.line == 1);
+        CHECK((*refsA)[1].range.start.line == 3);
+    }
+
+    TEST_CASE("ReferencesHandler - Invariant: N reference expressions yield exactly N references")
+    {
+        std::mt19937_64 rng(0x1337BEEF);
+        const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "targetVar");
+        const size_t N = 8;
+
+        std::string code = "void Runner() {\n";
+        code += "    int " + varName + " = 0;\n";
+        for (size_t i = 0; i < N; ++i)
         {
-            foundHost = true;
-            CHECK(ref.range.start.line == 4);
+            code += "    " + varName + " += " + std::to_string(i + 1) + ";\n";
+        }
+        code += "}\n";
+
+        TestEnvironment env(code);
+        auto refsWithDecl = env.RefsAt(1, 8, true);
+        REQUIRE(refsWithDecl.has_value());
+        CHECK(refsWithDecl->size() == N + 1);
+
+        auto refsWithoutDecl = env.RefsAt(1, 8, false);
+        REQUIRE(refsWithoutDecl.has_value());
+        CHECK(refsWithoutDecl->size() == N);
+    }
+
+    TEST_CASE(
+        "ReferencesHandler - Invariant: Parameter default argument and variable initializer references are counted")
+    {
+        std::mt19937_64 rng(0x5EEDCAFE);
+        const std::string funcName = angel_lsp::test::GenerateIdentifier(rng, "DefaultHelper");
+
+        std::string code;
+        code += "int " + funcName + "() { return 42; }\n";
+        code += "int g_global = " + funcName + "();\n";
+        code += "void Consumer(int p = " + funcName + "()) {}\n";
+        code += "void Runner() {\n";
+        code += "    int local = " + funcName + "();\n";
+        code += "}\n";
+
+        TestEnvironment env(code);
+        auto refsWithDecl = env.RefsAt(0, 5, true);
+        REQUIRE(refsWithDecl.has_value());
+        CHECK(refsWithDecl->size() == 4);
+
+        auto refsWithoutDecl = env.RefsAt(0, 5, false);
+        REQUIRE(refsWithoutDecl.has_value());
+        CHECK(refsWithoutDecl->size() == 3);
+
+        std::vector<uint32_t> lines;
+        for (const auto& r : *refsWithoutDecl)
+        {
+            lines.push_back(r.range.start.line);
+        }
+        std::sort(lines.begin(), lines.end());
+        CHECK(lines == std::vector<uint32_t>{1, 2, 4});
+    }
+
+    TEST_CASE("ReferencesHandler - Cross-File Namespace Variable References")
+    {
+        MultiFileTestEnv env;
+        const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("btscm");
+        const std::string constName = angel_lsp::test::GenerateRandomSymbolName("HITGROUP_SHIELD");
+        const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("someFunction");
+
+        const std::string uri1 = "file:///decl.as";
+        const std::string code1 = "namespace " + nsName +
+                                  "\n"
+                                  "{\n"
+                                  "    const int " +
+                                  constName +
+                                  " = 15;\n"
+                                  "}\n";
+
+        const std::string uri2 = "file:///usage.as";
+        const std::string code2 = "namespace " + nsName +
+                                  "\n"
+                                  "{\n"
+                                  "    void " +
+                                  funcName +
+                                  "(int iHitGroup) {\n"
+                                  "        if (iHitGroup == " +
+                                  constName +
+                                  ") {}\n"
+                                  "    }\n"
+                                  "}\n";
+
+        env.AddFile(uri1, code1);
+        env.AddFile(uri2, code2);
+
+        auto refs = env.RefsAt(uri1, 2, 15, false);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 1);
+        CHECK((*refs)[0].uri.toString() == uri2);
+    }
+
+    TEST_CASE("ReferencesHandler - Enum Member Cross-Enum Isolation (No False Matches)")
+    {
+        MultiFileTestEnv env;
+        const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("WeaponShotgunAnim");
+        const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("WeaponFlareAnim");
+        const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("Idle");
+        const std::string funcA = angel_lsp::test::GenerateRandomSymbolName("PlayShotgun");
+        const std::string funcB = angel_lsp::test::GenerateRandomSymbolName("PlayFlare");
+
+        const std::string uri1 = "file:///shotgun.as";
+        const std::string code1 = "enum " + enumA +
+                                  "\n"
+                                  "{\n"
+                                  "    " +
+                                  memberName +
+                                  " = 0,\n"
+                                  "    Shoot1\n"
+                                  "};\n"
+                                  "void " +
+                                  funcA +
+                                  "() {\n"
+                                  "    int a = " +
+                                  enumA + "::" + memberName +
+                                  ";\n"
+                                  "}\n";
+
+        const std::string uri2 = "file:///flare.as";
+        const std::string code2 = "enum " + enumB +
+                                  "\n"
+                                  "{\n"
+                                  "    " +
+                                  memberName +
+                                  " = 0,\n"
+                                  "    Shoot2\n"
+                                  "};\n"
+                                  "void " +
+                                  funcB +
+                                  "() {\n"
+                                  "    int b = " +
+                                  enumB + "::" + memberName +
+                                  ";\n"
+                                  "}\n";
+
+        const std::string uri3 = "file:///main.as";
+        const std::string code3 = "void Run() {\n"
+                                  "    int c = " +
+                                  enumA + "::" + memberName +
+                                  ";\n"
+                                  "    int d = " +
+                                  enumB + "::" + memberName +
+                                  ";\n"
+                                  "}\n";
+
+        env.AddFile(uri1, code1);
+        env.AddFile(uri2, code2);
+        env.AddFile(uri3, code3);
+
+        SUBCASE("References on enumA member declaration only returns enumA occurrences")
+        {
+            auto refs = env.RefsAt(uri1, 2, 5, true);
+            REQUIRE(refs.has_value());
+            CHECK(refs->size() == 3);
+            for (const auto& r : *refs)
+            {
+                CHECK(r.uri.toString() != uri2);
+            }
+        }
+
+        SUBCASE("References on scoped enumA::member returns only enumA occurrences")
+        {
+            auto refs = env.RefsAt(uri3, 1, 15 + static_cast<uint32_t>(enumA.size()), true);
+            REQUIRE(refs.has_value());
+            CHECK(refs->size() == 3);
+            for (const auto& r : *refs)
+            {
+                CHECK(r.uri.toString() != uri2);
+            }
+        }
+
+        SUBCASE("References on enumB member declaration only returns enumB occurrences")
+        {
+            auto refs = env.RefsAt(uri2, 2, 5, true);
+            REQUIRE(refs.has_value());
+            CHECK(refs->size() == 3);
+            for (const auto& r : *refs)
+            {
+                CHECK(r.uri.toString() != uri1);
+            }
         }
     }
-    CHECK(foundSibling);
-    CHECK(foundHost);
-}
 
-TEST_CASE("References - Enum member occurrences isolated between different namespaces")
-{
-    MultiFileTestEnv env;
-    const std::string nsA = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponA");
-    const std::string nsB = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponB");
-    const std::string enumName = "Anim";
-    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("IRON_FIRE2");
-
-    const std::string codeA = "namespace " + nsA +
-                              " {\n"
-                              "    enum " +
-                              enumName + " { " + memberName +
-                              " = 1 };\n"
-                              "    void Shoot() {\n"
-                              "        int a = " +
-                              memberName +
-                              ";\n"
-                              "    }\n"
-                              "}\n";
-
-    const std::string codeB = "namespace " + nsB +
-                              " {\n"
-                              "    enum " +
-                              enumName + " { " + memberName +
-                              " = 2 };\n"
-                              "    void Shoot() {\n"
-                              "        int b = " +
-                              memberName +
-                              ";\n"
-                              "    }\n"
-                              "}\n";
-
-    env.AddFile("file:///weapon_a.as", codeA);
-    env.AddFile("file:///weapon_b.as", codeB);
-
-    const size_t declPos = codeA.find(memberName);
-    auto posA = FindPos(codeA, memberName, declPos);
-
-    auto refs = env.RefsAt("file:///weapon_a.as", posA.line, posA.character, true);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 2);
-    for (const auto& ref : *refs)
+    TEST_CASE(
+        "ReferencesHandler - GAP-VISIBILITY-01: Sequential local variable does not bind pre-declaration references")
     {
-        CHECK(ref.uri.toString() == "file:///weapon_a.as");
+        MultiFileTestEnv env;
+        const std::string varName = test::GenerateRandomSymbolName("localVar");
+
+        std::string code = "int " + varName +
+                           " = 0;\n"
+                           "void test() {\n"
+                           "    " +
+                           varName +
+                           " = 10;\n"
+                           "    int " +
+                           varName +
+                           " = 20;\n"
+                           "    " +
+                           varName +
+                           " = 30;\n"
+                           "}\n";
+
+        env.AddFile("file:///test.as", code);
+
+        auto refs = env.RefsAt("file:///test.as", 3, 9, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 2);
+        for (const auto& ref : *refs)
+        {
+            CHECK(ref.range.start.line >= 3);
+        }
     }
-}
 
-TEST_CASE("References - A local target retains the scope revision it resolved against")
-{
-    TestEnvironment env("void Probe() {\n"
-                        "    int count = 0;\n"
-                        "    count++;\n"
-                        "}\n");
-    auto& workspace = env.multiEnv;
-    const auto& source = workspace.sources.at(env.uri);
-    auto request = MakeTargetRequest(env.uri, source, {1, 8}, workspace.symbolTable, workspace.scopeIndex);
-    const auto target = ResolveTargetSymbol(request);
-    REQUIRE(target.has_value());
-    REQUIRE(target->kind == TargetKind::Local);
-
-    workspace.scopeIndex.ClearDocument(env.uri);
-    auto occurrencesRequest =
-        MakeOccurrencesRequest(*target, env.uri, source, workspace.symbolTable, workspace.scopeIndex);
-    occurrencesRequest.includeDeclaration = false;
-    const auto occurrences = CollectOccurrences(occurrencesRequest);
-    REQUIRE(occurrences.size() == 1);
-    CHECK(occurrences.front().range.startLine == 2);
-    CHECK(occurrences.front().range.startCharacter == 4);
-}
-
-TEST_CASE("References - Bound calls are published and withdrawn by document and module")
-{
-    ScopeIndex index;
-    Symbol declaration;
-    declaration.name = "Pick";
-    declaration.qualifiedName = "Pick";
-    declaration.fileUri = "file:///shared.as";
-    declaration.selectionRange = {2, 4, 2, 8};
-
-    const auto makeRoot = [&](const std::string& module, uint32_t row)
+    TEST_CASE("ReferencesHandler - Cross-file namespace member references match declaration")
     {
-        auto scope = std::make_shared<Scope>();
-        auto enclosing = std::make_shared<ScopeEnclosingContext>();
-        auto bindings = std::make_shared<CallBindings>(std::nullopt, module);
-        bindings->Add(10, {row, 4, row, 8}, declaration);
-        enclosing->callBindings = std::move(bindings);
-        scope->enclosingContext = std::move(enclosing);
-        return scope;
-    };
-    const auto rows = [&](const std::optional<std::string>& module)
-    {
-        std::vector<uint32_t> result;
-        index.ForEachBoundUse(CallDeclaration(declaration), module,
-                              [&](const std::string& uri, std::span<const SourceRange> ranges)
-                              {
-                                  CHECK((uri == "file:///first.as" || uri == "file:///second.as"));
-                                  for (const auto& range : ranges)
-                                  {
-                                      result.push_back(range.startLine);
-                                  }
-                              });
-        std::ranges::sort(result);
-        return result;
-    };
-    const std::string firstUri = "file:///first.as";
-    const std::string secondUri = "file:///second.as";
-    const auto first = makeRoot("alpha", 3);
-    index.SetScopeTree(firstUri, first);
-    index.SetScopeTree(secondUri, makeRoot("beta", 5));
-    CHECK(rows("alpha") == std::vector<uint32_t>{3});
-    CHECK(rows("beta") == std::vector<uint32_t>{5});
-    CHECK(rows(std::nullopt) == std::vector<uint32_t>{3, 5});
+        MultiFileTestEnv env;
+        const std::string nsName = test::GenerateRandomSymbolName("INS2BASE");
+        const std::string varName = test::GenerateRandomSymbolName("ShouldUseCustomAmmo");
 
-    index.InvalidateDocumentOccurrences(firstUri);
-    CHECK(index.GetRoot(firstUri).get() == first.get());
-    CHECK_FALSE(static_cast<bool>(index.GetOccurrenceRoot(firstUri)));
-    CHECK(rows("alpha").empty());
-    CHECK(rows(std::nullopt) == std::vector<uint32_t>{5});
-
-    index.SetScopeTree(firstUri, makeRoot("beta", 7));
-    CHECK(rows("beta") == std::vector<uint32_t>{5, 7});
-    index.SetScopeTree(firstUri, makeRoot("alpha", 9));
-    CHECK(rows("alpha") == std::vector<uint32_t>{9});
-    CHECK(rows("beta") == std::vector<uint32_t>{5});
-    index.ClearDocument(firstUri);
-    index.ClearDocument(secondUri);
-    CHECK(rows(std::nullopt).empty());
-}
-
-TEST_CASE("ReferencesHandler - Scoped Class Member References Across Hierarchy")
-{
-    MultiFileTestEnv env;
-    const std::string baseCode = "class BaseClass {\n"
-                                 "    void DoTask() {}\n"
-                                 "}\n";
-    const std::string derivedCode = "class DerivedClass : BaseClass {\n"
-                                    "    void Work() {\n"
-                                    "        BaseClass::DoTask();\n"
-                                    "    }\n"
-                                    "}\n";
-
-    env.AddFile("file:///base.as", baseCode);
-    env.AddFile("file:///derived.as", derivedCode);
-
-    // Cursor on DoTask in BaseClass::DoTask() at line 2, character 19 in derived.as
-    auto refs = env.RefsAt("file:///derived.as", 2, 19, true);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 2);
-}
-
-TEST_CASE("ReferencesHandler - Enum Member Inside Namespace Resolved via Preceding Qualifier")
-{
-    MultiFileTestEnv env;
-    const std::string code = "namespace GameNS {\n"
-                             "    enum GameState {\n"
-                             "        STATE_ACTIVE = 1,\n"
-                             "        STATE_PAUSED = 2\n"
-                             "    };\n"
-                             "    void Update() {\n"
-                             "        int s = GameState::STATE_ACTIVE;\n"
-                             "    }\n"
+        std::string nsFile = "namespace " + nsName +
+                             " {\n"
+                             "    bool " +
+                             varName +
+                             " = true;\n"
                              "}\n";
 
-    env.AddFile("file:///gamestate.as", code);
+        std::string usageFile = "void WeaponCheck() {\n"
+                                "    if (" +
+                                nsName + "::" + varName +
+                                ") {\n"
+                                "    }\n"
+                                "}\n";
 
-    // Cursor on STATE_ACTIVE in GameState::STATE_ACTIVE at line 6, character 27
-    auto refs = env.RefsAt("file:///gamestate.as", 6, 27, true);
-    REQUIRE(refs.has_value());
-    CHECK(refs->size() == 2);
+        env.AddFile("file:///namespace_def.as", nsFile);
+        env.AddFile("file:///weapon_usage.as", usageFile);
+
+        // References on declaration at line 1, col 9 of file:///namespace_def.as
+        auto refs = env.RefsAt("file:///namespace_def.as", 1, 9, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 2);
+
+        bool foundUsage = false;
+        for (const auto& ref : *refs)
+        {
+            if (ref.uri.toString() == "file:///weapon_usage.as")
+            {
+                foundUsage = true;
+                CHECK(ref.range.start.line == 1);
+            }
+        }
+        CHECK(foundUsage);
+    }
+
+    TEST_CASE("ReferencesHandler - Cross-file namespace-qualified enum member references match declaration")
+    {
+        MultiFileTestEnv env;
+        const std::string nsName = test::GenerateRandomSymbolName("INS2BASE");
+        const std::string enumName = test::GenerateRandomSymbolName("INS2_SELECTFIRE_OPTIONS");
+        const std::string memberName = test::GenerateRandomSymbolName("SELECTFIRE_SEMI");
+
+        std::string nsFile = "namespace " + nsName +
+                             "\n"
+                             "{\n"
+                             "    enum " +
+                             enumName +
+                             "\n"
+                             "    {\n"
+                             "        " +
+                             memberName +
+                             " = 0\n"
+                             "    };\n"
+                             "}\n";
+
+        std::string usageFile = "void TestSelectFire()\n"
+                                "{\n"
+                                "    int mode = " +
+                                nsName + "::" + memberName +
+                                ";\n"
+                                "}\n";
+
+        env.AddFile("file:///enum_def.as", nsFile);
+        env.AddFile("file:///enum_usage.as", usageFile);
+
+        // References on declaration of memberName in file:///enum_def.as (line 4)
+        auto refs = env.RefsAt("file:///enum_def.as", 4, 8, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 2);
+
+        bool foundUsage = false;
+        for (const auto& ref : *refs)
+        {
+            if (ref.uri.toString() == "file:///enum_usage.as")
+            {
+                foundUsage = true;
+                CHECK(ref.range.start.line == 2);
+            }
+        }
+        CHECK(foundUsage);
+
+        // References on usage of nsName::memberName in file:///enum_usage.as (line 2)
+        auto refsFromUsage = env.RefsAt("file:///enum_usage.as", 2, static_cast<uint32_t>(17 + nsName.size()), true);
+        REQUIRE(refsFromUsage.has_value());
+        CHECK(refsFromUsage->size() == 2);
+    }
+
+    TEST_CASE("ReferencesHandler - Private mixin property references match across host and sibling mixin")
+    {
+        MultiFileTestEnv env;
+        const std::string baseMixin = test::GenerateRandomSymbolName("WeaponBase");
+        const std::string siblingMixin = test::GenerateRandomSymbolName("BipodWeaponBase");
+        const std::string hostClass = test::GenerateRandomSymbolName("WeaponHost");
+        const std::string propName = test::GenerateRandomSymbolName("BipodStatePos");
+
+        std::string baseCode = "mixin class " + baseMixin +
+                               "\n"
+                               "{\n"
+                               "    private int " +
+                               propName +
+                               ";\n"
+                               "}\n";
+
+        std::string sibCode = "mixin class " + siblingMixin +
+                              "\n"
+                              "{\n"
+                              "    void SiblingMethod()\n"
+                              "    {\n"
+                              "        " +
+                              propName +
+                              " = 42;\n"
+                              "    }\n"
+                              "}\n";
+
+        std::string hostCode = "class " + hostClass + " : " + baseMixin + ", " + siblingMixin +
+                               "\n"
+                               "{\n"
+                               "    void HostMethod()\n"
+                               "    {\n"
+                               "        int val = " +
+                               propName +
+                               ";\n"
+                               "    }\n"
+                               "}\n";
+
+        env.AddFile("file:///base_mixin.as", baseCode);
+        env.AddFile("file:///sibling_mixin.as", sibCode);
+        env.AddFile("file:///host.as", hostCode);
+
+        // References on declaration of propName in base_mixin.as (line 2, col 16)
+        auto refs = env.RefsAt("file:///base_mixin.as", 2, 16, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 3);
+
+        bool foundSibling = false;
+        bool foundHost = false;
+        for (const auto& ref : *refs)
+        {
+            if (ref.uri.toString() == "file:///sibling_mixin.as")
+            {
+                foundSibling = true;
+                CHECK(ref.range.start.line == 4);
+            }
+            else if (ref.uri.toString() == "file:///host.as")
+            {
+                foundHost = true;
+                CHECK(ref.range.start.line == 4);
+            }
+        }
+        CHECK(foundSibling);
+        CHECK(foundHost);
+    }
+
+    TEST_CASE("References - Enum member occurrences isolated between different namespaces")
+    {
+        MultiFileTestEnv env;
+        const std::string nsA = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponA");
+        const std::string nsB = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponB");
+        const std::string enumName = "Anim";
+        const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("IRON_FIRE2");
+
+        const std::string codeA = "namespace " + nsA +
+                                  " {\n"
+                                  "    enum " +
+                                  enumName + " { " + memberName +
+                                  " = 1 };\n"
+                                  "    void Shoot() {\n"
+                                  "        int a = " +
+                                  memberName +
+                                  ";\n"
+                                  "    }\n"
+                                  "}\n";
+
+        const std::string codeB = "namespace " + nsB +
+                                  " {\n"
+                                  "    enum " +
+                                  enumName + " { " + memberName +
+                                  " = 2 };\n"
+                                  "    void Shoot() {\n"
+                                  "        int b = " +
+                                  memberName +
+                                  ";\n"
+                                  "    }\n"
+                                  "}\n";
+
+        env.AddFile("file:///weapon_a.as", codeA);
+        env.AddFile("file:///weapon_b.as", codeB);
+
+        const size_t declPos = codeA.find(memberName);
+        auto posA = FindPos(codeA, memberName, declPos);
+
+        auto refs = env.RefsAt("file:///weapon_a.as", posA.line, posA.character, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 2);
+        for (const auto& ref : *refs)
+        {
+            CHECK(ref.uri.toString() == "file:///weapon_a.as");
+        }
+    }
+
+    TEST_CASE("References - A local target retains the scope revision it resolved against")
+    {
+        TestEnvironment env("void Probe() {\n"
+                            "    int count = 0;\n"
+                            "    count++;\n"
+                            "}\n");
+        auto& workspace = env.multiEnv;
+        const auto& source = workspace.sources.at(env.uri);
+        auto request = MakeTargetRequest(env.uri, source, {1, 8}, workspace.symbolTable, workspace.scopeIndex);
+        const auto target = ResolveTargetSymbol(request);
+        REQUIRE(target.has_value());
+        REQUIRE(target->kind == TargetKind::Local);
+
+        workspace.scopeIndex.ClearDocument(env.uri);
+        auto occurrencesRequest =
+            MakeOccurrencesRequest(*target, env.uri, source, workspace.symbolTable, workspace.scopeIndex);
+        occurrencesRequest.includeDeclaration = false;
+        const auto occurrences = CollectOccurrences(occurrencesRequest);
+        REQUIRE(occurrences.size() == 1);
+        CHECK(occurrences.front().range.startLine == 2);
+        CHECK(occurrences.front().range.startCharacter == 4);
+    }
+
+    TEST_CASE("References - Bound calls are published and withdrawn by document and module")
+    {
+        ScopeIndex index;
+        Symbol declaration;
+        declaration.name = "Pick";
+        declaration.qualifiedName = "Pick";
+        declaration.fileUri = "file:///shared.as";
+        declaration.selectionRange = {2, 4, 2, 8};
+
+        const auto makeRoot = [&](const std::string& module, uint32_t row)
+        {
+            auto scope = std::make_shared<Scope>();
+            auto enclosing = std::make_shared<ScopeEnclosingContext>();
+            auto bindings = std::make_shared<CallBindings>(std::nullopt, module);
+            bindings->Add(10, {row, 4, row, 8}, declaration);
+            enclosing->callBindings = std::move(bindings);
+            scope->enclosingContext = std::move(enclosing);
+            return scope;
+        };
+        const auto rows = [&](const std::optional<std::string>& module)
+        {
+            std::vector<uint32_t> result;
+            index.ForEachBoundUse(CallDeclaration(declaration), module,
+                                  [&](const std::string& uri, std::span<const SourceRange> ranges)
+                                  {
+                                      CHECK((uri == "file:///first.as" || uri == "file:///second.as"));
+                                      for (const auto& range : ranges)
+                                      {
+                                          result.push_back(range.startLine);
+                                      }
+                                  });
+            std::ranges::sort(result);
+            return result;
+        };
+        const std::string firstUri = "file:///first.as";
+        const std::string secondUri = "file:///second.as";
+        const auto first = makeRoot("alpha", 3);
+        index.SetScopeTree(firstUri, first);
+        index.SetScopeTree(secondUri, makeRoot("beta", 5));
+        CHECK(rows("alpha") == std::vector<uint32_t>{3});
+        CHECK(rows("beta") == std::vector<uint32_t>{5});
+        CHECK(rows(std::nullopt) == std::vector<uint32_t>{3, 5});
+
+        index.InvalidateDocumentOccurrences(firstUri);
+        CHECK(index.GetRoot(firstUri).get() == first.get());
+        CHECK_FALSE(static_cast<bool>(index.GetOccurrenceRoot(firstUri)));
+        CHECK(rows("alpha").empty());
+        CHECK(rows(std::nullopt) == std::vector<uint32_t>{5});
+
+        index.SetScopeTree(firstUri, makeRoot("beta", 7));
+        CHECK(rows("beta") == std::vector<uint32_t>{5, 7});
+        index.SetScopeTree(firstUri, makeRoot("alpha", 9));
+        CHECK(rows("alpha") == std::vector<uint32_t>{9});
+        CHECK(rows("beta") == std::vector<uint32_t>{5});
+        index.ClearDocument(firstUri);
+        index.ClearDocument(secondUri);
+        CHECK(rows(std::nullopt).empty());
+    }
+
+    TEST_CASE("ReferencesHandler - Scoped Class Member References Across Hierarchy")
+    {
+        MultiFileTestEnv env;
+        const std::string baseCode = "class BaseClass {\n"
+                                     "    void DoTask() {}\n"
+                                     "}\n";
+        const std::string derivedCode = "class DerivedClass : BaseClass {\n"
+                                        "    void Work() {\n"
+                                        "        BaseClass::DoTask();\n"
+                                        "    }\n"
+                                        "}\n";
+
+        env.AddFile("file:///base.as", baseCode);
+        env.AddFile("file:///derived.as", derivedCode);
+
+        // Cursor on DoTask in BaseClass::DoTask() at line 2, character 19 in derived.as
+        auto refs = env.RefsAt("file:///derived.as", 2, 19, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 2);
+    }
+
+    TEST_CASE("ReferencesHandler - Enum Member Inside Namespace Resolved via Preceding Qualifier")
+    {
+        MultiFileTestEnv env;
+        const std::string code = "namespace GameNS {\n"
+                                 "    enum GameState {\n"
+                                 "        STATE_ACTIVE = 1,\n"
+                                 "        STATE_PAUSED = 2\n"
+                                 "    };\n"
+                                 "    void Update() {\n"
+                                 "        int s = GameState::STATE_ACTIVE;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        env.AddFile("file:///gamestate.as", code);
+
+        // Cursor on STATE_ACTIVE in GameState::STATE_ACTIVE at line 6, character 27
+        auto refs = env.RefsAt("file:///gamestate.as", 6, 27, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 2);
+    }
 }

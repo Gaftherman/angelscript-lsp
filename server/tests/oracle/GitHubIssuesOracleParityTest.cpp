@@ -5,7 +5,7 @@
 
 using namespace angel_lsp::test;
 
-TEST_SUITE("GitHubIssuesOracleParity")
+TEST_SUITE("oracle/GitHubIssuesOracleParity")
 {
 
     TEST_CASE("Issue #3 - Completion filters out private and protected members on external access")

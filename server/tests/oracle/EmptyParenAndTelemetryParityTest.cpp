@@ -5,10 +5,10 @@
 
 using namespace angel_lsp::test;
 
-TEST_SUITE("EmptyParenAndTelemetryParity")
+TEST_SUITE("oracle/EmptyParenAndTelemetryParity")
 {
 
-    TEST_CASE("Empty parentheses variable declarations good and boundary paths")
+    TEST_CASE("EmptyParenAndTelemetryParity - Empty parentheses variable declarations good and boundary paths")
     {
         UnifiedFeatureAuditHarness harness;
         const std::string cls = GenerateRandomSymbolName("Component");
@@ -73,7 +73,7 @@ TEST_SUITE("EmptyParenAndTelemetryParity")
         harness.VerifyGoodPath("scripts/" + GenerateRandomSymbolName("ep_ns") + ".as", nsScript);
     }
 
-    TEST_CASE("Feature telemetry latency budget audit across all LSP capabilities")
+    TEST_CASE("EmptyParenAndTelemetryParity - Feature telemetry latency budget audit across all LSP capabilities")
     {
         UnifiedFeatureAuditHarness harness;
         const std::string cls = GenerateRandomSymbolName("TelemetryTarget");

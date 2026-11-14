@@ -134,7 +134,7 @@ std::vector<Symbol> CollectFunctionCandidates(const std::string& code, const std
 
 TEST_SUITE("AdversarialSemantics_ExpressionType")
 {
-    TEST_CASE("Deep 4-Level Method Chain with Mixed Reference Types")
+    TEST_CASE("ChainedExpressionResolution - Deep 4-Level Method Chain with Mixed Reference Types")
     {
         std::string code = "class Level3\n"
                            "{\n"
@@ -160,7 +160,7 @@ TEST_SUITE("AdversarialSemantics_ExpressionType")
         CHECK(DeduceTypeAtLastExpression(code) == "int");
     }
 
-    TEST_CASE("Chained Fluent Builder Methods with Arguments")
+    TEST_CASE("ChainedExpressionResolution - Chained Fluent Builder Methods with Arguments")
     {
         std::string code = "class Builder\n"
                            "{\n"
@@ -176,7 +176,7 @@ TEST_SUITE("AdversarialSemantics_ExpressionType")
         CHECK(DeduceTypeAtLastExpression(code) == "double");
     }
 
-    TEST_CASE("Deep 3-Level and 4-Level Generic Template Indexing")
+    TEST_CASE("ChainedExpressionResolution - Deep 3-Level and 4-Level Generic Template Indexing")
     {
         std::string code3 = "void main()\n"
                             "{\n"
@@ -200,7 +200,7 @@ TEST_SUITE("AdversarialSemantics_ExpressionType")
         CHECK(DeduceTypeAtLastExpression(code4) == "float");
     }
 
-    TEST_CASE("Complex Binary Operators with Mixed Primitives and Exponentiation")
+    TEST_CASE("ChainedExpressionResolution - Complex Binary Operators with Mixed Primitives and Exponentiation")
     {
         CHECK(DeduceTypeAtLastExpression("void main() { 2 ** 3; }") == "int");
         CHECK(DeduceTypeAtLastExpression("void main() { 2.0f ** 3; }") == "float");
@@ -213,7 +213,7 @@ TEST_SUITE("AdversarialSemantics_ExpressionType")
         CHECK(DeduceTypeAtLastExpression("void main() { uint(10) + int64(20); }") == "int64");
     }
 
-    TEST_CASE("Reversed Operator Overloads opSub_r and Inherited opAdd_r")
+    TEST_CASE("ChainedExpressionResolution - Reversed Operator Overloads opSub_r and Inherited opAdd_r")
     {
         std::string subRevCode = "class CustomVal\n"
                                  "{\n"
@@ -244,7 +244,7 @@ TEST_SUITE("AdversarialSemantics_ExpressionType")
 
 TEST_SUITE("AdversarialSemantics_OverloadResolver")
 {
-    TEST_CASE("Const vs Non-Const Reference Overloads")
+    TEST_CASE("ChainedExpressionResolution - Const vs Non-Const Reference Overloads")
     {
         std::string code = "void Modify(int &inout val) { }\n"
                            "void Modify(const int &in val) { }\n";
@@ -261,7 +261,7 @@ TEST_SUITE("AdversarialSemantics_OverloadResolver")
         CHECK_FALSE(matchNonConst.bestCandidate->GetFunction().parameters[0].isConst);
     }
 
-    TEST_CASE("Tricky Overload Ambiguities with Multiple Arguments")
+    TEST_CASE("ChainedExpressionResolution - Tricky Overload Ambiguities with Multiple Arguments")
     {
         std::string code = "void Dispatch(int a, float b) { }\n"
                            "void Dispatch(float a, int b) { }\n";
@@ -273,7 +273,7 @@ TEST_SUITE("AdversarialSemantics_OverloadResolver")
         CHECK(res.isAmbiguous);
     }
 
-    TEST_CASE("Default Parameter Penalty with Numeric Widening Hierarchy")
+    TEST_CASE("ChainedExpressionResolution - Default Parameter Penalty with Numeric Widening Hierarchy")
     {
         std::string code = "int Calc(int a, int b = 0, int c = 0) { return 0; }\n"
                            "double Calc(double a, int b = 0) { return 0.0; }\n"
@@ -294,7 +294,7 @@ TEST_SUITE("AdversarialSemantics_OverloadResolver")
 
 TEST_SUITE("AdversarialSemantics_DefiniteAssignment")
 {
-    TEST_CASE("Nested Loops and Complex Break Dataflow")
+    TEST_CASE("ChainedExpressionResolution - Nested Loops and Complex Break Dataflow")
     {
         std::string nestedWhile = "void Print(int v) { }\n"
                                   "void main()\n"
@@ -331,7 +331,7 @@ TEST_SUITE("AdversarialSemantics_DefiniteAssignment")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(nestedDoWhile)));
     }
 
-    TEST_CASE("Switch Statements With Partial Assignment or Missing Default")
+    TEST_CASE("ChainedExpressionResolution - Switch Statements With Partial Assignment or Missing Default")
     {
         std::string switchNoDefault = "void Print(int v) { }\n"
                                       "void main()\n"

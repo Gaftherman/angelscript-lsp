@@ -3,6 +3,7 @@
 #if __has_include(<angelscript.h>)
 
 #include "features/breakpoints/BreakpointLocationsHandler.h"
+#include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
@@ -269,14 +270,7 @@ TEST_CASE("Debugger DAP Protocol - Bounded Payload & Multi-Frame Scopes Invarian
 
 TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
 {
-    // Find built oracle binary
-    const std::vector<std::filesystem::path> candidates = {
-        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Debug" / "angelscript_oracle.exe",
-        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "bin" / "angelscript_oracle.exe",
-        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Release" / "angelscript_oracle.exe",
-        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Debug" / "angelscript_oracle.exe",
-        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "bin" / "angelscript_oracle.exe",
-    };
+    const std::vector<std::filesystem::path> candidates = test::LspSemanticHarnessFixture::OracleCandidatePaths();
 
     std::string oracleExe;
     for (const auto& c : candidates)

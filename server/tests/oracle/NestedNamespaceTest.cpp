@@ -7,9 +7,10 @@
 
 using namespace angel_lsp::test;
 
-TEST_SUITE("NestedNamespaceTest")
+TEST_SUITE("oracle/NestedNamespace")
 {
-    TEST_CASE("Hierarchical block namespaces A { B { C { ... } } } resolve parent and ancestor symbols")
+    TEST_CASE(
+        "NestedNamespace - Hierarchical block namespaces A { B { C { ... } } } resolve parent and ancestor symbols")
     {
         LspSemanticHarnessFixture fixture;
         const std::string nsA = GenerateRandomSymbolName("NsA");
@@ -54,7 +55,8 @@ TEST_SUITE("NestedNamespaceTest")
         fixture.AssertDefinitionTarget(docUri, 8, 17, "", 4);
     }
 
-    TEST_CASE("Compound namespace A::B::C accesses ancestor symbols and allows qualified external calls")
+    TEST_CASE(
+        "NestedNamespace - Compound namespace A::B::C accesses ancestor symbols and allows qualified external calls")
     {
         LspSemanticHarnessFixture fixture;
         const std::string nsA = GenerateRandomSymbolName("Outer");
@@ -99,7 +101,7 @@ TEST_SUITE("NestedNamespaceTest")
         fixture.AssertDefinitionTarget(docUri, 13, callCol1, "", 7);
     }
 
-    TEST_CASE("Sibling compound namespaces under same parent resolve relatively")
+    TEST_CASE("NestedNamespace - Sibling compound namespaces under same parent resolve relatively")
     {
         LspSemanticHarnessFixture fixture;
         const std::string rootNs = GenerateRandomSymbolName("Root");

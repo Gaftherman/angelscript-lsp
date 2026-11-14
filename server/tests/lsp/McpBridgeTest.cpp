@@ -19,7 +19,7 @@
  * MCP client such as an agent would actually see. The whole session is written up front: the bridge
  * answers in order and returns at end of input, which makes the tests deterministic without any waiting.
  */
-TEST_SUITE("LspMcpBridge")
+TEST_SUITE("lsp/McpBridge")
 {
 
     TEST_CASE("McpBridge - Good - lists the nine tools and answers ping")

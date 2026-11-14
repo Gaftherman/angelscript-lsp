@@ -80,416 +80,420 @@ struct GraphFixture
 };
 } // namespace
 
-// -------------------------------------------------------------------------------------
-// The case that motivated the graph: a file is opened from the middle of a module and
-// still needs the declarations that live in the file including it.
-// -------------------------------------------------------------------------------------
-
-TEST_CASE("GetModuleClosure - opening a leaf pulls in the files that include it, not just the ones it includes")
+TEST_SUITE("lsp/WorkspaceIncludeGraph")
 {
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"mid.as\"\nvoid RootOnly() {}\n");
-    fixture.Write("mid.as", "#include \"leaf.as\"\nvoid MidOnly() {}\n");
-    fixture.Write("leaf.as", "void LeafOnly() { RootOnly(); }\n");
-
-    fixture.Build();
-
-    // Opening the leaf: nothing it includes, everything that includes it.
-    const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("mid.as"), fixture.Path("leaf.as")};
-    CHECK(fixture.ClosureOf("leaf.as") == expected);
-
-    // Opening any other member of the module yields the same set.
-    CHECK(fixture.ClosureOf("root.as") == expected);
-    CHECK(fixture.ClosureOf("mid.as") == expected);
-}
-
-TEST_CASE("GetModuleClosure - a sibling included by the same root comes along")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"a.as\"\n#include \"b.as\"\n");
-    fixture.Write("a.as", "void A() {}\n");
-    fixture.Write("b.as", "void B() {}\n");
-
-    fixture.Build();
-
-    const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("a.as"), fixture.Path("b.as")};
-    CHECK(fixture.ClosureOf("a.as") == expected);
-}
-
-TEST_CASE("GetModuleClosure - a diamond visits the shared file once")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"left.as\"\n#include \"right.as\"\n");
-    fixture.Write("left.as", "#include \"common.as\"\n");
-    fixture.Write("right.as", "#include \"common.as\"\n");
-    fixture.Write("common.as", "void Common() {}\n");
-
-    fixture.Build();
-
-    const auto closure = fixture.graph.GetModuleClosure(fixture.Path("common.as"));
-    CHECK(closure.size() == 4);
-}
-
-// -------------------------------------------------------------------------------------
-// Isolation and independence
-// -------------------------------------------------------------------------------------
-
-TEST_CASE("GetModuleClosure - a file nothing includes and that includes nothing is its own module")
-{
-    GraphFixture fixture;
-    fixture.Write("alone.as", "void Alone() {}\n");
-
-    fixture.Build();
-
-    const std::set<std::string> expected = {fixture.Path("alone.as")};
-    CHECK(fixture.ClosureOf("alone.as") == expected);
-}
-
-TEST_CASE("GetModuleClosure - two independent modules do not bleed into each other")
-{
-    GraphFixture fixture;
-    fixture.Write("weapons.as", "#include \"ak47.as\"\n");
-    fixture.Write("ak47.as", "void Ak() {}\n");
-    fixture.Write("menu.as", "#include \"buy.as\"\n");
-    fixture.Write("buy.as", "void Buy() {}\n");
-
-    fixture.Build();
-
-    const std::set<std::string> weapons = {fixture.Path("weapons.as"), fixture.Path("ak47.as")};
-    CHECK(fixture.ClosureOf("ak47.as") == weapons);
-
-    const std::set<std::string> menu = {fixture.Path("menu.as"), fixture.Path("buy.as")};
-    CHECK(fixture.ClosureOf("buy.as") == menu);
-}
-
-TEST_CASE("GetModuleClosure - a file the graph has never seen still resolves to itself")
-{
-    GraphFixture fixture;
-    fixture.Write("known.as", "void Known() {}\n");
-
-    fixture.Build();
-
-    const auto closure = fixture.graph.GetModuleClosure(fixture.Path("never_scanned.as"));
-    REQUIRE(closure.size() == 1);
-    CHECK(closure[0] == fixture.Path("never_scanned.as"));
-}
-
-// -------------------------------------------------------------------------------------
-// Degenerate graphs
-// -------------------------------------------------------------------------------------
-
-TEST_CASE("GetModuleClosure - a two-file cycle terminates and keeps both files together")
-{
-    GraphFixture fixture;
-    fixture.Write("a.as", "#include \"b.as\"\n");
-    fixture.Write("b.as", "#include \"a.as\"\n");
-
-    fixture.Build();
-
-    const std::set<std::string> expected = {fixture.Path("a.as"), fixture.Path("b.as")};
-    CHECK(fixture.ClosureOf("a.as") == expected);
-    CHECK(fixture.ClosureOf("b.as") == expected);
-}
-
-TEST_CASE("GetModuleClosure - a cycle hanging below a root still reaches the root")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"a.as\"\n");
-    fixture.Write("a.as", "#include \"b.as\"\n");
-    fixture.Write("b.as", "#include \"a.as\"\n");
-
-    fixture.Build();
-
-    const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("a.as"), fixture.Path("b.as")};
-    CHECK(fixture.ClosureOf("b.as") == expected);
-}
-
-TEST_CASE("Build - a directive pointing at a file that does not exist creates no edge")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"missing.as\"\n");
-
-    fixture.Build();
-
-    const std::set<std::string> expected = {fixture.Path("root.as")};
-    CHECK(fixture.ClosureOf("root.as") == expected);
-}
-
-TEST_CASE("Build - directives inside comments and strings are not edges")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "// #include \"real.as\"\nstring s = \"#include \\\"real.as\\\"\";\n");
-    fixture.Write("real.as", "void Real() {}\n");
-
-    fixture.Build();
-
-    const std::set<std::string> expected = {fixture.Path("root.as")};
-    CHECK(fixture.ClosureOf("root.as") == expected);
-}
-
-TEST_CASE("Build - only files carrying the configured script extension are scanned")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"data.txt\"\n");
-    fixture.Write("data.txt", "not a script\n");
-    fixture.Write("notes.md", "#include \"root.as\"\n");
-
-    fixture.Build();
-
-    // notes.md was skipped, so it never became an includer of root.as.
-    const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("data.txt")};
-    CHECK(fixture.ClosureOf("root.as") == expected);
-}
-
-// -------------------------------------------------------------------------------------
-// UpdateFile - the save path
-// -------------------------------------------------------------------------------------
-
-TEST_CASE("UpdateFile - adding an include grows the module")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "void Root() {}\n");
-    fixture.Write("extra.as", "void Extra() {}\n");
-
-    fixture.Build();
-    CHECK(fixture.ClosureOf("extra.as").size() == 1);
-
-    fixture.graph.UpdateFile(fixture.Path("root.as"), "#include \"extra.as\"\n", {});
-
-    const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("extra.as")};
-    CHECK(fixture.ClosureOf("extra.as") == expected);
-}
-
-TEST_CASE("UpdateFile - removing an include detaches the file instead of leaving a stale edge")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"extra.as\"\n");
-    fixture.Write("extra.as", "void Extra() {}\n");
-
-    fixture.Build();
-    CHECK(fixture.ClosureOf("extra.as").size() == 2);
-
-    fixture.graph.UpdateFile(fixture.Path("root.as"), "void Root() {}\n", {});
-
-    const std::set<std::string> expected = {fixture.Path("extra.as")};
-    CHECK(fixture.ClosureOf("extra.as") == expected);
-}
-
-TEST_CASE("Clear - drops every node and edge")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"leaf.as\"\n");
-    fixture.Write("leaf.as", "void Leaf() {}\n");
-
-    fixture.Build();
-    CHECK(fixture.graph.FileCount() == 2);
-
-    fixture.graph.Clear();
-
-    CHECK(fixture.graph.FileCount() == 0);
-    CHECK_FALSE(fixture.graph.Contains(fixture.Path("root.as")));
-}
-
-TEST_CASE("RemoveFile - drops the node and detaches it from both edge directions")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"middle.as\"\n");
-    fixture.Write("middle.as", "#include \"leaf.as\"\n");
-    fixture.Write("leaf.as", "void Leaf() {}\n");
-
-    fixture.Build();
-    REQUIRE(fixture.graph.FileCount() == 3);
-    REQUIRE(fixture.ClosureOf("leaf.as").size() == 3);
-
-    CHECK(fixture.graph.RemoveFile(fixture.Path("middle.as")));
-    CHECK_FALSE(fixture.graph.Contains(fixture.Path("middle.as")));
-
-    // The deleted file no longer holds leaf.as and root.as in one module: its forward edge to
-    // leaf.as is gone, so leaf.as is now a module of its own.
-    const std::set<std::string> expected = {fixture.Path("leaf.as")};
-    CHECK(fixture.ClosureOf("leaf.as") == expected);
-}
-
-TEST_CASE("RemoveFile - reports whether the file was known")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "void Root() {}\n");
-    fixture.Build();
-
-    CHECK(fixture.graph.RemoveFile(fixture.Path("root.as")));
-    CHECK_FALSE(fixture.graph.RemoveFile(fixture.Path("root.as")));
-    CHECK_FALSE(fixture.graph.RemoveFile(fixture.Path("never-existed.as")));
-}
-
-TEST_CASE("RemoveFile - leaves the dangling directive of whoever still includes it")
-{
-    GraphFixture fixture;
-    fixture.Write("root.as", "#include \"leaf.as\"\n");
-    fixture.Write("leaf.as", "void Leaf() {}\n");
-
-    fixture.Build();
-    REQUIRE(fixture.graph.FileCount() == 2);
-
-    fixture.graph.RemoveFile(fixture.Path("leaf.as"));
-
-    // root.as still names leaf.as, because it does: rewriting its edges here would hide an
-    // unresolved #include that the user needs to see reported.
-    CHECK(fixture.graph.Contains(fixture.Path("root.as")));
-    CHECK(fixture.ClosureOf("root.as").contains(fixture.Path("leaf.as")));
-}
-
-TEST_CASE("Build - an excluded directory is never descended into")
-{
-    // Pruned, not filtered. The difference is the whole point: a filter still walks a build tree
-    // to reject every file in it one at a time, and on a repository with one that is most of the
-    // work the scan does.
-    GraphFixture fixture;
-
-    fixture.Write("src/main.as", "#include \"helper.as\"\n");
-    fixture.Write("src/helper.as", "\n");
-
-    // A copy of the same tree under a directory the defaults exclude. Its files are perfectly
-    // valid scripts; the point is that they must not be in the graph at all.
-    fixture.Write("build/generated/main.as", "#include \"helper.as\"\n");
-    fixture.Write("build/generated/helper.as", "\n");
-
-    const std::vector<std::string> excluded = {"**/build/**"};
-
-    WorkspaceIncludeGraph graph;
-    graph.Build(WorkspaceIncludeGraph::BuildRequest{{fixture.Root()}, {}, ".as", {}, {}, excluded, {}});
-
-    const auto has = [](const std::vector<std::string>& closure, const std::string& path)
-    { return std::find(closure.begin(), closure.end(), path) != closure.end(); };
-
-    const auto closure = graph.GetModuleClosure(fixture.Path("src/main.as"));
-    CHECK(has(closure, fixture.Path("src/main.as")));
-    CHECK(has(closure, fixture.Path("src/helper.as")));
-
-    // Nothing under build reached the graph, so nothing under build can be in any closure.
-    const auto buildClosure = graph.GetModuleClosure(fixture.Path("build/generated/main.as"));
-    CHECK(buildClosure.size() <= 1);
-
-    // Without the exclusion the same tree is walked and the file IS known, which is what shows
-    // the pruning did the work rather than the file simply being unreachable.
-    WorkspaceIncludeGraph unpruned;
-    unpruned.Build({fixture.Root()}, {}, ".as");
-    const auto unprunedClosure = unpruned.GetModuleClosure(fixture.Path("build/generated/main.as"));
-    CHECK(has(unprunedClosure, fixture.Path("build/generated/helper.as")));
-}
-
-TEST_CASE("WorkspaceIncludeGraph - BuildFromFiles produces identical graph to Build")
-{
-    GraphFixture fixture;
-    fixture.Write("a.as", "#include \"b.as\"\n");
-    fixture.Write("b.as", "#include \"c.as\"\n");
-    fixture.Write("c.as", "\n");
-
-    std::vector<std::string> files = {fixture.Path("a.as"), fixture.Path("b.as"), fixture.Path("c.as")};
-
-    WorkspaceIncludeGraph graphFromFiles;
-    graphFromFiles.BuildFromFiles(files, {}, {fixture.Root()});
-
-    WorkspaceIncludeGraph graphFromBuild;
-    graphFromBuild.Build({fixture.Root()}, {}, ".as");
-
-    CHECK(graphFromFiles.FileCount() == 3);
-    CHECK(graphFromBuild.FileCount() == 3);
-
-    auto closureFiles = graphFromFiles.GetModuleClosure(fixture.Path("a.as"));
-    auto closureBuild = graphFromBuild.GetModuleClosure(fixture.Path("a.as"));
-
-    std::sort(closureFiles.begin(), closureFiles.end());
-    std::sort(closureBuild.begin(), closureBuild.end());
-
-    CHECK(closureFiles == closureBuild);
-}
-
-TEST_CASE("WorkspaceIncludeGraph - Invariant: Randomized DAG topological ordering and zero duplicates")
-{
-    std::mt19937_64 rng(0x1337BEEF);
-    GraphFixture fixture;
-    constexpr size_t k_nodeCount = 60;
-
-    std::vector<std::string> fileNames;
-    fileNames.reserve(k_nodeCount);
-    for (size_t i = 0; i < k_nodeCount; ++i)
+    // -------------------------------------------------------------------------------------
+    // The case that motivated the graph: a file is opened from the middle of a module and
+    // still needs the declarations that live in the file including it.
+    // -------------------------------------------------------------------------------------
+
+    TEST_CASE("GetModuleClosure - opening a leaf pulls in the files that include it, not just the ones it includes")
     {
-        fileNames.push_back("node_" + std::to_string(i) + ".as");
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"mid.as\"\nvoid RootOnly() {}\n");
+        fixture.Write("mid.as", "#include \"leaf.as\"\nvoid MidOnly() {}\n");
+        fixture.Write("leaf.as", "void LeafOnly() { RootOnly(); }\n");
+
+        fixture.Build();
+
+        // Opening the leaf: nothing it includes, everything that includes it.
+        const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("mid.as"),
+                                                fixture.Path("leaf.as")};
+        CHECK(fixture.ClosureOf("leaf.as") == expected);
+
+        // Opening any other member of the module yields the same set.
+        CHECK(fixture.ClosureOf("root.as") == expected);
+        CHECK(fixture.ClosureOf("mid.as") == expected);
     }
 
-    for (size_t i = 0; i < k_nodeCount; ++i)
+    TEST_CASE("GetModuleClosure - a sibling included by the same root comes along")
     {
-        std::string content;
-        if (i > 0)
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"a.as\"\n#include \"b.as\"\n");
+        fixture.Write("a.as", "void A() {}\n");
+        fixture.Write("b.as", "void B() {}\n");
+
+        fixture.Build();
+
+        const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("a.as"), fixture.Path("b.as")};
+        CHECK(fixture.ClosureOf("a.as") == expected);
+    }
+
+    TEST_CASE("GetModuleClosure - a diamond visits the shared file once")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"left.as\"\n#include \"right.as\"\n");
+        fixture.Write("left.as", "#include \"common.as\"\n");
+        fixture.Write("right.as", "#include \"common.as\"\n");
+        fixture.Write("common.as", "void Common() {}\n");
+
+        fixture.Build();
+
+        const auto closure = fixture.graph.GetModuleClosure(fixture.Path("common.as"));
+        CHECK(closure.size() == 4);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Isolation and independence
+    // -------------------------------------------------------------------------------------
+
+    TEST_CASE("GetModuleClosure - a file nothing includes and that includes nothing is its own module")
+    {
+        GraphFixture fixture;
+        fixture.Write("alone.as", "void Alone() {}\n");
+
+        fixture.Build();
+
+        const std::set<std::string> expected = {fixture.Path("alone.as")};
+        CHECK(fixture.ClosureOf("alone.as") == expected);
+    }
+
+    TEST_CASE("GetModuleClosure - two independent modules do not bleed into each other")
+    {
+        GraphFixture fixture;
+        fixture.Write("weapons.as", "#include \"ak47.as\"\n");
+        fixture.Write("ak47.as", "void Ak() {}\n");
+        fixture.Write("menu.as", "#include \"buy.as\"\n");
+        fixture.Write("buy.as", "void Buy() {}\n");
+
+        fixture.Build();
+
+        const std::set<std::string> weapons = {fixture.Path("weapons.as"), fixture.Path("ak47.as")};
+        CHECK(fixture.ClosureOf("ak47.as") == weapons);
+
+        const std::set<std::string> menu = {fixture.Path("menu.as"), fixture.Path("buy.as")};
+        CHECK(fixture.ClosureOf("buy.as") == menu);
+    }
+
+    TEST_CASE("GetModuleClosure - a file the graph has never seen still resolves to itself")
+    {
+        GraphFixture fixture;
+        fixture.Write("known.as", "void Known() {}\n");
+
+        fixture.Build();
+
+        const auto closure = fixture.graph.GetModuleClosure(fixture.Path("never_scanned.as"));
+        REQUIRE(closure.size() == 1);
+        CHECK(closure[0] == fixture.Path("never_scanned.as"));
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Degenerate graphs
+    // -------------------------------------------------------------------------------------
+
+    TEST_CASE("GetModuleClosure - a two-file cycle terminates and keeps both files together")
+    {
+        GraphFixture fixture;
+        fixture.Write("a.as", "#include \"b.as\"\n");
+        fixture.Write("b.as", "#include \"a.as\"\n");
+
+        fixture.Build();
+
+        const std::set<std::string> expected = {fixture.Path("a.as"), fixture.Path("b.as")};
+        CHECK(fixture.ClosureOf("a.as") == expected);
+        CHECK(fixture.ClosureOf("b.as") == expected);
+    }
+
+    TEST_CASE("GetModuleClosure - a cycle hanging below a root still reaches the root")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"a.as\"\n");
+        fixture.Write("a.as", "#include \"b.as\"\n");
+        fixture.Write("b.as", "#include \"a.as\"\n");
+
+        fixture.Build();
+
+        const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("a.as"), fixture.Path("b.as")};
+        CHECK(fixture.ClosureOf("b.as") == expected);
+    }
+
+    TEST_CASE("Build - a directive pointing at a file that does not exist creates no edge")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"missing.as\"\n");
+
+        fixture.Build();
+
+        const std::set<std::string> expected = {fixture.Path("root.as")};
+        CHECK(fixture.ClosureOf("root.as") == expected);
+    }
+
+    TEST_CASE("Build - directives inside comments and strings are not edges")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "// #include \"real.as\"\nstring s = \"#include \\\"real.as\\\"\";\n");
+        fixture.Write("real.as", "void Real() {}\n");
+
+        fixture.Build();
+
+        const std::set<std::string> expected = {fixture.Path("root.as")};
+        CHECK(fixture.ClosureOf("root.as") == expected);
+    }
+
+    TEST_CASE("Build - only files carrying the configured script extension are scanned")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"data.txt\"\n");
+        fixture.Write("data.txt", "not a script\n");
+        fixture.Write("notes.md", "#include \"root.as\"\n");
+
+        fixture.Build();
+
+        // notes.md was skipped, so it never became an includer of root.as.
+        const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("data.txt")};
+        CHECK(fixture.ClosureOf("root.as") == expected);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // UpdateFile - the save path
+    // -------------------------------------------------------------------------------------
+
+    TEST_CASE("UpdateFile - adding an include grows the module")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "void Root() {}\n");
+        fixture.Write("extra.as", "void Extra() {}\n");
+
+        fixture.Build();
+        CHECK(fixture.ClosureOf("extra.as").size() == 1);
+
+        fixture.graph.UpdateFile(fixture.Path("root.as"), "#include \"extra.as\"\n", {});
+
+        const std::set<std::string> expected = {fixture.Path("root.as"), fixture.Path("extra.as")};
+        CHECK(fixture.ClosureOf("extra.as") == expected);
+    }
+
+    TEST_CASE("UpdateFile - removing an include detaches the file instead of leaving a stale edge")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"extra.as\"\n");
+        fixture.Write("extra.as", "void Extra() {}\n");
+
+        fixture.Build();
+        CHECK(fixture.ClosureOf("extra.as").size() == 2);
+
+        fixture.graph.UpdateFile(fixture.Path("root.as"), "void Root() {}\n", {});
+
+        const std::set<std::string> expected = {fixture.Path("extra.as")};
+        CHECK(fixture.ClosureOf("extra.as") == expected);
+    }
+
+    TEST_CASE("Clear - drops every node and edge")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"leaf.as\"\n");
+        fixture.Write("leaf.as", "void Leaf() {}\n");
+
+        fixture.Build();
+        CHECK(fixture.graph.FileCount() == 2);
+
+        fixture.graph.Clear();
+
+        CHECK(fixture.graph.FileCount() == 0);
+        CHECK_FALSE(fixture.graph.Contains(fixture.Path("root.as")));
+    }
+
+    TEST_CASE("RemoveFile - drops the node and detaches it from both edge directions")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"middle.as\"\n");
+        fixture.Write("middle.as", "#include \"leaf.as\"\n");
+        fixture.Write("leaf.as", "void Leaf() {}\n");
+
+        fixture.Build();
+        REQUIRE(fixture.graph.FileCount() == 3);
+        REQUIRE(fixture.ClosureOf("leaf.as").size() == 3);
+
+        CHECK(fixture.graph.RemoveFile(fixture.Path("middle.as")));
+        CHECK_FALSE(fixture.graph.Contains(fixture.Path("middle.as")));
+
+        // The deleted file no longer holds leaf.as and root.as in one module: its forward edge to
+        // leaf.as is gone, so leaf.as is now a module of its own.
+        const std::set<std::string> expected = {fixture.Path("leaf.as")};
+        CHECK(fixture.ClosureOf("leaf.as") == expected);
+    }
+
+    TEST_CASE("RemoveFile - reports whether the file was known")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "void Root() {}\n");
+        fixture.Build();
+
+        CHECK(fixture.graph.RemoveFile(fixture.Path("root.as")));
+        CHECK_FALSE(fixture.graph.RemoveFile(fixture.Path("root.as")));
+        CHECK_FALSE(fixture.graph.RemoveFile(fixture.Path("never-existed.as")));
+    }
+
+    TEST_CASE("RemoveFile - leaves the dangling directive of whoever still includes it")
+    {
+        GraphFixture fixture;
+        fixture.Write("root.as", "#include \"leaf.as\"\n");
+        fixture.Write("leaf.as", "void Leaf() {}\n");
+
+        fixture.Build();
+        REQUIRE(fixture.graph.FileCount() == 2);
+
+        fixture.graph.RemoveFile(fixture.Path("leaf.as"));
+
+        // root.as still names leaf.as, because it does: rewriting its edges here would hide an
+        // unresolved #include that the user needs to see reported.
+        CHECK(fixture.graph.Contains(fixture.Path("root.as")));
+        CHECK(fixture.ClosureOf("root.as").contains(fixture.Path("leaf.as")));
+    }
+
+    TEST_CASE("Build - an excluded directory is never descended into")
+    {
+        // Pruned, not filtered. The difference is the whole point: a filter still walks a build tree
+        // to reject every file in it one at a time, and on a repository with one that is most of the
+        // work the scan does.
+        GraphFixture fixture;
+
+        fixture.Write("src/main.as", "#include \"helper.as\"\n");
+        fixture.Write("src/helper.as", "\n");
+
+        // A copy of the same tree under a directory the defaults exclude. Its files are perfectly
+        // valid scripts; the point is that they must not be in the graph at all.
+        fixture.Write("build/generated/main.as", "#include \"helper.as\"\n");
+        fixture.Write("build/generated/helper.as", "\n");
+
+        const std::vector<std::string> excluded = {"**/build/**"};
+
+        WorkspaceIncludeGraph graph;
+        graph.Build(WorkspaceIncludeGraph::BuildRequest{{fixture.Root()}, {}, ".as", {}, {}, excluded, {}});
+
+        const auto has = [](const std::vector<std::string>& closure, const std::string& path)
+        { return std::find(closure.begin(), closure.end(), path) != closure.end(); };
+
+        const auto closure = graph.GetModuleClosure(fixture.Path("src/main.as"));
+        CHECK(has(closure, fixture.Path("src/main.as")));
+        CHECK(has(closure, fixture.Path("src/helper.as")));
+
+        // Nothing under build reached the graph, so nothing under build can be in any closure.
+        const auto buildClosure = graph.GetModuleClosure(fixture.Path("build/generated/main.as"));
+        CHECK(buildClosure.size() <= 1);
+
+        // Without the exclusion the same tree is walked and the file IS known, which is what shows
+        // the pruning did the work rather than the file simply being unreachable.
+        WorkspaceIncludeGraph unpruned;
+        unpruned.Build({fixture.Root()}, {}, ".as");
+        const auto unprunedClosure = unpruned.GetModuleClosure(fixture.Path("build/generated/main.as"));
+        CHECK(has(unprunedClosure, fixture.Path("build/generated/helper.as")));
+    }
+
+    TEST_CASE("WorkspaceIncludeGraph - BuildFromFiles produces identical graph to Build")
+    {
+        GraphFixture fixture;
+        fixture.Write("a.as", "#include \"b.as\"\n");
+        fixture.Write("b.as", "#include \"c.as\"\n");
+        fixture.Write("c.as", "\n");
+
+        std::vector<std::string> files = {fixture.Path("a.as"), fixture.Path("b.as"), fixture.Path("c.as")};
+
+        WorkspaceIncludeGraph graphFromFiles;
+        graphFromFiles.BuildFromFiles(files, {}, {fixture.Root()});
+
+        WorkspaceIncludeGraph graphFromBuild;
+        graphFromBuild.Build({fixture.Root()}, {}, ".as");
+
+        CHECK(graphFromFiles.FileCount() == 3);
+        CHECK(graphFromBuild.FileCount() == 3);
+
+        auto closureFiles = graphFromFiles.GetModuleClosure(fixture.Path("a.as"));
+        auto closureBuild = graphFromBuild.GetModuleClosure(fixture.Path("a.as"));
+
+        std::sort(closureFiles.begin(), closureFiles.end());
+        std::sort(closureBuild.begin(), closureBuild.end());
+
+        CHECK(closureFiles == closureBuild);
+    }
+
+    TEST_CASE("WorkspaceIncludeGraph - Invariant: Randomized DAG topological ordering and zero duplicates")
+    {
+        std::mt19937_64 rng(0x1337BEEF);
+        GraphFixture fixture;
+        constexpr size_t k_nodeCount = 60;
+
+        std::vector<std::string> fileNames;
+        fileNames.reserve(k_nodeCount);
+        for (size_t i = 0; i < k_nodeCount; ++i)
         {
-            std::uniform_int_distribution<size_t> parentDist(0, i - 1);
-            size_t p1 = parentDist(rng);
-            content += "#include \"" + fileNames[p1] + "\"\n";
-            if (i > 1)
+            fileNames.push_back("node_" + std::to_string(i) + ".as");
+        }
+
+        for (size_t i = 0; i < k_nodeCount; ++i)
+        {
+            std::string content;
+            if (i > 0)
             {
-                size_t p2 = parentDist(rng);
-                if (p2 != p1)
+                std::uniform_int_distribution<size_t> parentDist(0, i - 1);
+                size_t p1 = parentDist(rng);
+                content += "#include \"" + fileNames[p1] + "\"\n";
+                if (i > 1)
                 {
-                    content += "#include \"" + fileNames[p2] + "\"\n";
+                    size_t p2 = parentDist(rng);
+                    if (p2 != p1)
+                    {
+                        content += "#include \"" + fileNames[p2] + "\"\n";
+                    }
+                }
+            }
+            content += "void fn_" + std::to_string(i) + "() {}\n";
+            fixture.Write(fileNames[i], content);
+        }
+
+        fixture.Build();
+        const std::string rootNode = fixture.Path(fileNames[0]);
+
+        const auto revDeps = fixture.graph.GetReverseDependenciesTopological(rootNode);
+
+        // Invariant 1: Zero duplicates
+        std::vector<std::string> deduplicated = revDeps;
+        std::sort(deduplicated.begin(), deduplicated.end());
+        CHECK(std::adjacent_find(deduplicated.begin(), deduplicated.end()) == deduplicated.end());
+
+        // Invariant 2: Strictly topological ordering (prerequisites appear before dependents)
+        ankerl::unordered_dense::map<std::string, size_t> positionMap;
+        for (size_t i = 0; i < revDeps.size(); ++i)
+        {
+            positionMap[revDeps[i]] = i;
+        }
+
+        for (size_t i = 0; i < revDeps.size(); ++i)
+        {
+            auto includers = fixture.graph.GetFilesIncluding(revDeps[i]);
+            for (const auto& inc : includers)
+            {
+                if (positionMap.contains(inc))
+                {
+                    CHECK(positionMap[revDeps[i]] < positionMap[inc]);
                 }
             }
         }
-        content += "void fn_" + std::to_string(i) + "() {}\n";
-        fixture.Write(fileNames[i], content);
     }
 
-    fixture.Build();
-    const std::string rootNode = fixture.Path(fileNames[0]);
-
-    const auto revDeps = fixture.graph.GetReverseDependenciesTopological(rootNode);
-
-    // Invariant 1: Zero duplicates
-    std::vector<std::string> deduplicated = revDeps;
-    std::sort(deduplicated.begin(), deduplicated.end());
-    CHECK(std::adjacent_find(deduplicated.begin(), deduplicated.end()) == deduplicated.end());
-
-    // Invariant 2: Strictly topological ordering (prerequisites appear before dependents)
-    ankerl::unordered_dense::map<std::string, size_t> positionMap;
-    for (size_t i = 0; i < revDeps.size(); ++i)
+    TEST_CASE("WorkspaceIncludeGraph - Conditional includes are filtered on rebuild and update")
     {
-        positionMap[revDeps[i]] = i;
+        GraphFixture fixture;
+        const auto define = angel_lsp::test::GenerateRandomSymbolName("FEATURE");
+        const std::string source = "#if " + define + "\n#include \"leaf.as\"\n#endif\n";
+        fixture.Write("main.as", source);
+        fixture.Write("leaf.as", "void Leaf() {}\n");
+
+        fixture.Build();
+        CHECK(fixture.graph.GetForwardClosure(fixture.Path("main.as")).size() == 1);
+        auto words = std::make_shared<angel_lsp::TransparentStringSet>();
+        words->insert(define);
+        fixture.graph.UpdateFile({.filePath = fixture.Path("main.as"),
+                                  .sourceCode = source,
+                                  .searchDirectories = {},
+                                  .allowedRoots = {fixture.Root()},
+                                  .preprocessor = {words, {}}});
+        const auto closure = fixture.graph.GetForwardClosure(fixture.Path("main.as"));
+        CHECK(std::find(closure.begin(), closure.end(), fixture.Path("leaf.as")) != closure.end());
+        fixture.graph.UpdateFile({.filePath = fixture.Path("main.as"),
+                                  .sourceCode = source,
+                                  .searchDirectories = {},
+                                  .allowedRoots = {fixture.Root()}});
+        CHECK(fixture.graph.GetForwardClosure(fixture.Path("main.as")).size() == 1);
     }
-
-    for (size_t i = 0; i < revDeps.size(); ++i)
-    {
-        auto includers = fixture.graph.GetFilesIncluding(revDeps[i]);
-        for (const auto& inc : includers)
-        {
-            if (positionMap.contains(inc))
-            {
-                CHECK(positionMap[revDeps[i]] < positionMap[inc]);
-            }
-        }
-    }
-}
-
-TEST_CASE("Conditional includes are filtered on rebuild and update")
-{
-    GraphFixture fixture;
-    const auto define = angel_lsp::test::GenerateRandomSymbolName("FEATURE");
-    const std::string source = "#if " + define + "\n#include \"leaf.as\"\n#endif\n";
-    fixture.Write("main.as", source);
-    fixture.Write("leaf.as", "void Leaf() {}\n");
-
-    fixture.Build();
-    CHECK(fixture.graph.GetForwardClosure(fixture.Path("main.as")).size() == 1);
-    auto words = std::make_shared<angel_lsp::TransparentStringSet>();
-    words->insert(define);
-    fixture.graph.UpdateFile({.filePath = fixture.Path("main.as"),
-                              .sourceCode = source,
-                              .searchDirectories = {},
-                              .allowedRoots = {fixture.Root()},
-                              .preprocessor = {words, {}}});
-    const auto closure = fixture.graph.GetForwardClosure(fixture.Path("main.as"));
-    CHECK(std::find(closure.begin(), closure.end(), fixture.Path("leaf.as")) != closure.end());
-    fixture.graph.UpdateFile({.filePath = fixture.Path("main.as"),
-                              .sourceCode = source,
-                              .searchDirectories = {},
-                              .allowedRoots = {fixture.Root()}});
-    CHECK(fixture.graph.GetForwardClosure(fixture.Path("main.as")).size() == 1);
 }

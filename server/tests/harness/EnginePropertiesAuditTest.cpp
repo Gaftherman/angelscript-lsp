@@ -97,142 +97,145 @@ struct ArgvHelper
 };
 } // namespace
 
-TEST_CASE("EngineProperties: asEP_REQUIRE_ENUM_SCOPE on/off behavior")
+TEST_SUITE("harness/EnginePropertiesAudit")
 {
-    const std::string enumName = GenerateRandomSymbolName("Color");
-    const std::string memRed = GenerateRandomSymbolName("Red");
-    const std::string memBlue = GenerateRandomSymbolName("Blue");
-    const std::string fnName = GenerateRandomSymbolName("TestFunc");
-    const std::string varLocal = GenerateRandomSymbolName("cLocal");
-    const std::string varGlobal = GenerateRandomSymbolName("g_Color");
-
-    SUBCASE("Default off: unqualified enumerators resolve cleanly")
+    TEST_CASE("EnginePropertiesAudit - EngineProperties: asEP_REQUIRE_ENUM_SCOPE on/off behavior")
     {
-        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
-                                 varGlobal + " = " + memRed + ";\n" + "void " + fnName + "() {\n" + "    " + enumName +
-                                 " " + varLocal + " = " + memBlue + ";\n" + "}\n";
+        const std::string enumName = GenerateRandomSymbolName("Color");
+        const std::string memRed = GenerateRandomSymbolName("Red");
+        const std::string memBlue = GenerateRandomSymbolName("Blue");
+        const std::string fnName = GenerateRandomSymbolName("TestFunc");
+        const std::string varLocal = GenerateRandomSymbolName("cLocal");
+        const std::string varGlobal = GenerateRandomSymbolName("g_Color");
 
-        EngineProperties engine;
-        engine.requireEnumScope = false;
-        const auto res = RunPipeline(code, &engine);
-        CHECK_FALSE(HasDiagnostic(res.diagnostics, "as-err-enum-scope-required"));
+        SUBCASE("Default off: unqualified enumerators resolve cleanly")
+        {
+            const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
+                                     varGlobal + " = " + memRed + ";\n" + "void " + fnName + "() {\n" + "    " +
+                                     enumName + " " + varLocal + " = " + memBlue + ";\n" + "}\n";
+
+            EngineProperties engine;
+            engine.requireEnumScope = false;
+            const auto res = RunPipeline(code, &engine);
+            CHECK_FALSE(HasDiagnostic(res.diagnostics, "as-err-enum-scope-required"));
+        }
+
+        SUBCASE("Enabled on: unqualified enumerators emit as-err-enum-scope-required")
+        {
+            const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
+                                     varGlobal + " = " + memRed + ";\n" + "void " + fnName + "() {\n" + "    " +
+                                     enumName + " " + varLocal + " = " + memBlue + ";\n" + "}\n";
+
+            EngineProperties engine;
+            engine.requireEnumScope = true;
+            const auto res = RunPipeline(code, &engine);
+            CHECK(HasDiagnostic(res.diagnostics, "as-err-enum-scope-required"));
+        }
+
+        SUBCASE("Enabled on: scoped enumerators Enum::Member resolve without error")
+        {
+            const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
+                                     varGlobal + " = " + enumName + "::" + memRed + ";\n" + "void " + fnName +
+                                     "() {\n" + "    " + enumName + " " + varLocal + " = " + enumName + "::" + memBlue +
+                                     ";\n" + "}\n";
+
+            EngineProperties engine;
+            engine.requireEnumScope = true;
+            const auto res = RunPipeline(code, &engine);
+            CHECK_FALSE(HasDiagnostic(res.diagnostics, "as-err-enum-scope-required"));
+        }
     }
 
-    SUBCASE("Enabled on: unqualified enumerators emit as-err-enum-scope-required")
+    TEST_CASE("EnginePropertiesAudit - EngineProperties: asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT on/off behavior")
     {
-        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
-                                 varGlobal + " = " + memRed + ";\n" + "void " + fnName + "() {\n" + "    " + enumName +
-                                 " " + varLocal + " = " + memBlue + ";\n" + "}\n";
+        const std::string className = GenerateRandomSymbolName("CustomType");
+        const std::string varName = GenerateRandomSymbolName("inst");
+        const std::string fnName = GenerateRandomSymbolName("CreateInstance");
 
-        EngineProperties engine;
-        engine.requireEnumScope = true;
-        const auto res = RunPipeline(code, &engine);
-        CHECK(HasDiagnostic(res.diagnostics, "as-err-enum-scope-required"));
+        const std::string code = "class " + className + " {\n" + "    " + className + "(int a) {}\n" + "};\n" +
+                                 "void " + fnName + "() {\n" + "    " + className + " " + varName + ";\n" + "}\n";
+
+        SUBCASE("Default off: class with only non-default ctor cannot default construct")
+        {
+            EngineProperties engine;
+            engine.alwaysImplDefaultConstruct = false;
+            const auto res = RunPipeline(code, &engine);
+            CHECK(HasDiagnostic(res.diagnostics, "as-err-no-default-constructor"));
+        }
+
+        SUBCASE("Enabled on: implicit default constructor is permitted")
+        {
+            EngineProperties engine;
+            engine.alwaysImplDefaultConstruct = true;
+            const auto res = RunPipeline(code, &engine);
+            CHECK_FALSE(HasDiagnostic(res.diagnostics, "as-err-no-default-constructor"));
+        }
     }
 
-    SUBCASE("Enabled on: scoped enumerators Enum::Member resolve without error")
+    TEST_CASE("EnginePropertiesAudit - EngineProperties: asEP_IGNORE_DUPLICATE_SHARED_INTF on/off behavior")
     {
-        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
-                                 varGlobal + " = " + enumName + "::" + memRed + ";\n" + "void " + fnName + "() {\n" +
-                                 "    " + enumName + " " + varLocal + " = " + enumName + "::" + memBlue + ";\n" + "}\n";
+        const std::string ifaceName = GenerateRandomSymbolName("IShared");
+        const std::string methodName = GenerateRandomSymbolName("Execute");
 
-        EngineProperties engine;
-        engine.requireEnumScope = true;
-        const auto res = RunPipeline(code, &engine);
-        CHECK_FALSE(HasDiagnostic(res.diagnostics, "as-err-enum-scope-required"));
-    }
-}
+        const std::string code = "shared interface " + ifaceName + " { void " + methodName + "(); }\n" +
+                                 "shared interface " + ifaceName + " { void " + methodName + "(); }\n";
 
-TEST_CASE("EngineProperties: asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT on/off behavior")
-{
-    const std::string className = GenerateRandomSymbolName("CustomType");
-    const std::string varName = GenerateRandomSymbolName("inst");
-    const std::string fnName = GenerateRandomSymbolName("CreateInstance");
+        SUBCASE("Default off: duplicate shared interface reports duplicate symbol")
+        {
+            EngineProperties engine;
+            engine.ignoreDuplicateSharedIntf = false;
+            const auto res = RunPipeline(code, &engine);
+            CHECK(HasDiagnostic(res.diagnostics, "as-err-duplicate-symbol"));
+        }
 
-    const std::string code = "class " + className + " {\n" + "    " + className + "(int a) {}\n" + "};\n" + "void " +
-                             fnName + "() {\n" + "    " + className + " " + varName + ";\n" + "}\n";
-
-    SUBCASE("Default off: class with only non-default ctor cannot default construct")
-    {
-        EngineProperties engine;
-        engine.alwaysImplDefaultConstruct = false;
-        const auto res = RunPipeline(code, &engine);
-        CHECK(HasDiagnostic(res.diagnostics, "as-err-no-default-constructor"));
+        SUBCASE("Enabled on: duplicate shared interface is accepted cleanly")
+        {
+            EngineProperties engine;
+            engine.ignoreDuplicateSharedIntf = true;
+            const auto res = RunPipeline(code, &engine);
+            CHECK_FALSE(HasDiagnostic(res.diagnostics, "as-err-duplicate-symbol"));
+        }
     }
 
-    SUBCASE("Enabled on: implicit default constructor is permitted")
+    TEST_CASE("EnginePropertiesAudit - EngineProperties: CLI flags and boolean value parsing")
     {
-        EngineProperties engine;
-        engine.alwaysImplDefaultConstruct = true;
-        const auto res = RunPipeline(code, &engine);
-        CHECK_FALSE(HasDiagnostic(res.diagnostics, "as-err-no-default-constructor"));
-    }
-}
+        SUBCASE("Flag with boolean literals")
+        {
+            ArgvHelper args{"angel_lsp", "--require-enum-scope=true", "--always-impl-default-construct=1",
+                            "--ignore-duplicate-shared-intf=on"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.requireEnumScope == true);
+            CHECK(config.engine.alwaysImplDefaultConstruct == true);
+            CHECK(config.engine.ignoreDuplicateSharedIntf == true);
+        }
 
-TEST_CASE("EngineProperties: asEP_IGNORE_DUPLICATE_SHARED_INTF on/off behavior")
-{
-    const std::string ifaceName = GenerateRandomSymbolName("IShared");
-    const std::string methodName = GenerateRandomSymbolName("Execute");
+        SUBCASE("Negative flags toggle off cleanly")
+        {
+            ArgvHelper args{"angel_lsp", "--require-enum-scope=true", "--no-require-enum-scope",
+                            "--always-impl-default-construct=true", "--no-always-impl-default-construct"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.requireEnumScope == false);
+            CHECK(config.engine.alwaysImplDefaultConstruct == false);
+        }
 
-    const std::string code = "shared interface " + ifaceName + " { void " + methodName + "(); }\n" +
-                             "shared interface " + ifaceName + " { void " + methodName + "(); }\n";
-
-    SUBCASE("Default off: duplicate shared interface reports duplicate symbol")
-    {
-        EngineProperties engine;
-        engine.ignoreDuplicateSharedIntf = false;
-        const auto res = RunPipeline(code, &engine);
-        CHECK(HasDiagnostic(res.diagnostics, "as-err-duplicate-symbol"));
-    }
-
-    SUBCASE("Enabled on: duplicate shared interface is accepted cleanly")
-    {
-        EngineProperties engine;
-        engine.ignoreDuplicateSharedIntf = true;
-        const auto res = RunPipeline(code, &engine);
-        CHECK_FALSE(HasDiagnostic(res.diagnostics, "as-err-duplicate-symbol"));
-    }
-}
-
-TEST_CASE("EngineProperties: CLI flags and boolean value parsing")
-{
-    SUBCASE("Flag with boolean literals")
-    {
-        ArgvHelper args{"angel_lsp", "--require-enum-scope=true", "--always-impl-default-construct=1",
-                        "--ignore-duplicate-shared-intf=on"};
-        ServerConfig config = FromArgs(args.argc(), args.data());
-        CHECK(config.engine.requireEnumScope == true);
-        CHECK(config.engine.alwaysImplDefaultConstruct == true);
-        CHECK(config.engine.ignoreDuplicateSharedIntf == true);
+        SUBCASE("Engine-property syntax with varied boolean forms")
+        {
+            ArgvHelper args{
+                "angel_lsp", "--engine-property=requireEnumScope=true", "--engine-prop=alwaysImplDefaultConstruct=1",
+                "--engine-property=allowMultilineStrings=true", "--engine-property=disallowValueAssignForRef=true"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.requireEnumScope == true);
+            CHECK(config.engine.alwaysImplDefaultConstruct == true);
+            CHECK(config.engine.allowMultilineStrings == true);
+            CHECK(config.engine.disallowValueAssignForRef == true);
+        }
     }
 
-    SUBCASE("Negative flags toggle off cleanly")
+    TEST_CASE("EnginePropertiesAudit - EngineProperties: JSON deserialization with asEP_* and camelCase keys")
     {
-        ArgvHelper args{"angel_lsp", "--require-enum-scope=true", "--no-require-enum-scope",
-                        "--always-impl-default-construct=true", "--no-always-impl-default-construct"};
-        ServerConfig config = FromArgs(args.argc(), args.data());
-        CHECK(config.engine.requireEnumScope == false);
-        CHECK(config.engine.alwaysImplDefaultConstruct == false);
-    }
-
-    SUBCASE("Engine-property syntax with varied boolean forms")
-    {
-        ArgvHelper args{"angel_lsp", "--engine-property=requireEnumScope=true",
-                        "--engine-prop=alwaysImplDefaultConstruct=1", "--engine-property=allowMultilineStrings=true",
-                        "--engine-property=disallowValueAssignForRef=true"};
-        ServerConfig config = FromArgs(args.argc(), args.data());
-        CHECK(config.engine.requireEnumScope == true);
-        CHECK(config.engine.alwaysImplDefaultConstruct == true);
-        CHECK(config.engine.allowMultilineStrings == true);
-        CHECK(config.engine.disallowValueAssignForRef == true);
-    }
-}
-
-TEST_CASE("EngineProperties: JSON deserialization with asEP_* and camelCase keys")
-{
-    SUBCASE("asEP_* keys deserialization and ApplyEngineProperties")
-    {
-        const std::string json = R"({
+        SUBCASE("asEP_* keys deserialization and ApplyEngineProperties")
+        {
+            const std::string json = R"({
             "engineProperties": {
                 "asEP_ALLOW_UNSAFE_REFERENCES": true,
                 "asEP_OPTIMIZE_BYTE_CODE": false,
@@ -270,45 +273,45 @@ TEST_CASE("EngineProperties: JSON deserialization with asEP_* and camelCase keys
             }
         })";
 
-        const auto parsed = ParseEngineRuleConfigJson(json);
-        REQUIRE(parsed.has_value());
-        const auto& nativeProps = parsed->engineProperties;
+            const auto parsed = ParseEngineRuleConfigJson(json);
+            REQUIRE(parsed.has_value());
+            const auto& nativeProps = parsed->engineProperties;
 
-        CHECK(nativeProps.allowUnsafeReferences == true);
-        CHECK(nativeProps.privatePropAsProtected == true);
-        CHECK(nativeProps.useCharacterLiterals == 1);
-        CHECK(nativeProps.disallowValueAssignForRef == true);
-        CHECK(nativeProps.alterSyntaxNamedArgs == 1);
-        CHECK(nativeProps.disallowEmptyListElements == true);
-        CHECK(nativeProps.foreachSupport == true);
-        CHECK(nativeProps.alwaysImplDefaultConstruct == true);
-        CHECK(nativeProps.allowUnicodeIdentifiers == true);
-        CHECK(nativeProps.ignoreDuplicateSharedIntf == true);
-        CHECK(nativeProps.compilerWarnings == 2);
-        CHECK(nativeProps.memberInitMode == 1);
-        CHECK(nativeProps.heredocTrimMode == 2);
+            CHECK(nativeProps.allowUnsafeReferences == true);
+            CHECK(nativeProps.privatePropAsProtected == true);
+            CHECK(nativeProps.useCharacterLiterals == 1);
+            CHECK(nativeProps.disallowValueAssignForRef == true);
+            CHECK(nativeProps.alterSyntaxNamedArgs == 1);
+            CHECK(nativeProps.disallowEmptyListElements == true);
+            CHECK(nativeProps.foreachSupport == true);
+            CHECK(nativeProps.alwaysImplDefaultConstruct == true);
+            CHECK(nativeProps.allowUnicodeIdentifiers == true);
+            CHECK(nativeProps.ignoreDuplicateSharedIntf == true);
+            CHECK(nativeProps.compilerWarnings == 2);
+            CHECK(nativeProps.memberInitMode == 1);
+            CHECK(nativeProps.heredocTrimMode == 2);
 
-        EngineProperties engine;
-        ApplyEngineProperties(nativeProps, engine);
+            EngineProperties engine;
+            ApplyEngineProperties(nativeProps, engine);
 
-        CHECK(engine.allowUnsafeReferences == true);
-        CHECK(engine.privatePropAsProtected == true);
-        CHECK(engine.useCharacterLiterals == 1);
-        CHECK(engine.disallowValueAssignForRef == true);
-        CHECK(engine.alterSyntaxNamedArgs == 1);
-        CHECK(engine.disallowEmptyListElements == true);
-        CHECK(engine.foreachSupport == true);
-        CHECK(engine.alwaysImplDefaultConstruct == true);
-        CHECK(engine.allowUnicodeIdentifiers == true);
-        CHECK(engine.ignoreDuplicateSharedIntf == true);
-        CHECK(engine.compilerWarnings == 2);
-        CHECK(engine.memberInitMode == 1);
-        CHECK(engine.heredocTrimMode == 2);
-    }
+            CHECK(engine.allowUnsafeReferences == true);
+            CHECK(engine.privatePropAsProtected == true);
+            CHECK(engine.useCharacterLiterals == 1);
+            CHECK(engine.disallowValueAssignForRef == true);
+            CHECK(engine.alterSyntaxNamedArgs == 1);
+            CHECK(engine.disallowEmptyListElements == true);
+            CHECK(engine.foreachSupport == true);
+            CHECK(engine.alwaysImplDefaultConstruct == true);
+            CHECK(engine.allowUnicodeIdentifiers == true);
+            CHECK(engine.ignoreDuplicateSharedIntf == true);
+            CHECK(engine.compilerWarnings == 2);
+            CHECK(engine.memberInitMode == 1);
+            CHECK(engine.heredocTrimMode == 2);
+        }
 
-    SUBCASE("camelCase keys deserialization")
-    {
-        const std::string json = R"({
+        SUBCASE("camelCase keys deserialization")
+        {
+            const std::string json = R"({
             "engineProperties": {
                 "privatePropAsProtected": true,
                 "useCharacterLiterals": 2,
@@ -325,21 +328,22 @@ TEST_CASE("EngineProperties: JSON deserialization with asEP_* and camelCase keys
             }
         })";
 
-        const auto parsed = ParseEngineRuleConfigJson(json);
-        REQUIRE(parsed.has_value());
-        const auto& nativeProps = parsed->engineProperties;
+            const auto parsed = ParseEngineRuleConfigJson(json);
+            REQUIRE(parsed.has_value());
+            const auto& nativeProps = parsed->engineProperties;
 
-        CHECK(nativeProps.privatePropAsProtected == true);
-        CHECK(nativeProps.useCharacterLiterals == 2);
-        CHECK(nativeProps.disallowValueAssignForRef == true);
-        CHECK(nativeProps.alterSyntaxNamedArgs == 2);
-        CHECK(nativeProps.disallowEmptyListElements == true);
-        CHECK(nativeProps.foreachSupport == true);
-        CHECK(nativeProps.alwaysImplDefaultConstruct == true);
-        CHECK(nativeProps.allowUnicodeIdentifiers == true);
-        CHECK(nativeProps.ignoreDuplicateSharedIntf == true);
-        CHECK(nativeProps.compilerWarnings == 0);
-        CHECK(nativeProps.memberInitMode == 1);
-        CHECK(nativeProps.heredocTrimMode == 0);
+            CHECK(nativeProps.privatePropAsProtected == true);
+            CHECK(nativeProps.useCharacterLiterals == 2);
+            CHECK(nativeProps.disallowValueAssignForRef == true);
+            CHECK(nativeProps.alterSyntaxNamedArgs == 2);
+            CHECK(nativeProps.disallowEmptyListElements == true);
+            CHECK(nativeProps.foreachSupport == true);
+            CHECK(nativeProps.alwaysImplDefaultConstruct == true);
+            CHECK(nativeProps.allowUnicodeIdentifiers == true);
+            CHECK(nativeProps.ignoreDuplicateSharedIntf == true);
+            CHECK(nativeProps.compilerWarnings == 0);
+            CHECK(nativeProps.memberInitMode == 1);
+            CHECK(nativeProps.heredocTrimMode == 0);
+        }
     }
 }

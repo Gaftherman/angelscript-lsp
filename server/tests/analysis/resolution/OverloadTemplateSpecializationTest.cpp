@@ -135,7 +135,7 @@ Symbol MakeContainerOverload(const std::string& fnName, const std::string& conta
 }
 } // namespace
 
-TEST_SUITE("OverloadTemplateSpecialization")
+TEST_SUITE("analysis/resolution/OverloadTemplateSpecialization")
 {
     /**
      * @brief Test 1: Container template overload resolution selects array<string>@ &out

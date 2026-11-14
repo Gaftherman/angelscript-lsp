@@ -62,172 +62,177 @@ struct TempDirFixture
 };
 } // namespace
 
-TEST_CASE("ModuleIndex - Include graph and closure tracking")
+TEST_SUITE("lsp/ModuleIndex")
 {
-    TempDirFixture fix;
-    ModuleIndex index;
-
-    const std::string contentA = "#include \"B.as\"\nvoid funcA() {}";
-    const std::string contentB = "void funcB() {}";
-    fix.Write("A.as", contentA);
-    fix.Write("B.as", contentB);
-
-    const std::string fileA = fix.Path("A.as");
-    const std::string fileB = fix.Path("B.as");
-
-    index.UpdateFile(ModuleIndex::UpdateFileRequest{fileA, contentA, {fix.Root()}, {fix.Root()}, ""});
-    index.UpdateFile(ModuleIndex::UpdateFileRequest{fileB, contentB, {fix.Root()}, {fix.Root()}, ""});
-
-    auto closureA = index.GetModuleClosure(fileA);
-    CHECK(closureA.size() == 2);
-
-    index.RemoveFile(fileA);
-    auto closureAfterRemove = index.GetModuleClosure(fileA);
-    CHECK(closureAfterRemove.size() == 1);
-}
-
-TEST_CASE("ModuleIndex - Closure lifecycle and refcounting")
-{
-    ModuleIndex index;
-
-    const std::string doc1Uri = "file:///C:/project/doc1.as";
-    const std::string doc2Uri = "file:///C:/project/doc2.as";
-    const std::string sharedClosureUri = "file:///C:/project/shared.as";
-    const std::string uniqueClosureUri = "file:///C:/project/unique.as";
-
-    index.SetClosureDocument(sharedClosureUri, "void shared() {}");
-    index.SetClosureDocument(uniqueClosureUri, "void unique() {}");
-
-    CHECK(index.HasClosureDocument(sharedClosureUri));
-    CHECK(index.HasClosureDocument(uniqueClosureUri));
-
-    index.AssociateClosure(doc1Uri, {sharedClosureUri, uniqueClosureUri});
-    index.AssociateClosure(doc2Uri, {sharedClosureUri});
-
-    // Releasing doc1 should purge uniqueClosureUri because doc2 doesn't reference it,
-    // but sharedClosureUri must remain because doc2 still references it.
-    auto unreferenced1 = index.ReleaseClosure(doc1Uri);
-    CHECK(unreferenced1.size() == 1);
-    CHECK(unreferenced1[0] == uniqueClosureUri);
-    CHECK_FALSE(index.HasClosureDocument(uniqueClosureUri));
-    CHECK(index.HasClosureDocument(sharedClosureUri));
-
-    // Releasing doc2 should purge sharedClosureUri
-    auto unreferenced2 = index.ReleaseClosure(doc2Uri);
-    CHECK(unreferenced2.size() == 1);
-    CHECK(unreferenced2[0] == sharedClosureUri);
-    CHECK_FALSE(index.HasClosureDocument(sharedClosureUri));
-}
-
-TEST_CASE("ModuleIndex - Indexed URI mappings and purge")
-{
-    ModuleIndex index;
-
-    const std::string path = "C:/project/math.as";
-    const std::string uri = "file:///C:/project/math.as";
-
-    CHECK(index.GetIndexedUri(path) == std::nullopt);
-
-    index.SetIndexedUri(path, uri);
-    CHECK(index.GetIndexedUri(path) == uri);
-
-    index.RemoveIndexedPath(path);
-    CHECK(index.GetIndexedUri(path) == std::nullopt);
-
-    index.SetIndexedUri(path, uri);
-    index.SetClosureDocument(uri, "int add(int a, int b) { return a + b; }");
-    CHECK(index.HasClosureDocument(uri));
-
-    index.Clear();
-    CHECK(index.GetIndexedUri(path) == std::nullopt);
-    CHECK_FALSE(index.HasClosureDocument(uri));
-}
-
-TEST_CASE("ModuleIndex - Concurrent access")
-{
-    ModuleIndex index;
-    constexpr int kThreads = 4;
-    constexpr int kIterations = 100;
-
-    std::latch startLatch(kThreads);
-    std::atomic<uint32_t> failedChecks{0};
-    std::vector<std::thread> threads;
-    threads.reserve(kThreads);
-
-    for (int t = 0; t < kThreads; ++t)
+    TEST_CASE("ModuleIndex - Include graph and closure tracking")
     {
-        threads.emplace_back(
-            [&index, &startLatch, &failedChecks, t]()
-            {
-                startLatch.arrive_and_wait();
-                for (int i = 0; i < kIterations; ++i)
+        TempDirFixture fix;
+        ModuleIndex index;
+
+        const std::string contentA = "#include \"B.as\"\nvoid funcA() {}";
+        const std::string contentB = "void funcB() {}";
+        fix.Write("A.as", contentA);
+        fix.Write("B.as", contentB);
+
+        const std::string fileA = fix.Path("A.as");
+        const std::string fileB = fix.Path("B.as");
+
+        index.UpdateFile(ModuleIndex::UpdateFileRequest{fileA, contentA, {fix.Root()}, {fix.Root()}, ""});
+        index.UpdateFile(ModuleIndex::UpdateFileRequest{fileB, contentB, {fix.Root()}, {fix.Root()}, ""});
+
+        auto closureA = index.GetModuleClosure(fileA);
+        CHECK(closureA.size() == 2);
+
+        index.RemoveFile(fileA);
+        auto closureAfterRemove = index.GetModuleClosure(fileA);
+        CHECK(closureAfterRemove.size() == 1);
+    }
+
+    TEST_CASE("ModuleIndex - Closure lifecycle and refcounting")
+    {
+        ModuleIndex index;
+
+        const std::string doc1Uri = "file:///C:/project/doc1.as";
+        const std::string doc2Uri = "file:///C:/project/doc2.as";
+        const std::string sharedClosureUri = "file:///C:/project/shared.as";
+        const std::string uniqueClosureUri = "file:///C:/project/unique.as";
+
+        index.SetClosureDocument(sharedClosureUri, "void shared() {}");
+        index.SetClosureDocument(uniqueClosureUri, "void unique() {}");
+
+        CHECK(index.HasClosureDocument(sharedClosureUri));
+        CHECK(index.HasClosureDocument(uniqueClosureUri));
+
+        index.AssociateClosure(doc1Uri, {sharedClosureUri, uniqueClosureUri});
+        index.AssociateClosure(doc2Uri, {sharedClosureUri});
+
+        // Releasing doc1 should purge uniqueClosureUri because doc2 doesn't reference it,
+        // but sharedClosureUri must remain because doc2 still references it.
+        auto unreferenced1 = index.ReleaseClosure(doc1Uri);
+        CHECK(unreferenced1.size() == 1);
+        CHECK(unreferenced1[0] == uniqueClosureUri);
+        CHECK_FALSE(index.HasClosureDocument(uniqueClosureUri));
+        CHECK(index.HasClosureDocument(sharedClosureUri));
+
+        // Releasing doc2 should purge sharedClosureUri
+        auto unreferenced2 = index.ReleaseClosure(doc2Uri);
+        CHECK(unreferenced2.size() == 1);
+        CHECK(unreferenced2[0] == sharedClosureUri);
+        CHECK_FALSE(index.HasClosureDocument(sharedClosureUri));
+    }
+
+    TEST_CASE("ModuleIndex - Indexed URI mappings and purge")
+    {
+        ModuleIndex index;
+
+        const std::string path = "C:/project/math.as";
+        const std::string uri = "file:///C:/project/math.as";
+
+        CHECK(index.GetIndexedUri(path) == std::nullopt);
+
+        index.SetIndexedUri(path, uri);
+        CHECK(index.GetIndexedUri(path) == uri);
+
+        index.RemoveIndexedPath(path);
+        CHECK(index.GetIndexedUri(path) == std::nullopt);
+
+        index.SetIndexedUri(path, uri);
+        index.SetClosureDocument(uri, "int add(int a, int b) { return a + b; }");
+        CHECK(index.HasClosureDocument(uri));
+
+        index.Clear();
+        CHECK(index.GetIndexedUri(path) == std::nullopt);
+        CHECK_FALSE(index.HasClosureDocument(uri));
+    }
+
+    TEST_CASE("ModuleIndex - Concurrent access")
+    {
+        ModuleIndex index;
+        constexpr int kThreads = 4;
+        constexpr int kIterations = 100;
+
+        std::latch startLatch(kThreads);
+        std::atomic<uint32_t> failedChecks{0};
+        std::vector<std::thread> threads;
+        threads.reserve(kThreads);
+
+        for (int t = 0; t < kThreads; ++t)
+        {
+            threads.emplace_back(
+                [&index, &startLatch, &failedChecks, t]()
                 {
-                    std::string path = "C:/project/file_" + std::to_string(t) + "_" + std::to_string(i) + ".as";
-                    std::string uri = "file:///" + path;
-                    index.SetIndexedUri(path, uri);
-                    index.SetClosureDocument(uri, "void f() {}");
-                    auto res = index.GetIndexedUri(path);
-                    if (!res.has_value())
+                    startLatch.arrive_and_wait();
+                    for (int i = 0; i < kIterations; ++i)
                     {
-                        failedChecks.fetch_add(1, std::memory_order_relaxed);
+                        std::string path = "C:/project/file_" + std::to_string(t) + "_" + std::to_string(i) + ".as";
+                        std::string uri = "file:///" + path;
+                        index.SetIndexedUri(path, uri);
+                        index.SetClosureDocument(uri, "void f() {}");
+                        auto res = index.GetIndexedUri(path);
+                        if (!res.has_value())
+                        {
+                            failedChecks.fetch_add(1, std::memory_order_relaxed);
+                        }
+                        index.PurgeClosureDocument(uri);
                     }
-                    index.PurgeClosureDocument(uri);
-                }
-            });
+                });
+        }
+
+        for (auto& th : threads)
+        {
+            th.join();
+        }
+
+        CHECK(failedChecks.load() == 0);
     }
 
-    for (auto& th : threads)
+    TEST_CASE("ModuleIndex - Exported symbols binary prefix lookup")
     {
-        th.join();
+        ModuleIndex index;
+
+        const std::string prefixFoo = angel_lsp::test::GenerateRandomSymbolName("FooSym");
+        const std::string prefixBar = angel_lsp::test::GenerateRandomSymbolName("BarSym");
+
+        std::vector<ModuleIndex::ExportedSymbol> symbols = {
+            {prefixFoo + "_alpha", "Global", "file:///a.as", 10, 0},
+            {prefixFoo + "_beta", "Global", "file:///b.as", 20, 0},
+            {prefixFoo + "_gamma", "Global", "file:///c.as", 30, 0},
+            {prefixBar + "_one", "Global", "file:///d.as", 40, 0},
+            {prefixBar + "_two", "Global", "file:///e.as", 50, 0},
+        };
+
+        index.SetExportedSymbols(symbols);
+
+        auto fooMatches = index.FindSymbolsByPrefix(prefixFoo);
+        CHECK(fooMatches.size() == 3);
+        for (const auto& sym : fooMatches)
+        {
+            CHECK(sym.name.starts_with(prefixFoo));
+        }
+
+        auto barMatches = index.FindSymbolsByPrefix(prefixBar);
+        CHECK(barMatches.size() == 2);
+        for (const auto& sym : barMatches)
+        {
+            CHECK(sym.name.starts_with(prefixBar));
+        }
+
+        // Incremental addition via AddExportedSymbol
+        const std::string singleSym = prefixFoo + "_delta";
+        index.AddExportedSymbol({singleSym, "Global", "file:///f.as", 60, 0});
+        auto updatedFoo = index.FindSymbolsByPrefix(prefixFoo);
+        CHECK(updatedFoo.size() == 4);
+
+        // Empty prefix returns all
+        auto allSymbols = index.FindSymbolsByPrefix("");
+        CHECK(allSymbols.size() == 6);
+
+        // Non-existent prefix returns empty
+        auto noneMatches = index.FindSymbolsByPrefix("NonExistentPrefix_");
+        CHECK(noneMatches.empty());
+
+        // Clear purges exported symbols
+        index.Clear();
+        CHECK(index.FindSymbolsByPrefix("").empty());
     }
-
-    CHECK(failedChecks.load() == 0);
-}
-
-TEST_CASE("ModuleIndex - Exported symbols binary prefix lookup")
-{
-    ModuleIndex index;
-
-    const std::string prefixFoo = angel_lsp::test::GenerateRandomSymbolName("FooSym");
-    const std::string prefixBar = angel_lsp::test::GenerateRandomSymbolName("BarSym");
-
-    std::vector<ModuleIndex::ExportedSymbol> symbols = {
-        {prefixFoo + "_alpha", "Global", "file:///a.as", 10, 0}, {prefixFoo + "_beta", "Global", "file:///b.as", 20, 0},
-        {prefixFoo + "_gamma", "Global", "file:///c.as", 30, 0}, {prefixBar + "_one", "Global", "file:///d.as", 40, 0},
-        {prefixBar + "_two", "Global", "file:///e.as", 50, 0},
-    };
-
-    index.SetExportedSymbols(symbols);
-
-    auto fooMatches = index.FindSymbolsByPrefix(prefixFoo);
-    CHECK(fooMatches.size() == 3);
-    for (const auto& sym : fooMatches)
-    {
-        CHECK(sym.name.starts_with(prefixFoo));
-    }
-
-    auto barMatches = index.FindSymbolsByPrefix(prefixBar);
-    CHECK(barMatches.size() == 2);
-    for (const auto& sym : barMatches)
-    {
-        CHECK(sym.name.starts_with(prefixBar));
-    }
-
-    // Incremental addition via AddExportedSymbol
-    const std::string singleSym = prefixFoo + "_delta";
-    index.AddExportedSymbol({singleSym, "Global", "file:///f.as", 60, 0});
-    auto updatedFoo = index.FindSymbolsByPrefix(prefixFoo);
-    CHECK(updatedFoo.size() == 4);
-
-    // Empty prefix returns all
-    auto allSymbols = index.FindSymbolsByPrefix("");
-    CHECK(allSymbols.size() == 6);
-
-    // Non-existent prefix returns empty
-    auto noneMatches = index.FindSymbolsByPrefix("NonExistentPrefix_");
-    CHECK(noneMatches.empty());
-
-    // Clear purges exported symbols
-    index.Clear();
-    CHECK(index.FindSymbolsByPrefix("").empty());
 }

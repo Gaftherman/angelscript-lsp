@@ -9,7 +9,7 @@
  * Snippets in this file were run through angelscript_oracle against the real scriptarray add-on; the
  * oracle accepted every Good case and rejected every Bad one on the line the test asserts.
  */
-TEST_SUITE("OracleArrayTemplateParity")
+TEST_SUITE("oracle/ArrayTemplateParity")
 {
     /** @brief Keeps only the error diagnostics, which is the severity the oracle reports. */
     static std::vector<angel_lsp::analysis::Diagnostic> ErrorsIn(
