@@ -89,6 +89,7 @@ TEST_SUITE("analysis/checkers/HandleComparisonChecker")
             }
         }
         CHECK(count == 4);
+        CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::NoMatchingOperator));
     }
 
     TEST_CASE("HandleComparisonChecker - Handle Identity Comparison with Null Emits Zero Warnings")
@@ -345,6 +346,7 @@ TEST_SUITE("analysis/checkers/HandleComparisonChecker")
             }
         }
         CHECK(equalityWarnings == 2);
+        CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::NoMatchingOperator));
     }
 
     TEST_CASE("HandleComparisonChecker - Handle Comparison with this: is null accepted clean, == null emits warning "
@@ -370,6 +372,7 @@ TEST_SUITE("analysis/checkers/HandleComparisonChecker")
         }
         CHECK(equalityWarnings == 4);
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::IllegalOperation));
+        CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::NoMatchingOperator));
     }
 }
 

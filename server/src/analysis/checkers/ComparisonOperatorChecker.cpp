@@ -209,13 +209,20 @@ void CheckComparisonOperatorCompatibility(const BinaryExpressionFact& fact, cons
         return;
     }
 
-    const auto types = ResolveCleanBinaryOperandTypes(fact, scope, ctx);
-    if (!types)
+    const auto operands = ResolveBinaryOperands(fact, scope, ctx);
+    if (!operands)
     {
         return;
     }
 
-    EmitComparisonDiagnostics(fact.operatorRange, fact.op, *types, ctx);
+    // Comparing a handle (or `this`/funcdef) against `null` with `==` or `!=` is built-in handle comparison.
+    if (!isRelational &&
+        ((operands->leftIsHandle && operands->rightIsNull) || (operands->rightIsHandle && operands->leftIsNull)))
+    {
+        return;
+    }
+
+    EmitComparisonDiagnostics(fact.operatorRange, fact.op, operands->clean, ctx);
 }
 
 } // namespace angel_lsp::analysis

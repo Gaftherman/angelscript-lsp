@@ -261,6 +261,77 @@ TEST_SUITE("analysis/checkers/ComparisonOperatorChecker")
         const auto diags = AnalyzeScriptWithStandardProfile(script);
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
+
+    TEST_CASE("ComparisonOperatorChecker - Handle equality and inequality with null emit no operator error")
+    {
+        const std::string clsName = GenerateRandomSymbolName("Item");
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string handleVar = GenerateRandomSymbolName("handle");
+        const std::string constHandleVar = GenerateRandomSymbolName("constHandle");
+
+        const std::string script =
+            "class " + clsName + " {}\n" + "void " + funcName + "()\n" + "{\n" + "    " + clsName + "@ " + handleVar +
+            " = null;\n" + "    const " + clsName + "@ " + constHandleVar + " = null;\n" + "    if (" + handleVar +
+            " == null) {}\n" + "    if (null == " + handleVar + ") {}\n" + "    if (" + handleVar + " != null) {}\n" +
+            "    if (null != " + handleVar + ") {}\n" + "    if (" + constHandleVar + " == null) {}\n" +
+            "    if (null != " + constHandleVar + ") {}\n" + "}\n";
+
+        const auto diags = AnalyzeScriptWithStandardProfile(script);
+        CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+        for (const auto& d : diags)
+        {
+            CHECK(d.severity != analysis::DiagnosticSeverity::Error);
+        }
+    }
+
+    TEST_CASE("ComparisonOperatorChecker - Value class without opEquals compared to null emits NoMatchingOperator")
+    {
+        const std::string clsName = GenerateRandomSymbolName("Item");
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string valVar = GenerateRandomSymbolName("item");
+
+        const std::string script = "class " + clsName + " {}\n" + "void " + funcName + "()\n" + "{\n" + "    " +
+                                   clsName + " " + valVar + ";\n" + "    if (" + valVar + " == null) {}\n" +
+                                   "    if (null == " + valVar + ") {}\n" + "    if (" + valVar + " != null) {}\n" +
+                                   "    if (null != " + valVar + ") {}\n" + "}\n";
+
+        const auto diags = AnalyzeScriptWithStandardProfile(script);
+        size_t count = 0;
+        for (const auto& d : diags)
+        {
+            if (d.code == diagnostics::codes::NoMatchingOperator)
+            {
+                ++count;
+                CHECK(d.severity == analysis::DiagnosticSeverity::Error);
+            }
+        }
+        CHECK(count == 4);
+    }
+
+    TEST_CASE("ComparisonOperatorChecker - Two handles without opEquals compared with == or != emit NoMatchingOperator")
+    {
+        const std::string clsName = GenerateRandomSymbolName("Item");
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string h1Var = GenerateRandomSymbolName("h1");
+        const std::string h2Var = GenerateRandomSymbolName("h2");
+
+        const std::string script = "class " + clsName + " {}\n" + "void " + funcName + "()\n" + "{\n" + "    " +
+                                   clsName + "@ " + h1Var + " = null;\n" + "    " + clsName + "@ " + h2Var +
+                                   " = null;\n" + "    if (" + h1Var + " == " + h2Var + ") {}\n" + "    if (" + h1Var +
+                                   " != " + h2Var + ") {}\n" + "}\n";
+
+        const auto diags = AnalyzeScriptWithStandardProfile(script);
+        size_t count = 0;
+        for (const auto& d : diags)
+        {
+            if (d.code == diagnostics::codes::NoMatchingOperator)
+            {
+                ++count;
+                CHECK(d.severity == analysis::DiagnosticSeverity::Error);
+            }
+        }
+        CHECK(count == 2);
+    }
 }
 
 } // namespace angel_lsp::test

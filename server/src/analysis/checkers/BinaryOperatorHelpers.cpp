@@ -1,5 +1,6 @@
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 
+#include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace angel_lsp::analysis
 {
@@ -28,6 +30,11 @@ bool IsParameterCompatible(const ParameterInformation& param, std::string_view a
     if (cleanParam == "?" || cleanParam == "?&" || param.typeName.find('?') != std::string_view::npos)
     {
         return true;
+    }
+    if (argType == "null")
+    {
+        return param.modifier != ParameterModifier::Out && param.modifier != ParameterModifier::InOut &&
+               IsHandleType(param.typeName, table);
     }
     if (cleanParam == argType || param.typeName == argType)
     {
@@ -162,14 +169,14 @@ static std::string_view StripModifiers(std::string_view type)
 }
 
 /**
- * @brief Resolves both operand types of a binary expression and strips their modifiers.
+ * @brief Resolves both operand types of a binary expression, retaining handle/null flags alongside stripped types.
  * @param[in] fact Binary expression facts.
  * @param[in] scope Lexical scope enclosing the expression.
  * @param[in] ctx Diagnostic context.
- * @return Clean operand types, or nullopt when either is unresolved or poisoned.
+ * @return Resolved operand bundle, or nullopt when either operand is unresolved or poisoned.
  */
-std::optional<OperandTypePair> ResolveCleanBinaryOperandTypes(const BinaryExpressionFact& fact, const Scope* scope,
-                                                              const DiagnosticContext& ctx)
+std::optional<ResolvedBinaryOperands> ResolveBinaryOperands(const BinaryExpressionFact& fact, const Scope* scope,
+                                                            const DiagnosticContext& ctx)
 {
     const ExpressionTypeContext exprCtx(scope, ctx);
     const auto rawLeft = ResolveExpressionType(fact.left.bytes, exprCtx);
@@ -182,13 +189,42 @@ std::optional<OperandTypePair> ResolveCleanBinaryOperandTypes(const BinaryExpres
     {
         return std::nullopt;
     }
-    const auto cleanLeft = IsNullOperand(fact.left, rawLeft) ? "null" : StripModifiers(rawLeft);
-    const auto cleanRight = IsNullOperand(fact.right, rawRight) ? "null" : StripModifiers(rawRight);
+    const bool leftIsNull = IsNullOperand(fact.left, rawLeft);
+    const bool rightIsNull = IsNullOperand(fact.right, rawRight);
+    const auto cleanLeft = leftIsNull ? std::string_view("null") : StripModifiers(rawLeft);
+    const auto cleanRight = rightIsNull ? std::string_view("null") : StripModifiers(rawRight);
     if (cleanLeft.empty() || cleanRight.empty())
     {
         return std::nullopt;
     }
-    return MakeOperandTypePair(cleanLeft, cleanRight);
+    const auto& table = ctx.request.symbolTable;
+    return ResolvedBinaryOperands{
+        .clean = MakeOperandTypePair(cleanLeft, cleanRight),
+        .leftIsHandle =
+            !leftIsNull && (IsHandleType(rawLeft, table) || fact.left.isThis || fact.left.hasHandleOperator),
+        .rightIsHandle =
+            !rightIsNull && (IsHandleType(rawRight, table) || fact.right.isThis || fact.right.hasHandleOperator),
+        .leftIsNull = leftIsNull,
+        .rightIsNull = rightIsNull,
+    };
+}
+
+/**
+ * @brief Resolves both operand types of a binary expression and strips their modifiers.
+ * @param[in] fact Binary expression facts.
+ * @param[in] scope Lexical scope enclosing the expression.
+ * @param[in] ctx Diagnostic context.
+ * @return Clean operand types, or nullopt when either is unresolved or poisoned.
+ */
+std::optional<OperandTypePair> ResolveCleanBinaryOperandTypes(const BinaryExpressionFact& fact, const Scope* scope,
+                                                              const DiagnosticContext& ctx)
+{
+    auto resolved = ResolveBinaryOperands(fact, scope, ctx);
+    if (!resolved)
+    {
+        return std::nullopt;
+    }
+    return std::move(resolved->clean);
 }
 
 } // namespace angel_lsp::analysis

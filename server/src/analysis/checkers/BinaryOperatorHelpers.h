@@ -99,6 +99,28 @@ bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_vi
 bool IsNullOperand(const BinaryOperandFact& operand, std::string_view type);
 
 /**
+ * @brief Resolved clean operand types together with handle and null metadata preserved from raw operand types.
+ */
+struct ResolvedBinaryOperands
+{
+    OperandTypePair clean;      ///< Stripped base operand type spellings (`"null"` for null literals).
+    bool leftIsHandle = false;  ///< True when the left operand is a handle, funcdef, `this`, or unary `@`.
+    bool rightIsHandle = false; ///< True when the right operand is a handle, funcdef, `this`, or unary `@`.
+    bool leftIsNull = false;    ///< True when the left operand is the `null` literal or typed as `null`.
+    bool rightIsNull = false;   ///< True when the right operand is the `null` literal or typed as `null`.
+};
+
+/**
+ * @brief Resolves both operand types of a binary expression, retaining handle/null flags alongside stripped types.
+ * @param[in] fact Binary expression facts.
+ * @param[in] scope Lexical scope enclosing the expression.
+ * @param[in] ctx Diagnostic context.
+ * @return Resolved operand bundle, or nullopt when either operand is unresolved or poisoned.
+ */
+std::optional<ResolvedBinaryOperands> ResolveBinaryOperands(const BinaryExpressionFact& fact, const Scope* scope,
+                                                            const DiagnosticContext& ctx);
+
+/**
  * @brief Resolves both operand types of a binary expression and strips their modifiers.
  * @param[in] fact Binary expression facts.
  * @param[in] scope Lexical scope enclosing the expression.
