@@ -21,15 +21,18 @@
 #include "features/document_symbol/DocumentSymbolHandler.h"
 #include "features/hover/HoverHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "helpers/LiveLspStream.h"
 #include "helpers/McpTestSession.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
+#include "lsp/Server.h"
 #include "lsp/mcp/McpJson.h"
 #include "lsp/state/SyntaxRevisionCache.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/IncludeResolver.h"
 #include "utils/MemoryTelemetry.h"
 #include "utils/Timer.h"
+#include "utils/Utils.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include <algorithm>
@@ -48,6 +51,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <tree_sitter/api.h>
 #include <utility>
 #include <vector>
@@ -981,5 +985,80 @@ TEST_SUITE("harness/FlowBenchmark")
         CHECK(totalExtractedNodes == 0);
         flow_bench::PrintTableRow("syntax revision re-request", "20000 lines", samples,
                                   flow_bench::ComputeRssDeltaMib(rssBefore, rssAfter));
+    }
+
+    TEST_CASE("FlowBenchmark - Burst of 10 didChange to final diagnostics (5k, 20k lines)" * doctest::skip(true))
+    {
+        MESSAGE("Seed: " << flow_bench::kBenchmarkSeed);
+        flow_bench::PrintTableHeader();
+
+        std::mt19937_64 rng(flow_bench::kBenchmarkSeed);
+        struct BurstSpec
+        {
+            size_t targetLines;
+            size_t bursts;
+            const char* label;
+        };
+        const BurstSpec specs[] = {
+            {5000, 10, "5000 lines"},
+            {20000, 5, "20000 lines"},
+        };
+
+        for (const BurstSpec& spec : specs)
+        {
+            const flow_bench::GeneratedScript script = flow_bench::GenerateBenchmarkScript(spec.targetLines, rng);
+            REQUIRE(script.lineCount >= spec.targetLines);
+
+            const flow_bench::BenchmarkSandbox sandbox;
+            const std::string docPath = sandbox.WriteFile("burst_bench.as", script.source);
+            const std::string docUri = angel_lsp::utils::PathToUri(docPath);
+            const std::string rootUri = angel_lsp::utils::PathToUri(sandbox.rootDir.string());
+
+            angel_lsp::config::ServerConfig serverConfig;
+            angel_lsp::test::LiveLspStream stream;
+            angel_lsp::Server server(serverConfig, stream);
+            std::thread serverThread([&server]() { server.Run(); });
+
+            int nextId = 1;
+            stream.PushJson(angel_lsp::test::MakeInitializeMessage(nextId, rootUri));
+            stream.WaitForResponseId(nextId++);
+            stream.PushJson(
+                angel_lsp::test::MakeNotificationMessage("initialized", lsp::json::Value(lsp::json::Object{})));
+
+            int docVersion = 1;
+            stream.PushJson(angel_lsp::test::MakeDidOpenMessage(docUri, script.source, docVersion));
+            stream.WaitForPublishedVersion(docVersion);
+
+            std::vector<double> samples;
+            samples.reserve(spec.bursts);
+            const size_t rssBefore = flow_bench::ReadWorkingSetBytes();
+
+            for (size_t burst = 0; burst < spec.bursts; ++burst)
+            {
+                constexpr int kBurstSize = 10;
+                const int finalVersion = docVersion + kBurstSize;
+                angel_lsp::utils::HighResTimer timer;
+                for (int step = 0; step < kBurstSize; ++step)
+                {
+                    ++docVersion;
+                    const std::string inserted =
+                        "            int burstProbe_" + std::to_string(burst) + "_" + std::to_string(step) + " = 7;";
+                    const std::string editedSource = flow_bench::InsertLineAt(script.source, script.editLine, inserted);
+                    stream.PushJson(angel_lsp::test::MakeDidChangeWholeMessage(docUri, docVersion, editedSource));
+                }
+                stream.WaitForPublishedVersion(finalVersion);
+                samples.push_back(timer.ElapsedMs());
+            }
+
+            const size_t rssAfter = flow_bench::ReadWorkingSetBytes();
+            stream.PushJson(angel_lsp::test::MakeShutdownMessage(nextId));
+            stream.WaitForResponseId(nextId++);
+            stream.PushJson(angel_lsp::test::MakeNotificationMessage("exit", lsp::json::Value{}));
+            stream.Close();
+            serverThread.join();
+
+            flow_bench::PrintTableRow("burst 10 didChange to final diags", spec.label, samples,
+                                      flow_bench::ComputeRssDeltaMib(rssBefore, rssAfter));
+        }
     }
 }
