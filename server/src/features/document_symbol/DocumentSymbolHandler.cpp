@@ -153,11 +153,9 @@ static void AppendSymbolDetail(const analysis::Symbol& sym, bool isCtorOrDtor, l
     }
 }
 
-static lsp::DocumentSymbol MakeDocumentSymbol(const analysis::Symbol& sym, std::string_view sourceCode,
-                                              bool isInsideClass)
+static lsp::DocumentSymbol MakeDocumentSymbol(const analysis::Symbol& sym, bool isInsideClass)
 {
-    const bool isDtor =
-        (sym.type == analysis::SymbolType::Function && analysis::IsDestructorDeclaration(sym, sourceCode));
+    const bool isDtor = (sym.type == analysis::SymbolType::Function && analysis::IsDestructorDeclaration(sym));
     const bool isCtor = (sym.type == analysis::SymbolType::Function &&
                          (isDtor || (isInsideClass && sym.name == utils::LastScopeSegment(sym.containerName))));
 
@@ -334,7 +332,7 @@ std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolReque
         const bool isInsideClass = !stack.empty() && (stack.back().second->kind == lsp::SymbolKind::Class ||
                                                       stack.back().second->kind == lsp::SymbolKind::Interface);
 
-        lsp::DocumentSymbol docSym = MakeDocumentSymbol(*sym, request.sourceCode, isInsideClass);
+        lsp::DocumentSymbol docSym = MakeDocumentSymbol(*sym, isInsideClass);
         if (sym->type == analysis::SymbolType::Enum)
         {
             PopulateEnumMembers(*sym, request.symbolTable, docSym);

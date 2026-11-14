@@ -3301,6 +3301,42 @@
         "ServerHarnessTest",
         "PredefinedStubManagerTest"
       ]
+    },
+    {
+      "id": "REF-M27-DESTRUCTOR-FIRST-PASS-FLAG",
+      "phase": "M27",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/ClassHierarchyResolver.cpp",
+      "deletedLineRange": "915-962",
+      "originalSymbolOrCode": "IsDestructorDeclaration(const Symbol&, std::string_view); IsDestructorDeclaration(const Symbol&, const DiagnosticContext&)",
+      "whatItDidAndWhyInThatFile": "Rescanned document source from byte 0 counting newlines for every function symbol to check for a leading tilde before its identifier.",
+      "whyChangedOrDeleted": "Moved destructor tilde detection into first-pass SymbolCollector as Symbol::isDestructor and replaced the source-scanning overloads with a constant-time IsDestructorDeclaration(const Symbol&) overload.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ClassHierarchyResolver.cpp",
+      "replacedByCanonicalSymbol": "IsDestructorDeclaration",
+      "ramOrCpuImpact": "Packs isDestructor into the existing 1-byte bitfield on Symbol (0 extra bytes) and replaces O(F*L) newline scans with O(1) flag reads.",
+      "verifiedByTests": [
+        "SymbolCollectorTest",
+        "SemanticHelpersTest"
+      ]
+    },
+    {
+      "id": "REF-M27-SYNTAX-CACHE-BYTE-BUDGET",
+      "phase": "M27",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/lsp/state/SyntaxRevisionCache.h",
+      "deletedLineRange": "74-76",
+      "originalSymbolOrCode": "MaxNodes MaxSourceBytes NodeIndex::EstimateMemoryBytes",
+      "whatItDidAndWhyInThatFile": "SyntaxRevisionCache capped individual and total retained revisions at 32768 AST nodes and 2 MiB source bytes, while NodeIndex::EstimateMemoryBytes omitted m_flowFacts vectors and operand map.",
+      "whyChangedOrDeleted": "Replace the 32768-node cap with a 256 MiB byte budget using ParsedDocumentSyntax::EstimateMemoryBytes (index footprint, source bytes, and conservative tree node estimate), raise MaxSourceBytes to 8 MiB, and include all NodeIndex::FlowFacts storage in NodeIndex::EstimateMemoryBytes while keeping closed-before-open eviction.",
+      "replacedByCanonicalFile": "server/src/lsp/state/SyntaxRevisionCache.h",
+      "replacedByCanonicalSymbol": "SyntaxRevisionCache",
+      "ramOrCpuImpact": "Revisions above 32768 nodes stay retained within the 256 MiB cache budget so repeated protocol requests reuse the cached tree and index instead of reparsing and reindexing.",
+      "verifiedByTests": [
+        "SyntaxRevisionCache - Large open revision (>32768 nodes) is retained and reused",
+        "SyntaxRevisionCache - Exceeding byte budget evicts closed entries first, then oldest open",
+        "SyntaxRevisionCache - Single revision exceeding byte budget is not retained",
+        "FlowBenchmark - Syntax Revision Re-request (20k lines)"
+      ]
     }
   ]
 }

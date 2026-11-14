@@ -57,7 +57,7 @@ static void CollectDuplicateCandidates(const std::vector<Symbol>& symbols, const
         {
             continue;
         }
-        if (IsDestructorDeclaration(sym, ctx) || ctx.request.GetRuleIndex().enumMemberNames.contains(sym.name))
+        if (IsDestructorDeclaration(sym) || ctx.request.GetRuleIndex().enumMemberNames.contains(sym.name))
         {
             continue;
         }

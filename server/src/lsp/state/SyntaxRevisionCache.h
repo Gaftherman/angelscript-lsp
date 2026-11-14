@@ -21,6 +21,17 @@ struct ParsedDocumentSyntax
     {
     }
 
+    /**
+     * @brief Estimates retained bytes for the tree, index, and caller-owned source text.
+     * @param[in] sourceBytes Length in bytes of the retained source string.
+     * @return Estimated memory footprint in bytes.
+     * @note The tree share comes from NodeIndex::EstimateTreeBytes, a conservative per-node bound.
+     */
+    [[nodiscard]] size_t EstimateMemoryBytes(size_t sourceBytes = 0) const noexcept
+    {
+        return index.EstimateMemoryBytes() + sourceBytes + (tree ? index.EstimateTreeBytes() : 0);
+    }
+
     parser::TreePtr tree;
     analysis::NodeIndex index;
 };
@@ -49,6 +60,23 @@ struct SyntaxRevision
 class SyntaxRevisionCache
 {
   public:
+    static constexpr size_t MaxEntries = 8;
+    static constexpr size_t MaxRetainedBytes = size_t{96} * 1024 * 1024;
+    /// Raised to 8 MiB per revision so large AngelScript modules (>20k lines) remain cacheable without re-parsing.
+    static constexpr size_t MaxSourceBytes = size_t{8} * 1024 * 1024;
+
+    /**
+     * @brief Constructs a revision cache bounded by entry count, total retained bytes, and per-entry source size.
+     * @param[in] maxEntries Maximum number of cached revisions.
+     * @param[in] maxRetainedBytes Total estimated byte budget across all retained revisions.
+     * @param[in] maxSourceBytes Maximum source size in bytes for a single cacheable revision.
+     */
+    explicit SyntaxRevisionCache(size_t maxEntries = MaxEntries, size_t maxRetainedBytes = MaxRetainedBytes,
+                                 size_t maxSourceBytes = MaxSourceBytes) noexcept
+        : m_maxEntries(maxEntries), m_maxRetainedBytes(maxRetainedBytes), m_maxSourceBytes(maxSourceBytes)
+    {
+    }
+
     /// Finds an exact revision and promotes it; an unknown revision is never cached.
     [[nodiscard]] std::shared_ptr<const ParsedDocumentSyntax> Find(const SyntaxRevisionKey& key);
 
@@ -58,6 +86,15 @@ class SyntaxRevisionCache
     /// Releases the retained syntax when the protocol owner closes the document.
     void Forget(std::string_view uri);
 
+    /// Returns the total estimated memory footprint of all currently retained revisions in bytes.
+    [[nodiscard]] size_t RetainedBytes() const noexcept;
+
+    /// Returns the number of currently retained revisions.
+    [[nodiscard]] size_t EntryCount() const noexcept
+    {
+        return m_entries.size();
+    }
+
   private:
     struct Entry
     {
@@ -66,14 +103,15 @@ class SyntaxRevisionCache
         uint64_t generation;
         uint64_t closedRevision;
         std::shared_ptr<const ParsedDocumentSyntax> syntax;
+        size_t estimatedBytes = 0;
     };
 
     /// Inserts or promotes within the open or closed partition.
     std::list<Entry>::iterator RetentionFront(const SyntaxRevisionKey& key);
 
-    static constexpr size_t MaxEntries = 8;
-    static constexpr size_t MaxNodes = 32768;
-    static constexpr size_t MaxSourceBytes = 2 * 1024 * 1024;
+    size_t m_maxEntries = MaxEntries;
+    size_t m_maxRetainedBytes = MaxRetainedBytes;
+    size_t m_maxSourceBytes = MaxSourceBytes;
     std::list<Entry> m_entries;
 };
 /// Inputs owned by the caller or borrowed for the duration of syntax resolution.

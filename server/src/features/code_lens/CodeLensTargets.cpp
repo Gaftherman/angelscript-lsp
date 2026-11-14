@@ -207,8 +207,7 @@ void CollectReferenceTargets(const SymbolGroups& symGroups, const TargetCollecti
 
         if (sym.type == analysis::SymbolType::Function)
         {
-            if (analysis::IsInterfaceMethod(sym, ctx.mixinCtx.symbolTable) ||
-                analysis::IsDestructorDeclaration(sym, ctx.sourceCode))
+            if (analysis::IsInterfaceMethod(sym, ctx.mixinCtx.symbolTable) || analysis::IsDestructorDeclaration(sym))
             {
                 continue;
             }

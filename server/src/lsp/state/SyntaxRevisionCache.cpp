@@ -40,27 +40,31 @@ std::shared_ptr<const ParsedDocumentSyntax> SyntaxRevisionCache::Find(const Synt
 void SyntaxRevisionCache::Remember(const SyntaxRevisionKey& key,
                                    const std::shared_ptr<const ParsedDocumentSyntax>& syntax)
 {
-    if ((key.generation == 0 && key.closedRevision == 0) || !syntax->tree || syntax->index.NodeCount() > MaxNodes ||
-        key.source.size() > MaxSourceBytes)
+    if ((key.generation == 0 && key.closedRevision == 0) || !syntax || !syntax->tree ||
+        key.source.size() > m_maxSourceBytes)
     {
         return;
     }
-    Forget(key.uri);
-    m_entries.insert(RetentionFront(key),
-                     {std::string(key.uri), std::string(key.source), key.generation, key.closedRevision, syntax});
+    const size_t entryBytes = syntax->EstimateMemoryBytes(key.source.size());
+    if (entryBytes > m_maxRetainedBytes)
+    {
+        return;
+    }
 
-    size_t nodes = 0;
-    size_t bytes = 0;
+    Forget(key.uri);
+    m_entries.insert(RetentionFront(key), {std::string(key.uri), std::string(key.source), key.generation,
+                                           key.closedRevision, syntax, entryBytes});
+
+    size_t retainedBytes = 0;
     size_t entries = 0;
     auto end = m_entries.begin();
     for (; end != m_entries.end(); ++end)
     {
-        nodes += end->syntax->index.NodeCount();
-        bytes += end->source.size();
-        if (++entries > MaxEntries || nodes > MaxNodes || bytes > MaxSourceBytes)
+        if (++entries > m_maxEntries || end->estimatedBytes > m_maxRetainedBytes - retainedBytes)
         {
             break;
         }
+        retainedBytes += end->estimatedBytes;
     }
     m_entries.erase(end, m_entries.end());
 }
@@ -68,6 +72,16 @@ void SyntaxRevisionCache::Remember(const SyntaxRevisionKey& key,
 void SyntaxRevisionCache::Forget(std::string_view uri)
 {
     m_entries.remove_if([&](const Entry& entry) { return entry.uri == uri; });
+}
+
+size_t SyntaxRevisionCache::RetainedBytes() const noexcept
+{
+    size_t total = 0;
+    for (const Entry& entry : m_entries)
+    {
+        total += entry.estimatedBytes;
+    }
+    return total;
 }
 
 SyntaxRevision ResolveSyntaxRevision(SyntaxRevisionInput input, SyntaxRevisionCache* cache)

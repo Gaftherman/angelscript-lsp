@@ -346,14 +346,11 @@ InitializerItemKind ClassifyInitializerItem(std::string_view item);
 bool IsFromPredefinedStub(const Symbol& sym, const DiagnosticContext& ctx);
 
 /**
- * @brief Checks whether a function symbol is a destructor declaration given document source text.
+ * @brief Checks whether a function symbol is a destructor declaration using first-pass symbol metadata.
  * @param[in] sym Function symbol to classify.
- * @param[in] source Document source text.
  * @return True if the symbol is a destructor declaration.
  */
-bool IsDestructorDeclaration(const Symbol& sym, std::string_view source);
-
-bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
+bool IsDestructorDeclaration(const Symbol& sym);
 
 /**
  * @brief Checks whether a constructor function matches AngelScript's list behavior signature.

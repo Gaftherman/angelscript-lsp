@@ -49,9 +49,19 @@ struct MixinExpansionContext
     std::vector<std::string>& result;
 };
 
+/**
+ * @brief Checks whether a function symbol represents a destructor using first-pass symbol metadata.
+ * @param[in] sym Symbol to inspect.
+ * @return True if sym is a Function marked as a destructor or named with a leading '~'.
+ */
 bool IsDestructorSymbol(const Symbol& sym);
-bool IsDestructorDeclaration(const Symbol& sym, std::string_view source);
-bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
+
+/**
+ * @brief Checks whether a function symbol is a destructor declaration in O(1) using first-pass symbol metadata.
+ * @param[in] sym Symbol to inspect.
+ * @return True if sym is a Function marked as a destructor or named with a leading '~'.
+ */
+bool IsDestructorDeclaration(const Symbol& sym);
 
 NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable& table);
 bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table);

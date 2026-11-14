@@ -9,6 +9,8 @@
 
 #include <array>
 #include <doctest/doctest.h>
+#include <random>
+#include <vector>
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
@@ -588,5 +590,160 @@ TEST_SUITE("analysis/index/NodeIndex")
         CHECK(includes[1].rawPath == "vector");
         CHECK(includes[1].line == 1);
         CHECK(includes[1].isAngled);
+    }
+
+    TEST_CASE("NodeIndex - FindEnclosingNodeAny matches linear reference across nested structures and random offsets")
+    {
+        const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("NS");
+        const std::string clsOuter = angel_lsp::test::GenerateRandomSymbolName("OuterCls");
+        const std::string clsInner = angel_lsp::test::GenerateRandomSymbolName("InnerCls");
+        const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("Iface");
+        const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("Mix");
+        const std::string fnA = angel_lsp::test::GenerateRandomSymbolName("FnA");
+        const std::string fnB = angel_lsp::test::GenerateRandomSymbolName("FnB");
+
+        const std::string code = "namespace " + nsName +
+                                 " {\n"
+                                 "    interface " +
+                                 ifaceName +
+                                 " {\n"
+                                 "        void Ping();\n"
+                                 "    }\n"
+                                 "    mixin class " +
+                                 mixinName +
+                                 " {\n"
+                                 "        class " +
+                                 clsInner +
+                                 " {\n"
+                                 "            int field = 1;\n"
+                                 "        }\n"
+                                 "        void " +
+                                 fnA +
+                                 "() {\n"
+                                 "            auto outerLam = function(int x) {\n"
+                                 "                auto innerLam = function(int y) { return y + 1; };\n"
+                                 "                return innerLam(x);\n"
+                                 "            };\n"
+                                 "        }\n"
+                                 "    }\n"
+                                 "    class " +
+                                 clsOuter +
+                                 " {\n"
+                                 "        interface NestedIface {\n"
+                                 "            void Pong();\n"
+                                 "        }\n"
+                                 "        void " +
+                                 fnB +
+                                 "() { int z = 0; }\n"
+                                 "    }\n"
+                                 "}\n";
+
+        auto doc = angel_lsp::test::CreateTestDocument("file:///enclosing_parity.as", code);
+        REQUIRE(doc->GetTree() != nullptr);
+
+        NodeIndex index(ts_tree_root_node(doc->GetTree()), NodeIndexOptions{.source = code});
+        CHECK(index.EstimateMemoryBytes() > sizeof(NodeIndex));
+
+        const auto& gs = GetGrammarSymbols();
+        auto linearReference = [&](uint32_t byteOffset, std::span<const TSSymbol> targetSyms) -> TSNode
+        {
+            TSNode bestNode{};
+            uint32_t bestSpan = UINT32_MAX;
+            for (TSSymbol sym : targetSyms)
+            {
+                for (TSNode node : index.Nodes(sym))
+                {
+                    const uint32_t start = ts_node_start_byte(node);
+                    if (start > byteOffset)
+                    {
+                        break;
+                    }
+                    const uint32_t end = ts_node_end_byte(node);
+                    if (byteOffset < end)
+                    {
+                        const uint32_t span = end - start;
+                        if (span < bestSpan)
+                        {
+                            bestSpan = span;
+                            bestNode = node;
+                        }
+                    }
+                }
+            }
+            return bestNode;
+        };
+
+        const std::array<TSSymbol, 3> classTargets = {gs.symClassDeclaration, gs.symInterfaceDeclaration,
+                                                      gs.symMixinDeclaration};
+        const std::array<TSSymbol, 2> callableTargets = {gs.symFuncDeclaration, gs.symLambdaExpression};
+
+        std::vector<uint32_t> offsets;
+        offsets.reserve(code.size() + 128);
+        for (const TSSymbol sym : classTargets)
+        {
+            for (TSNode n : index.Nodes(sym))
+            {
+                const uint32_t s = ts_node_start_byte(n);
+                const uint32_t e = ts_node_end_byte(n);
+                if (s > 0)
+                {
+                    offsets.push_back(s - 1);
+                }
+                offsets.push_back(s);
+                if (e > 0)
+                {
+                    offsets.push_back(e - 1);
+                }
+                offsets.push_back(e);
+            }
+        }
+        for (const TSSymbol sym : callableTargets)
+        {
+            for (TSNode n : index.Nodes(sym))
+            {
+                const uint32_t s = ts_node_start_byte(n);
+                const uint32_t e = ts_node_end_byte(n);
+                offsets.push_back(s);
+                if (e > 0)
+                {
+                    offsets.push_back(e - 1);
+                }
+                offsets.push_back(e);
+            }
+        }
+
+        constexpr uint64_t kSeed = 0x9E3779B97F4A7C15ULL;
+        INFO("seed=" << kSeed);
+        std::mt19937_64 rng(kSeed);
+        std::uniform_int_distribution<uint32_t> dist(0, static_cast<uint32_t>(code.size()));
+        for (size_t i = 0; i < 200; ++i)
+        {
+            offsets.push_back(dist(rng));
+        }
+
+        for (const uint32_t off : offsets)
+        {
+            INFO("offset=" << off);
+            const TSNode actualClass = index.FindEnclosingClassOrMixin(off);
+            const TSNode expectedClass = linearReference(off, classTargets);
+            CHECK(ts_node_is_null(actualClass) == ts_node_is_null(expectedClass));
+            if (!ts_node_is_null(actualClass) && !ts_node_is_null(expectedClass))
+            {
+                CHECK(ts_node_eq(actualClass, expectedClass));
+            }
+
+            const TSNode actualCallable = index.FindEnclosingCallable(off);
+            const TSNode expectedCallable = linearReference(off, callableTargets);
+            CHECK(ts_node_is_null(actualCallable) == ts_node_is_null(expectedCallable));
+            if (!ts_node_is_null(actualCallable) && !ts_node_is_null(expectedCallable))
+            {
+                CHECK(ts_node_eq(actualCallable, expectedCallable));
+            }
+        }
+
+        index.Clear();
+        CHECK(index.Empty());
+        CHECK(ts_node_is_null(index.FindEnclosingClassOrMixin(0)));
+        CHECK(ts_node_is_null(index.FindEnclosingCallable(0)));
     }
 }

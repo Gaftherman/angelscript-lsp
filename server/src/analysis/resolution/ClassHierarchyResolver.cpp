@@ -909,56 +909,12 @@ bool IsDestructorSymbol(const Symbol& sym)
     {
         return false;
     }
-    return sym.name.starts_with("~");
+    return sym.isDestructor || sym.name.starts_with('~');
 }
 
-bool IsDestructorDeclaration(const Symbol& sym, std::string_view source)
+bool IsDestructorDeclaration(const Symbol& sym)
 {
-    if (sym.type != SymbolType::Function)
-    {
-        return false;
-    }
-    if (sym.name.starts_with('~'))
-    {
-        return true;
-    }
-    if (source.empty())
-    {
-        return false;
-    }
-
-    size_t offset = 0;
-    for (uint32_t line = 0; line < sym.selectionRange.startLine; ++line)
-    {
-        offset = source.find('\n', offset);
-        if (offset == std::string_view::npos)
-        {
-            return false;
-        }
-        ++offset;
-    }
-
-    offset += sym.selectionRange.startCharacter;
-    if (offset == 0 || offset > source.size())
-    {
-        return false;
-    }
-
-    size_t back = offset;
-    while (back > 0 && (source[back - 1] == ' ' || source[back - 1] == '\t'))
-    {
-        --back;
-    }
-    return back > 0 && source[back - 1] == '~';
-}
-
-bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
-{
-    if (sym.fileUri != ctx.request.fileUri)
-    {
-        return false;
-    }
-    return IsDestructorDeclaration(sym, ctx.request.sourceCode);
+    return IsDestructorSymbol(sym);
 }
 
 } // namespace angel_lsp::analysis

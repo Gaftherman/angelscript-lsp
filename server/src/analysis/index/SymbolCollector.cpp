@@ -1022,6 +1022,65 @@ bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const Symbol
 }
 
 /**
+ * @brief Checks in O(1) whether a function declaration node carries a destructor tilde (`~`) before its identifier.
+ * @param[in] funcNode Tree-Sitter AST node representing the function declaration.
+ * @param[in] nameNode Identifier child node of the function declaration.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] tokTilde Pre-resolved Tree-Sitter symbol ID for the `"~"` token.
+ * @return True when a `"~"` token or character precedes the function name inside the declaration span.
+ */
+static bool HasDestructorTilde(TSNode funcNode, TSNode nameNode, std::string_view sourceCode,
+                               TSSymbol tokTilde) noexcept
+{
+    if (ts_node_is_null(funcNode))
+    {
+        return false;
+    }
+    if (!ts_node_is_null(nameNode))
+    {
+        const uint32_t nameStart = ts_node_start_byte(nameNode);
+        if (nameStart < sourceCode.size() && sourceCode[nameStart] == '~')
+        {
+            return true;
+        }
+        const uint32_t funcStart = ts_node_start_byte(funcNode);
+        if (nameStart > funcStart && nameStart <= sourceCode.size())
+        {
+            size_t back = nameStart;
+            while (back > funcStart && (sourceCode[back - 1] == ' ' || sourceCode[back - 1] == '\t'))
+            {
+                --back;
+            }
+            if (back > funcStart && sourceCode[back - 1] == '~')
+            {
+                return true;
+            }
+        }
+    }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
+    bool found = false;
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (!ts_node_is_null(nameNode) && ts_node_eq(child, nameNode))
+            {
+                break;
+            }
+            if (ts_node_symbol(child) == tokTilde)
+            {
+                found = true;
+                break;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return found;
+}
+
+/**
  * @brief Extracts a function, method, or imported declaration into a function symbol with complete signature,
  * parameter, and modifier metadata, or redirects empty-paren variable declarations.
  * @param[in] funcNode Tree-Sitter AST node representing the function, method, or imported function declaration.
@@ -1046,7 +1105,8 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
         modifiers.isExternal = true;
     }
 
-    if (TryProcessEmptyParenVariable(funcNode, modifiers, sCtx, ctx))
+    const bool isDestructor = HasDestructorTilde(funcNode, nameNode, sCtx.request.sourceCode, m_gs.tokTilde);
+    if (!isDestructor && TryProcessEmptyParenVariable(funcNode, modifiers, sCtx, ctx))
     {
         return;
     }
@@ -1056,6 +1116,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
 
     SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, loc);
+    sym.isDestructor = isDestructor || sym.name.starts_with('~');
 
     FunctionSignature funcSig;
     funcSig.returnType = std::string(parser::NodeText(typeNode, sCtx.request.sourceCode));

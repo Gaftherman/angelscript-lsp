@@ -106,7 +106,7 @@ size_t NodeIndex::IndexBucketNode(TSNode node, TSSymbol symbol, IndexedDeclarati
     {
         m_nodesBySymbol.resize(static_cast<size_t>(symbol) + 1);
     }
-    auto& bucket = m_nodesBySymbol[symbol];
+    auto& bucket = m_nodesBySymbol[symbol].nodes;
     const size_t slot = bucket.size();
     bucket.push_back(node);
     if (kind != IndexedDeclarationKind::None)
@@ -263,9 +263,9 @@ TSNode NodeIndex::SyntaxHandle(const IndexedSyntaxNode& node) const noexcept
 {
     if (node.inSymbolBucket)
     {
-        if (node.symbol < m_nodesBySymbol.size() && node.syntaxSlot < m_nodesBySymbol[node.symbol].size())
+        if (node.symbol < m_nodesBySymbol.size() && node.syntaxSlot < m_nodesBySymbol[node.symbol].nodes.size())
         {
-            return m_nodesBySymbol[node.symbol][node.syntaxSlot];
+            return m_nodesBySymbol[node.symbol].nodes[node.syntaxSlot];
         }
         return {};
     }
@@ -1094,8 +1094,41 @@ void NodeIndex::Build(TSNode root, const NodeIndexOptions& options)
     PopulatePredefinedSymbols(m_language);
     m_symComment = SymbolForName("comment");
     TraverseTree(root, options.budget, options.contents == NodeIndexContents::Full, options.source);
+    BuildEnclosingSameSym();
     PostProcessErrorRanges();
     PostProcessCommentRanges();
+}
+
+void NodeIndex::BuildEnclosingSameSym()
+{
+    std::vector<uint32_t> stack;
+    for (auto& bucket : m_nodesBySymbol)
+    {
+        const size_t n = bucket.nodes.size();
+        if (n == 0)
+        {
+            continue;
+        }
+        bucket.enclosingSameSym.assign(n, UINT32_MAX);
+        if (n == 1)
+        {
+            continue;
+        }
+        stack.clear();
+        for (uint32_t i = 0; i < static_cast<uint32_t>(n); ++i)
+        {
+            const uint32_t start = ts_node_start_byte(bucket.nodes[i]);
+            while (!stack.empty() && start >= ts_node_end_byte(bucket.nodes[stack.back()]))
+            {
+                stack.pop_back();
+            }
+            if (!stack.empty())
+            {
+                bucket.enclosingSameSym[i] = stack.back();
+            }
+            stack.push_back(i);
+        }
+    }
 }
 
 std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept
@@ -1106,7 +1139,7 @@ std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept
     }
     if (static_cast<size_t>(symbol) < m_nodesBySymbol.size())
     {
-        return m_nodesBySymbol[symbol];
+        return m_nodesBySymbol[symbol].nodes;
     }
     return {};
 }
@@ -1150,6 +1183,52 @@ size_t NodeIndex::NodeCount() const noexcept
 bool NodeIndex::Empty() const noexcept
 {
     return m_nodeCount == 0;
+}
+
+size_t NodeIndex::EstimateMemoryBytes() const noexcept
+{
+    const auto vectorBytes = []<typename T>(const std::vector<T>& vec) noexcept -> size_t
+    { return vec.capacity() * sizeof(T); };
+
+    size_t bytes = sizeof(*this) + vectorBytes(m_errorNodes) + vectorBytes(m_nodesBySymbol) +
+                   vectorBytes(m_errorRanges) + vectorBytes(m_commentRanges) + vectorBytes(m_containerSpans);
+
+    for (const SymbolBucket& bucket : m_nodesBySymbol)
+    {
+        bytes += vectorBytes(bucket.nodes) + vectorBytes(bucket.enclosingSameSym);
+    }
+
+    if (m_flowFacts)
+    {
+        const FlowFacts& facts = *m_flowFacts;
+        bytes += sizeof(FlowFacts) + vectorBytes(facts.declarations) + vectorBytes(facts.returningBodies) +
+                 vectorBytes(facts.findings) + vectorBytes(facts.switches) + vectorBytes(facts.baseClassLists) +
+                 vectorBytes(facts.usingNames) + vectorBytes(facts.usingScopes) +
+                 vectorBytes(facts.initializerIdentifiers) + vectorBytes(facts.syntaxNodes) +
+                 vectorBytes(facts.unbucketedSyntax) + vectorBytes(facts.assignmentFunctions) +
+                 vectorBytes(facts.assignmentLambdas) + vectorBytes(facts.classByFunctionSlot) +
+                 vectorBytes(facts.callableByReturnSlot) + vectorBytes(facts.conditionalStatements) +
+                 vectorBytes(facts.selectionSpans) + vectorBytes(facts.foldableSpans) +
+                 vectorBytes(facts.includeDirectives);
+
+        for (const IndexedSwitch& sw : facts.switches)
+        {
+            bytes += vectorBytes(sw.labels);
+        }
+        for (const IndexedIncludeDirective& inc : facts.includeDirectives)
+        {
+            if (inc.rawPath.capacity() > sizeof(inc.rawPath))
+            {
+                bytes += inc.rawPath.capacity();
+            }
+        }
+
+        using OperandMap = decltype(FlowFacts::operandSyntax);
+        bytes += facts.operandSyntax.values().capacity() * sizeof(OperandMap::value_type);
+        bytes += facts.operandSyntax.bucket_count() * (2 * sizeof(uint32_t{}));
+    }
+
+    return bytes;
 }
 
 template <typename RangeType> void MergeSortedRanges(std::vector<RangeType>& ranges)
@@ -1288,25 +1367,74 @@ TSNode NodeIndex::FindEnclosingNodeAny(uint32_t byteOffset, std::span<const TSSy
 {
     TSNode bestNode{};
     uint32_t bestSpan = UINT32_MAX;
+    const TSSymbol symError = parser::GetGrammarSymbols().symError;
     for (TSSymbol sym : targetSyms)
     {
-        for (TSNode node : Nodes(sym))
+        const auto nodes = Nodes(sym);
+        if (nodes.empty())
         {
-            const uint32_t start = ts_node_start_byte(node);
-            if (start > byteOffset)
+            continue;
+        }
+        if (sym == symError || sym == static_cast<TSSymbol>(-1) || static_cast<size_t>(sym) >= m_nodesBySymbol.size() ||
+            m_nodesBySymbol[sym].enclosingSameSym.size() != nodes.size())
+        {
+            for (TSNode node : nodes)
+            {
+                const uint32_t start = ts_node_start_byte(node);
+                if (start > byteOffset)
+                {
+                    break;
+                }
+                const uint32_t end = ts_node_end_byte(node);
+                if (byteOffset < end)
+                {
+                    const uint32_t span = end - start;
+                    if (span < bestSpan)
+                    {
+                        bestSpan = span;
+                        bestNode = node;
+                    }
+                }
+            }
+            continue;
+        }
+
+        const auto& enclosing = m_nodesBySymbol[sym].enclosingSameSym;
+        const auto upper = std::ranges::upper_bound(nodes, byteOffset, {},
+                                                    [](const TSNode& n) noexcept { return ts_node_start_byte(n); });
+        if (upper == nodes.begin())
+        {
+            continue;
+        }
+        uint32_t idx = static_cast<uint32_t>((upper - nodes.begin()) - 1);
+        while (idx != UINT32_MAX && byteOffset >= ts_node_end_byte(nodes[idx]))
+        {
+            idx = enclosing[idx];
+        }
+        if (idx == UINT32_MAX)
+        {
+            continue;
+        }
+
+        const uint32_t start = ts_node_start_byte(nodes[idx]);
+        const uint32_t end = ts_node_end_byte(nodes[idx]);
+        while (enclosing[idx] != UINT32_MAX)
+        {
+            const uint32_t parentIdx = enclosing[idx];
+            if (ts_node_start_byte(nodes[parentIdx]) == start && ts_node_end_byte(nodes[parentIdx]) == end)
+            {
+                idx = parentIdx;
+            }
+            else
             {
                 break;
             }
-            const uint32_t end = ts_node_end_byte(node);
-            if (byteOffset < end)
-            {
-                const uint32_t span = end - start;
-                if (span < bestSpan)
-                {
-                    bestSpan = span;
-                    bestNode = node;
-                }
-            }
+        }
+        const uint32_t span = end - start;
+        if (span < bestSpan)
+        {
+            bestSpan = span;
+            bestNode = nodes[idx];
         }
     }
     return bestNode;

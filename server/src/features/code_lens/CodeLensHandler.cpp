@@ -62,7 +62,7 @@ static void AppendReferenceLens(const analysis::SourceRange& key, const analysis
 static void AppendFunctionLens(const analysis::SourceRange& key, const analysis::Symbol& sym,
                                const AssembledLensContext& ctx, std::vector<lsp::CodeLens>& lenses)
 {
-    if (analysis::IsDestructorDeclaration(sym, ctx.request.sourceCode))
+    if (analysis::IsDestructorDeclaration(sym))
     {
         return;
     }

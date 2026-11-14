@@ -80,8 +80,13 @@ struct ExpressionCacheKeyHash
      */
     uint64_t operator()(const ExpressionCacheKey& k) const noexcept
     {
-        const uint64_t h = (static_cast<uint64_t>(k.startByte) << 32) | static_cast<uint64_t>(k.endByte);
-        return h ^ (static_cast<uint64_t>(k.symbol) * 0x9e3779b97f4a7c15ULL);
+        uint64_t h = (static_cast<uint64_t>(k.startByte) << 32) | static_cast<uint64_t>(k.endByte);
+        h ^= static_cast<uint64_t>(k.symbol) * 0x9e3779b97f4a7c15ULL;
+        h ^= h >> 30;
+        h *= 0xbf58476d1ce4e5b9ULL;
+        h ^= h >> 27;
+        h *= 0x94d049bb133111ebULL;
+        return h ^ (h >> 31);
     }
 };
 

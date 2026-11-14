@@ -263,7 +263,7 @@ class NodeIndex
         {
             for (const auto& entry : m_flowFacts->declarations)
             {
-                visitor(m_nodesBySymbol[entry.symbol][entry.slot], entry.kind);
+                visitor(m_nodesBySymbol[entry.symbol].nodes[entry.slot], entry.kind);
             }
         }
     }
@@ -422,12 +422,17 @@ class NodeIndex
 
     /**
      * @brief Estimates total dynamic and structure memory used by this index in bytes.
+     * @return Estimated byte footprint across buckets, spans, and flow facts.
      */
-    [[nodiscard]] size_t EstimateMemoryBytes() const noexcept
+    [[nodiscard]] size_t EstimateMemoryBytes() const noexcept;
+
+    /**
+     * @brief Estimates the bytes the backing syntax tree retains for this index's nodes.
+     * @note Tree-sitter hides its allocation size, so this bounds it by two handles per node.
+     */
+    [[nodiscard]] size_t EstimateTreeBytes() const noexcept
     {
-        return sizeof(NodeIndex) + m_errorNodes.capacity() * sizeof(TSNode) +
-               m_containerSpans.capacity() * sizeof(IndexedContainerSpan) +
-               m_errorRanges.capacity() * sizeof(ErrorRange) + m_commentRanges.capacity() * sizeof(CommentRange);
+        return m_nodeCount * sizeof(TSNode) * 2;
     }
 
     /**
@@ -497,6 +502,8 @@ class NodeIndex
      * @brief Finds the innermost class, interface, or mixin declaration enclosing the given byte offset.
      * @param[in] byteOffset Document byte offset to test.
      * @return Innermost enclosing class/interface/mixin TSNode or null node if outside any class.
+     * @note Runs in O(sum_{s in {class, interface, mixin}} (log N_s + D_s)), where N_s is the bucket size and D_s is
+     *       the same-symbol nesting depth.
      */
     [[nodiscard]] TSNode FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept;
 
@@ -632,6 +639,8 @@ class NodeIndex
      * @brief Finds the innermost callable declaration (function or lambda expression) enclosing byteOffset.
      * @param[in] byteOffset Document byte offset to test.
      * @return Innermost enclosing function or lambda TSNode or null node if none found.
+     * @note Runs in O(sum_{s in {func, lambda}} (log N_s + D_s)), where N_s is the bucket size and D_s is the
+     *       same-symbol nesting depth.
      */
     [[nodiscard]] TSNode FindEnclosingCallable(uint32_t byteOffset) const noexcept;
 
@@ -768,6 +777,12 @@ class NodeIndex
     void RecordFoldableAndDirectiveSpan(TSNode node, std::string_view source);
     void ExtractIncludeDirective(TSNode node, std::string_view source);
     void TraverseTree(TSNode root, parser::TraversalBudget* budget, bool full, std::string_view source = {});
+    /**
+     * @brief Computes nearest-ancestor links within each symbol bucket in a single O(N) stack pass.
+     * @note Each bucket in m_nodesBySymbol is in preorder (non-decreasing start byte), so a single stack builds the
+     *       parallel enclosingSameSym parent index vector in linear time with zero recursion.
+     */
+    void BuildEnclosingSameSym();
     void PostProcessErrorRanges();
     void PostProcessCommentRanges();
     [[nodiscard]] bool IsInsideBaseClassList(uint32_t startByte, uint32_t endByte) const noexcept;
@@ -775,18 +790,25 @@ class NodeIndex
                                                                    std::string_view sourceCode) const;
 
     /**
-     * @brief Finds the innermost node matching any of the specified grammar symbols enclosing byteOffset in O(log K).
+     * @brief Finds the smallest node of any target symbol enclosing byteOffset.
+     * @note Per target bucket: O(log N_s + D_s), with D_s the same-symbol nesting depth.
      * @param[in] byteOffset Document byte offset to test.
      * @param[in] targetSyms Span of target grammar symbols.
      * @return Innermost enclosing TSNode or null node if not enclosed.
      */
     [[nodiscard]] TSNode FindEnclosingNodeAny(uint32_t byteOffset, std::span<const TSSymbol> targetSyms) const noexcept;
 
+    struct SymbolBucket
+    {
+        std::vector<TSNode> nodes;
+        std::vector<uint32_t> enclosingSameSym;
+    };
+
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;
     size_t m_nodeCount = 0;
     std::vector<TSNode> m_errorNodes;
-    std::vector<std::vector<TSNode>> m_nodesBySymbol;
+    std::vector<SymbolBucket> m_nodesBySymbol;
     std::vector<ErrorRange> m_errorRanges;
     std::vector<CommentRange> m_commentRanges;
     std::vector<IndexedContainerSpan> m_containerSpans;

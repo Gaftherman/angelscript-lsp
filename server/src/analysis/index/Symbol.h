@@ -492,6 +492,7 @@ struct Symbol
     ContainerKind containerKind = ContainerKind::None;
     bool isSynthesized : 1 = false; ///< True when synthesized into a host class (e.g. from an included mixin).
     bool isPredefined : 1 = false;  ///< True when parsed from a predefined stub or builtin profile.
+    bool isDestructor : 1 = false;  ///< True when a function symbol represents a destructor declaration (`~Name`).
 
     FunctionSignature& GetFunction() noexcept
     {

@@ -55,7 +55,7 @@ FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext&
 
     if (fctx.isMember)
     {
-        fctx.isDestructor = IsDestructorDeclaration(sym, ctx);
+        fctx.isDestructor = IsDestructorDeclaration(sym);
         // A constructor is spelled with the class's own name. The container's qualified name
         // is what the collector stores, so compare against its last segment.
         fctx.ownerName = LastScopeSegment(sym.containerName);

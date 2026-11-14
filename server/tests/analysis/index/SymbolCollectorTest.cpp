@@ -1153,4 +1153,86 @@ TEST_SUITE("analysis/index/SymbolCollector")
             CHECK(d.code != "as-syntax-error");
         }
     }
+
+    TEST_CASE("SymbolCollector - Populates isDestructor first-pass flag for tilde declarators with whitespace")
+    {
+        const std::string clsDirect = angel_lsp::test::GenerateRandomSymbolName("DirectDtor");
+        const std::string clsSpaced = angel_lsp::test::GenerateRandomSymbolName("SpacedDtor");
+        const std::string clsTabbed = angel_lsp::test::GenerateRandomSymbolName("TabbedDtor");
+        const std::string methodRegular = angel_lsp::test::GenerateRandomSymbolName("Method");
+        const std::string methodBitwise = angel_lsp::test::GenerateRandomSymbolName("BitNot");
+        const std::string freeFn = angel_lsp::test::GenerateRandomSymbolName("FreeFn");
+
+        const std::string code = "class " + clsDirect +
+                                 " {\n"
+                                 "    " +
+                                 clsDirect +
+                                 "() {}\n"
+                                 "    ~" +
+                                 clsDirect +
+                                 "() {}\n"
+                                 "    void " +
+                                 methodRegular +
+                                 "() {}\n"
+                                 "    int " +
+                                 methodBitwise +
+                                 "(int v) { return ~v; }\n"
+                                 "}\n"
+                                 "class " +
+                                 clsSpaced +
+                                 " {\n"
+                                 "    ~   \t " +
+                                 clsSpaced +
+                                 "() {}\n"
+                                 "}\n"
+                                 "class " +
+                                 clsTabbed +
+                                 " {\n"
+                                 "    ~\t" +
+                                 clsTabbed +
+                                 "() {}\n"
+                                 "}\n"
+                                 "void " +
+                                 freeFn + "() {}\n";
+
+        SymbolTable table;
+        CollectFromSource(code, table, "file:///destructor_flag_test.as");
+
+        auto hasDestructorFlag = [&](const std::string& qualifiedName, bool expectedDtor)
+        {
+            const auto syms = table.FindSymbols(qualifiedName);
+            REQUIRE(!syms.empty());
+            bool sawMatching = false;
+            for (const auto& s : syms)
+            {
+                if (s.type == SymbolType::Function && static_cast<bool>(s.isDestructor) == expectedDtor)
+                {
+                    sawMatching = true;
+                }
+            }
+            return sawMatching;
+        };
+
+        CHECK(hasDestructorFlag(clsDirect + "::" + clsDirect, true));
+        CHECK(hasDestructorFlag(clsDirect + "::" + clsDirect, false));
+        CHECK(hasDestructorFlag(clsSpaced + "::" + clsSpaced, true));
+        CHECK(hasDestructorFlag(clsTabbed + "::" + clsTabbed, true));
+        CHECK(hasDestructorFlag(clsDirect + "::" + methodRegular, false));
+        CHECK(hasDestructorFlag(clsDirect + "::" + methodBitwise, false));
+        CHECK(hasDestructorFlag(freeFn, false));
+
+        // Verify non-destructor methods/functions never report isDestructor == true.
+        for (const auto& s : table.FindSymbols(clsDirect + "::" + methodRegular))
+        {
+            CHECK_FALSE(static_cast<bool>(s.isDestructor));
+        }
+        for (const auto& s : table.FindSymbols(clsDirect + "::" + methodBitwise))
+        {
+            CHECK_FALSE(static_cast<bool>(s.isDestructor));
+        }
+        for (const auto& s : table.FindSymbols(freeFn))
+        {
+            CHECK_FALSE(static_cast<bool>(s.isDestructor));
+        }
+    }
 }
