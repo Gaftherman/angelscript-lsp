@@ -1,0 +1,3 @@
+namespace Grove {
+    class PineCone {}
+}

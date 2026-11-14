@@ -1,0 +1,3 @@
+namespace Harbor {
+    class BuoyFloat {}
+}

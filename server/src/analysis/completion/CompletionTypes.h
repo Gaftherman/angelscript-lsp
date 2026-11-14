@@ -6,6 +6,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TargetResolution.h"
 #include "config/ServerConfig.h"
+#include "utils/TransparentHash.h"
 
 #include <cstdint>
 #include <functional>
@@ -108,6 +109,13 @@ struct CompletionQuery
      * @brief Returns module symbols starting with a prefix as (name, container) pairs; empty when unset.
      */
     std::function<std::vector<std::pair<std::string, std::string>>(std::string_view prefix)> findModuleSymbols = {};
+
+    /**
+     * @brief URIs of the files that make up this document's module (itself plus its `#include` closure).
+     *        Global symbols declared in any other workspace file are not visible to the compiler, so they
+     *        are not offered; predefined files are always visible. Null or empty offers every file.
+     */
+    const TransparentStringSet* moduleFileUris = nullptr;
 };
 
 /**

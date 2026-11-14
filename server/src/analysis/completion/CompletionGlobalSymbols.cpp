@@ -51,6 +51,13 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
     }
 }
 
+bool IsSymbolVisibleToModule(const analysis::Symbol& sym, const CompletionCollector& collector)
+{
+    const TransparentStringSet* moduleFiles = collector.request.moduleFileUris;
+    return moduleFiles == nullptr || moduleFiles->empty() || moduleFiles->contains(sym.fileUri) ||
+           utils::IsPredefinedFile(sym.fileUri, GetPredefinedExtension(collector.request));
+}
+
 /**
  * @brief Converts a global symbol table symbol into a completion item.
  * @param[in] sym Target global symbol.
@@ -61,6 +68,10 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
 static void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsAreProperties,
                                     bool accessorKeywordRequired, CompletionCollector& collector)
 {
+    if (!IsSymbolVisibleToModule(sym, collector))
+    {
+        return;
+    }
     CompletionEntryKind kind = CompletionEntryKind::Variable;
     std::string detail;
     std::string snippet;

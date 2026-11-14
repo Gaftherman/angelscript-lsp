@@ -177,6 +177,87 @@ static bool IsKnownDirectGlobalCallee(std::string_view identView, const Diagnost
     return false;
 }
 
+/**
+ * @brief Namespaces a qualifier written at a call site may name: itself, then relative to each enclosing
+ *        namespace and each `using namespace` that applies at the call.
+ * @param[in] qualifier Qualifier text such as `A::B`.
+ * @param[in] globalQualified True when the callee started with `::`, which rules out relative lookup.
+ * @param[in] call Call site whose position selects the enclosing namespaces.
+ * @param[in] cctx Call-check context carrying the node index and source text.
+ * @return Candidate namespace paths, most specific first.
+ */
+static std::vector<std::string> QualifierCandidates(std::string_view qualifier, bool globalQualified,
+                                                    const CallSiteFact& call, const NamespaceCallCheckContext& cctx)
+{
+    std::vector<std::string> candidates{std::string(qualifier)};
+    if (globalQualified || !cctx.nodeIndex)
+    {
+        return candidates;
+    }
+    for (const auto& container : cctx.nodeIndex->CollectEnclosingContainers(call.bytes.startByte, cctx.sourceCode))
+    {
+        if (container.kind != ContainerKind::Namespace)
+        {
+            continue;
+        }
+        std::string_view path = container.qualifiedName.empty() ? std::string_view(container.name)
+                                                                : std::string_view(container.qualifiedName);
+        for (; !path.empty(); path = utils::ParentScopeView(path))
+        {
+            candidates.push_back(utils::JoinScopedName(path, qualifier));
+        }
+    }
+    for (const auto& imported : cctx.nodeIndex->CollectUsingNamespaces(cctx.sourceCode, call.bytes.startByte))
+    {
+        candidates.push_back(utils::JoinScopedName(imported, qualifier));
+    }
+    return candidates;
+}
+
+/**
+ * @brief Reports `A::f()` when `A` resolves to a namespace that declares no `f`.
+ *
+ * Qualifiers that are not namespaces (classes, enums) are left to the member checks, and so is any
+ * qualifier that shares its name with a type, because `A::f()` may then name a static member.
+ *
+ * @param[in] calleeName Callee text without a leading `::`.
+ * @param[in] globalQualified True when the callee started with `::`.
+ * @param[in] call Call site being checked.
+ * @param[in] cctx Call-check context carrying the node index and source text.
+ * @param[in,out] ctx Diagnostic context receiving the error.
+ */
+static void CheckQualifiedCallee(std::string_view calleeName, bool globalQualified, const CallSiteFact& call,
+                                 const NamespaceCallCheckContext& cctx, DiagnosticContext& ctx)
+{
+    const std::string_view qualifier = utils::ParentScopeView(calleeName);
+    const std::string_view member = utils::LastScopeSegment(calleeName);
+    if (qualifier.empty() || member.empty() || call.insideMixin || IsSpecialContextCallee(member, call, cctx) ||
+        ctx.request.IsRegisteredSymbol(calleeName) ||
+        !ctx.request.symbolTable.FindTypeSymbolsByShortName(utils::LastScopeSegment(qualifier)).empty())
+    {
+        return;
+    }
+    const auto& ruleIndex = ctx.request.GetRuleIndex();
+    bool qualifierIsNamespace = false;
+    for (const std::string& candidate : QualifierCandidates(qualifier, globalQualified, call, cctx))
+    {
+        const auto found = ruleIndex.byNamespace.find(candidate);
+        if (found == ruleIndex.byNamespace.end())
+        {
+            continue;
+        }
+        qualifierIsNamespace = true;
+        if (found->second.allMemberNames.contains(member))
+        {
+            return;
+        }
+    }
+    if (qualifierIsNamespace)
+    {
+        ctx.EmitAtRange(call.calleeRange, "as-err-undefined-identifier", calleeName, DiagnosticSeverity::Error);
+    }
+}
+
 void CheckCallExpression(const CallSiteFact& call, const NamespaceCallCheckContext& cctx, DiagnosticContext& ctx)
 {
     std::string_view calleeName = call.calleeText;
@@ -201,6 +282,7 @@ void CheckCallExpression(const CallSiteFact& call, const NamespaceCallCheckConte
 
     if (utils::ContainsScopeSeparator(calleeName))
     {
+        CheckQualifiedCallee(calleeName, utils::HasLeadingGlobalPrefix(call.calleeText), call, cctx, ctx);
         return;
     }
 

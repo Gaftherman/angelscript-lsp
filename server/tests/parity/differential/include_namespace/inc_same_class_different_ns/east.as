@@ -1,0 +1,3 @@
+namespace East {
+    class BeaconTower {}
+}

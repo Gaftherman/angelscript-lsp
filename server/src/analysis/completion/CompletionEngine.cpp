@@ -16,6 +16,7 @@
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
+#include <cctype>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,6 +26,31 @@
 namespace angel_lsp::analysis::completion
 {
 
+/**
+ * @brief Tells whether the word being typed is introduced by a bare `::`, which names the global scope.
+ * @param[in] prefix Text of the line before the cursor.
+ * @param[in] queryPrefix Identifier fragment at the end of `prefix`.
+ * @return True for `::Na`; false for `A::Na`, `A:::Na` and plain words.
+ */
+static bool IsGlobalScopeQualified(std::string_view prefix, std::string_view queryPrefix)
+{
+    if (queryPrefix.size() > prefix.size())
+    {
+        return false;
+    }
+    const size_t start = prefix.size() - queryPrefix.size();
+    if (start < 2 || prefix.substr(start - 2, 2) != "::")
+    {
+        return false;
+    }
+    if (start == 2)
+    {
+        return true;
+    }
+    const char before = prefix[start - 3];
+    return before != ':' && std::isalnum(static_cast<unsigned char>(before)) == 0 && before != '_';
+}
+
 void CollectUnscopedSymbols(const CompletionQuery& request, const analysis::Scope* innermostScope,
                             std::string_view prefix, CompletionCollector& collector)
 {
@@ -32,9 +58,15 @@ void CollectUnscopedSymbols(const CompletionQuery& request, const analysis::Scop
     const bool accessorsAreProperties = accessorMode >= 2;
     const bool accessorKeywordRequired = accessorMode == 3;
 
+    const std::string_view queryPrefix = ExtractQueryPrefix(prefix);
+    if (IsGlobalScopeQualified(prefix, queryPrefix))
+    {
+        // `::Name` skips locals, class members and enclosing namespaces: only the global scope is named.
+        CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, queryPrefix, collector);
+        return;
+    }
     CollectScopeDefinitions(innermostScope, collector);
     CollectEnclosingClassMembers(collector);
-    const std::string_view queryPrefix = ExtractQueryPrefix(prefix);
     CollectVisibleNamespaceSymbols(innermostScope, queryPrefix, collector);
     CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, queryPrefix, collector);
     CollectDeclarationSnippets(collector);

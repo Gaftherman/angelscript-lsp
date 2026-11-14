@@ -74,6 +74,22 @@ namespace
     std::vector<OracleLineEntry> g_lineEntries;
     bool g_sawError = false;
     bool g_dumpLines = false;
+    bool g_noMixinProbe = false;
+    /// Lines in the script as written; messages beyond it come from appended probe classes.
+    int g_sourceLineCount = 0;
+
+    int CountLines(const std::string &text)
+    {
+        int lines = 1;
+        for (const char c : text)
+        {
+            if (c == '\n')
+            {
+                ++lines;
+            }
+        }
+        return lines;
+    }
 
     void MessageCallback(const asSMessageInfo *info, void *)
     {
@@ -281,8 +297,9 @@ namespace
         for (size_t i = 0; i < g_messages.size(); ++i)
         {
             const Message &m = g_messages[i];
-            std::printf("    { \"type\": \"%s\", \"row\": %d, \"col\": %d, \"message\": \"%s\" }%s\n",
-                        m.type.c_str(), m.row, m.col, JsonEscape(m.text).c_str(),
+            const bool probeOnly = g_sourceLineCount > 0 && m.row > g_sourceLineCount;
+            std::printf("    { \"type\": \"%s\", \"row\": %d, \"col\": %d, \"probeOnly\": %s, \"message\": \"%s\" }%s\n",
+                        m.type.c_str(), m.row, m.col, probeOnly ? "true" : "false", JsonEscape(m.text).c_str(),
                         i + 1 < g_messages.size() ? "," : "");
         }
         std::printf("  ]");
@@ -394,6 +411,10 @@ int main(int argc, char **argv)
             else if (std::strcmp(argv[i], "--json") == 0)
             {
                 asJson = true;
+            }
+            else if (std::strcmp(argv[i], "--no-mixin-probe") == 0)
+            {
+                g_noMixinProbe = true;
             }
             else if (std::strncmp(argv[i], "--load-config=", 14) == 0)
             {
@@ -775,7 +796,9 @@ int main(int argc, char **argv)
     }
 
     // The section keeps the script's own path as its name so diagnostics point at the real file.
-    result = builder.AddSectionFromMemory(scriptPath, WithMixinProbes(source).c_str());
+    g_sourceLineCount = CountLines(source);
+    result = builder.AddSectionFromMemory(scriptPath,
+                                          (g_noMixinProbe ? source : WithMixinProbes(source)).c_str());
     if (result < 0)
     {
         // The builder failing is not always an unreadable file, and conflating the two hid a whole

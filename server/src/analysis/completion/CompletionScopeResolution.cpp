@@ -211,7 +211,7 @@ static void AddContainerMembers(std::string_view container, std::string_view qua
         }
         for (const auto& sym : *symList)
         {
-            if (sym.type == analysis::SymbolType::CallReference)
+            if (sym.type == analysis::SymbolType::CallReference || !IsSymbolVisibleToModule(sym, collector))
             {
                 continue;
             }

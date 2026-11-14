@@ -381,6 +381,15 @@ void CollectEnclosingClassMembers(CompletionCollector& collector);
 std::string_view ExtractQueryPrefix(std::string_view linePrefix);
 
 /**
+ * @brief Tells whether a symbol is declared in a file the completing document can see.
+ *        Visible files are the document's module (itself plus its `#include` closure) and predefined files.
+ * @param[in] sym Candidate symbol.
+ * @param[in] collector Completion collector context; its request carries the module file set.
+ * @return True when the symbol may be offered; always true when the request has no module file set.
+ */
+bool IsSymbolVisibleToModule(const analysis::Symbol& sym, const CompletionCollector& collector);
+
+/**
  * @brief Collects all global scope symbols from the symbol table.
  * @param[in] accessorsAreProperties Whether property accessors are exposed.
  * @param[in] accessorKeywordRequired Whether property keyword is required.

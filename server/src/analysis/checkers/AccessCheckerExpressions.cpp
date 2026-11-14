@@ -3,6 +3,7 @@
 #include "analysis/index/MemberAccessFacts.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "utils/ScopedNameUtils.h"
 
 #include <string>
 #include <string_view>
@@ -17,6 +18,39 @@ static bool DerivesFrom(std::string_view derived, std::string_view base, const S
 }
 
 /**
+ * @brief Qualifies a type name written relative to the enclosing namespaces.
+ *
+ * A local declared as `S s;` inside `namespace N` carries the type text `S`, while the symbol table
+ * knows the class as `N::S`. The member lookup that follows needs the table's spelling.
+ *
+ * @param[in] owner Type name as resolved from the expression; may be unqualified.
+ * @param[in] scope Innermost lexical scope of the access.
+ * @param[in] table Symbol table to probe.
+ * @return The name qualified by the nearest enclosing namespace that declares it, or `owner` unchanged.
+ */
+static std::string QualifyOwnerType(std::string owner, const Scope* scope, const SymbolTable& table)
+{
+    if (owner.empty() || table.FindSymbolsPtr(owner))
+    {
+        return owner;
+    }
+    std::string_view enclosing;
+    for (const Scope* current = scope; current != nullptr && enclosing.empty(); current = current->parent)
+    {
+        enclosing = current->GetEnclosingNamespace();
+    }
+    for (; !enclosing.empty(); enclosing = utils::ParentScopeView(enclosing))
+    {
+        std::string candidate = utils::JoinScopedName(enclosing, owner);
+        if (table.FindSymbolsPtr(candidate))
+        {
+            return candidate;
+        }
+    }
+    return owner;
+}
+
+/**
  * @brief Resolves the owning type of a member access object expression.
  *
  * @param[in] objectBytes Byte span of the object expression.
@@ -28,7 +62,9 @@ static std::string ResolveObjectOwnerType(IndexedByteRange objectBytes, const Sc
                                           const DiagnosticContext& ctx)
 {
     const std::string_view arrayContainer = ctx.request.GetEffectiveArrayTypeName();
-    return MemberOwnerType(ResolveExpressionType(objectBytes, ExpressionTypeContext(scope, ctx)), arrayContainer);
+    std::string owner =
+        MemberOwnerType(ResolveExpressionType(objectBytes, ExpressionTypeContext(scope, ctx)), arrayContainer);
+    return QualifyOwnerType(std::move(owner), scope, ctx.request.symbolTable);
 }
 
 /**

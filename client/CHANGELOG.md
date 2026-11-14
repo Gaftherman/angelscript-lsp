@@ -7,9 +7,14 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ## [Unreleased]
 
 ### Added
+- `angelscript_oracle --no-mixin-probe` skips the synthetic mixin subclasses, and its JSON marks messages that come from them with `probeOnly`.
+- Differential corpus (`server/tests/parity/differential`) replayed against the MCP bridge by `DifferentialCorpusTest`, and `server/scripts/differential-validate.py`, which lets the real compiler confirm each case before the server is compared with it.
 - `angel_lsp --mcp [--mcp-root <dir>]` serves an MCP bridge over stdio. Tools: `open_document`, `apply_edit`, `replace_document`, `diagnostics`, `hover`, `completion`, `signature_help`, `definition`, `document_symbols`; they drive an in-process language server like an editor would.
 
 ### Fixed
+- Completion no longer offers global symbols declared in workspace files the document does not `#include`, after `X::`, in a base-class list, or at the top level. `::Name` now offers only global symbols, not locals.
+- Member access on a local whose type is declared in the enclosing namespace (`namespace N { class S {} void f() { S s; s.x; } }`) is now checked: unknown members and private access are reported.
+- `A::missing()` is reported as an undefined identifier when `A` is a namespace that declares no `missing`.
 - MCP bridge: `diagnostics` retries only when the server answers ServerCancelled, tools on a document that was never opened fail at once, `completion` is ordered by `sortText` and reports `truncated`, `open_document` reads the file when `text` is null, and `initialize` answers with a protocol version the bridge supports.
 
 ### Removed

@@ -1,0 +1,3 @@
+namespace Forest {
+    class CedarTrunk {}
+}

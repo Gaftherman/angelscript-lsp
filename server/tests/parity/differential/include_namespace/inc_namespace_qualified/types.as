@@ -1,0 +1,3 @@
+namespace Alpine {
+    class FrostPeak {}
+}

@@ -166,6 +166,10 @@ static void CompleteInheritanceUnderQualifier(const InheritanceContext& ctx, Com
         }
         for (const auto& sym : *symList)
         {
+            if (!IsSymbolVisibleToModule(sym, collector))
+            {
+                continue;
+            }
             if (sym.type == analysis::SymbolType::Namespace)
             {
                 SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
@@ -201,6 +205,10 @@ static void CompleteGlobalInheritanceTypes(const InheritanceContext& ctx, Comple
     collector.request.symbolTable.ForEachGlobalTypeSymbol(
         [&](const analysis::Symbol& sym)
         {
+            if (!IsSymbolVisibleToModule(sym, collector))
+            {
+                return;
+            }
             if (sym.type == analysis::SymbolType::Interface && sym.name != ctx.declaringClassName)
             {
                 SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);

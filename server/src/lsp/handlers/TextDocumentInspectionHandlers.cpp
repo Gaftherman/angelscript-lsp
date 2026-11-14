@@ -46,6 +46,8 @@ Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Comple
                                              &m_config,
                                              m_sessionCoordinator->GetClientSupportsSnippets()};
 
+    const TransparentStringSet moduleFileUris = ComputeModuleClosureUris(doc->uri);
+    cr.moduleFileUris = &moduleFileUris;
     cr.documentPath = documentPath;
     cr.implicitExtension = ImplicitIncludeExtension();
     cr.listIncludeCandidates = [this]() { return IncludableFiles(); };

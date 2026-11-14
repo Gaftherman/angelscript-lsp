@@ -1,0 +1,3 @@
+namespace Delta {
+    class StreamFlow {}
+}
