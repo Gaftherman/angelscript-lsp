@@ -2,10 +2,14 @@
 
 **[English](README.md)** | **[Español](README.es.md)**
 
+[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Gaftherman.angelscript-gaftherman.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
+[![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Gaftherman.angelscript-gaftherman.svg?color=success)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/Gaftherman)
+
 Angelscript adds autocomplete, hover documentation, error checks, and code navigation for AngelScript (`.as`) files in VS Code.
 
-![Hover documentation on a method call](images/hover.gif)
-*Rest the cursor on a function or method call to see its signature and doc comment.*
+<p align="center"><img src="images/hover.webp" alt="Hover documentation on a method call" width="720"><br><em>Rest the cursor on a function or method call to see its signature and doc comment.</em></p>
 
 ## Get started
 
@@ -17,9 +21,9 @@ Angelscript adds autocomplete, hover documentation, error checks, and code navig
 
 | Feature | What you see | Image |
 | :--- | :--- | :--- |
-| Hover | Watch the signature and doc comment pop up when the cursor rests on a symbol. | ![Hover documentation](images/hover.gif) |
-| Autocomplete | Watch matching methods and fields appear as you type after `.` or `::`. | ![Member autocomplete](images/completion.gif) |
-| Diagnostics | Watch red and yellow squiggles appear on typos and unused variables as you type. | ![Diagnostics while typing](images/diagnostics.gif) |
+| Hover | Watch the signature and doc comment pop up when the cursor rests on a symbol. | ![Hover documentation](images/hover.webp) |
+| Autocomplete | Watch matching methods and fields appear as you type after `.` or `::`. | ![Member autocomplete](images/completion.webp) |
+| Diagnostics | Watch red and yellow squiggles appear on typos and unused variables as you type. | ![Diagnostics while typing](images/diagnostics.webp) |
 | Signature help | Parameter names and types stay visible while you fill in a function call. | ![Signature help](images/signature-help.png) |
 | Outline | The Outline panel lists every namespace, class, field, and method in the file. | ![Outline panel](images/outline.png) |
 
@@ -27,26 +31,23 @@ Angelscript adds autocomplete, hover documentation, error checks, and code navig
 
 Your engine adds built-in classes, functions, and globals that are not defined in your `.as` scripts. You can list them in an `.as.predefined` file, which is a file that lists what the game gives to scripts (often called a stub). With that file in `${workspaceFolder}`, autocomplete and hover recognize your game's API without false errors.
 
-![Predefined game API in autocomplete](images/predefined.gif)
-*Watch the editor recognize game types and methods as soon as the `.as.predefined` file is loaded.*
+<p align="center"><img src="images/predefined.webp" alt="Predefined game API in autocomplete" width="720"><br><em>Watch the editor recognize game types and methods as soon as the `.as.predefined` file is loaded.</em></p>
 
-![Example .as.predefined file](images/predefined-file.png)
+<p align="center"><img src="images/predefined-file.png" alt="Example .as.predefined file" width="720"></p>
 
 ## Add your own rules
 
 A `*.angelscript.rules.json` file lets your team set engine options and add its own checks. For example, you can warn when a type is stored in a class field. Put the file in `${workspaceFolder}` and the editor loads it by itself.
 
-![Custom engine rules in action](images/rules.gif)
-*Watch a custom rule flag a disallowed field type right inside the editor.*
+<p align="center"><img src="images/rules.webp" alt="Custom engine rules in action" width="720"><br><em>Watch a custom rule flag a disallowed field type right inside the editor.</em></p>
 
-![Example .angelscript.rules.json file](images/rules-file.png)
+<p align="center"><img src="images/rules-file.png" alt="Example .angelscript.rules.json file" width="720"></p>
 
 ## Match your engine
 
 Each game configures AngelScript with its own language rules, such as whether `foreach` loops or multi-line strings are valid. You can match your game's setup with the `angelscript.engine.*` settings in VS Code. Changing an option updates the editor checks right away.
 
-![Engine option changing editor checks](images/engine-options.gif)
-*Watch an error appear or clear as an engine option changes in settings.*
+<p align="center"><img src="images/engine-options.webp" alt="Engine option changing editor checks" width="720"><br><em>Watch an error appear or clear as an engine option changes in settings.</em></p>
 
 ## Documentation
 
