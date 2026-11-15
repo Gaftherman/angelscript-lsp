@@ -360,7 +360,7 @@
         },
         {
           "name": "entity.name.type.class.angelscript",
-          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b(?=\\s*(?:<|>|::|&|@|\\[\\s*\\]|\\s+[A-Za-z_]))"
         }
       ]
     },

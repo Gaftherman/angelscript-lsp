@@ -19,6 +19,23 @@
 namespace angel_lsp::analysis
 {
 
+/**
+ * @brief Tells whether the identifier under the query is written as `Class::member` for a class or interface.
+ * @param[in] query Definition query carrying the scoped identifier text.
+ * @return True when the qualifier names a class or interface; namespaces and enums keep their own resolution.
+ */
+static bool IsClassQualified(const DefinitionQuery& query)
+{
+    if (!utils::ContainsScopeSeparator(query.scopedIdentifier))
+    {
+        return false;
+    }
+    const std::string_view qualifier = utils::SplitScopedName(query.scopedIdentifier).first;
+    const auto symbols = query.symbolTable.FindSymbolsPtr(qualifier);
+    return symbols && std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
+                                  { return sym.type == SymbolType::Class || sym.type == SymbolType::Interface; });
+}
+
 static std::vector<Symbol> TryResolveOverriddenMethod(std::string_view nodeText, const Scope* innerScope,
                                                       const DefinitionQuery& query)
 {
@@ -92,14 +109,14 @@ DefinitionTargetResult ResolveDefinitionTarget(const DefinitionQuery& query)
 
     std::string_view nodeText = query.identifier;
 
-    result.symbols = TryResolveThisKeyword(nodeText, query);
+    auto rootScope = query.scopeIndex.GetRoot(query.uri);
+    const Scope* innerScope = rootScope ? FindInnermostScope(rootScope.get(), query.line, query.character) : nullptr;
+
+    result.symbols = TryResolveThisKeyword(nodeText, innerScope, query);
     if (!result.symbols.empty())
     {
         return result;
     }
-
-    auto rootScope = query.scopeIndex.GetRoot(query.uri);
-    const Scope* innerScope = rootScope ? FindInnermostScope(rootScope.get(), query.line, query.character) : nullptr;
 
     result.symbols = TryResolveOverriddenMethod(nodeText, innerScope, query);
     if (!result.symbols.empty())
@@ -112,6 +129,16 @@ DefinitionTargetResult ResolveDefinitionTarget(const DefinitionQuery& query)
         result.localRange = *localRange;
         result.localUri = query.uri;
         return result;
+    }
+
+    if (IsClassQualified(query))
+    {
+        // `Derived::Inherited` names the ancestor's member, not the same-named member of the enclosing class.
+        result.symbols = TryResolveScopedIdentifier(query);
+        if (!result.symbols.empty())
+        {
+            return result;
+        }
     }
 
     auto resolveReq = MakeTargetRequest(query.uri, query.sourceCode, TargetPosition{query.line, query.character},

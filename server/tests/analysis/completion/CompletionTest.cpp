@@ -1401,6 +1401,22 @@ TEST_CASE("Completion - Single colon suppression vs double colon trigger")
     CHECK(HasItem(doubleItems, fnName));
 }
 
+TEST_CASE("Completion - Derived:: offers the members its ancestors declare")
+{
+    const std::string baseClass = test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string derived = test::GenerateRandomSymbolName("MeleeWeapon");
+    const std::string inherited = test::GenerateRandomSymbolName("Holster");
+    const std::string own = test::GenerateRandomSymbolName("Swing");
+    const std::string code = "class " + baseClass + " {\n    void " + inherited + "() {}\n}\nclass " + derived + " : " +
+                             baseClass + " {\n    void " + own + "() {}\n    void Run() {\n        " + derived +
+                             "::\n    }\n}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(6, static_cast<uint32_t>(8 + derived.size() + 2));
+    CHECK(HasItem(items, own));
+    CHECK(HasItem(items, inherited));
+}
+
 TEST_CASE("Completion - Compound namespace scope trigger")
 {
     const std::string nsA = test::GenerateRandomSymbolName("RootNS");

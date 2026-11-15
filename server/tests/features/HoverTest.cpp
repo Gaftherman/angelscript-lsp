@@ -641,6 +641,44 @@ TEST_CASE("HoverHandler - A property backed by accessors is described")
     CHECK(text.find("get_Health") != std::string::npos);
 }
 
+TEST_CASE("HoverHandler - A bare name resolving to an inherited get_ accessor is described")
+{
+    const std::string cfgClass = test::GenerateRandomSymbolName("Cfg");
+    const std::string baseClass = test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string derivedClass = test::GenerateRandomSymbolName("MeleeWeapon");
+    const std::string propName = test::GenerateRandomSymbolName("config");
+    const std::string library = "class " + cfgClass +
+                                " {\n"
+                                "    int Cool() { return 1; }\n"
+                                "}\n"
+                                "abstract class " +
+                                baseClass +
+                                " {\n"
+                                "    " +
+                                cfgClass + "@ get_" + propName +
+                                "() { return null; }\n"
+                                "}\n";
+    const std::string main = "abstract class " + derivedClass + " : " + baseClass +
+                             " {\n"
+                             "    int Run() {\n"
+                             "        return " +
+                             propName +
+                             ".Cool();\n"
+                             "    }\n"
+                             "}\n";
+
+    TwoFileEnvironment env(library, main);
+    const size_t at = main.find(propName, main.find("return"));
+    const size_t lineStart = main.rfind('\n', at) + 1;
+    auto hover = env.HoverAt(2, static_cast<uint32_t>(at - lineStart) + 1);
+
+    REQUIRE(hover.has_value());
+    const std::string& text = std::get<lsp::MarkupContent>(hover->contents).value;
+    INFO(text);
+    CHECK(text.find("get_" + propName) != std::string::npos);
+    CHECK(text.find(cfgClass) != std::string::npos);
+}
+
 // =====================================================================================
 // Hovering an `#include`.
 //

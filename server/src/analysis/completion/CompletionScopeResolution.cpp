@@ -2,6 +2,7 @@
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/index/CompletionFacts.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/CompletionReceiverResolution.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -239,6 +240,13 @@ static void CollectContainerMembersUnderQualifier(std::string_view qualifier, Co
     }
 
     AddContainerMembers(qualifier, qualifier, ruleIndex.get(), collector);
+    for (const auto& ancestor : analysis::GetInheritedTypeHierarchy(qualifier, collector.request.symbolTable))
+    {
+        if (ancestor != qualifier)
+        {
+            AddContainerMembers(ancestor, ancestor, ruleIndex.get(), collector);
+        }
+    }
     if (!utils::ContainsScopeSeparator(qualifier))
     {
         auto qit = ruleIndex->qualifiedTypesByShortName.find(qualifier);

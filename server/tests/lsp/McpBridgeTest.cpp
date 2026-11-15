@@ -283,6 +283,35 @@ TEST_SUITE("lsp/McpBridge")
               full.object().get("items").array().front().object().get("label").string());
     }
 
+    TEST_CASE("McpBridge - Normal - warnings survive an edit that fixes an error on another line")
+    {
+        angel_lsp::test::McpTestSession session;
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("run");
+        const std::string unknownType = angel_lsp::test::GenerateRandomSymbolName("Missing");
+        session.Call("open_document", angel_lsp::test::McpArgs("edited.as", "void " + fn + "() {\n  int a = 1;\n  " +
+                                                                                unknownType + " b;\n}\n"));
+        session.Call("diagnostics", angel_lsp::test::McpPathArgs("edited.as"));
+
+        lsp::json::Value edit = angel_lsp::test::McpPathArgs("edited.as");
+        edit.object()["startLine"] = 2;
+        edit.object()["startCharacter"] = 2;
+        edit.object()["endLine"] = 2;
+        edit.object()["endCharacter"] = static_cast<int>(2 + unknownType.size() + 3);
+        edit.object()["text"] = std::string("int b = a;");
+        session.Call("apply_edit", std::move(edit));
+        const int incremental = session.Call("diagnostics", angel_lsp::test::McpPathArgs("edited.as"));
+
+        session.Call("open_document",
+                     angel_lsp::test::McpArgs("fresh.as", "void " + fn + "() {\n  int a = 1;\n  int b = a;\n}\n"));
+        const int fresh = session.Call("diagnostics", angel_lsp::test::McpPathArgs("fresh.as"));
+        const auto replies = session.Run();
+
+        const auto a = angel_lsp::test::McpPayload(replies.at(incremental));
+        const auto b = angel_lsp::test::McpPayload(replies.at(fresh));
+        REQUIRE_FALSE(b.array().empty());
+        CHECK(lsp::json::stringify(a) == lsp::json::stringify(b));
+    }
+
     TEST_CASE("McpBridge - Normal - a run of incremental edits matches the document opened with the final text")
     {
         angel_lsp::test::McpTestSession session;

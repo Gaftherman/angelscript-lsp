@@ -1357,6 +1357,90 @@ TEST_SUITE("features/Definition")
         CHECK((*def)[0].range.start.line == declPos.line);
     }
 
+    TEST_CASE("Definition - Inherited get_ accessor reached through this., bare name and this keyword")
+    {
+        const std::string cfgClass = angel_lsp::test::GenerateRandomSymbolName("Cfg");
+        const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+        const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("MeleeWeapon");
+        const std::string propName = angel_lsp::test::GenerateRandomSymbolName("owner");
+        const std::string baseUri = "file:///scripts/base_" + propName + ".as";
+        const std::string userUri = "file:///scripts/derived_" + propName + ".as";
+        const std::string baseCode = "class " + cfgClass +
+                                     " {\n"
+                                     "    int Cool() { return 1; }\n"
+                                     "}\n"
+                                     "abstract class " +
+                                     baseClass +
+                                     " {\n"
+                                     "    " +
+                                     cfgClass + "@ get_" + propName +
+                                     "() { return null; }\n"
+                                     "}\n";
+        const std::string code = "abstract class " + derivedClass + " : " + baseClass +
+                                 " {\n"
+                                 "    int Run() {\n"
+                                 "        " +
+                                 propName +
+                                 ".Cool();\n"
+                                 "        " +
+                                 cfgClass + "@ viaThis = this." + propName +
+                                 ";\n"
+                                 "        return 0;\n"
+                                 "    }\n"
+                                 "}\n";
+
+        TestEnvironment env(code, userUri);
+        env.AddFile(baseUri, baseCode);
+        const auto accessorDecl = FindPos(baseCode, "get_" + propName);
+
+        // Good: `this.<prop>` jumps to the get_ accessor declared in the base class.
+        const size_t viaThisPos = code.find("this." + propName) + 5;
+        const auto viaThis = FindPos(code, propName, viaThisPos);
+        auto qualified = env.DefAt(viaThis.line, viaThis.character);
+        REQUIRE(qualified.has_value());
+        REQUIRE(!qualified->empty());
+        CHECK((*qualified)[0].uri.toString() == baseUri);
+        CHECK((*qualified)[0].range.start.line == accessorDecl.line);
+
+        // Good: the bare `<prop>` inside a derived method reaches the same accessor.
+        const auto bare = FindPos(code, propName, code.find("Run()"));
+        auto bareDef = env.DefAt(bare.line, bare.character);
+        REQUIRE(bareDef.has_value());
+        REQUIRE(!bareDef->empty());
+        CHECK((*bareDef)[0].uri.toString() == baseUri);
+        CHECK((*bareDef)[0].range.start.line == accessorDecl.line);
+
+        // Good: `this` jumps to the enclosing class declaration.
+        const auto thisKw = FindPos(code, "this.");
+        auto thisDef = env.DefAt(thisKw.line, thisKw.character + 1);
+        REQUIRE(thisDef.has_value());
+        REQUIRE(!thisDef->empty());
+        CHECK((*thisDef)[0].uri.toString() == userUri);
+        CHECK((*thisDef)[0].range.start.line == 0);
+    }
+
+    TEST_CASE("Definition - Derived::Inherited resolves to the ancestor that declares the method")
+    {
+        const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+        const std::string midClass = angel_lsp::test::GenerateRandomSymbolName("MeleeWeapon");
+        const std::string leafClass = angel_lsp::test::GenerateRandomSymbolName("ChargeWeapon");
+        const std::string method = angel_lsp::test::GenerateRandomSymbolName("Holster");
+        const std::string code = "class " + baseClass + " {\n    void " + method + "(int skip) {}\n}\nclass " +
+                                 midClass + " : " + baseClass + " {\n}\nclass " + leafClass + " : " + midClass +
+                                 " {\n    void " + method + "(int skip) {\n        " + midClass + "::" + method +
+                                 "(skip);\n    }\n}\n";
+
+        TestEnvironment env(code);
+        const auto declPos = FindPos(code, method);
+        const size_t callAt = code.find(midClass + "::" + method);
+        const auto usePos = FindPos(code, method, callAt);
+
+        auto def = env.DefAt(usePos.line, usePos.character);
+        REQUIRE(def.has_value());
+        REQUIRE(!def->empty());
+        CHECK((*def)[0].range.start.line == declPos.line);
+    }
+
     TEST_CASE("Definition - Property declared in a base two levels up reached through this.")
     {
         const std::string grandBase = angel_lsp::test::GenerateRandomSymbolName("GrandEntity");

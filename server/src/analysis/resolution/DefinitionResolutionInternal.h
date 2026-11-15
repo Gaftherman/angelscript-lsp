@@ -57,10 +57,12 @@ void DisambiguateCandidateContainers(std::vector<Symbol>& symbols, const Scope* 
 /**
  * @brief Attempts to resolve the 'this' keyword to its enclosing class symbol.
  * @param[in] nodeText Identifier text at query position.
+ * @param[in] innerScope Innermost lexical scope at the query position; its enclosing class is tried first.
  * @param[in] query Definition query context.
  * @return Enclosing class symbols or empty vector.
  */
-[[nodiscard]] std::vector<Symbol> TryResolveThisKeyword(std::string_view nodeText, const DefinitionQuery& query);
+[[nodiscard]] std::vector<Symbol> TryResolveThisKeyword(std::string_view nodeText, const Scope* innerScope,
+                                                        const DefinitionQuery& query);
 
 /**
  * @brief Resolves base class delegate property symbols (e.g. BaseClass).

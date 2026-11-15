@@ -150,6 +150,128 @@ TEST_SUITE("features/SignatureHelp")
         CHECK(sig->activeParameter.value().value() == 0u);
     }
 
+    /** Offsets of the character just after @p needle in @p code, as a zero-based line and column. */
+    static lsp::Position PositionAfter(const std::string& code, const std::string& needle, size_t from = 0)
+    {
+        const size_t pos = code.find(needle, from) + needle.size();
+        const size_t lineStart = code.rfind('\n', pos - 1) + 1;
+        uint32_t line = 0;
+        for (size_t i = 0; i < pos; ++i)
+        {
+            line += code[i] == '\n' ? 1u : 0u;
+        }
+        return lsp::Position{line, static_cast<uint32_t>(pos - lineStart)};
+    }
+
+    TEST_CASE("SignatureHelpHandler - Inherited methods, accessor receivers and base-qualified calls")
+    {
+        const std::string tool = angel_lsp::test::GenerateRandomSymbolName("Tool");
+        const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+        const std::string derived = angel_lsp::test::GenerateRandomSymbolName("MeleeWeapon");
+        const std::string prop = angel_lsp::test::GenerateRandomSymbolName("owner");
+        const std::string helper = angel_lsp::test::GenerateRandomSymbolName("PlaySound");
+        const std::string toolMethod = angel_lsp::test::GenerateRandomSymbolName("Cool");
+        const std::string code =
+            "class " + tool + " {\n    int " + toolMethod + "(int amount, bool miss) { return 0; }\n}\nclass " +
+            baseClass + " {\n    " + tool + "@ get_" + prop + "() { return null; }\n    void " + helper +
+            "(string name, float volume) {}\n    void Holster(int skip) {}\n}\nclass " + derived + " : " + baseClass +
+            " {\n    void Holster(int skip) {\n        " + helper + "(\"x\", 1.0);\n        this." + prop + "." +
+            toolMethod + "(1, true);\n        " + prop + "." + toolMethod + "(1, true);\n        " + baseClass +
+            "::Holster(0);\n    }\n}\n";
+
+        TestEnvironment env(code);
+        const size_t body = code.find("class " + derived);
+        auto at = [&](const std::string& needle)
+        {
+            const auto pos = PositionAfter(code, needle, body);
+            return env.SigHelpAt(pos.line, pos.character);
+        };
+
+        // Good: a call to a method the enclosing class inherits.
+        auto inherited = at(helper + "(");
+        REQUIRE(inherited.has_value());
+        REQUIRE(!inherited->signatures.empty());
+        CHECK(inherited->signatures[0].label.find(helper) != std::string::npos);
+
+        // Good: `this.<accessor>.Method(` and the bare `<accessor>.Method(` read the accessor's return type.
+        auto chained = at("this." + prop + "." + toolMethod + "(");
+        REQUIRE(chained.has_value());
+        REQUIRE(!chained->signatures.empty());
+        CHECK(chained->signatures[0].label.find(toolMethod) != std::string::npos);
+        auto bare = at("        " + prop + "." + toolMethod + "(");
+        REQUIRE(bare.has_value());
+        REQUIRE(!bare->signatures.empty());
+
+        // Good: `Base::Method(` resolves in the base class.
+        auto qualified = at(baseClass + "::Holster(");
+        REQUIRE(qualified.has_value());
+        REQUIRE(!qualified->signatures.empty());
+        CHECK(qualified->signatures[0].label.find("Holster") != std::string::npos);
+    }
+
+    TEST_CASE("SignatureHelpHandler - Chained namespace field and funcdef field receivers")
+    {
+        const std::string ns = angel_lsp::test::GenerateRandomSymbolName("Logger");
+        const std::string sink = angel_lsp::test::GenerateRandomSymbolName("Sink");
+        const std::string holder = angel_lsp::test::GenerateRandomSymbolName("Holder");
+        const std::string callback = angel_lsp::test::GenerateRandomSymbolName("Callback");
+        const std::string field = angel_lsp::test::GenerateRandomSymbolName("info");
+        const std::string method = angel_lsp::test::GenerateRandomSymbolName("print");
+        const std::string code = "namespace " + ns + " {\n    class " + sink + " {\n        void " + method +
+                                 "(string text) {}\n    }\n    class " + holder + " {\n        " + sink + "@ " + field +
+                                 ";\n    }\n}\nfuncdef void " + callback + "(int value);\nclass Owner {\n    " +
+                                 callback + "@ Lambda;\n}\nvoid main() {\n    " + ns + "::" + holder + " h;\n    h." +
+                                 field + "." + method + "(\"x\");\n    Owner o;\n    o.Lambda(1);\n}\n";
+
+        TestEnvironment env(code);
+        auto at = [&](const std::string& needle)
+        {
+            const auto pos = PositionAfter(code, needle);
+            return env.SigHelpAt(pos.line, pos.character);
+        };
+
+        auto chained = at("h." + field + "." + method + "(");
+        REQUIRE(chained.has_value());
+        REQUIRE(!chained->signatures.empty());
+        CHECK(chained->signatures[0].label.find(method) != std::string::npos);
+
+        auto viaFuncdef = at("o.Lambda(");
+        REQUIRE(viaFuncdef.has_value());
+        REQUIRE(!viaFuncdef->signatures.empty());
+        CHECK(viaFuncdef->signatures[0].label.find("int value") != std::string::npos);
+    }
+
+    TEST_CASE("SignatureHelpHandler - Auto-handle receivers and namespace-qualified constructors")
+    {
+        const std::string ns = angel_lsp::test::GenerateRandomSymbolName("Shop");
+        const std::string item = angel_lsp::test::GenerateRandomSymbolName("Item");
+        const std::string info = angel_lsp::test::GenerateRandomSymbolName("Info");
+        const std::string setter = angel_lsp::test::GenerateRandomSymbolName("SetAuthor");
+        const std::string code =
+            "class " + info + " {\n    void " + setter + "(const string &in name) {}\n}\nclass Mod {\n    " + info +
+            "@+ get_Info() { return null; }\n}\nnamespace " + ns + " {\n    class " + item + " {\n        " + item +
+            "(const string &in label, int cost) {}\n    }\n}\nvoid main() {\n    Mod m;\n    m.Info." + setter +
+            "(\"a\");\n    " + ns + "::" + item + " made(\"x\", 1);\n    auto other = " + ns + "::" + item +
+            "(\"y\", 2);\n}\n";
+
+        TestEnvironment env(code);
+        auto at = [&](const std::string& needle)
+        {
+            const auto pos = PositionAfter(code, needle);
+            return env.SigHelpAt(pos.line, pos.character);
+        };
+
+        auto viaAutoHandle = at("m.Info." + setter + "(");
+        REQUIRE(viaAutoHandle.has_value());
+        REQUIRE(!viaAutoHandle->signatures.empty());
+        CHECK(viaAutoHandle->signatures[0].label.find(setter) != std::string::npos);
+
+        auto ctor = at("= " + ns + "::" + item + "(");
+        REQUIRE(ctor.has_value());
+        REQUIRE(!ctor->signatures.empty());
+        CHECK(ctor->signatures[0].label.find("int cost") != std::string::npos);
+    }
+
     TEST_CASE("SignatureHelpHandler - Outside Function Call Returns Nullopt")
     {
         TestEnvironment env("void main() { int x = 10; }");

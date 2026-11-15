@@ -2,6 +2,7 @@
 #include "analysis/resolution/AmbiguityDetector.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/HoverResolution.h"
+#include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "utils/ScopedNameUtils.h"
@@ -91,6 +92,24 @@ void AppendEnclosingClassMethods(IndexedByteRange targetRange, std::string_view 
     }
 }
 
+std::vector<Symbol> FindEnclosingClassAccessors(IndexedByteRange targetRange, std::string_view nodeText,
+                                                const ExpressionTypeContext& ctx, bool keywordRequired)
+{
+    if (!ctx.nodeIndex)
+    {
+        return {};
+    }
+    for (const auto& c : analysis::GetEnclosingContainers(targetRange, *ctx.nodeIndex, ctx.sourceCode))
+    {
+        if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+        {
+            return FindPropertyAccessors(c.qualifiedName.empty() ? c.name : c.qualifiedName, nodeText, ctx.symbolTable,
+                                         keywordRequired);
+        }
+    }
+    return {};
+}
+
 /**
  * @brief Name lookup at the hover target: the byte-range form of `FindSymbolsInScope(name, node, ...)`.
  * @param[in] query Hover site, source text, symbol table and node index.
@@ -133,10 +152,14 @@ static void ResolveScopedMemberFallback(std::string_view scopedPrefix, const Sco
     {
         const std::string_view qName =
             qs.qualifiedName.empty() ? std::string_view(qs.name) : std::string_view(qs.qualifiedName);
-        if (const auto found = query.symbolTable.FindMemberSymbolPtr(qName, query.nodeText))
+        // `Derived::Inherited` names a member the qualifier's ancestors declare.
+        for (const auto& owner : GetInheritedTypeHierarchy(qName, query.symbolTable))
         {
-            symbols.insert(symbols.end(), found->begin(), found->end());
-            return;
+            if (const auto found = query.symbolTable.FindMemberSymbolPtr(owner, query.nodeText))
+            {
+                symbols.insert(symbols.end(), found->begin(), found->end());
+                return;
+            }
         }
     }
 }

@@ -140,6 +140,11 @@ std::vector<Symbol> ResolveClassMemberSymbols(const TargetDescriptor& target, co
             }
         }
     }
+    if (memberSyms.empty())
+    {
+        // `obj.name` can name a virtual property whose get_name()/set_name() live in this class or an ancestor.
+        memberSyms = FindPropertyAccessors(target.declaringClass, target.name, query.symbolTable, false);
+    }
     return memberSyms;
 }
 
@@ -158,6 +163,14 @@ std::vector<Symbol> TryResolveScopedIdentifier(const DefinitionQuery& query)
     }
 
     auto memberSyms = query.symbolTable.FindMemberSymbols(qualifier, memberName);
+    for (const auto& owner : GetInheritedTypeHierarchy(qualifier, query.symbolTable))
+    {
+        if (!memberSyms.empty())
+        {
+            break;
+        }
+        memberSyms = query.symbolTable.FindMemberSymbols(owner, memberName);
+    }
     if (memberSyms.empty())
     {
         memberSyms = query.symbolTable.FindSymbols(scopedName);
@@ -205,13 +218,16 @@ std::vector<Symbol> TryResolveScopedIdentifier(const DefinitionQuery& query)
     return memberSyms;
 }
 
-std::vector<Symbol> TryResolveThisKeyword(std::string_view nodeText, const DefinitionQuery& query)
+std::vector<Symbol> TryResolveThisKeyword(std::string_view nodeText, const Scope* innerScope,
+                                          const DefinitionQuery& query)
 {
     if (nodeText != "this")
     {
         return {};
     }
-    std::string enclosingClass = query.symbolTable.FindEnclosingClassName(query.uri, query.line);
+    std::string enclosingClass = (innerScope && !innerScope->GetEnclosingClass().empty())
+                                     ? std::string(innerScope->GetEnclosingClass())
+                                     : query.symbolTable.FindEnclosingClassName(query.uri, query.line);
     if (enclosingClass.empty())
     {
         return {};

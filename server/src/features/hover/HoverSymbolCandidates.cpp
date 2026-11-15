@@ -202,7 +202,19 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
         const int accessorMode = ctx.request.config ? ctx.request.config->engine.propertyAccessorMode : 2;
         if (accessorMode >= 2)
         {
-            symbols = analysis::FindGlobalPropertyAccessors(ctx.nodeText, ctx.request.symbolTable, accessorMode == 3);
+            if (!ctx.site.isQualifiedMember)
+            {
+                analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode,
+                                                        ctx.request.uri, ctx.request.nodeIndex);
+                symbols = analysis::FindEnclosingClassAccessors(
+                    analysis::IndexedByteRange{ctx.site.targetStartByte, ctx.site.targetEndByte}, ctx.nodeText, exprCtx,
+                    accessorMode == 3);
+            }
+            if (symbols.empty())
+            {
+                symbols =
+                    analysis::FindGlobalPropertyAccessors(ctx.nodeText, ctx.request.symbolTable, accessorMode == 3);
+            }
             candidates.accessorPropertyType = analysis::PropertyTypeFromAccessors(symbols);
         }
     }

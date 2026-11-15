@@ -155,6 +155,18 @@ void AppendEnclosingClassMethods(IndexedByteRange targetRange, std::string_view 
                                  const ExpressionTypeContext& ctx, std::vector<Symbol>& symbols);
 
 /**
+ * @brief Finds the `get_`/`set_` accessors that make a bare name a virtual property of the enclosing class.
+ * @param[in] targetRange Byte range of the hovered identifier, used to find its enclosing class or interface.
+ * @param[in] nodeText Bare property name as written in the script.
+ * @param[in] ctx Semantic expression context; its node index answers the container lookup.
+ * @param[in] keywordRequired True when the engine only accepts accessors declared with the `property` keyword.
+ * @return Accessors declared by the enclosing class or an ancestor, most derived first; empty when the name is not
+ * an accessor property or the target is outside any class.
+ */
+[[nodiscard]] std::vector<Symbol> FindEnclosingClassAccessors(IndexedByteRange targetRange, std::string_view nodeText,
+                                                              const ExpressionTypeContext& ctx, bool keywordRequired);
+
+/**
  * @brief Checks if a named member belongs to a class or interface hierarchy.
  * @param[in] classSym Container class symbol.
  * @param[in] memberName Target member name.

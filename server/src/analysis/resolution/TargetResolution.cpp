@@ -1107,8 +1107,14 @@ static void ResolveEnclosingClassMember(const ResolveTargetRequest& request, std
         {
             target.kind = TargetKind::ClassMember;
             target.declaringClass = cls;
-            break;
+            return;
         }
+    }
+    // A bare `config` can be the virtual property behind an inherited `get_config()`.
+    if (!analysis::FindPropertyAccessors(enclosingClass, nodeText, request.symbolTable, false).empty())
+    {
+        target.kind = TargetKind::ClassMember;
+        target.declaringClass = enclosingClass;
     }
 }
 
