@@ -68,11 +68,10 @@ project(AngelLSP VERSION ${ANGELLSP_VERSION_NUMERIC})
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# The AngelScript SDK is not linked: nothing in server/src references asIScriptEngine or any
-# other symbol from it (verified by grep), and building the whole SDK on every configure cost
-# real time for nothing. Re-add cmake/AngelScript.cmake, the include directory and the
-# AngelScriptLib link - plus the MASM language below, needed by as_callfunc_x64_msvc_asm.asm -
-# when real-compiler diagnostics are actually built.
+# The AngelScript SDK is not linked into angel_lsp_core: nothing in server/src references
+# asIScriptEngine or any other symbol from it (verified by grep), and building the whole SDK on
+# every configure cost real time for nothing. Use cmake/Oracle.cmake (-DANGELLSP_BUILD_ORACLE=ON)
+# for parity oracle builds, or wire it back if real-compiler diagnostics are ever built in-server.
 
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
