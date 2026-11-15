@@ -94,6 +94,12 @@ static void ProcessAutoDeclarator(const AutoDeclaratorFact& declarator, const Ty
         return;
     }
 
+    if (declarator.valueIsLambda)
+    {
+        ctx.EmitAtRange(value.range, "as-err-cannot-infer-lambda");
+        return;
+    }
+
     const auto rhsType = ResolveExpressionType(value.bytes, ExpressionTypeContext(scope, ctx));
 
     if (rhsType == "void")

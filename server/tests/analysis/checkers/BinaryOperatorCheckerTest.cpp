@@ -221,5 +221,70 @@ TEST_SUITE("analysis/checkers/BinaryOperatorChecker")
         auto diags = AnalyzeScriptWithStandardProfile(code);
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
+
+    TEST_CASE("Indexing - Rejects non-indexable primitive and mismatched opIndex key, accepts valid containers")
+    {
+        const std::string fnName = GenerateRandomSymbolName("TestIndex");
+        const std::string badIntCode = "void " + fnName + "() {\n    int x = 5;\n    int y = x[0];\n}\n";
+        auto badIntDiags = AnalyzeScriptWithStandardProfile(badIntCode);
+        CHECK(HasDiagnostic(badIntDiags, diagnostics::codes::TypeNotIndexable));
+
+        const std::string badKeyCode =
+            "void " + fnName + "() {\n    array<int> a = {1, 2, 3};\n    int x = a[\"0\"];\n}\n";
+        auto badKeyDiags = AnalyzeScriptWithStandardProfile(badKeyCode);
+        CHECK(HasDiagnostic(badKeyDiags, diagnostics::codes::CallNoMatchingSignature));
+
+        const std::string clsName = GenerateRandomSymbolName("NoIdx");
+        const std::string noOpClassCode =
+            "class " + clsName + " {}\nvoid " + fnName + "() {\n    " + clsName + " c;\n    int z = c[0];\n}\n";
+        CHECK(HasDiagnostic(AnalyzeScriptWithStandardProfile(noOpClassCode), diagnostics::codes::TypeNotIndexable));
+
+        const std::string okCode = "void " + fnName +
+                                   "() {\n"
+                                   "    array<int> a = {1, 2, 3};\n"
+                                   "    int x = a[0];\n"
+                                   "    string s = \"abc\";\n"
+                                   "    uint8 ch = s[1];\n"
+                                   "    dictionary d;\n"
+                                   "    d[\"k\"] = 10;\n"
+                                   "}\n";
+        auto okDiags = AnalyzeScriptWithStandardProfile(okCode);
+        CHECK_FALSE(HasDiagnostic(okDiags, diagnostics::codes::TypeNotIndexable));
+        CHECK_FALSE(HasDiagnostic(okDiags, diagnostics::codes::CallNoMatchingSignature));
+    }
+
+    TEST_CASE("BinaryOperator - Compound assignment on bool is rejected while numeric and string are accepted")
+    {
+        const std::string fnName = GenerateRandomSymbolName("TestCompoundBool");
+        const std::string badCode = "void " + fnName + "() {\n    bool b = true;\n    b += false;\n}\n";
+        auto badDiags = AnalyzeScriptWithStandardProfile(badCode);
+        CHECK(HasDiagnostic(badDiags, diagnostics::codes::NoMathConversion));
+
+        const std::string okCode =
+            "void " + fnName + "() {\n    int n = 1;\n    n += 2;\n    string s = \"a\";\n    s += \"b\";\n}\n";
+        auto okDiags = AnalyzeScriptWithStandardProfile(okCode);
+        CHECK_FALSE(HasDiagnostic(okDiags, diagnostics::codes::NoMathConversion));
+    }
+
+    TEST_CASE("BinaryOperator - Logical operators reject non-bool operands and accept bool and opImplConv")
+    {
+        const std::string fnName = GenerateRandomSymbolName("TestLogical");
+        const std::string clsName = GenerateRandomSymbolName("BoolConv");
+
+        const std::string badCode =
+            "void " + fnName + "() {\n    int a = 1;\n    int b = 2;\n    bool c = a && b;\n}\n";
+        auto badDiags = AnalyzeScriptWithStandardProfile(badCode);
+        CHECK(HasDiagnostic(badDiags, diagnostics::codes::NoImplicitConversion));
+
+        const std::string okCode = "class " + clsName + " { bool opImplConv() const { return true; } }\n" + "void " +
+                                   fnName +
+                                   "() {\n"
+                                   "    bool x = true;\n    bool y = false;\n"
+                                   "    bool r1 = x && y;\n    bool r2 = x || !y;\n    bool r3 = x ^^ y;\n"
+                                   "    " +
+                                   clsName + " obj;\n    bool r4 = obj && x;\n}\n";
+        auto okDiags = AnalyzeScriptWithStandardProfile(okCode);
+        CHECK_FALSE(HasDiagnostic(okDiags, diagnostics::codes::NoImplicitConversion));
+    }
 }
 } // namespace angel_lsp::test

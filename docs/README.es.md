@@ -34,6 +34,20 @@ A diferencia de los enfoques basados en ejecutar scripts dentro de un entorno ho
 
 ---
 
+## Capturas de pantalla
+
+| Autocompletado (`.` y `::`) | Hover con documentación Doxygen |
+| :---: | :---: |
+| ![Autocompletado de miembros sobre una instancia](../client/images/completion.png) | ![Documentación al pasar el cursor sobre una llamada](../client/images/hover.png) |
+
+| Ayuda de firma | Diagnósticos y panel de problemas |
+| :---: | :---: |
+| ![Sugerencias de parámetros dentro de una llamada](../client/images/signature-help.png) | ![Un token faltante marcado con su rango exacto](../client/images/diagnostics.png) |
+
+![Esquema de namespaces, clases y métodos](../client/images/outline.png)
+
+---
+
 ## Guía de inicio rápido
 
 ### 1. Instalación

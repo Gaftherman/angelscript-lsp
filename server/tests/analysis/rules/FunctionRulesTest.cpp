@@ -1268,4 +1268,46 @@ TEST_SUITE("analysis/rules/FunctionRules")
             CHECK(HasCode(diags, "as-hint-accessor-portability"));
         }
     }
+
+    TEST_CASE("FunctionRules - Rejects auto parameter in functions and funcdefs while accepting untyped lambdas")
+    {
+        const std::string fn1 = angel_lsp::test::GenerateRandomSymbolName("BadAutoFn");
+        const std::string fd1 = angel_lsp::test::GenerateRandomSymbolName("BadAutoFd");
+        const std::string fdOk = angel_lsp::test::GenerateRandomSymbolName("ValidFd");
+        const std::string fnOk = angel_lsp::test::GenerateRandomSymbolName("ValidFn");
+        const std::string param = angel_lsp::test::GenerateRandomSymbolName("p");
+
+        CHECK(HasCode(AnalyzeFunctionSnippet("void " + fn1 + "(auto " + param + ") {}\n"), "as-err-auto-not-allowed"));
+        CHECK(HasCode(AnalyzeFunctionSnippet("funcdef void " + fd1 + "(auto " + param + ");\n"),
+                      "as-err-auto-not-allowed"));
+
+        const std::string valid = "funcdef int " + fdOk +
+                                  "(int);\n"
+                                  "void " +
+                                  fnOk + "() { " + fdOk + "@ cb = function(x) { return x; }; }\n";
+        CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(valid), "as-err-auto-not-allowed"));
+    }
+
+    TEST_CASE("FunctionRules - override without matching base method anchors diagnostic to derived class")
+    {
+        const std::string base = angel_lsp::test::GenerateRandomSymbolName("BaseCls");
+        const std::string derived = angel_lsp::test::GenerateRandomSymbolName("DerivedCls");
+        const std::string method = angel_lsp::test::GenerateRandomSymbolName("Step");
+
+        const std::string illegal = "class " + base +
+                                    " {}\n"
+                                    "class " +
+                                    derived + " : " + base + " {\n    int " + method + "() override { return 2; }\n}\n";
+        const auto diags = AnalyzeFunctionSnippet(illegal);
+        auto it = std::find_if(diags.begin(), diags.end(),
+                               [](const Diagnostic& d) { return d.code == "as-err-override-no-base"; });
+        REQUIRE(it != diags.end());
+        CHECK(it->range.start.line == 1);
+
+        const std::string legal = "class " + base + " {\n    int " + method +
+                                  "() { return 1; }\n}\n"
+                                  "class " +
+                                  derived + " : " + base + " {\n    int " + method + "() override { return 2; }\n}\n";
+        CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(legal), "as-err-override-no-base"));
+    }
 }

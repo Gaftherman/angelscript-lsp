@@ -34,6 +34,7 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"W119", diagnostics::codes::UnusedMethod},
     {"W120", diagnostics::codes::UnusedClass},
     {"W121", diagnostics::codes::EngineCallSafety},
+    {"W122", diagnostics::codes::BinaryOperatorArity},
     // Hints
     {"W151", diagnostics::codes::AccessorDisabled},
     {"W152", diagnostics::codes::AccessorPortability},
@@ -101,7 +102,6 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"E151", diagnostics::codes::ArrayInvalidTemplate},
     {"E152", diagnostics::codes::AttributeRepeated},
     {"E153", diagnostics::codes::AutoRequiresInitializer},
-    {"E154", diagnostics::codes::BinaryOperatorArity},
     {"E155", diagnostics::codes::CannotInferNull},
     {"E156", diagnostics::codes::CannotInferVoid},
     {"E157", diagnostics::codes::CannotReturnLocalRef},
@@ -198,6 +198,15 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"E248", diagnostics::codes::ReadonlyReference},
     {"E249", diagnostics::codes::GlobalFunctionAttribute},
     {"E250", diagnostics::codes::VariableInSwitchCase},
+    {"E251", diagnostics::codes::EmptySwitchStatement},
+    {"E252", diagnostics::codes::SwitchConditionNotIntegral},
+    {"E253", diagnostics::codes::TypeNotIndexable},
+    {"E254", diagnostics::codes::NoMathConversion},
+    {"E255", diagnostics::codes::IdentityRequiresHandles},
+    {"E256", diagnostics::codes::ClassFinalAbstractConflict},
+    {"E257", diagnostics::codes::AutoNotAllowedHere},
+    {"E258", diagnostics::codes::HandleToHandle},
+    {"E259", diagnostics::codes::CannotInferLambda},
 };
 
 static bool EqualsCaseInsensitive(std::string_view a, std::string_view b) noexcept

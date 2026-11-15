@@ -374,6 +374,50 @@ TEST_SUITE("analysis/checkers/HandleComparisonChecker")
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::IllegalOperation));
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::NoMatchingOperator));
     }
-}
 
+    TEST_CASE("HandleComparisonChecker - Identity operators require handle operands")
+    {
+        const std::string className = GenerateRandomSymbolName();
+        const std::string fnName = GenerateRandomSymbolName();
+
+        const std::string badPrimScript = "void " + fnName +
+                                          "() {\n"
+                                          "    int a = 1; int b = 1;\n"
+                                          "    bool r1 = a is b;\n"
+                                          "    bool r2 = a !is b;\n"
+                                          "}\n";
+        CHECK(HasDiagnosticCode(AnalyzeScript(badPrimScript), diagnostics::codes::IdentityRequiresHandles));
+
+        // Script classes are reference types, so the compiler accepts identity between their objects.
+        const std::string objectScript = "class " + className + " {}\nvoid " + fnName + "() {\n    " + className +
+                                         " a; " + className + " b;\n    bool r = a is b;\n}\n";
+        CHECK_FALSE(HasDiagnosticCode(AnalyzeScript(objectScript), diagnostics::codes::IdentityRequiresHandles));
+
+        const std::string validScript = "class " + className + " {}\nvoid " + fnName + "(" + className + "@ h1, " +
+                                        className +
+                                        "@ h2) {\n"
+                                        "    bool r1 = h1 is h2;\n"
+                                        "    bool r2 = h1 !is null;\n"
+                                        "    " +
+                                        className + " v1; " + className +
+                                        " v2;\n"
+                                        "    bool r3 = @v1 is @v2;\n"
+                                        "}\n";
+        CHECK_FALSE(HasDiagnosticCode(AnalyzeScript(validScript), diagnostics::codes::IdentityRequiresHandles));
+    }
+
+    TEST_CASE("TypeConversion - auto bound to an anonymous function needs a target funcdef")
+    {
+        const std::string fn = GenerateRandomSymbolName("main");
+        const std::string fd = GenerateRandomSymbolName("Op");
+        const std::string var = GenerateRandomSymbolName("lam");
+
+        const std::string noContext = "void " + fn + "() { auto " + var + " = function(int x) { return x; }; }\n";
+        CHECK(HasDiagnosticCode(AnalyzeScript(noContext), "as-err-cannot-infer-lambda"));
+
+        const std::string withContext = "funcdef int " + fd + "(int);\nvoid " + fn + "() { " + fd + "@ " + var +
+                                        " = function(int x) { return x; }; }\n";
+        CHECK_FALSE(HasDiagnosticCode(AnalyzeScript(withContext), "as-err-cannot-infer-lambda"));
+    }
+}
 } // namespace angel_lsp::test

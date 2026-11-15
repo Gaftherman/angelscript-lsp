@@ -144,9 +144,10 @@ static bool CheckLocalCaseConstantness(const ControlFlowCaseLabelFact& label, st
         }
     }
 
-    if (def && insideFunction && def->kind == LocalDefinitionKind::Variable)
+    if (def && insideFunction &&
+        (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter))
     {
-        ctx.EmitAtRange(label.range, "as-err-case-not-constant");
+        ctx.EmitAtRange(label.range, diagnostics::codes::CaseNotConstant);
         return true;
     }
 
@@ -266,6 +267,12 @@ void CheckSwitchLabels(const ControlFlowRecord& record, const ControlFlowFacts& 
                 switchLabels.push_back(label);
             }
         }
+    }
+
+    if (!record.hasSyntaxError && switchLabels.empty())
+    {
+        ctx.EmitAtRange(record.range, diagnostics::codes::EmptySwitchStatement);
+        return;
     }
 
     CheckSwitchLabels(switchLabels, sourceCode, ctx);

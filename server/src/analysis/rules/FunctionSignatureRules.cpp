@@ -172,6 +172,12 @@ static void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig,
  */
 static void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
+    if (sig.returnHasDoubleHandle)
+    {
+        ctx.LogRule("CheckReturnType", "as-err-handle-to-handle", sym);
+        ctx.Emit(sym, "as-err-handle-to-handle");
+    }
+
     if (sig.returnHasPrimitiveHandle && !sig.returnIsArray)
     {
         ctx.LogRule("CheckReturnType", "as-err-handle-on-primitive", sym);
@@ -200,7 +206,9 @@ static void CheckReturnTypeResolution(const Symbol& sym, const FunctionSignature
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
     const std::string_view enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable);
     const auto ruleIndex = ctx.request.symbolTable.GetRuleIndex();
-    const bool existsInOtherScope = ruleIndex && ruleIndex->allNames.contains(sig.returnBaseTypeName);
+    const std::string_view shortType = utils::LastScopeSegment(sig.returnBaseTypeName);
+    const bool existsInOtherScope =
+        ruleIndex && (ruleIndex->allNames.contains(sig.returnBaseTypeName) || ruleIndex->allNames.contains(shortType));
     if ((sig.isImported || ctx.request.ReportsUnknownTypes() || existsInOtherScope) &&
         !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
         !(isPredefined && (sig.returnBaseTypeName == "?" || sig.returnBaseTypeName == "T")) &&

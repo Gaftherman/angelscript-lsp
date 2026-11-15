@@ -4,6 +4,9 @@
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/OperandRangeResolution.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 
 #include <string_view>
@@ -13,6 +16,10 @@ namespace angel_lsp::analysis
 
 [[nodiscard]] static ComparisonOperatorInfo ClassifyComparisonOperator(const BinaryExpressionFact& fact) noexcept
 {
+    if (fact.opClass == BinaryOperatorClass::Identity)
+    {
+        return {ComparisonCategory::Identity, {}};
+    }
     if (fact.opClass == BinaryOperatorClass::Equality)
     {
         if (fact.op == "==")
@@ -73,9 +80,37 @@ static void CheckRelationalComparison(SourceRange opRange, const RelationalCheck
     }
 }
 
+[[nodiscard]] static bool IsOperandIdentityCapable(std::string_view typeName, bool isNull, bool isHandle,
+                                                   const DiagnosticContext& ctx)
+{
+    if (isNull || isHandle)
+    {
+        return true;
+    }
+    if (typeName.empty() || ExpressionTypeCache::IsPoisonType(typeName))
+    {
+        return true;
+    }
+    // Identity compares references, so every object type qualifies; only primitives and enums are values.
+    const std::string_view clean = CleanBaseTypeView(typeName);
+    if (clean.empty() || clean == "auto" || clean == "?" || clean == "any" || ctx.request.IsRegisteredSymbol(clean))
+    {
+        return true;
+    }
+    return !IsPrimitiveTypeName(clean) && !ResolvesToEnum(clean, ctx.request.symbolTable);
+}
+
 static void DispatchComparisonCheck(const ComparisonDispatchContext& dispatch, const ComparisonOperandsState& s,
                                     DiagnosticContext& ctx)
 {
+    if (dispatch.opInfo.category == ComparisonCategory::Identity)
+    {
+        if (!s.isLeftIdentityCapable || !s.isRightIdentityCapable)
+        {
+            ctx.EmitAtRange(dispatch.opRange, diagnostics::codes::IdentityRequiresHandles, dispatch.op);
+        }
+        return;
+    }
     if (dispatch.opInfo.category == ComparisonCategory::ValueEquality)
     {
         const bool isHandleComp = (s.isLeftNull && s.isRightHandle) || (s.isRightNull && s.isLeftHandle);
@@ -112,11 +147,19 @@ void CheckHandleComparison(const BinaryExpressionFact& fact, const Scope* scope,
     const auto rightType = ResolveExpressionType(fact.right.bytes, ExpressionTypeContext(scope, ctx));
 
     const auto& table = ctx.request.symbolTable;
+    const bool isLeftNull = IsNullOperand(fact.left, leftType);
+    const bool isRightNull = IsNullOperand(fact.right, rightType);
+    const bool isLeftHandle = IsHandleType(leftType, table) || fact.left.isThis;
+    const bool isRightHandle = IsHandleType(rightType, table) || fact.right.isThis;
+    const bool isLeftIdHandle = isLeftHandle || fact.left.hasHandleOperator;
+    const bool isRightIdHandle = isRightHandle || fact.right.hasHandleOperator;
     const ComparisonOperandsState operandsState{
-        .isLeftNull = IsNullOperand(fact.left, leftType),
-        .isRightNull = IsNullOperand(fact.right, rightType),
-        .isLeftHandle = IsHandleType(leftType, table) || fact.left.isThis,
-        .isRightHandle = IsHandleType(rightType, table) || fact.right.isThis,
+        .isLeftNull = isLeftNull,
+        .isRightNull = isRightNull,
+        .isLeftHandle = isLeftHandle,
+        .isRightHandle = isRightHandle,
+        .isLeftIdentityCapable = IsOperandIdentityCapable(leftType, isLeftNull, isLeftIdHandle, ctx),
+        .isRightIdentityCapable = IsOperandIdentityCapable(rightType, isRightNull, isRightIdHandle, ctx),
         .leftType = leftType,
     };
     const ComparisonDispatchContext dispatch{

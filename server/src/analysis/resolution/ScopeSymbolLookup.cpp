@@ -21,37 +21,24 @@
 namespace angel_lsp::analysis
 {
 /**
- * @brief Matches qualified types by short name suffix against the rule index.
- * @param[in] clean Type name without root qualifier.
- * @param[in] index Precomputed rule index.
- * @return True if clean matches a known qualified type or suffix.
+ * @brief Resolves legacy references from a nested sub-namespace that name an ancestor-namespace type
+ *        qualified with the current sub-namespace prefix (e.g., `a::b::v2::Type` inside `a::b::v2`).
+ * @param[in] clean Type name without leading global qualifier.
+ * @param[in] containerScope Enclosing namespace path at the declaration site.
+ * @param[in] table Symbol table for exact symbol lookup.
+ * @return True if an ancestor prefix of containerScope declares the trailing type symbol.
  */
-static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::RuleIndex* index)
+static bool MatchesParentNamespaceType(std::string_view clean, std::string_view containerScope,
+                                       const SymbolTable& table)
 {
-    if (!index)
+    if (containerScope.empty())
     {
         return false;
     }
-    auto it = index->qualifiedTypesByShortName.find(LastScopeSegment(clean));
-    if (it == index->qualifiedTypesByShortName.end())
-    {
-        return false;
-    }
-    const bool isPartiallyQualified = utils::ContainsScopeSeparator(clean);
-    for (const auto& qType : it->second)
-    {
-        if (qType == clean || (isPartiallyQualified && utils::EndsWithScopedMember(qType, clean)))
-        {
-            return true;
-        }
-    }
-    return false;
-}
 
-bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table, const rules::RuleIndex* ruleIndex)
-{
     const auto [parent, member] = utils::SplitScopedName(clean);
-    if (parent.empty())
+    if (parent.empty() || member.empty() ||
+        (parent != containerScope && !utils::HasScopePrefix(containerScope, parent)))
     {
         return false;
     }
@@ -60,9 +47,12 @@ bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table
     while (!prefix.empty())
     {
         prefix = utils::ParentScopeView(prefix);
+        if (prefix.empty())
+        {
+            break;
+        }
         const std::string candidate = utils::JoinScopedName(prefix, member);
-        if (table.HasSymbol(candidate) || table.HasSymbolAnywhere(candidate) ||
-            MatchesQualifiedTypeSuffix(candidate, ruleIndex))
+        if (table.HasSymbol(candidate))
         {
             return true;
         }
@@ -161,18 +151,18 @@ bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::s
     if (ctx.request.IsRegisteredSymbol(baseName))
         return true;
 
+    const bool hasGlobalPrefix = utils::HasLeadingGlobalPrefix(baseName);
     std::string_view clean = utils::StripGlobalPrefix(baseName);
     if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
 
+    if (hasGlobalPrefix)
+        return false;
+
     if (IsReachableInContainerScope(clean, containerScope, ctx.request.symbolTable))
         return true;
 
-    const auto* ruleIndex = ctx.request.symbolTable.GetRuleIndex().get();
-    if (MatchesQualifiedTypeSuffix(clean, ruleIndex))
-        return true;
-
-    if (MatchesParentNamespaceType(clean, ctx.request.symbolTable, ruleIndex))
+    if (MatchesParentNamespaceType(clean, containerScope, ctx.request.symbolTable))
         return true;
 
     return IsReachableViaUsingDirectives(clean, ctx);

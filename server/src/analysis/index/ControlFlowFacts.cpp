@@ -186,6 +186,7 @@ static void CollectStatements(const NodeIndex& index, std::string_view source, C
     for (const TSNode sw : index.Nodes(gs.symSwitchStatement))
     {
         ControlFlowRecord rec{.kind = ControlFlowRecordKind::Switch, .bytes = BytesOf(sw), .range = RangeOf(sw)};
+        rec.hasSyntaxError = ts_node_has_error(sw) || index.NodeHasSyntaxError(sw);
         rec.condition = ReadCondition(SyntaxOperands(sw, &index).FieldOrNamed(gs.fieldCondition, 0), index, source);
         const auto [begin, count] = CollectSwitchLabels(sw, index, source, facts);
         rec.labelBegin = begin;

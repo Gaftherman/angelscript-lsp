@@ -137,7 +137,7 @@ static bool MatchesFinalBaseMethod(const Symbol& mSym, std::string_view cleanBas
  * @param[in] reportingBase Name of base class for diagnostic emission.
  * @param[in] ctx Diagnostic context.
  */
-static void CheckFinalPropertyOverride(std::string_view container, std::string_view methodName,
+static void CheckFinalPropertyOverride(const Symbol& derivedSym, std::string_view methodName,
                                        std::string_view reportingBase, const DiagnosticContext& ctx)
 {
     if (methodName.size() <= 4 || (!methodName.starts_with("get_") && !methodName.starts_with("set_")))
@@ -145,6 +145,8 @@ static void CheckFinalPropertyOverride(std::string_view container, std::string_v
         return;
     }
 
+    const std::string_view container = derivedSym.qualifiedName.empty() ? std::string_view(derivedSym.name)
+                                                                        : std::string_view(derivedSym.qualifiedName);
     const std::string_view propName = methodName.substr(4);
     auto propPtr = ctx.request.symbolTable.FindMemberSymbolPtr(container, propName);
     if (!propPtr)
@@ -164,8 +166,8 @@ static void CheckFinalPropertyOverride(std::string_view container, std::string_v
             const auto& varSig = std::get<VariableSignature>(pSym.signature);
             if ((isGet && varSig.hasGet) || (!isGet && varSig.hasSet))
             {
-                ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", pSym);
-                ctx.Emit(pSym, "as-err-override-final-method", methodName, reportingBase);
+                ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", derivedSym);
+                ctx.Emit(derivedSym, "as-err-override-final-method", methodName, reportingBase);
             }
         }
     }
@@ -173,15 +175,17 @@ static void CheckFinalPropertyOverride(std::string_view container, std::string_v
 
 /**
  * @brief Reports methods overriding final methods of a base class or its mixins.
- * @param[in] container Name of the derived container class.
+ * @param[in] derivedSym Symbol of the derived container class.
  * @param[in] cleanBase Sanitized base class name.
  * @param[in] reportingBase Name of base class reported in diagnostics.
  * @param[in] ctx Diagnostic context.
  */
-static void ReportFinalMethodOverrides(std::string_view container, std::string_view cleanBase,
+static void ReportFinalMethodOverrides(const Symbol& derivedSym, std::string_view cleanBase,
                                        std::string_view reportingBase, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
+    const std::string_view container = derivedSym.qualifiedName.empty() ? std::string_view(derivedSym.name)
+                                                                        : std::string_view(derivedSym.qualifiedName);
     for (const auto& methodName : ctx.request.GetRuleIndex().Members(cleanBase).finalMethodNames)
     {
         if (auto methodsPtr = table.FindMemberSymbolPtr(container, methodName))
@@ -194,13 +198,13 @@ static void ReportFinalMethodOverrides(std::string_view container, std::string_v
                 }
                 if (MatchesFinalBaseMethod(mSym, cleanBase, methodName, table))
                 {
-                    ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", mSym);
-                    ctx.Emit(mSym, "as-err-override-final-method", methodName, reportingBase);
+                    ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", derivedSym);
+                    ctx.Emit(derivedSym, "as-err-override-final-method", methodName, reportingBase);
                 }
             }
         }
 
-        CheckFinalPropertyOverride(container, methodName, reportingBase, ctx);
+        CheckFinalPropertyOverride(derivedSym, methodName, reportingBase, ctx);
     }
 }
 
@@ -210,8 +214,6 @@ static void ReportFinalMethodOverrides(std::string_view container, std::string_v
 void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
-    const std::string_view container =
-        sym.qualifiedName.empty() ? std::string_view(sym.name) : std::string_view(sym.qualifiedName);
 
     ankerl::unordered_dense::set<std::string_view> visited;
     std::vector<std::string_view> queue;
@@ -234,7 +236,7 @@ void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const Dia
             continue;
         }
 
-        ReportFinalMethodOverrides(container, currentBase, currentBase, ctx);
+        ReportFinalMethodOverrides(sym, currentBase, currentBase, ctx);
 
         if (auto baseSyms = table.FindSymbolsPtr(currentBase))
         {
@@ -245,7 +247,7 @@ void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const Dia
                     const auto& bClass = bSym.GetClass();
                     for (const auto& mixinName : bClass.includedMixins)
                     {
-                        ReportFinalMethodOverrides(container, mixinName, currentBase, ctx);
+                        ReportFinalMethodOverrides(sym, mixinName, currentBase, ctx);
                     }
                     for (const auto& nextBase : bClass.bases)
                     {

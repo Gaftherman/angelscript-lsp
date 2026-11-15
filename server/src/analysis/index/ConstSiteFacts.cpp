@@ -91,17 +91,17 @@ static ConstAssignmentFact ReadConstAssignment(TSNode node, TSNode left, const N
         BytesOf(node), RangeOf(node), {BytesOf(left), RangeOf(left), parser::NodeText(left, source)}};
     ConstAssignmentTargetFact& target = fact.target;
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode actual = left;
-    if (ts_node_symbol(left) == gs.symUnaryExpression)
+    TSNode actual = UnwrapIndexedParentheses(left, &index);
+    if (ts_node_symbol(actual) == gs.symUnaryExpression)
     {
-        const SyntaxOperands unary(left, &index);
+        const SyntaxOperands unary(actual, &index);
         const TSNode op = unary.Field(gs.fieldOperator);
         if (!ts_node_is_null(op) && ts_node_symbol(op) == gs.tokAt)
         {
             target.isHandle = true;
             const TSNode operand = unary.Field(gs.fieldOperand);
             if (!ts_node_is_null(operand))
-                actual = operand;
+                actual = UnwrapIndexedParentheses(operand, &index);
         }
     }
 
@@ -262,6 +262,42 @@ static EnclosingMethodFact ReadEnclosingMethod(TSNode funcNode, const NodeIndex&
     return fact;
 }
 
+static TSNode ExtractIncDecOperand(TSNode node, const NodeIndex& index)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const SyntaxOperands syntax(node, &index);
+    TSNode opNode = syntax.Field(gs.fieldOperator);
+    if (ts_node_is_null(opNode))
+    {
+        syntax.ForEachNamed(
+            [&](TSNode child)
+            {
+                const TSSymbol sym = ts_node_symbol(child);
+                if (sym == gs.tokPlusPlus || sym == gs.tokDashDash)
+                {
+                    opNode = child;
+                    return false;
+                }
+                return true;
+            });
+    }
+    const TSSymbol opSym = !ts_node_is_null(opNode) ? ts_node_symbol(opNode) : 0;
+    if (opSym != gs.tokPlusPlus && opSym != gs.tokDashDash)
+        return {};
+    if (const TSNode operand = syntax.Field(gs.fieldOperand); !ts_node_is_null(operand))
+        return operand;
+    TSNode found{};
+    syntax.ForEachNamed(
+        [&](TSNode child)
+        {
+            if (!ts_node_is_null(opNode) && ts_node_eq(child, opNode))
+                return true;
+            found = child;
+            return false;
+        });
+    return found;
+}
+
 ConstSiteFacts BuildConstSiteFacts(const NodeIndex& index, std::string_view source)
 {
     ConstSiteFacts facts;
@@ -270,6 +306,11 @@ ConstSiteFacts BuildConstSiteFacts(const NodeIndex& index, std::string_view sour
     for (const TSNode node : index.Nodes(gs.symAssignmentExpression))
         if (const TSNode left = SyntaxOperands(node, &index).Field(gs.fieldLeft); !ts_node_is_null(left))
             facts.assignments.push_back(ReadConstAssignment(node, left, index, source));
+
+    for (const TSSymbol sym : {gs.symUnaryExpression, gs.symPostfixExpression})
+        for (const TSNode node : index.Nodes(sym))
+            if (const TSNode operand = ExtractIncDecOperand(node, index); !ts_node_is_null(operand))
+                facts.assignments.push_back(ReadConstAssignment(node, operand, index, source));
 
     for (const TSNode node : index.Nodes(gs.symCallExpression))
     {

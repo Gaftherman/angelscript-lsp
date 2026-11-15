@@ -52,6 +52,14 @@ bool WalkInheritancePath(std::vector<std::string_view>& path, std::string_view c
 bool HasInheritanceCycle(std::string_view typeName, const SymbolTable& table);
 
 /**
+ * @brief Reports whether sym is the declaration-order back-edge that closes an inheritance cycle.
+ * @param[in] sym Class or interface symbol being validated.
+ * @param[in] table Symbol table to resolve bases through.
+ * @return True when sym reaches itself without traversing a same-file declaration declared later than sym.
+ */
+bool ClosesInheritanceCycle(const Symbol& sym, const SymbolTable& table);
+
+/**
  * @brief Enforces the modifier and shape rules a class declaration must satisfy on its own: body presence,
  *        external declarations and the allowed mixin/abstract/final/shared combinations.
  * @param[in] sym Class symbol being validated.

@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { activateExtension, getCompletionLabels, getHoverText, randomSuffix, waitForDiagnostics } from './helpers';
 
 interface TestSymbols {
     nsA: string;
@@ -13,11 +14,6 @@ interface TestSymbols {
     userFnA: string;
     userFnB: string;
     userFnMember: string;
-}
-
-/** @brief Generates a unique alphanumeric suffix for isolated test fixtures and symbols. */
-function randomSuffix(): string {
-    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /** @brief Builds a set of randomized AngelScript identifiers for one test run. */
@@ -34,60 +30,6 @@ function createTestSymbols(suffix: string): TestSymbols {
         userFnMember: `useMember_${suffix}`,
     };
 }
-
-/**
- * @brief Resolves on the first diagnostics change for a URI whose current diagnostics satisfy a predicate.
- * @param uri Document whose diagnostics are watched.
- * @param accept Predicate over the diagnostics published for the document; defaults to accepting any state.
- */
-function waitForDiagnostics(
-    uri: vscode.Uri,
-    accept: (diagnostics: readonly vscode.Diagnostic[]) => boolean = () => true
-): Promise<void> {
-    const target = uri.toString();
-    return new Promise<void>(resolve => {
-        const disposable = vscode.languages.onDidChangeDiagnostics(event => {
-            if (event.uris.some(changed => changed.toString() === target) && accept(vscode.languages.getDiagnostics(uri))) {
-                disposable.dispose();
-                resolve();
-            }
-        });
-    });
-}
-
-/** @brief Executes completion at a position and returns normalized item labels. */
-async function getCompletionLabels(uri: vscode.Uri, position: vscode.Position): Promise<string[]> {
-    const result = await vscode.commands.executeCommand<vscode.CompletionList | vscode.CompletionItem[]>(
-        'vscode.executeCompletionItemProvider',
-        uri,
-        position
-    );
-    if (!result) {
-        return [];
-    }
-    const items = Array.isArray(result) ? result : result.items;
-    return items.map(item => (typeof item.label === 'string' ? item.label : item.label.label));
-}
-
-/** @brief Executes hover at a position and joins all returned markdown or string contents. */
-async function getHoverText(uri: vscode.Uri, position: vscode.Position): Promise<string> {
-    const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
-        'vscode.executeHoverProvider',
-        uri,
-        position
-    );
-    if (!hovers || hovers.length === 0) {
-        return '';
-    }
-    const parts: string[] = [];
-    for (const hover of hovers) {
-        for (const content of hover.contents) {
-            parts.push(typeof content === 'string' ? content : content.value);
-        }
-    }
-    return parts.join('\n');
-}
-
 suite('AngelScript LSP E2E', function () {
     let fixtureDir: string;
     let mainUri: vscode.Uri;
@@ -99,14 +41,7 @@ suite('AngelScript LSP E2E', function () {
         const folders = vscode.workspace.workspaceFolders ?? [];
         assert.ok(folders.length > 0, 'Requires an open workspace folder');
 
-        const extension = vscode.extensions.getExtension('Gaftherman.angelscript-gaftherman')
-            ?? vscode.extensions.getExtension('Gaftherman.angelscript')
-            ?? vscode.extensions.all.find(
-                candidate => candidate.packageJSON?.name === 'angelscript-gaftherman'
-                    || candidate.packageJSON?.name === 'angelscript'
-            );
-        assert.ok(extension, 'AngelScript extension must be installed in the test host');
-        await extension.activate();
+        await activateExtension();
 
         const suffix = randomSuffix();
         symbols = createTestSymbols(suffix);

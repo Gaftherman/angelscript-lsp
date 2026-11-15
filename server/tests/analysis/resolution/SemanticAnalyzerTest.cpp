@@ -3087,3 +3087,47 @@ TEST_CASE("SemanticAnalyzer - Virtual property set accessor implicit value param
         CHECK(diag.severity != DiagnosticSeverity::Error);
     }
 }
+
+TEST_CASE("SemanticAnalyzer - Local variable named value or generated name used before declaration emits error")
+{
+    const std::string fnValue = angel_lsp::test::GenerateRandomSymbolName("UseValueBeforeDecl");
+    const std::string fnGen = angel_lsp::test::GenerateRandomSymbolName("UseGenBeforeDecl");
+    const std::string genVar = angel_lsp::test::GenerateRandomSymbolName("lateVar");
+    const std::string outVar = angel_lsp::test::GenerateRandomSymbolName("res");
+
+    const std::string badCode = "void " + fnValue + "() {\n    int " + outVar +
+                                " = value + 1;\n    int value = 5;\n}\n" + "void " + fnGen + "() {\n    int " + outVar +
+                                " = " + genVar + " + 1;\n    int " + genVar + " = 5;\n}\n";
+
+    SymbolTable badTable;
+    angel_lsp::i18n::I18n i18n;
+    const auto badDiags = AnalyzeSource(badCode, badTable, i18n, "file:///before_decl.as");
+    CHECK(HasUndefinedIdentifierDiagnostic(badDiags, "value"));
+    CHECK(HasUndefinedIdentifierDiagnostic(badDiags, genVar));
+
+    bool hasValueError = false;
+    bool hasGenError = false;
+    for (const auto& d : badDiags)
+    {
+        if (d.code == "as-warn-undeclared-identifier" && d.severity == DiagnosticSeverity::Error)
+        {
+            if (d.message.find("value") != std::string::npos)
+            {
+                hasValueError = true;
+            }
+            if (d.message.find(genVar) != std::string::npos)
+            {
+                hasGenError = true;
+            }
+        }
+    }
+    CHECK(hasValueError);
+    CHECK(hasGenError);
+
+    const std::string goodCode = "int " + outVar + " = 0;\nint " + genVar + "\n{\n    get { return " + outVar +
+                                 "; }\n    set { " + outVar + " = value; }\n}\nvoid " + fnValue + "() {\n    " +
+                                 genVar + " = 42;\n    int value = 5;\n    int x = value + 1;\n}\n";
+    SymbolTable goodTable;
+    const auto goodDiags = AnalyzeSource(goodCode, goodTable, i18n, "file:///valid_value.as");
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(goodDiags, "value"));
+}

@@ -134,6 +134,7 @@ struct ControlFlowRecord
     ControlFlowReturnFact returnFact; ///< Details for return statements.
 
     uint32_t functionIndex = UINT32_MAX; ///< Index into ControlFlowFacts::functions for functions/lambdas.
+    bool hasSyntaxError = false;         ///< True when the underlying syntax node contains a parse error.
 };
 
 /**

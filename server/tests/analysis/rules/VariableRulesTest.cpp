@@ -696,4 +696,104 @@ TEST_SUITE("analysis/rules/VariableRules")
         }
         CHECK(foundExpectedSemicolon);
     }
+
+    TEST_CASE("VariableRules - Partially qualified nested namespace type requires enclosing or using scope")
+    {
+        std::mt19937_64 rng(0x41B90F2E);
+        const std::string outerNs = angel_lsp::test::GenerateIdentifier(rng, "Realm");
+        const std::string innerNs = angel_lsp::test::GenerateIdentifier(rng, "Sanctuary");
+        const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Shrine");
+        const std::string fnVisit = angel_lsp::test::GenerateIdentifier(rng, "Visit");
+        const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "inst");
+
+        const auto runWithNodeIndex = [](const std::string& code)
+        {
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            LocalScopeCollector scopes(nullptr);
+            SymbolTable table;
+            static angel_lsp::i18n::I18n i18n;
+            const std::string fileUri = "file:///vars.as";
+
+            auto diags = collector.CollectSymbols(fileUri, code, parser, table);
+            table.EnsureRuleIndex();
+
+            SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+            request.scopeRoot = scopes.CollectScopes(code, parser);
+            request.sourceCode = code;
+            TSTree* tree = parser.Parse(code);
+            NodeIndex nodeIndex(ts_tree_root_node(tree), NodeIndexOptions{.source = code});
+            request.nodeIndex = &nodeIndex;
+
+            SemanticAnalyzer analyzer(nullptr);
+            auto semDiags = analyzer.Analyze(request);
+            diags.insert(diags.end(), std::make_move_iterator(semDiags.begin()),
+                         std::make_move_iterator(semDiags.end()));
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+            return diags;
+        };
+
+        const std::string decl = "namespace " + outerNs + "::" + innerNs + " { class " + clsName + " {} }\n";
+
+        // Reject: partial qualification from global scope without enclosing namespace or using directive
+        const auto badGlobal =
+            runWithNodeIndex(decl + "void " + fnVisit + "() { " + innerNs + "::" + clsName + " " + varName + "; }\n");
+        CHECK(HasCode(badGlobal, "as-err-unresolved-type"));
+
+        // Reject: explicit :: global qualification bypasses enclosing namespace
+        const auto badExplicitGlobal =
+            runWithNodeIndex(decl + "namespace " + outerNs + " { void " + fnVisit + "() { ::" + innerNs +
+                             "::" + clsName + " " + varName + "; } }\n");
+        CHECK(HasCode(badExplicitGlobal, "as-err-unresolved-type"));
+
+        // Accept: full qualification, enclosing parent namespace, and using namespace outer
+        const auto goodFull = runWithNodeIndex(decl + "void " + fnVisit + "() { " + outerNs + "::" + innerNs +
+                                               "::" + clsName + " " + varName + "; }\n");
+        CHECK_FALSE(HasCode(goodFull, "as-err-unresolved-type"));
+
+        const auto goodEnclosing = runWithNodeIndex(decl + "namespace " + outerNs + " { void " + fnVisit + "() { " +
+                                                    innerNs + "::" + clsName + " " + varName + "; } }\n");
+        CHECK_FALSE(HasCode(goodEnclosing, "as-err-unresolved-type"));
+
+        const auto goodUsing = runWithNodeIndex(decl + "using namespace " + outerNs + ";\nvoid " + fnVisit + "() { " +
+                                                innerNs + "::" + clsName + " " + varName + "; }\n");
+        CHECK_FALSE(HasCode(goodUsing, "as-err-unresolved-type"));
+    }
+
+    TEST_CASE("VariableRules - Rejects double handle @@ while allowing single handle and array<Obj@>@")
+    {
+        const std::string cls = angel_lsp::test::GenerateRandomSymbolName("Obj");
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string v = angel_lsp::test::GenerateRandomSymbolName("ptr");
+
+        const std::string badLocal = "class " + cls + " {}\nvoid " + fn + "() { " + cls + "@@ " + v + " = null; }\n";
+        const auto badDiags = AnalyzeVariableSnippet(badLocal);
+        CHECK(HasCode(badDiags, "as-err-handle-to-handle"));
+        CHECK_FALSE(HasCode(badDiags, "as-err-handle-on-primitive"));
+
+        const std::string badParam = "class " + cls + " {}\nvoid " + fn + "(" + cls + "@@ " + v + ") {}\n";
+        CHECK(HasCode(AnalyzeVariableSnippet(badParam), "as-err-handle-to-handle"));
+
+        const std::string valid = "class " + cls + " {}\nvoid " + fn + "() { " + cls + "@ " + v + " = null; const " +
+                                  cls + "@ const " + v + "2 = null; array<" + cls + "@>@ arr = null; }\n";
+        CHECK_FALSE(HasCode(AnalyzeVariableSnippet(valid), "as-err-handle-to-handle"));
+    }
+
+    TEST_CASE("VariableRules - Local funcdef variable without handle is rejected and with handle accepted")
+    {
+        const std::string fd = angel_lsp::test::GenerateRandomSymbolName("Op");
+        const std::string target = angel_lsp::test::GenerateRandomSymbolName("inc");
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("main");
+        const std::string var = angel_lsp::test::GenerateRandomSymbolName("cb");
+
+        const std::string header = "funcdef int " + fd + "(int);\nint " + target + "(int a) { return a + 1; }\n";
+        const std::string missingHandle = header + "void " + fn + "() { " + fd + " " + var + " = " + target + "; }\n";
+        CHECK(HasCode(AnalyzeVariableSnippet(missingHandle), "as-err-funcdef-not-handle"));
+
+        const std::string withHandle = header + "void " + fn + "() { " + fd + "@ " + var + " = " + target + "; }\n";
+        CHECK_FALSE(HasCode(AnalyzeVariableSnippet(withHandle), "as-err-funcdef-not-handle"));
+    }
 }

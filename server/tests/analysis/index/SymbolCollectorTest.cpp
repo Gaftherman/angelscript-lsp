@@ -1236,3 +1236,76 @@ TEST_SUITE("analysis/index/SymbolCollector")
         }
     }
 }
+
+TEST_CASE("SymbolCollector - Pinpoints missing rparen before brace, missing ternary colon, and missing catch")
+{
+    const std::string fnIf = angel_lsp::test::GenerateRandomSymbolName("IfFn");
+    const std::string fnWhile = angel_lsp::test::GenerateRandomSymbolName("WhileFn");
+    const std::string fnTern = angel_lsp::test::GenerateRandomSymbolName("TernFn");
+    const std::string fnTry = angel_lsp::test::GenerateRandomSymbolName("TryFn");
+    const std::string var = angel_lsp::test::GenerateRandomSymbolName("val");
+
+    auto collectDiags = [](const std::string& src)
+    {
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        SymbolTable table;
+        return collector.CollectSymbols("file:///pinpoint.as", src, parser, table);
+    };
+
+    {
+        const std::string badIf =
+            "void " + fnIf + "(int " + var + ") {\n    if (" + var + " > 0 {\n        " + var + " = 1;\n    }\n}\n";
+        const auto diags = collectDiags(badIf);
+        REQUIRE(!diags.empty());
+        CHECK(diags[0].range.start.line == 1);
+        CHECK(badIf.substr(badIf.find("{\n        "))[0] == '{');
+        CHECK(diags[0].range.start.character > 8);
+        CHECK(diags[0].message.find("Expected ')'") != std::string::npos);
+
+        const std::string okIf =
+            "void " + fnIf + "(int " + var + ") {\n    if (" + var + " > 0) {\n        " + var + " = 1;\n    }\n}\n";
+        CHECK(collectDiags(okIf).empty());
+    }
+
+    {
+        const std::string badWhile =
+            "void " + fnWhile + "(int " + var + ") {\n    while (" + var + " > 0 {\n        " + var + "--;\n    }\n}\n";
+        const auto diags = collectDiags(badWhile);
+        REQUIRE(!diags.empty());
+        CHECK(diags[0].range.start.line == 1);
+        CHECK(diags[0].range.start.character > 11);
+        CHECK(diags[0].message.find("Expected ')'") != std::string::npos);
+
+        const std::string okWhile = "void " + fnWhile + "(int " + var + ") {\n    while (" + var + " > 0) {\n        " +
+                                    var + "--;\n    }\n}\n";
+        CHECK(collectDiags(okWhile).empty());
+    }
+
+    {
+        const std::string badTern = "int " + fnTern + "(bool " + var + ") {\n    return " + var + " ? 1 2;\n}\n";
+        const auto diags = collectDiags(badTern);
+        REQUIRE(!diags.empty());
+        CHECK(diags[0].range.start.line == 1);
+        const auto secondLinePos = badTern.find('\n') + 1;
+        const auto expectedCol = badTern.find("2;", secondLinePos) - secondLinePos;
+        CHECK(diags[0].range.start.character == static_cast<uint32_t>(expectedCol));
+        CHECK(diags[0].message.find("Expected ':'") != std::string::npos);
+
+        const std::string okTern = "int " + fnTern + "(bool " + var + ") {\n    return " + var + " ? 1 : 2;\n}\n";
+        CHECK(collectDiags(okTern).empty());
+    }
+
+    {
+        const std::string badTry = "void " + fnTry + "() {\n    try {\n        int " + var + " = 1;\n    }\n}\n";
+        const auto diags = collectDiags(badTry);
+        REQUIRE(!diags.empty());
+        CHECK(diags[0].range.start.line == 4);
+        CHECK(diags[0].range.start.character == 0);
+        CHECK(diags[0].message.find("Expected 'catch'") != std::string::npos);
+
+        const std::string okTry =
+            "void " + fnTry + "() {\n    try {\n        int " + var + " = 1;\n    } catch {}\n}\n";
+        CHECK(collectDiags(okTry).empty());
+    }
+}

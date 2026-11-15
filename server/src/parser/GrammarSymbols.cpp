@@ -192,6 +192,10 @@ static void PopulateKeywordTokens(const TSLanguage* lang, GrammarSymbols& gs) no
     gs.tokFunction = SymAnon(lang, "function");
     gs.tokDefault = SymAnon(lang, "default");
     gs.tokCase = SymAnon(lang, "case");
+    gs.tokIf = SymAnon(lang, "if");
+    gs.tokWhile = SymAnon(lang, "while");
+    gs.tokTry = SymAnon(lang, "try");
+    gs.tokCatch = SymAnon(lang, "catch");
     gs.tokTrue = SymAnon(lang, "true");
     gs.tokFalse = SymAnon(lang, "false");
     gs.tokNull = SymAnon(lang, "null");

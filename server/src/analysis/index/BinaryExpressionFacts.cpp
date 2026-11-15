@@ -40,6 +40,11 @@ static BinaryOperatorClass ClassifyBinaryOperator(TSSymbol sym, const parser::Gr
     {
         return BinaryOperatorClass::Bitwise;
     }
+    if (sym == gs.tokAmpAmp || sym == gs.tokAnd || sym == gs.tokPipePipe || sym == gs.tokOr ||
+        sym == gs.tokCaretCaret || sym == gs.tokXor)
+    {
+        return BinaryOperatorClass::Logical;
+    }
     return BinaryOperatorClass::Other;
 }
 

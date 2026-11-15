@@ -237,4 +237,13 @@ inline constexpr std::string_view EngineCallSafety = "as-warn-engine-call-safety
 inline constexpr std::string_view EngineCallSafetyDisallowed = "as-warn-engine-call-safety-disallowed";
 
 inline constexpr std::string_view VariableInSwitchCase = "as-err-variable-in-switch-case";
+inline constexpr std::string_view EmptySwitchStatement = "as-err-empty-switch-statement";
+inline constexpr std::string_view SwitchConditionNotIntegral = "as-err-switch-condition-not-integral";
+inline constexpr std::string_view TypeNotIndexable = "as-err-type-not-indexable";
+inline constexpr std::string_view NoMathConversion = "as-err-no-math-conversion";
+inline constexpr std::string_view IdentityRequiresHandles = "as-err-identity-requires-handles";
+inline constexpr std::string_view ClassFinalAbstractConflict = "as-err-class-final-abstract-conflict";
+inline constexpr std::string_view AutoNotAllowedHere = "as-err-auto-not-allowed";
+inline constexpr std::string_view HandleToHandle = "as-err-handle-to-handle";
+inline constexpr std::string_view CannotInferLambda = "as-err-cannot-infer-lambda";
 } // namespace angel_lsp::diagnostics::codes

@@ -53,7 +53,65 @@ TEST_SUITE("analysis/index/NamespaceUsageFacts")
         const auto* fact2 = facts.FindScopedIdentifier(facts.scopedIdentifiers[2].bytes);
         REQUIRE(fact2 != nullptr);
         CHECK(fact2->prefix == nsName);
+        CHECK(fact2->qualifier == nsName + "::" + subNs);
         CHECK(fact2->memberName == targetFunc);
+        CHECK(fact2->usage == angel_lsp::analysis::ScopedIdentifierUsage::CallCallee);
+
+        ts_tree_delete(tree);
+    }
+
+    TEST_CASE("NamespaceUsageFacts - Scoped identifier syntactic usage classification")
+    {
+        angel_lsp::parser::AngelScriptParser parser;
+        const std::string nsA = angel_lsp::test::GenerateRandomSymbolName("Alpha");
+        const std::string nsB = angel_lsp::test::GenerateRandomSymbolName("Beta");
+        const std::string cls = angel_lsp::test::GenerateRandomSymbolName("Item");
+        const std::string val = angel_lsp::test::GenerateRandomSymbolName("flag");
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("Run");
+
+        const std::string code = "namespace " + nsA + "::" + nsB + " { class " + cls + " {} bool " + val +
+                                 " = false; void " + fn + "() {} }\n" + "using namespace " + nsA + "::" + nsB +
+                                 ";\nvoid Main() {\n    " + nsA + "::" + nsB + "::" + cls +
+                                 " inst;\n    bool b = " + nsA + "::" + nsB + "::" + val + ";\n    " + nsA +
+                                 "::" + nsB + "::" + fn + "();\n}\n";
+
+        TSTree* tree = parser.Parse(code);
+        REQUIRE(tree != nullptr);
+        TSNode root = ts_tree_root_node(tree);
+        angel_lsp::analysis::NodeIndex index(root, angel_lsp::analysis::NodeIndexOptions{.source = code});
+        const auto facts = angel_lsp::analysis::BuildNamespaceUsageFacts(index, code);
+
+        bool sawNsDecl = false;
+        bool sawUsingDecl = false;
+        bool sawTypeScope = false;
+        bool sawExpr = false;
+        bool sawCallee = false;
+        for (const auto& f : facts.scopedIdentifiers)
+        {
+            switch (f.usage)
+            {
+            case angel_lsp::analysis::ScopedIdentifierUsage::NamespaceDeclaration:
+                sawNsDecl = true;
+                break;
+            case angel_lsp::analysis::ScopedIdentifierUsage::UsingDeclaration:
+                sawUsingDecl = true;
+                break;
+            case angel_lsp::analysis::ScopedIdentifierUsage::TypeScope:
+                sawTypeScope = true;
+                break;
+            case angel_lsp::analysis::ScopedIdentifierUsage::Expression:
+                sawExpr = (f.memberName == val && f.qualifier == nsA + "::" + nsB);
+                break;
+            case angel_lsp::analysis::ScopedIdentifierUsage::CallCallee:
+                sawCallee = (f.memberName == fn && f.qualifier == nsA + "::" + nsB);
+                break;
+            }
+        }
+        CHECK(sawNsDecl);
+        CHECK(sawUsingDecl);
+        CHECK(sawTypeScope);
+        CHECK(sawExpr);
+        CHECK(sawCallee);
 
         ts_tree_delete(tree);
     }

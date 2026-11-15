@@ -1655,7 +1655,7 @@ TEST_CASE("CallChecker - Invariant: Const &in argument disqualifies &out overloa
     CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
 }
 
-TEST_CASE("CallChecker - Invariant: Tied overloads emit Warning severity and report priority signature")
+TEST_CASE("CallChecker - Invariant: Tied overloads emit Error severity and report priority signature")
 {
     std::mt19937_64 rng(0x1337BEF5);
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Compute");
@@ -1672,17 +1672,17 @@ TEST_CASE("CallChecker - Invariant: Tied overloads emit Warning severity and rep
                              "}\n";
 
     auto diags = AnalyzeCallSnippet(code);
-    bool foundAmbiguousWarning = false;
+    bool foundAmbiguousError = false;
     for (const auto& d : diags)
     {
         if (d.code == "as-err-call-ambiguous")
         {
-            foundAmbiguousWarning = true;
-            CHECK(d.severity == DiagnosticSeverity::Warning);
+            foundAmbiguousError = true;
+            CHECK(d.severity == DiagnosticSeverity::Error);
             CHECK(d.message.find(fnName + "(int a, float b)") != std::string::npos);
         }
     }
-    CHECK(foundAmbiguousWarning);
+    CHECK(foundAmbiguousError);
 }
 
 TEST_CASE("CallChecker - Invariant: Unqualified member call resolves class method when global enum member shares name")
@@ -2237,4 +2237,75 @@ TEST_CASE("CallChecker - Canonical comparison and scope resolution for myVar == 
     CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
     CHECK_FALSE(HasCode(diags, "as-err-binary-op-not-found"));
     CHECK_FALSE(HasCode(diags, "as-err-unknown-type"));
+}
+
+TEST_CASE("CallChecker - Ambiguous zero-arg call via two using directives emits Error while qualified call passes")
+{
+    std::mt19937_64 rng(0x5A2319B1);
+    const std::string nsA = angel_lsp::test::GenerateIdentifier(rng, "NsAlpha");
+    const std::string nsB = angel_lsp::test::GenerateIdentifier(rng, "NsBeta");
+    const std::string fn = angel_lsp::test::GenerateIdentifier(rng, "Trigger");
+
+    const std::string header = "namespace " + nsA + " { void " + fn + "() {} }\nnamespace " + nsB + " { void " + fn +
+                               "() {} }\nusing namespace " + nsA + ";\nusing namespace " + nsB + ";\n";
+
+    const auto badDiags = AnalyzeCallSnippet(header + "void main() { " + fn + "(); }\n");
+    const bool hasAmbError =
+        std::any_of(badDiags.begin(), badDiags.end(), [](const Diagnostic& d)
+                    { return d.code == "as-err-call-ambiguous" && d.severity == DiagnosticSeverity::Error; });
+    CHECK(hasAmbError);
+
+    const auto goodDiags = AnalyzeCallSnippet(header + "void main() { " + nsA + "::" + fn + "(); }\n");
+    CHECK_FALSE(HasCode(goodDiags, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasCode(goodDiags, "as-err-undefined-identifier"));
+}
+
+TEST_CASE("CallChecker - Tied float and double overloads with int argument emit Error while exact literals pass")
+{
+    std::mt19937_64 rng(0x7C41E209);
+    const std::string fn = angel_lsp::test::GenerateIdentifier(rng, "Scalar");
+
+    const std::string decls = "void " + fn + "(float a) {}\nvoid " + fn + "(double a) {}\n";
+
+    const auto badDiags = AnalyzeCallSnippet(decls + "void main() { " + fn + "(1); }\n");
+    const bool hasAmbError =
+        std::any_of(badDiags.begin(), badDiags.end(), [](const Diagnostic& d)
+                    { return d.code == "as-err-call-ambiguous" && d.severity == DiagnosticSeverity::Error; });
+    CHECK(hasAmbError);
+
+    const auto goodDiags = AnalyzeCallSnippet(decls + "void main() { " + fn + "(1.0f); " + fn + "(1.0); }\n");
+    CHECK_FALSE(HasCode(goodDiags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("CallChecker - Nested namespace wrong intermediate qualifier emits Error while valid paths pass")
+{
+    std::mt19937_64 rng(0x9E3779B9);
+    const std::string nsOuter = angel_lsp::test::GenerateIdentifier(rng, "Core");
+    const std::string nsInner = angel_lsp::test::GenerateIdentifier(rng, "Math");
+    const std::string nsBad = angel_lsp::test::GenerateIdentifier(rng, "Mth");
+    const std::string fnZero = angel_lsp::test::GenerateIdentifier(rng, "Zero");
+
+    const std::string decls =
+        "namespace " + nsOuter + " { namespace " + nsInner + " { int " + fnZero + "() { return 0; } } }\n";
+
+    const auto badDiags =
+        AnalyzeCallSnippet(decls + "void main() { int z = " + nsOuter + "::" + nsBad + "::" + fnZero + "(); }\n");
+    const bool hasNsError =
+        std::any_of(badDiags.begin(), badDiags.end(), [](const Diagnostic& d)
+                    { return d.code == "as-err-undefined-namespace" && d.severity == DiagnosticSeverity::Error; });
+    CHECK(hasNsError);
+
+    const auto badGlobalDiags = AnalyzeCallSnippet(
+        decls + "namespace " + nsOuter + " { void main() { int z = ::" + nsInner + "::" + fnZero + "(); } }\n");
+    CHECK(HasCode(badGlobalDiags, "as-err-undefined-namespace"));
+
+    const auto goodFullDiags =
+        AnalyzeCallSnippet(decls + "void main() { int z = " + nsOuter + "::" + nsInner + "::" + fnZero + "(); }\n");
+    CHECK_FALSE(HasCode(goodFullDiags, "as-err-undefined-namespace"));
+    CHECK_FALSE(HasCode(goodFullDiags, "as-err-undefined-identifier"));
+
+    const auto goodRelativeDiags = AnalyzeCallSnippet(
+        decls + "namespace " + nsOuter + " { void main() { int z = " + nsInner + "::" + fnZero + "(); } }\n");
+    CHECK_FALSE(HasCode(goodRelativeDiags, "as-err-undefined-namespace"));
+    CHECK_FALSE(HasCode(goodRelativeDiags, "as-err-undefined-identifier"));
 }

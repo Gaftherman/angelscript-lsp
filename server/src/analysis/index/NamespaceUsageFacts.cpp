@@ -43,6 +43,25 @@ static IndexedByteRange BytesOf(TSNode node) noexcept
                                  : IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)};
 }
 
+static ScopedIdentifierUsage ClassifyScopedUsage(TSNode node, const parser::GrammarSymbols& gs) noexcept
+{
+    TSNode parent = parser::GetParent(node);
+    if (ts_node_is_null(parent))
+    {
+        return ScopedIdentifierUsage::Expression;
+    }
+    const TSSymbol pSym = ts_node_symbol(parent);
+    if (pSym == gs.symNamespaceDeclaration)
+        return ScopedIdentifierUsage::NamespaceDeclaration;
+    if (pSym == gs.symUsingDeclaration)
+        return ScopedIdentifierUsage::UsingDeclaration;
+    if (pSym == gs.symScope)
+        return ScopedIdentifierUsage::TypeScope;
+    if (pSym == gs.symCallExpression && ts_node_eq(parser::GetChildByField(parent, gs.fieldFunction), node))
+        return ScopedIdentifierUsage::CallCallee;
+    return ScopedIdentifierUsage::Expression;
+}
+
 static void CollectScopedIdentifiers(const NodeIndex& index, std::string_view source, NamespaceUsageFacts& facts)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -57,26 +76,37 @@ static void CollectScopedIdentifiers(const NodeIndex& index, std::string_view so
         const bool hasGlobal =
             utils::HasLeadingGlobalPrefix(text) ||
             (!ts_node_is_null(ts_node_child(node, 0)) && ts_node_symbol(ts_node_child(node, 0)) == gs.tokColonColon);
+        const ScopedIdentifierUsage usage = ClassifyScopedUsage(node, gs);
+        const bool inError = index.IsInsideError(ts_node_start_byte(node));
 
         if (namedCount >= 2)
         {
             TSNode firstChild = ts_node_named_child(node, 0);
+            TSNode lastQualifier = ts_node_named_child(node, namedCount - 2);
             TSNode lastChild = ts_node_named_child(node, namedCount - 1);
-            if (ts_node_is_null(firstChild) || ts_node_is_null(lastChild))
+            if (ts_node_is_null(firstChild) || ts_node_is_null(lastQualifier) || ts_node_is_null(lastChild))
             {
                 continue;
             }
-            facts.scopedIdentifiers.push_back(
-                ScopedIdentifierFact{.bytes = BytesOf(node),
-                                     .range = RangeOf(node),
-                                     .qualifiedText = text,
-                                     .prefixBytes = BytesOf(firstChild),
-                                     .prefixRange = RangeOf(firstChild),
-                                     .prefix = utils::TrimView(parser::NodeText(firstChild, source)),
-                                     .memberBytes = BytesOf(lastChild),
-                                     .memberRange = RangeOf(lastChild),
-                                     .memberName = utils::TrimView(parser::NodeText(lastChild, source)),
-                                     .hasLeadingGlobal = hasGlobal});
+            const SourceRange firstRange = RangeOf(firstChild);
+            const SourceRange lastQualRange = RangeOf(lastQualifier);
+            facts.scopedIdentifiers.push_back(ScopedIdentifierFact{
+                .bytes = BytesOf(node),
+                .range = RangeOf(node),
+                .qualifiedText = text,
+                .prefixBytes = BytesOf(firstChild),
+                .prefixRange = firstRange,
+                .prefix = utils::TrimView(parser::NodeText(firstChild, source)),
+                .qualifierBytes = {ts_node_start_byte(firstChild), ts_node_end_byte(lastQualifier)},
+                .qualifierRange = {firstRange.startLine, firstRange.startCharacter, lastQualRange.endLine,
+                                   lastQualRange.endCharacter},
+                .qualifier = utils::TrimView(utils::ParentScopeView(utils::StripGlobalPrefix(text))),
+                .memberBytes = BytesOf(lastChild),
+                .memberRange = RangeOf(lastChild),
+                .memberName = utils::TrimView(parser::NodeText(lastChild, source)),
+                .usage = usage,
+                .hasLeadingGlobal = hasGlobal,
+                .isInsideError = inError});
         }
         else if (hasGlobal && namedCount == 1)
         {
@@ -97,7 +127,9 @@ static void CollectScopedIdentifiers(const NodeIndex& index, std::string_view so
                                      .memberBytes = BytesOf(memberNode),
                                      .memberRange = RangeOf(memberNode),
                                      .memberName = utils::TrimView(parser::NodeText(memberNode, source)),
-                                     .hasLeadingGlobal = true});
+                                     .usage = usage,
+                                     .hasLeadingGlobal = true,
+                                     .isInsideError = inError});
         }
     }
 }

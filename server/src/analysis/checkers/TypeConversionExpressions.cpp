@@ -4,10 +4,19 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/ExpressionSiteFacts.h"
+#include "analysis/resolution/AmbiguityDetector.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OperandRangeResolution.h"
+#include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/resolution/TemplateTypeResolver.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 
+#include <string>
 #include <string_view>
+#include <variant>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -113,26 +122,149 @@ void ProcessMemberExpressionSite(const MemberExpressionSiteFact& site, const Typ
     }
 }
 
+static std::string FormatOpIndexCall(std::string_view owner, const std::vector<std::string>& argTypes)
+{
+    std::string out(owner);
+    out += "::opIndex(";
+    for (size_t i = 0; i < argTypes.size(); ++i)
+    {
+        if (i > 0)
+            out += ", ";
+        out += argTypes[i].empty() ? "?" : argTypes[i];
+    }
+    return out + ")";
+}
+
+static size_t CollectMatchingOpIndexOverloads(std::string_view owner, std::string_view normalizedObj, uint32_t argCount,
+                                              const SymbolTable& table, std::vector<Symbol>& outOverloads)
+{
+    TemplateBinding binding;
+    if (normalizedObj.find('<') != std::string::npos)
+        binding = BindTemplateArguments(normalizedObj, table);
+
+    size_t totalOpIndex = 0;
+    for (const auto& cls : GetInheritedTypeHierarchy(owner, table))
+    {
+        const auto found = table.FindMemberSymbolPtr(cls, "opIndex");
+        if (!found)
+            continue;
+        for (const auto& sym : *found)
+        {
+            if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+                continue;
+            ++totalOpIndex;
+            const auto arity = InspectFunctionArity(sym.GetFunction());
+            if (argCount < arity.requiredParams || (!arity.isVariadic && argCount > arity.maxParams))
+                continue;
+            Symbol copy = sym;
+            if (binding.usable)
+            {
+                for (auto& param : copy.GetFunction().parameters)
+                    param.typeName = SubstituteTemplateParameters(param.typeName, binding);
+            }
+            outOverloads.push_back(std::move(copy));
+        }
+    }
+    return totalOpIndex;
+}
+
+static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const TypeConversionCheckRequest& request,
+                                      const Scope* scope, DiagnosticContext& ctx)
+{
+    if (site.hasSyntaxError || site.objectBytes.endByte == 0 || site.argCount == 0 || !request.expressionSites ||
+        site.argBegin + site.argCount > request.expressionSites->indexArgs.size())
+        return;
+
+    const ExpressionTypeContext exprCtx(scope, ctx);
+    if (IsBareDataType(site.objectBytes, exprCtx) || IsFunctionReference(site.objectBytes, exprCtx))
+        return;
+
+    const std::string rawObjType = ResolveExpressionType(site.objectBytes, exprCtx);
+    if (rawObjType.empty() || ExpressionTypeCache::IsPoisonType(rawObjType))
+        return;
+
+    const SymbolTable& table = ctx.request.symbolTable;
+    const std::string_view arrayTypeName = ctx.request.GetEffectiveArrayTypeName();
+    const std::string normalizedObj = UnwrapTypedef(NormalizeType(rawObjType, arrayTypeName), table);
+    if (normalizedObj.empty() || normalizedObj == "auto" || normalizedObj == "?" || normalizedObj == "any" ||
+        ctx.request.IsRegisteredSymbol(normalizedObj))
+        return;
+
+    if (IsPrimitiveTypeName(normalizedObj) || ResolvesToEnum(normalizedObj, table) ||
+        FindFuncdef(normalizedObj, table).has_value())
+    {
+        ctx.EmitAtRange(site.range, diagnostics::codes::TypeNotIndexable, normalizedObj);
+        return;
+    }
+
+    std::string owner = MemberOwnerType(normalizedObj, arrayTypeName);
+    if (owner.empty())
+        owner = CleanBaseType(normalizedObj);
+    if (ctx.request.IsRegisteredSymbol(owner) || !HierarchyIsFullyVisible(owner, table))
+        return;
+
+    std::vector<Symbol> overloads;
+    if (CollectMatchingOpIndexOverloads(owner, normalizedObj, site.argCount, table, overloads) == 0)
+    {
+        ctx.EmitAtRange(site.range, diagnostics::codes::TypeNotIndexable, owner);
+        return;
+    }
+
+    std::vector<std::string> argTypes;
+    argTypes.reserve(site.argCount);
+    bool allResolved = true;
+    for (uint32_t i = 0; i < site.argCount; ++i)
+    {
+        std::string argType =
+            ResolveExpressionType(request.expressionSites->indexArgs[site.argBegin + i].bytes, exprCtx);
+        const std::string_view cleanArg = CleanBaseTypeView(argType);
+        if (argType.empty() || ExpressionTypeCache::IsPoisonType(argType) || cleanArg == "auto" || cleanArg == "?" ||
+            ctx.request.IsRegisteredSymbol(cleanArg))
+            allResolved = false;
+        argTypes.push_back(std::move(argType));
+    }
+
+    if (overloads.empty())
+    {
+        ctx.EmitAtRange(site.range, diagnostics::codes::CallNoMatchingSignature, FormatOpIndexCall(owner, argTypes));
+        return;
+    }
+    if (!allResolved)
+        return;
+
+    std::vector<const Symbol*> matchingArity;
+    matchingArity.reserve(overloads.size());
+    for (const auto& s : overloads)
+        matchingArity.push_back(&s);
+
+    const OverloadMatchResult match = ResolveBestOverload(matchingArity, argTypes, table);
+    // Const and non-const opIndex pairs share their parameters, so several viable candidates without a
+    // single best one is a valid container, not a mismatch.
+    if (match.viableCandidates.empty())
+        ctx.EmitAtRange(site.range, diagnostics::codes::CallNoMatchingSignature, FormatOpIndexCall(owner, argTypes));
+}
+
 /**
- * @brief Reports an index expression that reads through a write-only indexed property.
- * @param[in] site Index-expression fact; write or mutation sites are skipped.
+ * @brief Reports an index expression that reads a write-only property or calls an invalid opIndex.
+ * @param[in] site Index-expression fact.
  * @param[in] request Check request giving access to the scope tree.
- * @param[in,out] ctx Diagnostic sink that receives as-err-write-only-property.
+ * @param[in,out] ctx Diagnostic sink.
  */
 void ProcessIndexExpressionSite(const IndexExpressionSiteFact& site, const TypeConversionCheckRequest& request,
                                 DiagnosticContext& ctx)
 {
-    if (site.isWriteOrMutation)
+    const Scope* scope = ResolveNodeScope(site.range, request);
+    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.objectProperty, scope, ctx);
+    if (pInfo.isProperty && pInfo.isIndexed)
     {
+        if (!site.isWriteOrMutation && !pInfo.hasGet && pInfo.hasSet)
+        {
+            ctx.EmitAtRange(site.range, "as-err-write-only-property", pInfo.propName);
+        }
         return;
     }
 
-    const Scope* scope = ResolveNodeScope(site.range, request);
-    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.objectProperty, scope, ctx);
-    if (pInfo.isProperty && pInfo.isIndexed && !pInfo.hasGet && pInfo.hasSet)
-    {
-        ctx.EmitAtRange(site.range, "as-err-write-only-property", pInfo.propName);
-    }
+    ValidateOpIndexInvocation(site, request, scope, ctx);
 }
 
 static bool CheckCastVisibilityGuards(const ConversionTypePair& types, bool sourceIsScalar, bool targetIsScalar,

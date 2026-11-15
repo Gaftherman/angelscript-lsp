@@ -60,3 +60,21 @@ build/Release/angelscript_oracle yourcase.as --json
 Note that `grid` is a registered type here (the SDK's `scriptgrid` add-on), so it cannot be used as
 a variable name — AS-Harness does not register it, which is the kind of surface difference that
 makes pairing matter.
+
+## Differential corpus (`differential/`)
+
+Each category is a directory of `.as` files checked against the real compiler by
+`scripts/differential-validate.py` and replayed against the server by `DifferentialCorpusTest`.
+
+- **Multi-case files.** One file holds many independent cases, each introduced by
+  `// ==== case: <id> ====`. Every section is compiled and analysed on its own, so names never collide
+  between sections and ids must be unique inside a file. A case that needs sibling files (`#include`)
+  stays a directory with a `main.as`.
+- **Header tags** (inside a section): `// @expect: accept|reject`, `// @complete+ Label`,
+  `// @complete- Label`, `// @scan: all`, with `/*$complete*/` marking the cursor.
+- **Ranges.** `// @error: L:C-L:C` pins the exact 0-based range of a diagnostic, with lines counted from
+  the first line after the marker. `// @range: strict` requires a server range to cover the position the
+  compiler reports (or sit where a missing token belongs); `// @range: loose` allows one line of
+  distance or only blanks and comments in between.
+- **Known gaps.** `_known_gaps/` holds cases the compiler rejects and the server does not (or reports at
+  another place). The test skips every directory starting with `_`; the validator still lists them.

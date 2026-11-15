@@ -108,6 +108,18 @@ The following community and tested host stubs are available:
 
 ---
 
+## Screenshots
+
+| Completion (`.` and `::`) | Hover with Doxygen docs |
+| :---: | :---: |
+| ![Member completion on a class instance](images/completion.png) | ![Hover documentation for a method call](images/hover.png) |
+
+| Signature help | Diagnostics and Problems panel |
+| :---: | :---: |
+| ![Parameter hints inside a call](images/signature-help.png) | ![A missing token flagged with its exact range](images/diagnostics.png) |
+
+![Outline of namespaces, classes and methods](images/outline.png)
+
 ## Contributed Commands
 
 All commands can be triggered via the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) or context menus:

@@ -4,6 +4,7 @@
 #include "analysis/index/EnumDeclarationFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "parser/Keywords.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -91,6 +92,12 @@ void ValidateTypedef(const Symbol& sym, const DiagnosticContext& ctx)
 
 static void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature& sig, const DiagnosticContext& ctx)
 {
+    if (sig.returnHasDoubleHandle)
+    {
+        ctx.LogRule("ValidateFuncdef", "as-err-handle-to-handle", sym);
+        ctx.Emit(sym, "as-err-handle-to-handle");
+    }
+
     if (sig.returnHasPrimitiveHandle)
     {
         ctx.LogRule("ValidateFuncdef", "as-err-handle-on-primitive", sym);
@@ -124,6 +131,12 @@ static void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature&
 
 static void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
 {
+    if (param.hasDoubleHandle)
+    {
+        ctx.LogRule("ValidateFuncdef", "as-err-handle-to-handle", sym);
+        ctx.Emit(sym, "as-err-handle-to-handle");
+    }
+
     if (param.hasPrimitiveHandle)
     {
         ctx.LogRule("ValidateFuncdef", "as-err-handle-on-primitive", sym);
@@ -134,9 +147,15 @@ static void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformati
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
     const std::string_view paramBase =
         CleanBaseTypeView(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
+    if (param.typeKind == TypeKind::Auto || paramBase == parser::keywords::Auto)
+    {
+        ctx.LogRule("ValidateFuncdef", "as-err-auto-not-allowed", sym);
+        ctx.Emit(sym, "as-err-auto-not-allowed");
+        return;
+    }
+
     const std::string_view enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable);
-    if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" &&
-        !(isPredefined && (paramBase == "?" || paramBase == "T")) &&
+    if (!paramBase.empty() && paramBase != "void" && !(isPredefined && (paramBase == "?" || paramBase == "T")) &&
         !IsTemplateParameterOfContainer(paramBase, sym, ctx.request.symbolTable) &&
         !IsKnownType(paramBase, ctx, enclosingNs))
     {

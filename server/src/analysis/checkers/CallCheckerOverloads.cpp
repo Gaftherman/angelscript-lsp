@@ -176,18 +176,10 @@ void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticConte
     {
         const std::string_view prioritySig =
             match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
-        bool hasInitList =
-            std::any_of(request.args.argTypes.begin(), request.args.argTypes.end(),
-                        [](std::string_view t) { return t == constants::k_initializerListTypeSentinel; });
-        if (!hasInitList)
-        {
-            hasInitList = std::any_of(request.arguments.begin(), request.arguments.end(), [](const CallArgumentFact& a)
-                                      { return a.kind == CallArgumentKind::InitializerList; });
-        }
         const SourceRange emitRange =
             request.site.calleeNameRange != SourceRange{} ? request.site.calleeNameRange : request.site.calleeRange;
         ctx.EmitAtRange(emitRange, "as-err-call-ambiguous", {request.calleeRes.reportedName, prioritySig},
-                        hasInitList ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning);
+                        DiagnosticSeverity::Error);
     }
     else if (match.viableCandidates.empty() || match.bestCandidate == nullptr)
     {

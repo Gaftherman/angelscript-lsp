@@ -108,6 +108,18 @@ Están disponibles los siguientes stubs comunitarios probados:
 
 ---
 
+## Capturas de pantalla
+
+| Autocompletado (`.` y `::`) | Hover con documentación Doxygen |
+| :---: | :---: |
+| ![Autocompletado de miembros sobre una instancia](images/completion.png) | ![Documentación al pasar el cursor sobre una llamada](images/hover.png) |
+
+| Ayuda de firma | Diagnósticos y panel de problemas |
+| :---: | :---: |
+| ![Sugerencias de parámetros dentro de una llamada](images/signature-help.png) | ![Un token faltante marcado con su rango exacto](images/diagnostics.png) |
+
+![Esquema de namespaces, clases y métodos](images/outline.png)
+
 ## Comandos de la extensión
 
 Todos los comandos pueden ejecutarse desde la Paleta de comandos (`Ctrl+Shift+P` / `Cmd+Shift+P`) o menús contextuales:

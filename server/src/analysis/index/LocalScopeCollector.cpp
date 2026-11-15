@@ -1291,6 +1291,7 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, std::stri
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(paramTypeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.hasDoubleHandle = typeInfo.hasDoubleHandle;
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
@@ -1323,6 +1324,7 @@ void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol 
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.hasDoubleHandle = typeInfo.hasDoubleHandle;
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
@@ -1382,6 +1384,7 @@ void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.hasDoubleHandle = typeInfo.hasDoubleHandle;
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
@@ -1473,6 +1476,7 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.hasDoubleHandle = typeInfo.hasDoubleHandle;
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
@@ -1572,6 +1576,7 @@ void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, std::
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.hasDoubleHandle = typeInfo.hasDoubleHandle;
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
@@ -1848,6 +1853,7 @@ static void ProcessVirtualPropertySetAccessor(TSNode accNode, const VirtualPrope
     def.typeName = ctx.propTypeStr;
     def.typeKind = ctx.typeInfo.kind;
     def.isHandleType = ctx.typeInfo.isHandle;
+    def.hasDoubleHandle = ctx.typeInfo.hasDoubleHandle;
     def.visibleFromByte = 0;
     TSPoint kStart = ts_node_start_point(kindNode);
     TSPoint kEnd = ts_node_end_point(kindNode);

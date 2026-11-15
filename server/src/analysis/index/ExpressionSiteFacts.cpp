@@ -233,15 +233,45 @@ static MemberExpressionSiteFact ReadMemberExpression(TSNode node, const NodeInde
     return fact;
 }
 
-static IndexExpressionSiteFact ReadIndexExpression(TSNode node, const NodeIndex& index, std::string_view source)
+static IndexExpressionSiteFact ReadIndexExpression(TSNode node, const NodeIndex& index, std::string_view source,
+                                                   ExpressionSiteFacts& facts)
 {
-    IndexExpressionSiteFact fact{.bytes = BytesOf(node), .range = RangeOf(node)};
+    const auto& gs = parser::GetGrammarSymbols();
+    const SyntaxOperands syntax(node, &index);
+    IndexExpressionSiteFact fact{.bytes = BytesOf(node),
+                                 .range = RangeOf(node),
+                                 .hasSyntaxError = ts_node_has_error(node) || index.NodeHasSyntaxError(node)};
     if (const auto* opFact = index.FindOperandSyntax(node))
     {
         fact.isWriteOrMutation = IsWriteOrMutation(*opFact);
     }
-    const TSNode arrayNode = SyntaxOperands(node, &index).FieldOrNamed(parser::GetGrammarSymbols().fieldObject);
-    fact.objectProperty = ReadPropertyAccess(arrayNode, &index, source);
+    const TSNode arrayNode = syntax.FieldOrNamed(gs.fieldObject);
+    if (!ts_node_is_null(arrayNode))
+    {
+        fact.objectBytes = BytesOf(arrayNode);
+        fact.objectRange = RangeOf(arrayNode);
+        fact.objectText = parser::NodeText(arrayNode, source);
+        fact.objectProperty = ReadPropertyAccess(arrayNode, &index, source);
+    }
+    fact.argBegin = static_cast<uint32_t>(facts.indexArgs.size());
+    if (const auto* parent = syntax.Fact())
+    {
+        for (const auto* child = index.SyntaxNode(parent->first); child; child = index.SyntaxNode(child->next))
+        {
+            if (child->field == gs.fieldIndex)
+            {
+                const TSNode idxNode = index.SyntaxHandle(*child);
+                facts.indexArgs.push_back(
+                    ConversionExpressionFact{BytesOf(idxNode), RangeOf(idxNode), parser::NodeText(idxNode, source)});
+            }
+        }
+    }
+    else if (const TSNode idxNode = syntax.Field(gs.fieldIndex); !ts_node_is_null(idxNode))
+    {
+        facts.indexArgs.push_back(
+            ConversionExpressionFact{BytesOf(idxNode), RangeOf(idxNode), parser::NodeText(idxNode, source)});
+    }
+    fact.argCount = static_cast<uint32_t>(facts.indexArgs.size() - fact.argBegin);
     return fact;
 }
 
@@ -290,7 +320,7 @@ ExpressionSiteFacts BuildExpressionSiteFacts(const NodeIndex& index, std::string
     }
     for (const TSNode node : index.Nodes(gs.symIndexExpression))
     {
-        facts.indexExpressions.push_back(ReadIndexExpression(node, index, source));
+        facts.indexExpressions.push_back(ReadIndexExpression(node, index, source, facts));
     }
     for (const TSNode node : index.Nodes(gs.symCastExpression))
     {

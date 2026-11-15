@@ -8,6 +8,13 @@ Every case lives in server/tests/parity/differential/<category>/ as either `<id>
     // @complete+ Label                 Label must compile when it replaces the marked prefix
     // @complete- Label                 Label must NOT compile there
     // @scan: all                       every non-keyword completion the server returns must compile
+    // @error: L:C-L:C                  exact 0-based range a diagnostic must cover (RANGE_MISMATCH)
+    // @range: strict|loose             strict: a server range must cover the compiler's position (or sit
+                                        where a missing token belongs); loose: within one line of it;
+                                        default: the first diagnostic starts on the compiler's line
+
+A file may hold many cases, each introduced by `// ==== case: <id> ====`; every section is compiled
+and analysed on its own, so names never collide between sections.
 
 `/*$complete*/` marks the cursor and sits right after the partial identifier, so replacing that
 identifier by a candidate yields a script the oracle can judge. The oracle runs first: a case whose
@@ -29,15 +36,43 @@ MARKER = "/*$complete*/"
 KIND_KEYWORD, KIND_SNIPPET = 14, 15
 
 
+DUMP = None  # set to a dict by --dump-ranges: case id -> server error ranges
+CASE_MARKER = re.compile(r"^//\s*====\s*case:\s*(\S+)\s*====\s*$")
+ERROR_TAG = re.compile(r"\s*//\s*@error:\s*(\d+):(\d+)-(\d+):(\d+)")
+
+
+def split_cases(text: str):
+    """Splits a multi-case file into [(id, body)]; a file without markers is one case with id ''."""
+    sections, current_id, body = [], "", []
+    for line in text.splitlines(keepends=True):
+        m = CASE_MARKER.match(line.strip())
+        if m:
+            if current_id or any(part.strip() for part in body):
+                sections.append((current_id, "".join(body)))
+            current_id, body = m.group(1), []
+        else:
+            body.append(line)
+    if current_id or any(part.strip() for part in body):
+        sections.append((current_id, "".join(body)))
+    return sections
+
+
 class Case:
-    def __init__(self, path: Path):
+    """One corpus case. Multi-case files contribute one Case per `// ==== case: id ====` section.
+
+    `// @error: L:C-L:C` (0-based, relative to the section text) pins the exact range of a diagnostic.
+    """
+
+    def __init__(self, path: Path, case_id: str = "", text: str = None):
         self.path = path
         self.main = path / "main.as" if path.is_dir() else path
-        self.id = path.name if path.is_dir() else path.stem
-        self.category = (path.parent).name
-        self.text = self.main.read_text(encoding="utf-8")
+        self.id = path.name if path.is_dir() else (f"{path.stem}::{case_id}" if case_id else path.stem)
+        self.category = path.parent.name
+        self.text = self.main.read_text(encoding="utf-8") if text is None else text
         self.expect = None
-        self.plus, self.minus, self.scan_all = [], [], False
+        self.plus, self.minus, self.scan_all, self.ranges = [], [], False, []
+        self.loose = bool(re.search(r"^\s*//\s*@range:\s*loose", self.text, re.M))
+        self.strict = bool(re.search(r"^\s*//\s*@range:\s*strict", self.text, re.M))
         for line in self.text.splitlines():
             m = re.match(r"\s*//\s*@(expect|scan):\s*(\w+)", line)
             if m:
@@ -48,6 +83,22 @@ class Case:
             m = re.match(r"\s*//\s*@complete([+-])\s*(\S+)", line)
             if m:
                 (self.plus if m.group(1) == "+" else self.minus).append(m.group(2))
+            m = ERROR_TAG.match(line)
+            if m:
+                self.ranges.append(tuple(int(g) for g in m.groups()))
+
+    @staticmethod
+    def load(path: Path):
+        """Returns every Case an entry holds: directories and plain files are one, multi-case files many."""
+        if path.is_dir():
+            return [Case(path)]
+        sections = split_cases(path.read_text(encoding="utf-8"))
+        if len(sections) == 1 and sections[0][0] == "":
+            return [Case(path)]
+        ids = [s[0] for s in sections]
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"duplicate case ids in {path.name}")
+        return [Case(path, cid, body) for cid, body in sections]
 
     def siblings(self):
         if not self.path.is_dir():
@@ -125,6 +176,45 @@ class McpClient:
             self.proc.kill()
 
 
+def anchored(rng: dict, point: tuple, text: str) -> bool:
+    """True when a server range explains the position the compiler reported.
+
+    The compiler reports where it noticed the problem. The server may underline the offending token
+    (the range contains the point) or, for a missing token, sit where the token belonged: a
+    zero-width range that ends at or before the point with only whitespace in between.
+    """
+    start = (rng["start"]["line"], rng["start"]["character"])
+    end = (rng["end"]["line"], rng["end"]["character"])
+    lines = text.split("\n")
+    # The compiler counts columns in UTF-8 bytes, the protocol in UTF-16 units.
+    raw = lines[point[0]].encode("utf-8")[:point[1]].decode("utf-8", errors="ignore")
+    point = (point[0], len(raw.encode("utf-16-le")) // 2)
+    if start <= point <= end:
+        return True
+    # Member and scope errors are reported at the `.` or `::` before the name the server underlines.
+    if start[0] == point[0] and start[1] > point[1] and re.fullmatch(r"\.|::|->", lines[start[0]][point[1]:start[1]].strip() or "x"):
+        return True
+    if start != end or end > point:
+        return False
+    offset = lambda pos: sum(len(line) + 1 for line in lines[:pos[0]]) + pos[1]
+    return text[offset(end):offset(point)].strip() == ""
+
+
+def quiet_gap(rng: dict, point: tuple, text: str) -> bool:
+    """True when only whitespace and comments lie between the end of a server range and the compiler's position.
+
+    A missing `;` is noticed by the compiler at the next token, possibly several lines on, while the
+    server marks the statement that lacks it.
+    """
+    lines = text.split("\n")
+    end = (rng["end"]["line"], rng["end"]["character"])
+    if end > point:
+        return False
+    offset = lambda pos: sum(len(line) + 1 for line in lines[:pos[0]]) + pos[1]
+    gap = text[offset(end):offset(point)]
+    return re.sub(r"//[^\n]*|/\*.*?\*/", "", gap, flags=re.S).strip() == ""
+
+
 def evaluate(case: Case, oracle: Path, lsp_exe: Path):
     findings = []
 
@@ -180,10 +270,32 @@ def evaluate(case: Case, oracle: Path, lsp_exe: Path):
         elif not accepted and not diags:
             add("FALSE_NEGATIVE", f"oracle: {errors[:1]}")
         elif not accepted:
-            oracle_line = min(r for r, _, _ in errors if r > 0) - 1
-            lsp_line = min(d["range"]["start"]["line"] for d in diags)
-            if oracle_line != lsp_line:
-                add("SPAN_MISMATCH", f"oracle line {oracle_line}, server line {lsp_line}: {diags[0]['message'][:80]}")
+            located = [(r - 1, c - 1) for r, c, _ in errors if r > 0 and c > 0]
+            if DUMP is not None:
+                DUMP[f"{case.category}/{case.id}"] = sorted(
+                    (d["range"]["start"]["line"], d["range"]["start"]["character"],
+                     d["range"]["end"]["line"], d["range"]["end"]["character"]) for d in diags)
+            if case.loose:
+                # The server underlines a different token than the compiler by design; the case must
+                # still land within one line of the compiler's position.
+                if located and not any(abs(d["range"]["start"]["line"] - located[0][0]) <= 1 or
+                                       quiet_gap(d["range"], located[0], files["main.as"]) for d in diags):
+                    add("SPAN_MISMATCH", f"loose: oracle line {located[0][0]}, server {[d['range']['start']['line'] for d in diags]}")
+            elif not case.strict:
+                oracle_line = min((r for r, _ in located), default=None)
+                lsp_line = min(d["range"]["start"]["line"] for d in diags)
+                if oracle_line is not None and oracle_line != lsp_line:
+                    add("SPAN_MISMATCH", f"oracle line {oracle_line}, server line {lsp_line}: {diags[0]['message'][:80]}")
+            elif located and not any(anchored(d["range"], located[0], files["main.as"]) for d in diags):
+                got = [(d["range"]["start"]["line"], d["range"]["start"]["character"],
+                        d["range"]["end"]["line"], d["range"]["end"]["character"]) for d in diags]
+                add("SPAN_MISMATCH", f"oracle {located[0][0]}:{located[0][1]}, server {got}")
+            if case.ranges:
+                got = sorted((d["range"]["start"]["line"], d["range"]["start"]["character"],
+                              d["range"]["end"]["line"], d["range"]["end"]["character"]) for d in diags)
+                for want in case.ranges:
+                    if want not in got:
+                        add("RANGE_MISMATCH", f"expected {want[0]}:{want[1]}-{want[2]}:{want[3]}, server gave {got}")
 
         if marker:
             _, _, line, character, _ = marker
@@ -217,20 +329,23 @@ def main():
     parser.add_argument("--oracle", default=str(SERVER_DIR / "build" / "Release" / "angelscript_oracle.exe"))
     parser.add_argument("--log", default=str(SERVER_DIR / "build" / "lsp_discrepancies_log.json"))
     parser.add_argument("--filter", default="")
+    parser.add_argument("--dump-ranges", default="", help="write the server's error ranges per case to this JSON file")
     args = parser.parse_args()
+    global DUMP
+    DUMP = {} if args.dump_ranges else None
 
     root = Path(args.cases)
     cases = []
     for category in sorted(p for p in root.iterdir() if p.is_dir()):
         for entry in sorted(category.iterdir()):
             if entry.is_dir() and (entry / "main.as").exists() or entry.suffix == ".as":
-                case = Case(entry)
-                if args.filter in f"{case.category}/{case.id}":
-                    cases.append(case)
+                cases.extend(c for c in Case.load(entry) if args.filter in f"{c.category}/{c.id}")
 
     with ThreadPoolExecutor(max_workers=6) as pool:
         results = list(pool.map(lambda c: evaluate(c, Path(args.oracle), Path(args.lsp)), cases))
     findings = [f for r in results for f in r]
+    if DUMP is not None:
+        Path(args.dump_ranges).write_text(json.dumps(DUMP, indent=1), encoding="utf-8")
     Path(args.log).write_text(json.dumps(findings, indent=2), encoding="utf-8")
 
     contradictions = [f for f in findings if f["kind"] == "ORACLE_CONTRADICTS_CASE"]

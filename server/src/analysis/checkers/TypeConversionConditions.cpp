@@ -15,14 +15,13 @@ namespace angel_lsp::analysis
  * @param[in] operandType Cleaned base type of the operand.
  * @param[in,out] ctx Diagnostic context.
  */
-static void ValidateConditionOperand(const ConversionExpressionFact& operand, std::string_view operandType,
-                                     DiagnosticContext& ctx)
+static void ValidateConditionOperand(std::string_view operandType, const SourceRange& emitRange, DiagnosticContext& ctx)
 {
     const bool isKnown = IsKnownType(operandType, ctx);
 
     if (isKnown && !IsTruthyCondition(operandType, ctx.request.symbolTable))
     {
-        ctx.EmitAtRange(operand.range, "as-err-condition-not-boolean", operandType);
+        ctx.EmitAtRange(emitRange, "as-err-condition-not-boolean", operandType);
         return;
     }
 
@@ -35,7 +34,7 @@ static void ValidateConditionOperand(const ConversionExpressionFact& operand, st
     if (const std::string_view conversion = BoolConversionOperator(operandType, ctx.request.symbolTable);
         !conversion.empty())
     {
-        ctx.EmitAtRange(operand.range, "as-hint-bool-conversion", {operandType, conversion}, DiagnosticSeverity::Hint);
+        ctx.EmitAtRange(emitRange, "as-hint-bool-conversion", {operandType, conversion}, DiagnosticSeverity::Hint);
     }
 }
 
@@ -59,7 +58,11 @@ static void CheckBooleanOperands(const ConversionSiteFacts& facts, const Conditi
             continue;
         }
 
-        ValidateConditionOperand(operand, operandType, ctx);
+        const SourceRange emitRange =
+            site.isDoWhile ? SourceRange{site.statementRange.startLine, site.statementRange.startCharacter,
+                                         site.statementRange.startLine, site.statementRange.startCharacter + 2}
+                           : operand.range;
+        ValidateConditionOperand(operandType, emitRange, ctx);
     }
 }
 

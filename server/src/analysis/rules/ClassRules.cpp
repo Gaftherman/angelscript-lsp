@@ -40,7 +40,7 @@ void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx, MixinFileCac
 
     if (sym.type == SymbolType::Interface)
     {
-        if (HasInheritanceCycle(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName, ctx.request.symbolTable))
+        if (ClosesInheritanceCycle(sym, ctx.request.symbolTable))
         {
             ctx.LogRule("ValidateClass", "as-err-circular-inherit", sym);
             ctx.Emit(sym, "as-err-circular-inherit", sym.name);

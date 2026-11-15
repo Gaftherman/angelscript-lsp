@@ -167,7 +167,8 @@ static void BuildConditionFacts(const NodeIndex& index, std::string_view source,
                 .operandBegin = operandBegin,
                 .operandCount = static_cast<uint32_t>(facts.booleanOperands.size()) - operandBegin,
                 .isTernary = symbol == gs.symTernaryExpression,
-                .isRootIf = symbol == gs.symIfStatement && (!syntax || syntax->parentSymbol != gs.symIfStatement)});
+                .isRootIf = symbol == gs.symIfStatement && (!syntax || syntax->parentSymbol != gs.symIfStatement),
+                .isDoWhile = symbol == gs.symDoWhileStatement});
         }
     }
     SortBySpan(facts.conditions);
@@ -283,11 +284,15 @@ static void BuildAutoFacts(const NodeIndex& index, std::string_view source, Conv
                 if (child.Symbol() == gs.symVariableDeclarator)
                 {
                     const TSNode name = child.Field(gs.fieldName);
-                    facts.autoDeclarators.push_back(
-                        AutoDeclaratorFact{.declaratorRange = RangeOf(child.Node()),
-                                           .name = parser::NodeText(name, source),
-                                           .nameRange = RangeOf(name),
-                                           .value = BuildExpressionFact(child.DeclaratorValue(source), source)});
+                    const TSNode rawValue = child.DeclaratorValue(source);
+                    const TSNode unwrapped = UnwrapIndexedParentheses(rawValue, &index);
+                    const bool isLambda =
+                        !ts_node_is_null(unwrapped) && ts_node_symbol(unwrapped) == gs.symLambdaExpression;
+                    facts.autoDeclarators.push_back(AutoDeclaratorFact{.declaratorRange = RangeOf(child.Node()),
+                                                                       .name = parser::NodeText(name, source),
+                                                                       .nameRange = RangeOf(name),
+                                                                       .value = BuildExpressionFact(rawValue, source),
+                                                                       .valueIsLambda = isLambda});
                 }
                 return true;
             });

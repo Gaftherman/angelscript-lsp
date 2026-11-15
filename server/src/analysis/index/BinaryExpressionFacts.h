@@ -20,7 +20,8 @@ enum class BinaryOperatorClass : uint8_t
     Equality,   ///< `==` and `!=`.
     Relational, ///< `<`, `<=`, `>`, `>=`.
     Arithmetic, ///< `+`, `-`, `*`, `/`, `%`, `**`.
-    Bitwise     ///< `|`, `&`, `^`, `<<`, `>>`, `>>>`.
+    Bitwise,    ///< `|`, `&`, `^`, `<<`, `>>`, `>>>`.
+    Logical     ///< `&&`, `||`, `^^`, `and`, `or`, `xor`.
 };
 
 /**

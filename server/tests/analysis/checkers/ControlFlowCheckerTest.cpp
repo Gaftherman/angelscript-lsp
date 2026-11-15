@@ -775,4 +775,97 @@ TEST_SUITE("analysis/checkers/ControlFlowChecker")
                                  "}\n";
         CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
     }
+
+    TEST_CASE("ControlFlow - Reports empty switch with only default or no cases")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string badCode = "int " + fnName +
+                                    "(int x) {\n"
+                                    "    switch (x) {\n"
+                                    "        default: return 42;\n"
+                                    "    }\n"
+                                    "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(badCode), "as-err-empty-switch-statement"));
+
+        const std::string okCode = "int " + fnName +
+                                   "(int x) {\n"
+                                   "    switch (x) {\n"
+                                   "        case 1: return 1;\n"
+                                   "        default: return 0;\n"
+                                   "    }\n"
+                                   "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(okCode), "as-err-empty-switch-statement"));
+    }
+
+    TEST_CASE("ControlFlow - Reports non-integral switch condition and accepts integer, enum, typedef")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("Mode");
+        const std::string aliasName = angel_lsp::test::GenerateRandomSymbolName("Id");
+
+        const std::string floatCode = "int " + fnName +
+                                      "(float x) {\n"
+                                      "    switch (x) {\n"
+                                      "        case 1: return 1;\n"
+                                      "        default: return 0;\n"
+                                      "    }\n"
+                                      "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(floatCode), "as-err-switch-condition-not-integral"));
+
+        const std::string okCode = "enum " + enumName + " { A = 1, B = 2 }\n" + "typedef int " + aliasName + ";\n" +
+                                   "int " + fnName + "(" + enumName + " m, " + aliasName +
+                                   " id) {\n"
+                                   "    switch (m) {\n"
+                                   "        case " +
+                                   enumName +
+                                   "::A: break;\n"
+                                   "        default: break;\n"
+                                   "    }\n"
+                                   "    switch (id) {\n"
+                                   "        case 1: return 1;\n"
+                                   "        default: return 0;\n"
+                                   "    }\n"
+                                   "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(okCode), "as-err-switch-condition-not-integral"));
+    }
+
+    TEST_CASE("ControlFlow - Reports function parameter used as case label")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("p");
+        const std::string code = "int " + fnName + "(int x, int " + paramName +
+                                 ") {\n"
+                                 "    switch (x) {\n"
+                                 "        case " +
+                                 paramName +
+                                 ": return 1;\n"
+                                 "        default: return 0;\n"
+                                 "    }\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-case-not-constant"));
+    }
+
+    TEST_CASE("ControlFlow - Non-boolean do-while condition anchors diagnostic on do line")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("DoFn");
+        const std::string varName = angel_lsp::test::GenerateRandomSymbolName("count");
+        const std::string illegal = "void " + fnName + "(int " + varName +
+                                    ") {\n"
+                                    "    do {\n"
+                                    "        " +
+                                    varName +
+                                    "--;\n"
+                                    "    } while (" +
+                                    varName + ");\n}\n";
+        const auto diags = AnalyzeFlowSnippet(illegal);
+        auto it = std::find_if(diags.begin(), diags.end(),
+                               [](const Diagnostic& d) { return d.code == "as-err-condition-not-boolean"; });
+        REQUIRE(it != diags.end());
+        CHECK(it->range.start.line == 1);
+        CHECK(it->range.start.character == 4);
+
+        const std::string legal = "void " + fnName + "(bool " + varName + ") {\n    do {\n        " + varName +
+                                  " = false;\n    } while (" + varName + ");\n}\n";
+        CHECK_FALSE(HasCode(AnalyzeFlowSnippet(legal), "as-err-condition-not-boolean"));
+    }
 }

@@ -5,6 +5,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Keywords.h"
 #include "parser/Primitives.h"
 #include "utils/Utils.h"
 
@@ -66,6 +67,12 @@ void CheckParamModifiers(const Symbol& sym, const ParameterInformation& param, c
         ctx.Emit(param, sym, "as-err-double-reference", param.baseTypeName);
     }
 
+    if (param.hasDoubleHandle)
+    {
+        ctx.LogParam("ValidateParameters", "as-err-handle-to-handle", param, sym);
+        ctx.Emit(param, sym, "as-err-handle-to-handle");
+    }
+
     if (param.hasPrimitiveHandle)
     {
         ctx.LogParam("ValidateParameters", "as-err-handle-on-primitive", param, sym);
@@ -75,6 +82,15 @@ void CheckParamModifiers(const Symbol& sym, const ParameterInformation& param, c
 
 void CheckParamTypeLegality(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
 {
+    const std::string_view rawBase =
+        CleanBaseTypeView(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
+    if (param.typeKind == TypeKind::Auto || rawBase == parser::keywords::Auto)
+    {
+        ctx.LogParam("ValidateParameters", "as-err-auto-not-allowed", param, sym);
+        ctx.Emit(param, sym, "as-err-auto-not-allowed");
+        return;
+    }
+
     if (IsMixinClass(param.baseTypeName, ctx.request.symbolTable))
     {
         ctx.LogParam("ValidateParameters", "as-err-mixin-not-a-type", param, sym);
@@ -109,7 +125,9 @@ void CheckParamTypeResolution(const Symbol& sym, const ParameterInformation& par
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
     const std::string_view enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable);
     const auto ruleIndex = ctx.request.symbolTable.GetRuleIndex();
-    const bool existsInOtherScope = ruleIndex && ruleIndex->allNames.contains(param.baseTypeName);
+    const std::string_view shortType = utils::LastScopeSegment(param.baseTypeName);
+    const bool existsInOtherScope =
+        ruleIndex && (ruleIndex->allNames.contains(param.baseTypeName) || ruleIndex->allNames.contains(shortType));
     const bool judgeParameterType = (sym.type == SymbolType::Function && sym.GetFunction().isImported) ||
                                     ctx.request.ReportsUnknownTypes() || existsInOtherScope;
     if (judgeParameterType && !param.baseTypeName.empty() &&

@@ -540,6 +540,35 @@ TEST_CASE("ConstChecker - Mutating local variables in const methods is allowed")
     CHECK(HasNoConstFinding(AnalyzeConstSnippet(code)));
 }
 
+TEST_CASE("ConstChecker - Reports increment and decrement of member or const variable, permits local inc/dec")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Counter");
+    const std::string badMemberInc = "class " + clsName +
+                                     " {\n"
+                                     "    int val;\n"
+                                     "    void Inc() const {\n"
+                                     "        val++;\n"
+                                     "        --this.val;\n"
+                                     "    }\n"
+                                     "}\n";
+    CHECK(HasCode(AnalyzeConstSnippet(badMemberInc), "as-err-readonly-reference"));
+
+    const std::string badConstLocal = "void main() {\n    const int k = 1;\n    k++;\n}\n";
+    CHECK(HasCode(AnalyzeConstSnippet(badConstLocal), "as-err-const-assignment"));
+
+    const std::string okCode = "class " + clsName +
+                               " {\n"
+                               "    int val;\n"
+                               "    void IncMut() { val++; }\n"
+                               "    void LocalOnly() const {\n"
+                               "        int local = 0;\n"
+                               "        local++;\n"
+                               "        --local;\n"
+                               "    }\n"
+                               "}\n";
+    CHECK(HasNoConstFinding(AnalyzeConstSnippet(okCode)));
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Const Corpus Audit*"`)

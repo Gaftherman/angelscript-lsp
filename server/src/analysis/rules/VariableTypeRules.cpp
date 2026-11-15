@@ -119,6 +119,12 @@ static void CheckPrimitiveOrVoidType(const Symbol& sym, const VariableSignature&
         ctx.Emit(sym, "as-err-void-variable", sym.name);
     }
 
+    if (sig.hasDoubleHandle)
+    {
+        ctx.LogRule("CheckDeclaredType", "as-err-handle-to-handle", sym);
+        ctx.Emit(sym, "as-err-handle-to-handle");
+    }
+
     if (sig.hasPrimitiveHandle)
     {
         ctx.LogRule("CheckDeclaredType", "as-err-handle-on-primitive", sym);
@@ -173,7 +179,9 @@ static void CheckUnresolvedVariableType(const Symbol& sym, const VariableSignatu
     }
 
     const auto ruleIndex = ctx.request.symbolTable.GetRuleIndex();
-    const bool existsInOtherScope = ruleIndex && ruleIndex->allNames.contains(baseType);
+    const std::string_view shortType = utils::LastScopeSegment(baseType);
+    const bool existsInOtherScope =
+        ruleIndex && (ruleIndex->allNames.contains(baseType) || ruleIndex->allNames.contains(shortType));
     if (ctx.request.ReportsUnknownTypes() || existsInOtherScope)
     {
         ctx.LogRule("CheckDeclaredType", "as-err-unresolved-type", sym);

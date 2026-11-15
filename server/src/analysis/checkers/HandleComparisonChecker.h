@@ -22,6 +22,7 @@ void CheckHandleComparison(const BinaryExpressionFact& fact, const Scope* scope,
 enum class ComparisonCategory
 {
     None,
+    Identity,
     ValueEquality,
     Relational
 };
@@ -64,6 +65,8 @@ struct ComparisonOperandsState
     bool isRightNull = false;
     bool isLeftHandle = false;
     bool isRightHandle = false;
+    bool isLeftIdentityCapable = true;
+    bool isRightIdentityCapable = true;
     std::string_view leftType; ///< Resolved left operand type; owned by the caller for the duration of the check.
 };
 } // namespace angel_lsp::analysis

@@ -34,6 +34,20 @@ Unlike approaches that rely on running scripts inside an embedded host runtime o
 
 ---
 
+## Screenshots
+
+| Completion (`.` and `::`) | Hover with Doxygen docs |
+| :---: | :---: |
+| ![Member completion on a class instance](client/images/completion.png) | ![Hover documentation for a method call](client/images/hover.png) |
+
+| Signature help | Diagnostics and Problems panel |
+| :---: | :---: |
+| ![Parameter hints inside a call](client/images/signature-help.png) | ![A missing token flagged with its exact range](client/images/diagnostics.png) |
+
+![Outline of namespaces, classes and methods](client/images/outline.png)
+
+---
+
 ## Quickstart
 
 ### 1. Installation

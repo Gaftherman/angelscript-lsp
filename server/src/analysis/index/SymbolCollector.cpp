@@ -3,6 +3,7 @@
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/index/DeclarationRecovery.h"
+#include "analysis/index/SyntaxErrorPinpointing.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "document/Document.h"
@@ -44,36 +45,6 @@ static std::string_view TrimView(std::string_view sv)
         sv.remove_suffix(1);
     }
     return sv;
-}
-
-/**
- * @brief Advances index past whitespace and comments in text buffer.
- * @param[in] text Source text buffer.
- * @param[in,out] i Cursor index advanced past comments and whitespace.
- */
-static void SkipWhitespaceAndComments(std::string_view text, size_t& i)
-{
-    while (i < text.size())
-    {
-        if (isspace(static_cast<unsigned char>(text[i])))
-        {
-            ++i;
-            continue;
-        }
-        if (text.substr(i).starts_with("//"))
-        {
-            size_t nl = text.find('\n', i + 2);
-            i = (nl == std::string_view::npos) ? text.size() : (nl + 1);
-            continue;
-        }
-        if (text.substr(i).starts_with("/*"))
-        {
-            size_t end = text.find("*/", i + 2);
-            i = (end == std::string_view::npos) ? text.size() : (end + 2);
-            continue;
-        }
-        break;
-    }
 }
 
 static std::string ExtractFirstToken(std::string_view rawErrText)
@@ -763,6 +734,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     varSig.typeKind = typeInfo.kind;
     varSig.isArray = typeInfo.isArray;
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
+    varSig.hasDoubleHandle = typeInfo.hasDoubleHandle;
     varSig.arrayDepth = typeInfo.arrayDepth;
     varSig.defaultValue = std::string(parser::NodeText(varDeclNode, sCtx.request.sourceCode));
     varSig.modifiers = modifiers;
@@ -793,6 +765,7 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     varSig.typeKind = header.typeInfo.kind;
     varSig.isArray = header.typeInfo.isArray;
     varSig.hasPrimitiveHandle = header.typeInfo.hasPrimitiveHandle;
+    varSig.hasDoubleHandle = header.typeInfo.hasDoubleHandle;
     varSig.arrayDepth = header.typeInfo.arrayDepth;
     varSig.defaultValue = std::string(parser::NodeText(valueNode, sCtx.request.sourceCode));
     varSig.hasNullInitializer = IsNullInitializer(valueNode);
@@ -950,6 +923,7 @@ void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectCo
     varSig.typeKind = retInfo.kind;
     varSig.isArray = retInfo.isArray;
     varSig.hasPrimitiveHandle = retInfo.hasPrimitiveHandle;
+    varSig.hasDoubleHandle = retInfo.hasDoubleHandle;
     varSig.arrayDepth = retInfo.arrayDepth;
     varSig.modifiers = modifiers;
     if (retInfo.isConst)
@@ -1126,6 +1100,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     funcSig.returnIsArray = retInfo.isArray;
     funcSig.returnIsConst = retInfo.isConst;
     funcSig.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
+    funcSig.returnHasDoubleHandle = retInfo.hasDoubleHandle;
     funcSig.returnArrayDepth = retInfo.arrayDepth;
     funcSig.modifiers = modifiers;
     funcSig.parameters = ExtractParameters(paramsNode, sCtx);
@@ -1373,6 +1348,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     funcdefSig.returnIsArray = retInfo.isArray;
     funcdefSig.returnArrayDepth = retInfo.arrayDepth;
     funcdefSig.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
+    funcdefSig.returnHasDoubleHandle = retInfo.hasDoubleHandle;
     funcdefSig.modifiers = modifiers;
     funcdefSig.parameters = ExtractParameters(paramsNode, sCtx);
     if (!ts_node_is_null(typeNode))
@@ -1611,6 +1587,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     varSig.typeKind = typeInfo.kind;
     varSig.isArray = typeInfo.isArray;
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
+    varSig.hasDoubleHandle = typeInfo.hasDoubleHandle;
     varSig.arrayDepth = typeInfo.arrayDepth;
     varSig.modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
     varSig.defaultValue = std::string(parser::NodeText(node, sCtx.request.sourceCode));
@@ -1900,63 +1877,6 @@ static TSNode PinpointOffendingNode(TSNode errorNode, const parser::GrammarSymbo
         return state.firstNonComment;
     }
     return errorNode;
-}
-
-static TSPoint ComputeLocalPoint(std::string_view sourceCode, TSNode baseNode, size_t targetOffset)
-{
-    TSPoint pt = ts_node_start_point(baseNode);
-    const size_t limit = std::min(targetOffset, sourceCode.size());
-    for (size_t i = ts_node_start_byte(baseNode); i < limit; ++i)
-    {
-        if (sourceCode[i] == '\n')
-        {
-            ++pt.row;
-            pt.column = 0;
-        }
-        else
-        {
-            ++pt.column;
-        }
-    }
-    return pt;
-}
-
-static bool IsIdentChar(char c)
-{
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
-}
-
-static void SkipStringLiteral(std::string_view text, size_t& idx)
-{
-    if (idx >= text.size())
-    {
-        return;
-    }
-    if (text.substr(idx).starts_with("\"\"\""))
-    {
-        const size_t end = text.find("\"\"\"", idx + 3);
-        idx = (end == std::string_view::npos) ? text.size() : (end + 3);
-        return;
-    }
-    const char quote = text[idx++];
-    while (idx < text.size())
-    {
-        if (text[idx] == '\\')
-        {
-            idx += 2;
-            continue;
-        }
-        if (text[idx] == quote)
-        {
-            ++idx;
-            break;
-        }
-        if (text[idx] == '\n')
-        {
-            break;
-        }
-        ++idx;
-    }
 }
 
 /**
@@ -2391,6 +2311,42 @@ void SymbolCollector::HandleParseErrorNode(TSNode node, ParseErrorReportContext&
             return;
         }
     }
+    for (const auto& [supStart, supEnd] : errCtx.suppressedErrorRanges)
+    {
+        if (startByte >= supStart && startByte < supEnd)
+        {
+            return;
+        }
+    }
+
+    if (const auto pinpointed = TryPinpointSyntaxError(node, errCtx.sCtx.request.sourceCode, errCtx.sCtx.request.i18n))
+    {
+        const uint32_t line = pinpointed->range.startLine;
+        if (errCtx.missingOpenBrace && errCtx.firstErrorLine != UINT32_MAX && line > errCtx.firstErrorLine)
+        {
+            return;
+        }
+        Diagnostic diag;
+        diag.range.start.line = pinpointed->range.startLine;
+        diag.range.start.character = pinpointed->range.startCharacter;
+        diag.range.end.line = pinpointed->range.endLine;
+        diag.range.end.character = pinpointed->range.endCharacter;
+        diag.severity = DiagnosticSeverity::Error;
+        diag.code = "as-syntax-error";
+        diag.source = "AngelScript";
+        diag.fileUri = errCtx.sCtx.request.fileUri;
+        diag.message = pinpointed->message;
+        errCtx.sCtx.diagnostics.push_back(std::move(diag));
+        if (pinpointed->suppressEndByte > pinpointed->suppressStartByte)
+        {
+            errCtx.suppressedErrorRanges.emplace_back(pinpointed->suppressStartByte, pinpointed->suppressEndByte);
+        }
+        if (errCtx.firstErrorLine == UINT32_MAX)
+        {
+            errCtx.firstErrorLine = line;
+        }
+        return;
+    }
 
     TSNode target = ts_node_is_missing(node) ? node : PinpointOffendingNode(node, m_gs);
     if (ts_node_symbol(target) == m_gs.symComment || ts_node_symbol(node) == m_gs.symComment)
@@ -2417,7 +2373,7 @@ void SymbolCollector::ReportParseErrors(const NodeIndex& index, SymbolCollectCon
     }
 
     const auto braceBalance = parser::ComputeBraceBalance(sCtx.request.sourceCode);
-    ParseErrorReportContext errCtx{sCtx, braceBalance.HasMissingOpenBrace(), UINT32_MAX, {}};
+    ParseErrorReportContext errCtx{sCtx, braceBalance.HasMissingOpenBrace(), UINT32_MAX, {}, {}};
     const TSSymbol candidates[] = {m_gs.symSwitchStatement, m_gs.symError};
     index.ForEachNodeOrdered(
         candidates,
@@ -2958,6 +2914,7 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, con
     paramInfo.typeKind = pInfo.kind;
     paramInfo.isArray = pInfo.isArray;
     paramInfo.hasPrimitiveHandle = pInfo.hasPrimitiveHandle;
+    paramInfo.hasDoubleHandle = pInfo.hasDoubleHandle;
     paramInfo.arrayDepth = pInfo.arrayDepth;
     paramInfo.defaultValue = std::string(parser::NodeText(pDefaultNode, sourceCode));
     if (paramInfo.defaultValue.empty())

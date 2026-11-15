@@ -252,9 +252,7 @@ void CheckBases(const Symbol& sym, const ClassSignature& sig, const DiagnosticCo
         }
     }
 
-    if (HasInheritanceCycle(sym.qualifiedName.empty() ? std::string_view(sym.name)
-                                                      : std::string_view(sym.qualifiedName),
-                            ctx.request.symbolTable))
+    if (ClosesInheritanceCycle(sym, ctx.request.symbolTable))
     {
         ctx.LogRule("CheckBases", "as-err-circular-inherit", sym);
         ctx.Emit(sym, "as-err-circular-inherit", sym.name);

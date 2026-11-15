@@ -42,6 +42,7 @@ struct ConditionSiteFact
     uint32_t operandCount = 0;          ///< Number of leaf operands, in left-to-right source order.
     bool isTernary = false;             ///< The site is a ternary expression, which skips the handle check.
     bool isRootIf = false;              ///< An if statement that is not the else branch of another one.
+    bool isDoWhile = false;             ///< The site is a do-while statement whose error anchors at `do`.
 };
 
 /**
@@ -96,6 +97,7 @@ struct AutoDeclaratorFact
     std::string_view name;          ///< Declared variable name.
     SourceRange nameRange;          ///< Span of the name; matched against the local definition position.
     ConversionExpressionFact value; ///< Initializer expression; absent when the declarator has none.
+    bool valueIsLambda = false;     ///< True when the unwrapped initializer is an anonymous function expression.
 };
 
 /**

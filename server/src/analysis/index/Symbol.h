@@ -231,6 +231,7 @@ struct ParameterInformation
 
     bool isArray : 1 = false;
     bool hasPrimitiveHandle : 1 = false;
+    bool hasDoubleHandle : 1 = false;
     bool isHandle : 1 = false;
     bool isConst : 1 = false;
     bool isReference : 1 = false;
@@ -306,6 +307,7 @@ struct TypeExtractionResult
     bool isReference = false;
     bool isConst = false;
     bool hasPrimitiveHandle = false;
+    bool hasDoubleHandle = false;
     uint32_t arrayDepth = 0;
     std::vector<std::string> templateArgumentTypes;
 };
@@ -330,6 +332,7 @@ struct FunctionSignature
     bool returnIsArray : 1 = false;
     bool returnIsConst : 1 = false;
     bool returnHasPrimitiveHandle : 1 = false;
+    bool returnHasDoubleHandle : 1 = false;
     bool hasBody : 1 = false;
     bool isInterfaceMethod : 1 = false;
     bool isImported : 1 = false;
@@ -355,6 +358,7 @@ struct VariableSignature
 
     bool isArray : 1 = false;
     bool hasPrimitiveHandle : 1 = false;
+    bool hasDoubleHandle : 1 = false;
     bool isVirtualProperty : 1 = false;
     bool hasGet : 1 = false;
     bool hasSet : 1 = false;
@@ -451,6 +455,7 @@ struct FuncdefSignature
     bool returnIsArray : 1 = false;
     bool returnIsConst : 1 = false;
     bool returnHasPrimitiveHandle : 1 = false;
+    bool returnHasDoubleHandle : 1 = false;
 };
 static_assert(sizeof(FuncdefSignature) <= 152);
 

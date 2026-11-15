@@ -1,12 +1,16 @@
 #include "analysis/checkers/BinaryOperatorChecker.h"
 
 #include "analysis/checkers/BinaryOperatorHelpers.h"
+#include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/OperandTypePair.h"
+#include "analysis/types/TypeSanitization.h"
 
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -208,6 +212,33 @@ static bool AreBinaryOperandsCompatible(std::string_view op, const OperandTypePa
 }
 
 /**
+ * @brief Validates that a logical operator operand converts to bool when its type is known.
+ * @param[in] operand Left or right operand of the logical binary expression.
+ * @param[in] exprCtx Expression type resolution context.
+ * @param[in,out] ctx Diagnostic sink.
+ */
+static void CheckLogicalOperand(const BinaryOperandFact& operand, const ExpressionTypeContext& exprCtx,
+                                DiagnosticContext& ctx)
+{
+    const std::string rawType = ResolveExpressionType(operand.bytes, exprCtx);
+    if (rawType.empty() || ExpressionTypeCache::IsPoisonType(rawType))
+    {
+        return;
+    }
+    const SymbolTable& table = ctx.request.symbolTable;
+    const std::string clean = UnwrapTypedef(CleanBaseType(rawType), table);
+    if (clean.empty() || clean == "auto" || clean == "?" || ctx.request.IsRegisteredSymbol(clean) ||
+        !IsKnownType(clean, table, ctx.request.GetEffectiveStringTypeName()))
+    {
+        return;
+    }
+    if (clean == "void" || (!IsHandleTypeView(rawType) && !IsTruthyCondition(clean, table)))
+    {
+        ctx.EmitAtRange(operand.range, diagnostics::codes::NoImplicitConversion, {clean, "bool"});
+    }
+}
+
+/**
  * @brief Check binary operator compatibility.
  * @param[in] fact Binary expression facts with operator and both operands.
  * @param[in] scope Enclosing lexical scope.
@@ -215,9 +246,10 @@ static bool AreBinaryOperandsCompatible(std::string_view op, const OperandTypePa
  */
 void CheckBinaryOperatorCompatibility(const BinaryExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx)
 {
+    const bool isLogical = fact.opClass == BinaryOperatorClass::Logical;
     const bool isBitwise = fact.opClass == BinaryOperatorClass::Bitwise || IsBitwiseOp(fact.op);
     const bool isArithmetic = fact.opClass == BinaryOperatorClass::Arithmetic || IsArithmeticOp(fact.op);
-    if (!isBitwise && !isArithmetic)
+    if (!isLogical && !isBitwise && !isArithmetic)
     {
         return;
     }
@@ -236,6 +268,13 @@ void CheckBinaryOperatorCompatibility(const BinaryExpressionFact& fact, const Sc
     if (IsFunctionReference(fact.left.bytes, exprCtx) || IsFunctionReference(fact.right.bytes, exprCtx))
     {
         ctx.EmitAtRange(fact.operatorRange, diagnostics::codes::NoMatchingOperator, {fact.op, "function", "value"});
+        return;
+    }
+
+    if (isLogical)
+    {
+        CheckLogicalOperand(fact.left, exprCtx, ctx);
+        CheckLogicalOperand(fact.right, exprCtx, ctx);
         return;
     }
 

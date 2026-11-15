@@ -1593,10 +1593,10 @@ TEST_SUITE("AngelScript_Class_OOP_And_Operators_Verification")
         CHECK(diagnostics[0].range.start.line == 2);
 
         CHECK(diagnostics[1].code == "E_CANNOT_OVERRIDE_FINAL_METHOD");
-        CHECK(diagnostics[1].range.start.line == 10);
+        CHECK(diagnostics[1].range.start.line == 9);
 
         CHECK(diagnostics[2].code == "E_METHOD_DOES_NOT_OVERRIDE");
-        CHECK(diagnostics[2].range.start.line == 11);
+        CHECK(diagnostics[2].range.start.line == 9);
     }
 
     TEST_CASE("TypeRules - Access Control: Protected and private member visibility enforcement")

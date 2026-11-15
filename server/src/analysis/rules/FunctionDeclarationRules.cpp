@@ -55,6 +55,39 @@ void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig,
 
 // Override
 
+static const Symbol& ResolveOverrideDiagnosticTarget(const Symbol& methodSym, const SymbolTable& table,
+                                                     std::shared_ptr<const std::vector<Symbol>>& keepAlive)
+{
+    if (!methodSym.containerName.empty())
+    {
+        keepAlive = table.FindSymbolsPtr(methodSym.containerName);
+        if (keepAlive)
+        {
+            const Symbol* best = nullptr;
+            for (const auto& candidate : *keepAlive)
+            {
+                if (candidate.type == SymbolType::Class && candidate.fileUri == methodSym.fileUri &&
+                    !candidate.isSynthesized)
+                {
+                    if (candidate.startLine <= methodSym.startLine && (!best || candidate.startLine > best->startLine))
+                    {
+                        best = &candidate;
+                    }
+                    else if (!best)
+                    {
+                        best = &candidate;
+                    }
+                }
+            }
+            if (best)
+            {
+                return *best;
+            }
+        }
+    }
+    return methodSym;
+}
+
 void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
                    const DiagnosticContext& ctx)
 {
@@ -73,12 +106,15 @@ void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const Functi
         return;
     }
 
+    std::shared_ptr<const std::vector<Symbol>> keepAlive;
+    const Symbol& target = ResolveOverrideDiagnosticTarget(sym, table, keepAlive);
+
     const auto hierarchy = GetInheritedTypeHierarchy(sym.containerName, table);
     if (hierarchy.size() <= 1)
     {
         // No bases at all. `override` on such a method is meaningless whatever it names.
-        ctx.LogRule("CheckOverride", "as-err-override-no-base", sym);
-        ctx.Emit(sym, "as-err-override-no-base", sym.name, sym.containerName);
+        ctx.LogRule("CheckOverride", "as-err-override-no-base", target);
+        ctx.Emit(target, "as-err-override-no-base", sym.name, sym.containerName);
         return;
     }
 
@@ -103,8 +139,8 @@ void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const Functi
 
     if (!found)
     {
-        ctx.LogRule("CheckOverride", "as-err-override-no-base", sym);
-        ctx.Emit(sym, "as-err-override-no-base", sym.name, sym.containerName);
+        ctx.LogRule("CheckOverride", "as-err-override-no-base", target);
+        ctx.Emit(target, "as-err-override-no-base", sym.name, sym.containerName);
     }
 }
 

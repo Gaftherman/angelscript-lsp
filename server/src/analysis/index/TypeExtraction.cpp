@@ -89,10 +89,9 @@ static void ReadTypeModifier(TSNode child, TSNode previous, const NodeIndex* ind
     }
     else if (token == gs.tokAt)
     {
-        if (result.isHandle &&
-            (ts_node_is_null(previous) || ts_node_is_missing(previous) || ts_node_symbol(previous) != gs.tokConst))
+        if (result.isHandle)
         {
-            result.hasPrimitiveHandle = true;
+            result.hasDoubleHandle = true;
         }
         result.isHandle = true;
         if (!result.isArray && !ts_node_is_null(previous) && ts_node_symbol(previous) == gs.symDatatype)
@@ -242,6 +241,7 @@ class TypeReadWorklist
         {
             result.baseTypeName = m_completed.baseTypeName;
             result.hasPrimitiveHandle = m_completed.hasPrimitiveHandle;
+            result.hasDoubleHandle |= m_completed.hasDoubleHandle;
             result.arrayDepth += m_completed.arrayDepth;
             if (m_completed.kind != TypeKind::Unknown)
             {

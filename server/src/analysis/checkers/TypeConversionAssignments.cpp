@@ -1,4 +1,5 @@
 #include "analysis/checkers/TypeConversionCommon.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
@@ -62,9 +63,19 @@ static void CheckAssignmentOperatorConversion(const AssignmentSiteFact& site, co
         }
     }
 
+    const std::string_view overload = site.op.empty() ? std::string_view() : AssignmentOverloadName(site.op);
+    if (!site.opIsAssign && site.op != "=" && !overload.empty())
+    {
+        const std::string toUnwrapped = UnwrapTypedef(types.to, ctx.request.symbolTable);
+        if (toUnwrapped == "bool")
+        {
+            ctx.EmitAtRange(site.range, diagnostics::codes::NoMathConversion, types.to);
+            return;
+        }
+    }
+
     if (!types.from.empty() && types.to != types.from)
     {
-        const std::string_view overload = site.op.empty() ? std::string_view() : AssignmentOverloadName(site.op);
         const bool operatorHandlesIt = DeclaresOperatorMethod(types.to, overload, ctx.request.symbolTable);
         if (!operatorHandlesIt && !IsConvertible(types.from, types.to, ctx))
         {

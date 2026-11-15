@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/BinaryExpressionFacts.h"
+#include "analysis/index/ConversionSiteFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/PropertyAccessFacts.h"
 #include "analysis/index/SpanFactSearch.h"
@@ -79,6 +80,12 @@ struct IndexExpressionSiteFact
     IndexedByteRange bytes;            ///< Byte span of the index expression.
     SourceRange range;                 ///< Line and column span; its start selects the lexical scope.
     bool isWriteOrMutation = false;    ///< True when the index is an assignment LHS or mutation operand.
+    bool hasSyntaxError = false;       ///< True when the index expression contains a syntax error.
+    IndexedByteRange objectBytes;      ///< Byte span of the indexed object expression.
+    SourceRange objectRange;           ///< Line and column span of the indexed object expression.
+    std::string_view objectText;       ///< Source spelling of the indexed object expression.
+    uint32_t argBegin = 0;             ///< First index into ExpressionSiteFacts::indexArgs.
+    uint32_t argCount = 0;             ///< Number of index argument expressions.
     PropertyAccessFact objectProperty; ///< Indexed object expression read as a virtual property access.
 };
 
@@ -111,6 +118,7 @@ struct ExpressionSiteFacts
     std::vector<CastExpressionSiteFact> castExpressions;       ///< Ordered by start byte.
     std::vector<FoldedConstantFact> foldedConstants;           ///< Ordered by start byte.
     std::vector<IndexedByteRange> unwrappedSpans;              ///< Parenthesized spans, sliced by FoldedConstantFact.
+    std::vector<ConversionExpressionFact> indexArgs; ///< Index argument expressions, sliced by IndexExpressionSiteFact.
 
     /**
      * @brief Finds the binary expression site that spans exactly the given bytes.

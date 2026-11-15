@@ -95,6 +95,7 @@ struct LocalDefinition
     TypeKind typeKind = TypeKind::Unknown;
 
     bool isHandleType : 1 = false;
+    bool hasDoubleHandle : 1 = false;
     bool hasNullInitializer : 1 = false;
     bool isConst : 1 = false;
     bool isReference : 1 = false;

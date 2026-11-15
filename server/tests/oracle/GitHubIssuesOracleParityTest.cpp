@@ -112,19 +112,19 @@ TEST_SUITE("oracle/GitHubIssuesOracleParity")
                                        fnAmb +
                                        "(1, 2);\n"
                                        "}\n";
-        const std::string warnUri = harness.SandboxUri("scripts/" + GenerateRandomSymbolName("amb_warn") + ".as");
-        harness.AddVirtualDocument(warnUri, warnScript);
-        const auto& warnDiags = harness.GetDiagnostics(warnUri);
-        bool foundWarning = false;
-        for (const auto& d : warnDiags)
+        const std::string ambUri = harness.SandboxUri("scripts/" + GenerateRandomSymbolName("amb_call") + ".as");
+        harness.AddVirtualDocument(ambUri, warnScript);
+        const auto& ambDiags = harness.GetDiagnostics(ambUri);
+        bool foundAmbError = false;
+        for (const auto& d : ambDiags)
         {
-            if (d.code == "as-err-call-ambiguous" && d.severity == angel_lsp::analysis::DiagnosticSeverity::Warning)
+            if (d.code == "as-err-call-ambiguous" && d.severity == angel_lsp::analysis::DiagnosticSeverity::Error)
             {
-                foundWarning = true;
+                foundAmbError = true;
                 break;
             }
         }
-        CHECK(foundWarning);
+        CHECK(foundAmbError);
     }
 
     TEST_CASE("Issue #7 - Const handle to non-const handle emits error and offers quick fix")

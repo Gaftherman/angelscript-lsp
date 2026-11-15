@@ -334,6 +334,7 @@ class SymbolCollector
         bool missingOpenBrace = false;
         uint32_t firstErrorLine = UINT32_MAX;
         std::vector<MissingCaseColon> missingColons;
+        std::vector<std::pair<uint32_t, uint32_t>> suppressedErrorRanges;
     };
     void ReportParseErrors(const NodeIndex& index, SymbolCollectContext& sCtx) const;
     void RecoverSwallowedDeclarations(SymbolCollectContext& sCtx);

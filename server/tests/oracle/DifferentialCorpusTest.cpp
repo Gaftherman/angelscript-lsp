@@ -1,7 +1,9 @@
 #include "helpers/McpTestSession.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstdio>
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
@@ -26,6 +28,8 @@ TEST_SUITE("oracle/DifferentialCorpus")
         std::string expect;
         std::vector<std::string> required;
         std::vector<std::string> forbidden;
+        /// Exact diagnostic ranges from `// @error: L:C-L:C` as {startLine, startChar, endLine, endChar}.
+        std::vector<std::array<int, 4>> ranges;
     };
 
     static std::string ReadFile(const std::filesystem::path& path)
@@ -44,23 +48,9 @@ TEST_SUITE("oracle/DifferentialCorpus")
         return text;
     }
 
-    static CorpusCase LoadCase(const std::filesystem::path& entry)
+    /** @brief Reads the `// @expect`, `@complete` and `@error` tags of a case's main text. */
+    static void ParseTags(CorpusCase & result)
     {
-        CorpusCase result;
-        const bool isDirectory = std::filesystem::is_directory(entry);
-        result.id =
-            entry.parent_path().filename().string() + "/" + (isDirectory ? entry.filename() : entry.stem()).string();
-        result.mainText = ReadFile(isDirectory ? entry / "main.as" : entry);
-        if (isDirectory)
-        {
-            for (const auto& sibling : std::filesystem::directory_iterator(entry))
-            {
-                if (sibling.path().extension() == ".as" && sibling.path().filename() != "main.as")
-                {
-                    result.siblings.emplace_back(sibling.path().filename().string(), ReadFile(sibling.path()));
-                }
-            }
-        }
         std::istringstream lines(result.mainText);
         std::string line;
         while (std::getline(lines, line))
@@ -80,6 +70,75 @@ TEST_SUITE("oracle/DifferentialCorpus")
             {
                 result.forbidden.push_back(minus);
             }
+            else if (const std::string error = take("// @error:"); !error.empty())
+            {
+                std::array<int, 4> range{};
+                if (std::sscanf(error.c_str(), "%d:%d-%d:%d", &range[0], &range[1], &range[2], &range[3]) == 4)
+                {
+                    result.ranges.push_back(range);
+                }
+            }
+        }
+    }
+
+    /** @brief Marker line that starts a section of a multi-case file. */
+    static constexpr std::string_view k_caseMarker = "// ==== case:";
+
+    /**
+     * @brief Loads every case an entry holds.
+     * @param[in] entry A `.as` file (one case, or many split by `// ==== case: id ====`) or a directory with `main.as`.
+     * @return One case per section; sections are independent scripts so their names never collide.
+     */
+    static std::vector<CorpusCase> LoadCases(const std::filesystem::path& entry)
+    {
+        const std::string category = entry.parent_path().filename().string();
+        std::vector<CorpusCase> result;
+        if (std::filesystem::is_directory(entry))
+        {
+            CorpusCase item;
+            item.id = category + "/" + entry.filename().string();
+            item.mainText = ReadFile(entry / "main.as");
+            for (const auto& sibling : std::filesystem::directory_iterator(entry))
+            {
+                if (sibling.path().extension() == ".as" && sibling.path().filename() != "main.as")
+                {
+                    item.siblings.emplace_back(sibling.path().filename().string(), ReadFile(sibling.path()));
+                }
+            }
+            ParseTags(item);
+            result.push_back(std::move(item));
+            return result;
+        }
+        std::istringstream lines(ReadFile(entry));
+        std::string line;
+        CorpusCase* current = nullptr;
+        std::set<std::string> seen;
+        while (std::getline(lines, line))
+        {
+            const std::string trimmed = Trim(line);
+            if (trimmed.rfind(k_caseMarker, 0) == 0)
+            {
+                std::string name = Trim(trimmed.substr(k_caseMarker.size()));
+                name = Trim(name.substr(0, name.rfind("====")));
+                REQUIRE_MESSAGE(seen.insert(name).second, "duplicate case id " << name << " in " << entry.filename());
+                current = &result.emplace_back();
+                current->id = category + "/" + entry.stem().string() + "::" + name;
+                continue;
+            }
+            if (current == nullptr)
+            {
+                if (Trim(line).empty())
+                {
+                    continue;
+                }
+                current = &result.emplace_back();
+                current->id = category + "/" + entry.stem().string();
+            }
+            current->mainText += line + "\n";
+        }
+        for (CorpusCase& item : result)
+        {
+            ParseTags(item);
         }
         return result;
     }
@@ -111,7 +170,10 @@ TEST_SUITE("oracle/DifferentialCorpus")
         std::sort(entries.begin(), entries.end());
         for (const auto& entry : entries)
         {
-            cases.push_back(LoadCase(entry));
+            for (CorpusCase& item : LoadCases(entry))
+            {
+                cases.push_back(std::move(item));
+            }
         }
         return cases;
     }
@@ -167,6 +229,22 @@ TEST_SUITE("oracle/DifferentialCorpus")
                     errors += (severity != nullptr && severity->isInteger() && severity->integer() == 1) ? 1 : 0;
                 }
                 CHECK((errors == 0) == (item.expect == "accept"));
+                for (const std::array<int, 4>& want : item.ranges)
+                {
+                    bool found = false;
+                    for (const auto& diag : report.array())
+                    {
+                        const lsp::json::Value& range = diag.object().get("range");
+                        const lsp::json::Value& start = range.object().get("start");
+                        const lsp::json::Value& end = range.object().get("end");
+                        found = found || (start.object().get("line").integer() == want[0] &&
+                                          start.object().get("character").integer() == want[1] &&
+                                          end.object().get("line").integer() == want[2] &&
+                                          end.object().get("character").integer() == want[3]);
+                    }
+                    CHECK_MESSAGE(found, "no diagnostic covers " << want[0] << ":" << want[1] << "-" << want[2] << ":"
+                                                                 << want[3]);
+                }
                 continue;
             }
 

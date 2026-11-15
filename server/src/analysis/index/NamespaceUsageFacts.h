@@ -14,20 +14,37 @@ namespace angel_lsp::analysis
 {
 
 /**
+ * @brief Syntactic role of a scoped identifier node (`A::B`).
+ */
+enum class ScopedIdentifierUsage : uint8_t
+{
+    Expression,           ///< Value, argument, condition, or standalone qualified name.
+    CallCallee,           ///< Callee of a call expression (e.g., `A::B::fn()`).
+    TypeScope,            ///< Qualifier inside a `scope` node of a type (e.g., `A::B` in `A::B::Type`).
+    NamespaceDeclaration, ///< Name of a `namespace A::B` declaration.
+    UsingDeclaration      ///< Target of a using-directive naming a scope.
+};
+
+/**
  * @brief Scoped identifier reference such as `A::B` or `::A::B`.
  */
 struct ScopedIdentifierFact
 {
-    IndexedByteRange bytes;         ///< Byte span of the entire scoped identifier node.
-    SourceRange range;              ///< Line and column span of the scoped identifier.
-    std::string_view qualifiedText; ///< Full qualified spelling including colons.
-    IndexedByteRange prefixBytes;   ///< Byte span of the leading scope qualifier identifier.
-    SourceRange prefixRange;        ///< Line and column span of the leading scope qualifier.
-    std::string_view prefix;        ///< Scope qualifier prefix name.
-    IndexedByteRange memberBytes;   ///< Byte span of the trailing member identifier.
-    SourceRange memberRange;        ///< Line and column span of the trailing member identifier.
-    std::string_view memberName;    ///< Trailing member identifier name.
-    bool hasLeadingGlobal = false;  ///< True if prefixed with the global scope operator `::`.
+    IndexedByteRange bytes;          ///< Byte span of the entire scoped identifier node.
+    SourceRange range;               ///< Line and column span of the scoped identifier.
+    std::string_view qualifiedText;  ///< Full qualified spelling including colons.
+    IndexedByteRange prefixBytes;    ///< Byte span of the leading scope qualifier identifier.
+    SourceRange prefixRange;         ///< Line and column span of the leading scope qualifier.
+    std::string_view prefix;         ///< Scope qualifier prefix name.
+    IndexedByteRange qualifierBytes; ///< Byte span of the full qualifier chain before the final `::`.
+    SourceRange qualifierRange;      ///< Line and column span of the full qualifier chain.
+    std::string_view qualifier;      ///< Full qualifier path before trailing member, without leading `::`.
+    IndexedByteRange memberBytes;    ///< Byte span of the trailing member identifier.
+    SourceRange memberRange;         ///< Line and column span of the trailing member identifier.
+    std::string_view memberName;     ///< Trailing member identifier name.
+    ScopedIdentifierUsage usage = ScopedIdentifierUsage::Expression; ///< Syntactic context of this reference.
+    bool hasLeadingGlobal = false; ///< True if prefixed with the global scope operator `::`.
+    bool isInsideError = false;    ///< True if enclosed within a syntax error node.
 };
 
 /**

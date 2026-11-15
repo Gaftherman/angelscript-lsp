@@ -553,4 +553,41 @@ TEST_SUITE("analysis/resolution/EnumReachability")
         CHECK(MatchesVerdict(diagnostics, expectedVerdict));
         CHECK(HasReachabilityDiagnostic(diagnostics));
     }
+
+    TEST_CASE("EnumReachability - Typo in qualified enum member or namespace value emits error while valid resolves")
+    {
+        const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("State");
+        const std::string valIdle = angel_lsp::test::GenerateRandomSymbolName("Idle");
+        const std::string valRun = angel_lsp::test::GenerateRandomSymbolName("Running");
+        const std::string valTypo = angel_lsp::test::GenerateRandomSymbolName("Runing");
+        const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("Input");
+        const std::string flagName = angel_lsp::test::GenerateRandomSymbolName("isPressed");
+        const std::string flagTypo = angel_lsp::test::GenerateRandomSymbolName("isPresed");
+        const std::string mainFn = angel_lsp::test::GenerateRandomSymbolName("Main");
+
+        const std::string badCode = "enum " + enumName + " { " + valIdle + ", " + valRun + " }\nnamespace " + nsName +
+                                    " { bool " + flagName + " = false; }\nvoid " + mainFn + "() {\n    " + enumName +
+                                    " s = " + enumName + "::" + valTypo + ";\n    bool p = " + nsName +
+                                    "::" + flagTypo + ";\n}\n";
+
+        const auto badDiags = AnalyzeCode(badCode);
+        int undefinedIdentErrors = 0;
+        for (const auto& d : badDiags)
+        {
+            if (d.code == "as-err-undefined-identifier" && d.severity == DiagnosticSeverity::Error)
+            {
+                ++undefinedIdentErrors;
+            }
+        }
+        CHECK(undefinedIdentErrors == 2);
+
+        const std::string goodCode = "enum " + enumName + " { " + valIdle + ", " + valRun + " }\nnamespace " + nsName +
+                                     " { bool " + flagName + " = false; }\nvoid " + mainFn + "() {\n    " + enumName +
+                                     " s = " + enumName + "::" + valRun + ";\n    bool p = " + nsName +
+                                     "::" + flagName + ";\n}\n";
+
+        const auto goodDiags = AnalyzeCode(goodCode);
+        CHECK_FALSE(MatchesVerdict(goodDiags, "as-err-undefined-identifier"));
+        CHECK_FALSE(MatchesVerdict(goodDiags, "as-err-undefined-namespace"));
+    }
 }

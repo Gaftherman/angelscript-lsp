@@ -2,6 +2,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/VariableRules.h"
+#include "parser/Keywords.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -68,6 +69,16 @@ static bool CheckMissingFuncdefHint(std::string_view base, const SourceRange& ra
     return false;
 }
 
+static bool CheckIllegalDoubleHandle(const LocalDefinition& def, const SourceRange& range, DiagnosticContext& ctx)
+{
+    if (def.hasDoubleHandle)
+    {
+        ctx.EmitAtRange(range, "as-err-handle-to-handle", DiagnosticSeverity::Error);
+        return true;
+    }
+    return false;
+}
+
 static bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, std::string_view base, const SourceRange& range,
                                           DiagnosticContext& ctx)
 {
@@ -99,6 +110,35 @@ static std::string_view ResolveEnclosingNamespaceForDefinition(const LocalDefini
     return scope->GetEnclosingNamespace();
 }
 
+/**
+ * @brief Tells whether a written type name resolves to a funcdef.
+ * @param[in] name Type name as written, possibly unqualified.
+ * @param[in] containerScope Namespace the declaration sits in; each enclosing namespace is tried in turn.
+ * @param[in] table Symbol table to query.
+ * @return True when `name`, or `name` relative to an enclosing namespace, is a funcdef symbol.
+ */
+static bool ResolvesToFuncdefFrom(std::string_view name, std::string_view containerScope, const SymbolTable& table)
+{
+    const auto isFuncdef = [&table](std::string_view candidate)
+    {
+        const auto bucket = table.FindSymbolsPtr(candidate);
+        return bucket && std::any_of(bucket->begin(), bucket->end(),
+                                     [](const Symbol& sym) { return sym.type == SymbolType::Funcdef; });
+    };
+    if (isFuncdef(name))
+    {
+        return true;
+    }
+    for (std::string_view scope = containerScope; !scope.empty(); scope = utils::ParentScopeView(scope))
+    {
+        if (isFuncdef(utils::JoinScopedName(scope, name)))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
 {
     const SourceRange range = GetDefinitionTypeRange(def);
@@ -121,7 +161,14 @@ static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& 
         ctx.EmitAtRange(range, "as-err-mixin-not-a-type", base, DiagnosticSeverity::Error);
         return;
     }
-    if (CheckMissingFuncdefHint(base, range, ctx) || CheckIllegalHandleOnPrimitive(def, base, range, ctx))
+    if (def.kind == LocalDefinitionKind::Parameter && base == "auto")
+    {
+        ctx.EmitAtRange(range, "as-err-auto-not-allowed", DiagnosticSeverity::Error);
+        return;
+    }
+
+    if (CheckIllegalDoubleHandle(def, range, ctx) || CheckMissingFuncdefHint(base, range, ctx) ||
+        CheckIllegalHandleOnPrimitive(def, base, range, ctx))
     {
         return;
     }
@@ -132,9 +179,18 @@ static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& 
     {
         ValidateTemplateArguments(def, tmplInfo, enclosingNs, ctx);
     }
-    else if (!base.empty() && base != "auto" && !IsReservedKeyword(base) && !IsKnownType(base, ctx, enclosingNs))
+    else if (!base.empty() && base != parser::keywords::Auto && !IsReservedKeyword(base))
     {
-        ctx.EmitAtRange(range, "as-err-unresolved-type", base, DiagnosticSeverity::Error);
+        if (!IsKnownType(base, ctx, enclosingNs))
+        {
+            ctx.EmitAtRange(range, "as-err-unresolved-type", base, DiagnosticSeverity::Error);
+        }
+        else if (!def.isHandleType && def.typeKind != TypeKind::Array && !IsHandleTypeView(def.typeName) &&
+                 !std::string_view(def.typeName).ends_with("[]") &&
+                 ResolvesToFuncdefFrom(base, enclosingNs, ctx.request.symbolTable))
+        {
+            ctx.EmitAtRange(range, "as-err-funcdef-not-handle", {base, base}, DiagnosticSeverity::Error);
+        }
     }
 
     CheckEngineLocalTypeSuggestions(def, ctx);

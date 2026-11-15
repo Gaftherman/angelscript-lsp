@@ -124,6 +124,11 @@ void CheckClassModifiers(const Symbol& sym, const ClassSignature& sig, const Dia
 {
     CheckBodyPresence(sym, sig, ctx);
     CheckExternalClass(sym, sig, ctx);
+    if (!sig.modifiers.isMixin && sig.modifiers.isFinal && sig.modifiers.isAbstract)
+    {
+        ctx.LogRule("CheckClassModifiers", "as-err-class-final-abstract-conflict", sym);
+        ctx.Emit(sym, "as-err-class-final-abstract-conflict");
+    }
     CheckMixinModifiers(sym, sig, ctx);
 }
 

@@ -430,7 +430,7 @@ TEST_CASE("Case 10 - json::Get with const string&in keyName and bool&out temp re
     CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
 }
 
-TEST_CASE("Case 11 - Ambiguous call emits Warning with root pre-formatted GetDisplaySignature in EN and ES via i18n")
+TEST_CASE("Case 11 - Ambiguous call emits Error with root pre-formatted GetDisplaySignature in EN and ES via i18n")
 {
     const std::string nsName = GenerateRandomSymbolName("ns");
     const std::string clsName = GenerateRandomSymbolName("Dispatcher");
@@ -465,7 +465,7 @@ TEST_CASE("Case 11 - Ambiguous call emits Warning with root pre-formatted GetDis
         if (d.code == "as-err-call-ambiguous")
         {
             foundEn = true;
-            CHECK(d.severity == analysis::DiagnosticSeverity::Warning);
+            CHECK(d.severity == analysis::DiagnosticSeverity::Error);
             CHECK(d.message == "Call to '" + fnName + "' is ambiguous (Priority: '" + expectedPrioritySig + "').");
         }
     }
@@ -478,7 +478,7 @@ TEST_CASE("Case 11 - Ambiguous call emits Warning with root pre-formatted GetDis
         if (d.code == "as-err-call-ambiguous")
         {
             foundEs = true;
-            CHECK(d.severity == analysis::DiagnosticSeverity::Warning);
+            CHECK(d.severity == analysis::DiagnosticSeverity::Error);
             CHECK(d.message == "La llamada a '" + fnName + "' es ambigua (Prioridad: '" + expectedPrioritySig + "').");
         }
     }

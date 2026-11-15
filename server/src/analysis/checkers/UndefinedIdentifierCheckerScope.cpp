@@ -22,7 +22,7 @@ static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticCon
         return true;
     }
 
-    if (ref.name == "this" || ref.name == "value")
+    if (ref.name == "this")
     {
         return true;
     }

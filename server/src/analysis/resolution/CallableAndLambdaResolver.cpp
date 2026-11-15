@@ -419,6 +419,7 @@ Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callNa
         fnSig.returnIsArray = fd.returnIsArray;
         fnSig.returnIsConst = fd.returnIsConst;
         fnSig.returnHasPrimitiveHandle = fd.returnHasPrimitiveHandle;
+        fnSig.returnHasDoubleHandle = fd.returnHasDoubleHandle;
         fnSig.returnArrayDepth = fd.returnArrayDepth;
         fnSig.modifiers = fd.modifiers;
         fnSig.parameters = fd.parameters;

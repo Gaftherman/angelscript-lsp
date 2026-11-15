@@ -89,6 +89,25 @@ inline constexpr std::string_view k_scopeSeparator = "::";
 }
 
 /**
+ * @brief Rewrites a scoped name typed with free spacing (`A :: B`) into its canonical `A::B` spelling.
+ * @param[in] written Source text of the name, possibly containing blanks around the separators.
+ * @return The name without any whitespace, ready for symbol-table lookups.
+ */
+[[nodiscard]] inline std::string CompactScopedName(std::string_view written)
+{
+    std::string out;
+    out.reserve(written.size());
+    for (const char c : written)
+    {
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n')
+        {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+
+/**
  * @brief Concatenates a scope qualifier and a symbol name with "::" in a single heap allocation.
  * @param[in] scope Scope qualifier prefix (e.g. "Namespace").
  * @param[in] name Leaf symbol name (e.g. "Class").

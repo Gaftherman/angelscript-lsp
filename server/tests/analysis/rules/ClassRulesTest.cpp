@@ -1284,3 +1284,65 @@ TEST_CASE("ClassRules - Mixin with foreach variable and local datatype does not 
     const auto diags = AnalyzeClassSnippet(code);
     CHECK_FALSE(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
 }
+
+TEST_CASE("ClassRules - Rejects class marked both final and abstract, accepts each alone")
+{
+    const std::string c1 = angel_lsp::test::GenerateRandomSymbolName("FinalAbs");
+    const std::string c2 = angel_lsp::test::GenerateRandomSymbolName("AbsFinal");
+    const std::string c3 = angel_lsp::test::GenerateRandomSymbolName("FinalOnly");
+    const std::string c4 = angel_lsp::test::GenerateRandomSymbolName("AbsOnly");
+
+    CHECK(HasCode(AnalyzeClassSnippet("final abstract class " + c1 + " {}\n"), "as-err-class-final-abstract-conflict"));
+    CHECK(HasCode(AnalyzeClassSnippet("abstract final class " + c2 + " {}\n"), "as-err-class-final-abstract-conflict"));
+
+    const std::string valid = "final class " + c3 + " {}\nabstract class " + c4 + " {}\n";
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet(valid), "as-err-class-final-abstract-conflict"));
+}
+
+TEST_CASE("ClassRules - Circular inheritance reports only on the cycle-closing declaration line")
+{
+    const std::string a = angel_lsp::test::GenerateRandomSymbolName("CycleA");
+    const std::string b = angel_lsp::test::GenerateRandomSymbolName("CycleB");
+
+    const std::string cyclic = "class " + a + " : " + b + " {}\nclass " + b + " : " + a + " {}\n";
+    const auto diags = AnalyzeClassSnippet(cyclic);
+
+    int circularCount = 0;
+    uint32_t reportedLine = UINT32_MAX;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-circular-inherit")
+        {
+            ++circularCount;
+            reportedLine = d.range.start.line;
+        }
+    }
+    CHECK(circularCount == 1);
+    CHECK(reportedLine == 1);
+
+    const std::string linear = "class " + a + " {}\nclass " + b + " : " + a + " {}\n";
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet(linear), "as-err-circular-inherit"));
+}
+
+TEST_CASE("ClassRules - Overriding final base method anchors diagnostic to derived class header")
+{
+    const std::string base = angel_lsp::test::GenerateRandomSymbolName("FinalBase");
+    const std::string derived = angel_lsp::test::GenerateRandomSymbolName("DerivedBad");
+    const std::string method = angel_lsp::test::GenerateRandomSymbolName("DoWork");
+
+    const std::string illegal = "class " + base + " {\n    int " + method +
+                                "() final { return 1; }\n}\n"
+                                "class " +
+                                derived + " : " + base + " {\n    int " + method + "() override { return 2; }\n}\n";
+    const auto illegalDiags = AnalyzeClassSnippet(illegal);
+    auto it = std::find_if(illegalDiags.begin(), illegalDiags.end(),
+                           [](const Diagnostic& d) { return d.code == "as-err-override-final-method"; });
+    REQUIRE(it != illegalDiags.end());
+    CHECK(it->range.start.line == 3);
+
+    const std::string legal = "class " + base + " {\n    int " + method +
+                              "() { return 1; }\n}\n"
+                              "class " +
+                              derived + " : " + base + " {\n    int " + method + "() override { return 2; }\n}\n";
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet(legal), "as-err-override-final-method"));
+}

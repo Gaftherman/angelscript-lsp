@@ -12,6 +12,7 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <ankerl/unordered_dense.h>
 #include <memory>
 #include <optional>
 #include <span>
@@ -109,6 +110,85 @@ bool HasInheritanceCycle(std::string_view typeName, const SymbolTable& table)
         if (sym.type == SymbolType::Interface && checkBases(sym.GetInterface().inheritedInterfaces))
         {
             return true;
+        }
+    }
+
+    return false;
+}
+
+static bool IsBeforeInSameFile(const Symbol& candidate, const Symbol& anchor) noexcept
+{
+    if (candidate.fileUri != anchor.fileUri)
+    {
+        return true;
+    }
+    return candidate.startLine < anchor.startLine ||
+           (candidate.startLine == anchor.startLine && candidate.startCharacter < anchor.startCharacter);
+}
+
+static void EnqueueAllowedBases(const Symbol& nodeSym, std::vector<std::string_view>& worklist)
+{
+    auto pushBases = [&](const auto& bases)
+    {
+        for (const auto& base : bases)
+        {
+            const std::string_view cleanBase = CleanBaseTypeView(base);
+            if (!cleanBase.empty())
+            {
+                worklist.push_back(cleanBase);
+            }
+        }
+    };
+
+    if (nodeSym.type == SymbolType::Class)
+    {
+        pushBases(nodeSym.GetClass().bases);
+    }
+    else if (nodeSym.type == SymbolType::Interface)
+    {
+        pushBases(nodeSym.GetInterface().inheritedInterfaces);
+    }
+}
+
+bool ClosesInheritanceCycle(const Symbol& sym, const SymbolTable& table)
+{
+    const std::string_view startType =
+        sym.qualifiedName.empty() ? std::string_view(sym.name) : std::string_view(sym.qualifiedName);
+    if (startType.empty())
+    {
+        return false;
+    }
+
+    std::vector<std::string_view> worklist;
+    EnqueueAllowedBases(sym, worklist);
+
+    ankerl::unordered_dense::set<std::string_view> visited;
+    while (!worklist.empty())
+    {
+        const std::string_view current = worklist.back();
+        worklist.pop_back();
+
+        if (current == startType)
+        {
+            return true;
+        }
+        if (!visited.insert(current).second || visited.size() > 256)
+        {
+            continue;
+        }
+
+        const auto symbols = table.FindSymbolsPtr(current);
+        if (!symbols)
+        {
+            continue;
+        }
+        for (const auto& candidate : *symbols)
+        {
+            if ((candidate.type == SymbolType::Class || candidate.type == SymbolType::Interface) &&
+                IsBeforeInSameFile(candidate, sym))
+            {
+                EnqueueAllowedBases(candidate, worklist);
+            }
         }
     }
 
