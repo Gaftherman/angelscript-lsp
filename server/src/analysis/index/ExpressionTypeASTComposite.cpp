@@ -40,7 +40,7 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
 
     if (chain.empty() || ts_node_is_null(curr))
     {
-        return std::string(ExpressionTypeCache::k_poisonType);
+        return {};
     }
 
     std::string currentType = ResolveASTExpressionType(curr, ctx);
@@ -50,15 +50,10 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
         const TSNode right = it->Field(gs.fieldRight);
         if (ts_node_is_null(opNode) || ts_node_is_null(right))
         {
-            return std::string(ExpressionTypeCache::k_poisonType);
+            return {};
         }
 
         std::string rightType = ResolveASTExpressionType(right, ctx);
-        if (ExpressionTypeCache::IsPoisonType(currentType) || ExpressionTypeCache::IsPoisonType(rightType))
-        {
-            return std::string(ExpressionTypeCache::k_poisonType);
-        }
-
         const std::string_view op = parser::OperatorSpelling(opNode);
         currentType = EvaluateBinaryResultType(op, currentType, rightType, ctx);
         if (currentType.empty())
@@ -90,14 +85,10 @@ static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeConte
     const TSNode alternative = syntax.Field(parser::GetGrammarSymbols().fieldAlternative);
     if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
     {
-        return std::string(ExpressionTypeCache::k_poisonType);
+        return {};
     }
     std::string t1 = ResolveASTExpressionType(consequence, ctx);
     std::string t2 = ResolveASTExpressionType(alternative, ctx);
-    if (ExpressionTypeCache::IsPoisonType(t1) || ExpressionTypeCache::IsPoisonType(t2))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
     if (t1.empty())
     {
         return t2;

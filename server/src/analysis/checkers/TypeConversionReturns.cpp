@@ -43,7 +43,7 @@ static void CheckReturnedValue(const ReturnSiteFact& site, std::string_view expe
     }
 
     const auto rawActual = ResolveExpressionType(value.bytes, ExpressionTypeContext(scope, ctx));
-    if (skipPoison && ExpressionTypeCache::IsPoisonType(rawActual))
+    if (skipPoison && RangeHasSyntaxError(ctx.request.nodeIndex, value.bytes))
     {
         return;
     }

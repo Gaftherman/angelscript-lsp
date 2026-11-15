@@ -209,12 +209,12 @@ bool IsStringType(std::string_view typeName, const DiagnosticContext& ctx);
 bool IsBuiltInValueType(std::string_view typeName, const DiagnosticContext& ctx);
 
 /**
- * @brief Checks if either type is empty or an error poison sentinel.
+ * @brief Checks if either type is empty, meaning it could not be resolved.
  * @param[in] from Source type name.
  * @param[in] to Destination type name.
- * @return True if either type is poison or empty; false otherwise.
+ * @return True if either type is empty; false otherwise.
  */
-bool IsPoisonOrEmptyType(std::string_view from, std::string_view to);
+bool HasEmptyType(std::string_view from, std::string_view to);
 
 /**
  * @brief Decides whether a value of type 'from' can reach type 'to'.
@@ -231,7 +231,7 @@ bool IsConvertible(std::string_view from, std::string_view to, const DiagnosticC
  * @param[in] value Leaf kind, spelling and unary operators of the expression.
  * @param[in] scope Lexical scope at the expression position.
  * @param[in] ctx Diagnostic context.
- * @return Resolved ExpressionType; a poison type for expressions with syntax errors, unknown when unresolved.
+ * @return Resolved ExpressionType; an unknown type when the expression is unresolved or holds a syntax error.
  */
 ExpressionType ResolveValueType(const ValueExpressionFact& value, const Scope* scope, const DiagnosticContext& ctx);
 

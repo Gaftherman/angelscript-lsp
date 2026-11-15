@@ -86,8 +86,8 @@ static bool IsMixinIncluded(std::string_view hostClass, std::string_view mixinNa
  * @param[in] collector Completion collector context.
  * @return True if accessible, false if restricted by private/protected visibility.
  */
-static bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, std::string_view typeName,
-                                            const CompletionCollector& collector)
+bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, std::string_view typeName,
+                                     const CompletionCollector& collector)
 {
     analysis::AccessModifier access = analysis::AccessModifier::Public;
     if (sym.type == analysis::SymbolType::Function)

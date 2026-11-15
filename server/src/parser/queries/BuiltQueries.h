@@ -263,7 +263,8 @@ namespace angel_lsp::parser::queries
 ; disambiguate by walking ancestors to work out which capture was the real one. Enumerating the
 ; contexts here removes the ambiguity at the source; tree-sitter queries cannot express "not
 ; inside a class_body" directly, so the list is explicit and has to track the grammar:
-; script, namespace_body, statement_block, for_statement init, and case_clause.
+; script, namespace_body, statement_block, for_statement init, case_clause, and the unbraced body of a
+; control statement.
 (script
   (variable_declaration
     (variable_declarator
@@ -286,6 +287,37 @@ namespace angel_lsp::parser::queries
 
 (case_clause
   (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+; A declaration written as the unbraced body of a control statement. It binds in the enclosing block.
+(if_statement
+  consequence: (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(if_statement
+  alternative: (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(while_statement
+  body: (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(do_while_statement
+  body: (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(for_statement
+  body: (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(foreach_statement
+  body: (variable_declaration
     (variable_declarator
       name: (identifier) @local.definition.var)))
 

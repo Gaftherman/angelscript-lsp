@@ -231,8 +231,7 @@ static std::string ResolveReceiverTypeUncached(IndexedByteRange objRange, std::s
     }
 
     std::string exprType = ResolveExpressionTypeAt(objRange, exprCtx);
-    if (!exprType.empty() && exprType != "void" && exprType != "unknown" &&
-        exprType.find("<poison>") == std::string::npos)
+    if (!exprType.empty() && exprType != "void" && exprType != "unknown")
     {
         return MemberOwnerType(exprType, arrayTypeName);
     }

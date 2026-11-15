@@ -221,7 +221,7 @@ static void CheckLogicalOperand(const BinaryOperandFact& operand, const Expressi
                                 DiagnosticContext& ctx)
 {
     const std::string rawType = ResolveExpressionType(operand.bytes, exprCtx);
-    if (rawType.empty() || ExpressionTypeCache::IsPoisonType(rawType))
+    if (rawType.empty())
     {
         return;
     }

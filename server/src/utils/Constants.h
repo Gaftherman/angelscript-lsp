@@ -12,11 +12,6 @@ namespace angel_lsp::constants
 inline constexpr std::string_view k_diagnosticSource = "AngelScript";
 
 /**
- * @brief Sentinel type name used to represent poisoned or unresolvable expressions.
- */
-inline constexpr std::string_view k_poisonTypeSentinel = "<poison>";
-
-/**
  * @brief Sentinel type name used to represent an initializer list expression.
  */
 inline constexpr std::string_view k_initializerListTypeSentinel = "<init_list>";

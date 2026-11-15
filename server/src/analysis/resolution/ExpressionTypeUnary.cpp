@@ -67,10 +67,6 @@ std::string ResolveUnaryHandle(bool isFunctionTarget, std::string_view operandTy
     {
         return {};
     }
-    if (ExpressionTypeCache::IsPoisonType(operandType))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
     if (operandType.empty())
     {
         return {};

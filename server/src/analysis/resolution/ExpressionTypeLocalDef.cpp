@@ -52,7 +52,7 @@ static std::string FindFallbackSymbolType(std::string_view name, const SymbolTab
 static bool IsValidDeducedRhsType(std::string_view rhsType)
 {
     return !rhsType.empty() && rhsType != "void" && rhsType != "null" &&
-           rhsType != constants::k_initializerListTypeSentinel && !ExpressionTypeCache::IsPoisonType(rhsType);
+           rhsType != constants::k_initializerListTypeSentinel;
 }
 
 /**

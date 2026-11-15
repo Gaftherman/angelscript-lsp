@@ -279,6 +279,36 @@ TEST_SUITE("analysis/index/CallContextFacts")
         ts_tree_delete(tree);
     }
 
+    TEST_CASE("CallContextFacts - Unclosed call after return and inside a ternary still finds its callee")
+    {
+        const std::string cls = angel_lsp::test::GenerateRandomSymbolName("Weapon");
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("Deploy");
+        const std::string prefix = "class " + cls + " {\n    bool " + fn + "(int a, int b) { return true; }\n";
+
+        const std::string openers[] = {"        return " + fn + "(", "        return c ? " + fn + "(",
+                                       "        bool ok = " + fn + "("};
+        const std::string suffixes[] = {"\n    }\n}\n", ""};
+        for (const std::string& opener : openers)
+            for (const std::string& suffix : suffixes)
+            {
+                const std::string code = prefix + "    bool Go(bool c) {\n" + opener + suffix;
+
+                angel_lsp::parser::AngelScriptParser parser;
+                TSTree* tree = parser.Parse(code);
+                REQUIRE(tree != nullptr);
+                angel_lsp::analysis::NodeIndex index(ts_tree_root_node(tree),
+                                                     angel_lsp::analysis::NodeIndexOptions{.source = code});
+
+                const uint32_t cursor = static_cast<uint32_t>(code.find(opener) + opener.size());
+                auto ctx = angel_lsp::analysis::FindCallContext(index, cursor);
+                REQUIRE_MESSAGE(ctx.has_value(), opener);
+                CHECK(ctx->activeParameter == 0);
+                CHECK(angel_lsp::utils::SliceSource(code, ctx->calleeStartByte, ctx->calleeEndByte) == fn);
+
+                ts_tree_delete(tree);
+            }
+    }
+
     TEST_CASE("CallContextFacts - Global qualifier is empty and earlier errors do not capture later cursors")
     {
         const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fnGlobal");

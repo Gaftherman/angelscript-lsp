@@ -180,7 +180,7 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
         return;
 
     const std::string rawObjType = ResolveExpressionType(site.objectBytes, exprCtx);
-    if (rawObjType.empty() || ExpressionTypeCache::IsPoisonType(rawObjType))
+    if (rawObjType.empty())
         return;
 
     const SymbolTable& table = ctx.request.symbolTable;
@@ -218,8 +218,7 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
         std::string argType =
             ResolveExpressionType(request.expressionSites->indexArgs[site.argBegin + i].bytes, exprCtx);
         const std::string_view cleanArg = CleanBaseTypeView(argType);
-        if (argType.empty() || ExpressionTypeCache::IsPoisonType(argType) || cleanArg == "auto" || cleanArg == "?" ||
-            ctx.request.IsRegisteredSymbol(cleanArg))
+        if (argType.empty() || cleanArg == "auto" || cleanArg == "?" || ctx.request.IsRegisteredSymbol(cleanArg))
             allResolved = false;
         argTypes.push_back(std::move(argType));
     }

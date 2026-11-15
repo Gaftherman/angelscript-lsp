@@ -265,7 +265,7 @@ bool TryCompleteMemberAccess(std::string_view prefix, const analysis::Scope* inn
         }
     }
 
-    if (rawTypeName.empty() || rawTypeName.find("<poison>") != std::string::npos)
+    if (rawTypeName.empty())
     {
         rawTypeName = ResolveFallbackReceiverType(prefix, *dotCol, collector, innermostScope);
         if (rawTypeName.empty() && collector.request.nodeIndex)
@@ -279,7 +279,7 @@ bool TryCompleteMemberAccess(std::string_view prefix, const analysis::Scope* inn
     else if (analysis::IsCorePrimitive(rawTypeName))
     {
         std::string fallback = ResolveFallbackReceiverType(prefix, *dotCol, collector, innermostScope);
-        if (!fallback.empty() && !analysis::IsCorePrimitive(fallback) && fallback.find("<poison>") == std::string::npos)
+        if (!fallback.empty() && !analysis::IsCorePrimitive(fallback))
         {
             rawTypeName = std::move(fallback);
         }

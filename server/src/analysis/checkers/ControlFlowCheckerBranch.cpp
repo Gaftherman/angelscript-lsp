@@ -34,7 +34,7 @@ static void CheckSwitchConditionType(const ControlFlowRecord& record, Diagnostic
                                                   record.condition.range.startCharacter)
                              : nullptr;
     const std::string rawType = ResolveExpressionType(record.condition.bytes, ExpressionTypeContext(scope, ctx));
-    if (rawType.empty() || ExpressionTypeCache::IsPoisonType(rawType))
+    if (rawType.empty())
     {
         return;
     }

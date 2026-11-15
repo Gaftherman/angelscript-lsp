@@ -1,6 +1,7 @@
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/document_symbol/DocumentSymbolHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <doctest/doctest.h>
@@ -102,6 +103,25 @@ TEST_SUITE("features/DocumentSymbol")
         CHECK((*symbols)[1].kind == lsp::SymbolKind::Function);
         CHECK((*symbols)[1].detail.has_value());
         CHECK((*symbols)[1].detail.value().find("void") != std::string::npos);
+    }
+
+    TEST_CASE("DocumentSymbolHandler - Function detail keeps directions, defaults and attributes")
+    {
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("Hit");
+        const std::string cls = angel_lsp::test::GenerateRandomSymbolName("Weapon");
+        const std::string code =
+            "class " + cls + " {\n    bool " + fn + "(int &out hit, string label = \"x\") const {}\n}\n";
+
+        DocumentSymbolTestEnv env(code);
+        auto symbols = env.GetSymbols();
+        REQUIRE(symbols.has_value());
+        REQUIRE(symbols->size() == 1);
+        const auto& children = (*symbols)[0].children.value();
+        REQUIRE(children.size() == 1);
+        const std::string detail = children[0].detail.value();
+        CHECK(detail.find("&out") != std::string::npos);
+        CHECK(detail.find("= \"x\"") != std::string::npos);
+        CHECK(detail.find(") const") != std::string::npos);
     }
 
     TEST_CASE("DocumentSymbolHandler - Class Hierarchy with Methods, Fields, and Constructors")

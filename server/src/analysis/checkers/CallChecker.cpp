@@ -87,8 +87,7 @@ static void CheckCall(const CallCheckFactRequest& req, DiagnosticContext& ctx)
     }
 
     const CallResolutionContext args = ResolveCallArguments(req.arguments, req.scope, ctx, req.request.nodeIndex);
-    if (std::any_of(args.argTypes.begin(), args.argTypes.end(),
-                    [](std::string_view t) { return ExpressionTypeCache::IsPoisonType(t); }))
+    if (AnyArgumentHasSyntaxError(req.request.nodeIndex, req.arguments))
     {
         return;
     }

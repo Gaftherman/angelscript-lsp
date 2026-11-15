@@ -252,10 +252,6 @@ std::vector<Symbol> CollectMemberMethodCandidates(std::string_view ownerType, st
 std::string ResolveMemberPropertyType(std::string_view objType, std::string_view fallbackObjName,
                                       std::string_view memName, const SymbolTable& symbolTable)
 {
-    if (ExpressionTypeCache::IsPoisonType(objType))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
     std::string_view cleanObj = CleanBaseTypeView(objType);
     if (cleanObj.empty())
     {

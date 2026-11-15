@@ -221,8 +221,7 @@ ExpressionType ResolveValueType(const ValueExpressionFact& value, const Scope* s
     ExpressionType result;
     switch (value.kind)
     {
-    case ValueExpressionKind::Poison:
-        result.baseName = ExpressionTypeCache::k_poisonType;
+    case ValueExpressionKind::SyntaxError:
         break;
     case ValueExpressionKind::Number:
     case ValueExpressionKind::String:

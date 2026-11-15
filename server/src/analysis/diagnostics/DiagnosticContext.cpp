@@ -66,15 +66,6 @@ static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std
         return;
     }
 
-    for (const auto a : args)
-    {
-        if (IsPoisonType(a))
-        {
-            diag.message = constants::k_poisonTypeSentinel;
-            return;
-        }
-    }
-
     const std::string_view pattern = ResolveDiagnosticTemplate(i18n, code, args);
     if (!pattern.empty())
     {
@@ -153,12 +144,6 @@ static size_t ColumnOfTypeName(std::string_view sourceCode, uint32_t line, uint3
 void DiagnosticContext::Append(Diagnostic&& diag) const
 {
     if (!diag.fileUri.empty() && diag.fileUri != request.fileUri)
-    {
-        return;
-    }
-
-    if (std::string_view(diag.message).find("<poison>") != std::string_view::npos ||
-        diag.code.find("<poison>") != std::string_view::npos)
     {
         return;
     }

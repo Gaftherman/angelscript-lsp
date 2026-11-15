@@ -83,7 +83,7 @@ ValueExpressionFact ReadValueExpression(TSNode node, const NodeIndex* index, std
         }
         if (ts_node_is_error(node) || ts_node_is_missing(node) || (index && index->NodeHasSyntaxError(node)))
         {
-            fact.kind = ValueExpressionKind::Poison;
+            fact.kind = ValueExpressionKind::SyntaxError;
             return fact;
         }
         if (ts_node_symbol(node) != gs.symUnaryExpression)

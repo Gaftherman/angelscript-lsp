@@ -87,7 +87,7 @@ static void CheckRelationalComparison(SourceRange opRange, const RelationalCheck
     {
         return true;
     }
-    if (typeName.empty() || ExpressionTypeCache::IsPoisonType(typeName))
+    if (typeName.empty())
     {
         return true;
     }

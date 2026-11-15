@@ -209,6 +209,30 @@ TEST_SUITE("features/SignatureHelp")
         CHECK(qualified->signatures[0].label.find("Holster") != std::string::npos);
     }
 
+    TEST_CASE("SignatureHelpHandler - Unclosed inherited call after return, in a ternary and with arguments inside a "
+              "closed class")
+    {
+        const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+        const std::string derived = angel_lsp::test::GenerateRandomSymbolName("MeleeWeapon");
+        const std::string method = angel_lsp::test::GenerateRandomSymbolName("Deploy");
+
+        const std::string openers[] = {"return " + method + "(", "return c ? " + method + "(",
+                                       "return " + method + "(1, "};
+        const std::string tail = "\n    }\n}\n";
+        for (const std::string& opener : openers)
+        {
+            const std::string code = "class " + baseClass + " {\n    bool " + method +
+                                     "(int a, int b) { return true; }\n}\nclass " + derived + " : " + baseClass +
+                                     " {\n    bool Go(bool c) {\n        " + opener + tail;
+            TestEnvironment env(code);
+            const auto pos = PositionAfter(code, opener);
+            const auto help = env.SigHelpAt(pos.line, pos.character);
+            REQUIRE_MESSAGE(help.has_value(), opener);
+            REQUIRE(!help->signatures.empty());
+            CHECK(help->signatures[0].label.find(method) != std::string::npos);
+        }
+    }
+
     TEST_CASE("SignatureHelpHandler - Chained namespace field and funcdef field receivers")
     {
         const std::string ns = angel_lsp::test::GenerateRandomSymbolName("Logger");

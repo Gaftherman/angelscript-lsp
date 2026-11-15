@@ -54,11 +54,6 @@ static ObjectTypeInfo ResolveMemberObjectType(const CallSiteFact& site, const Sc
     const std::string rawObjType =
         CanonicalizeArrayType(ResolveExpressionType(site.objectOperand.bytes, ExpressionTypeContext(scope, ctx)),
                               ctx.request.GetEffectiveArrayTypeName());
-    if (ExpressionTypeCache::IsPoisonType(rawObjType))
-    {
-        info.objectType = std::string(ExpressionTypeCache::k_poisonType);
-        return info;
-    }
     info.objectType = CleanBaseType(rawObjType);
     const bool isObjConst = site.isThisCall ? site.isEnclosingMethodConst
                                             : IsObjectOperandConst(site.objectOperand, scope, ctx.request.symbolTable);
@@ -138,8 +133,7 @@ CalleeResolution ResolveMemberCallee(const CallSiteFact& site, const Scope* scop
     }
 
     const auto objInfo = ResolveMemberObjectType(site, scope, ctx);
-    if (objInfo.objectType.empty() || ExpressionTypeCache::IsPoisonType(objInfo.objectType) ||
-        !HierarchyIsFullyVisible(objInfo.objectType, ctx.request.symbolTable))
+    if (objInfo.objectType.empty() || !HierarchyIsFullyVisible(objInfo.objectType, ctx.request.symbolTable))
     {
         res.shouldCheck = false;
         return res;

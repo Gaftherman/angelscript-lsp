@@ -185,10 +185,6 @@ std::optional<ResolvedBinaryOperands> ResolveBinaryOperands(const BinaryExpressi
     {
         return std::nullopt;
     }
-    if (ExpressionTypeCache::IsPoisonType(rawLeft) || ExpressionTypeCache::IsPoisonType(rawRight))
-    {
-        return std::nullopt;
-    }
     const bool leftIsNull = IsNullOperand(fact.left, rawLeft);
     const bool rightIsNull = IsNullOperand(fact.right, rawRight);
     const auto cleanLeft = leftIsNull ? std::string_view("null") : StripModifiers(rawLeft);

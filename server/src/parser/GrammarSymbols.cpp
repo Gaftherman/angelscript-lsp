@@ -96,6 +96,7 @@ static void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbol
     gs.symMetadata = SymNamed(lang, parser::nodes::Metadata);
     gs.symComment = SymNamed(lang, parser::nodes::Comment);
     gs.symPreprocDirective = SymNamed(lang, parser::nodes::PreprocDirective);
+    gs.symVoidArgument = SymNamed(lang, parser::nodes::VoidArgument);
 
     gs.symStatementBlock = SymNamed(lang, parser::nodes::StatementBlock);
     gs.symReturnStatement = SymNamed(lang, parser::nodes::ReturnStatement);
@@ -221,6 +222,7 @@ static void PopulatePunctuationTokens(const TSLanguage* lang, GrammarSymbols& gs
 static void PopulateFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.fieldName = FieldId(lang, parser::fields::Name);
+    gs.fieldDestructor = FieldId(lang, parser::fields::Destructor);
     gs.fieldType = FieldId(lang, parser::fields::Type);
     gs.fieldReturnType = FieldId(lang, parser::fields::ReturnType);
     gs.fieldParameters = FieldId(lang, parser::fields::Parameters);

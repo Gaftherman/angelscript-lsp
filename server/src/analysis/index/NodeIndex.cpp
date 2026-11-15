@@ -1334,6 +1334,21 @@ std::span<const NodeIndex::CommentRange> NodeIndex::CommentRanges() const noexce
     return m_commentRanges;
 }
 
+bool NodeIndex::SpanHasSyntaxError(uint32_t startByte, uint32_t endByte) const noexcept
+{
+    auto it = std::lower_bound(m_errorRanges.begin(), m_errorRanges.end(), startByte,
+                               [](const ErrorRange& range, uint32_t offset) { return range.endByte < offset; });
+    for (; it != m_errorRanges.end() && it->startByte <= endByte; ++it)
+    {
+        const bool zeroWidth = it->startByte == it->endByte;
+        if (zeroWidth || (it->startByte < endByte && it->endByte > startByte))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool NodeIndex::NodeHasSyntaxError(TSNode node) const noexcept
 {
     if (ts_node_is_null(node))

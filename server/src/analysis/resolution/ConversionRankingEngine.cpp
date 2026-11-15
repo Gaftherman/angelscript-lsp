@@ -455,11 +455,6 @@ static ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation&
     }
     return EvaluateConversionMatch(ctx);
 }
-static bool IsPoisonOrEmptyArg(std::string_view cleanArg, std::string_view cleanParam)
-{
-    return cleanArg.empty() || cleanParam.empty() || ExpressionTypeCache::IsPoisonType(cleanArg) ||
-           ExpressionTypeCache::IsPoisonType(cleanParam);
-}
 
 static ArgumentConversion AdjustForLValueConstraint(ArgumentConversion conv, bool isOutOrRef, bool argIsLValue)
 {
@@ -482,7 +477,7 @@ ArgumentConversion EvaluateArgumentConversion(std::string_view argType, const Pa
     const std::string cleanArg = UnwrapTypedef(NormalizeType(argType, symbolTable.GetDefaultArrayType()), symbolTable);
     const std::string cleanParam =
         UnwrapTypedef(NormalizeType(param.typeName, symbolTable.GetDefaultArrayType()), symbolTable);
-    if (IsPoisonOrEmptyArg(cleanArg, cleanParam))
+    if (cleanArg.empty() || cleanParam.empty())
     {
         return ArgumentConversion{MatchTier::UnknownTypes,
                                   ConversionRank::StandardConv,

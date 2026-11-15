@@ -181,7 +181,7 @@ static void CheckInitializer(const VariableDeclaratorFact& declarator, const Dec
     }
 
     const ExpressionType source = ResolveValueType(declarator.value, scope, ctx);
-    if (ExpressionTypeCache::IsPoisonType(source.baseName))
+    if (declarator.value.kind == ValueExpressionKind::SyntaxError)
     {
         return;
     }

@@ -191,7 +191,7 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
     const TSNode operandNode = syntax.Field(gs.fieldOperand);
     if (ts_node_is_null(operandNode) || ts_node_is_error(operandNode) || ts_node_is_missing(operandNode))
     {
-        return std::string(ExpressionTypeCache::k_poisonType);
+        return {};
     }
     const TSNode operatorNode = syntax.Field(gs.fieldOperator);
     const TSSymbol opSym = !ts_node_is_null(operatorNode) ? ts_node_symbol(operatorNode) : 0;
@@ -209,10 +209,6 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
         return ResolveUnaryHandle(isFuncTarget, operandType);
     }
     std::string operandType = ResolveASTExpressionType(operandNode, ctx);
-    if (ExpressionTypeCache::IsPoisonType(operandType))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
     if (opSym == gs.tokDash)
     {
         return ResolveUnaryMinus(operandType);

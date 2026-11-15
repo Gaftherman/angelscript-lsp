@@ -173,7 +173,7 @@ static bool CheckNullAssignmentToNonHandle(const AssignmentSiteFact& site, std::
         return false;
     }
 
-    if (rawLeftType.empty() || ExpressionTypeCache::IsPoisonType(rawLeftType))
+    if (rawLeftType.empty())
     {
         return false;
     }
@@ -252,7 +252,8 @@ void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionC
     }
 
     const auto rightType = ResolveExpressionType(site.right.bytes, ExpressionTypeContext(scope, ctx));
-    if (ExpressionTypeCache::IsPoisonType(leftType) || ExpressionTypeCache::IsPoisonType(rightType))
+    if (RangeHasSyntaxError(ctx.request.nodeIndex, site.left.bytes) ||
+        RangeHasSyntaxError(ctx.request.nodeIndex, site.right.bytes))
     {
         return;
     }

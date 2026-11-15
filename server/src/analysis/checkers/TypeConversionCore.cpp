@@ -11,7 +11,7 @@ namespace angel_lsp::analysis
 
 bool CanTriviallyConvert(std::string_view from, std::string_view to, const DiagnosticContext& ctx)
 {
-    if (IsPoisonOrEmptyType(from, to) || IsSameType(from, to))
+    if (HasEmptyType(from, to) || IsSameType(from, to))
     {
         return true;
     }
@@ -164,7 +164,7 @@ bool CanConvertUserTypes(std::string_view from, std::string_view to, const Diagn
 bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_view to, const DiagnosticContext& ctx,
                                             ConversionState& state)
 {
-    if (IsPoisonOrEmptyType(from, to))
+    if (HasEmptyType(from, to))
     {
         return true;
     }

@@ -415,6 +415,17 @@ std::string_view ExtractQueryPrefix(std::string_view linePrefix);
 bool IsSymbolVisibleToModule(const analysis::Symbol& sym, const CompletionCollector& collector);
 
 /**
+ * @brief Checks whether a member symbol may be offered from the cursor position given its access modifier.
+ * @param[in] sym Member symbol; only functions and variables carry an access modifier.
+ * @param[in] typeName Container type name, used when the symbol does not record its owner.
+ * @param[in] collector Completion collector context; its request locates the enclosing class.
+ * @return True for public members, and for private or protected ones when the cursor sits in a class allowed to
+ *         reach them.
+ */
+bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, std::string_view typeName,
+                                     const CompletionCollector& collector);
+
+/**
  * @brief Collects all global scope symbols from the symbol table.
  * @param[in] accessorsAreProperties Whether property accessors are exposed.
  * @param[in] accessorKeywordRequired Whether property keyword is required.

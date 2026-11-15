@@ -157,7 +157,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
         }
 
         std::string argType = ResolveExpressionType(arg.bytes, exprCtx);
-        if (argType.empty() || ExpressionTypeCache::IsPoisonType(argType))
+        if (argType.empty())
         {
             if (arg.operand.isNullLiteral)
             {

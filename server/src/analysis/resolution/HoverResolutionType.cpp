@@ -142,8 +142,7 @@ std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, const Exp
                 {
                     std::string res = ResolveExpressionTypeAt(d.valueOperand.bytes, ctx);
                     if (!res.empty() && res != "void" && res != "null" &&
-                        res != constants::k_initializerListTypeSentinel &&
-                        !analysis::ExpressionTypeCache::IsPoisonType(res))
+                        res != constants::k_initializerListTypeSentinel)
                     {
                         return res;
                     }

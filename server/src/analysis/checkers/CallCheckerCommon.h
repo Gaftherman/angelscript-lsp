@@ -91,6 +91,22 @@ struct LambdaCheckFactsContext
 };
 
 /**
+ * @brief Tells whether any argument expression of a call holds a syntax error.
+ *
+ * A call with a broken argument has no argument types worth checking, so the overload and conversion checks skip it.
+ *
+ * @param[in] index Node index of the document, or nullptr when none is available.
+ * @param[in] arguments Argument facts of the call or direct initialization.
+ * @return True when at least one argument span overlaps a syntax error.
+ */
+[[nodiscard]] inline bool AnyArgumentHasSyntaxError(const NodeIndex* index,
+                                                    std::span<const CallArgumentFact> arguments) noexcept
+{
+    return std::any_of(arguments.begin(), arguments.end(), [index](const CallArgumentFact& argument)
+                       { return RangeHasSyntaxError(index, argument.bytes); });
+}
+
+/**
  * @brief Finds indices of arguments that are lambda expressions.
  * @param[in] arguments List of argument facts.
  * @return 0-based indices where arguments are lambdas.

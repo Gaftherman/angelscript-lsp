@@ -68,8 +68,7 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
     {
         argTypes.push_back(ResolveExpressionType(arg.bytes, ExpressionTypeContext(scope, ctx)));
     }
-    if (std::any_of(argTypes.begin(), argTypes.end(),
-                    [](std::string_view t) { return ExpressionTypeCache::IsPoisonType(t); }))
+    if (AnyArgumentHasSyntaxError(ctx.request.nodeIndex, argSlice))
     {
         return;
     }

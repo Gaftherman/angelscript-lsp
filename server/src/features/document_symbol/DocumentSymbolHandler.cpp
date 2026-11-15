@@ -1,5 +1,6 @@
 #include "features/document_symbol/DocumentSymbolHandler.h"
 
+#include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "features/common/FeatureSharedUtils.h"
 #include "utils/ScopedNameUtils.h"
@@ -63,7 +64,8 @@ static inline bool ContainsRange(const lsp::Range& parent, const lsp::Range& chi
 }
 
 /**
- * @brief Appends a parenthesized "(type name, ...)" parameter list to a protocol detail string.
+ * @brief Appends a parenthesized parameter list to a protocol detail string, each parameter spelled as in source
+ *        (direction, default value included).
  * @param[in] params Declared parameters in source order.
  * @param[in,out] out Detail text being built in place.
  */
@@ -76,12 +78,7 @@ static void AppendParameterList(const std::vector<analysis::ParameterInformation
         {
             out += ", ";
         }
-        out += params[i].typeName;
-        if (!params[i].name.empty())
-        {
-            out += ' ';
-            out += params[i].name;
-        }
+        out += analysis::FormatParameter(params[i]);
     }
     out += ')';
 }
@@ -120,6 +117,7 @@ static void AppendSymbolDetail(const analysis::Symbol& sym, bool isCtorOrDtor, l
                 out += ' ';
             }
             AppendParameterList(sig.parameters, out);
+            out += analysis::FormatFunctionSuffix(sig.modifiers);
         }
         return;
     case analysis::SymbolType::Variable:

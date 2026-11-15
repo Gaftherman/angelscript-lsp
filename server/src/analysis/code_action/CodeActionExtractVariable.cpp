@@ -6,6 +6,7 @@
 #include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/index/ExtractVariableFacts.h"
 #include "analysis/resolution/CodeActionResolution.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "parser/Keywords.h"
 #include "utils/AccessorNames.h"
 #include "utils/Utils.h"
@@ -154,7 +155,7 @@ static std::optional<CodeActionEntry> BuildExtractVariableEntry(const CodeAction
     {
         return std::nullopt;
     }
-    if (varType.empty() || varType == "null")
+    if (analysis::IsUnusableTypeName(varType) || varType == "null")
     {
         varType = "auto";
     }

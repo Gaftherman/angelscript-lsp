@@ -14,17 +14,17 @@ namespace angel_lsp::analysis
  */
 enum class ValueExpressionKind : uint8_t
 {
-    None,       ///< Unsupported leaf or missing operand; the type is unknown.
-    Poison,     ///< The expression contains a syntax error.
-    Number,     ///< Number literal.
-    String,     ///< String literal.
-    Boolean,    ///< Boolean literal.
-    Null,       ///< Null literal.
-    Identifier, ///< Identifier or scoped identifier.
-    Call,       ///< Call or construct call whose callee was found.
-    Cast,       ///< Explicit or functional cast.
-    Member,     ///< Member expression.
-    Index       ///< Index expression such as items[0]; its type is the element or opIndex result.
+    None,        ///< Unsupported leaf or missing operand; the type is unknown.
+    SyntaxError, ///< The expression contains a syntax error.
+    Number,      ///< Number literal.
+    String,      ///< String literal.
+    Boolean,     ///< Boolean literal.
+    Null,        ///< Null literal.
+    Identifier,  ///< Identifier or scoped identifier.
+    Call,        ///< Call or construct call whose callee was found.
+    Cast,        ///< Explicit or functional cast.
+    Member,      ///< Member expression.
+    Index        ///< Index expression such as items[0]; its type is the element or opIndex result.
 };
 
 /**
@@ -46,7 +46,7 @@ struct ValueExpressionFact
  * @param[in] index Precomputed node index of the document.
  * @param[in] source Document text; the fact's views point into it.
  * @return Value expression fact. Parentheses are unwrapped, unary operators are folded into flags,
- *         and a syntax error at any unwrapped level yields kind Poison.
+ *         and a syntax error at any unwrapped level yields kind SyntaxError.
  * @note Walks the unary chain iteratively; cost is the chain length.
  */
 [[nodiscard]] ValueExpressionFact ReadValueExpression(TSNode node, const NodeIndex* index, std::string_view source);

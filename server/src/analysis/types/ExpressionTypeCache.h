@@ -17,38 +17,18 @@ namespace angel_lsp::analysis
 inline constexpr std::string_view k_initializerListTypeSentinel = constants::k_initializerListTypeSentinel;
 
 /**
- * @brief Sentinel type representing a poisoned / broken expression type.
- *        When an expression is broken or has syntax errors, it is mapped to k_poisonType
+ * @brief Type name of an expression whose type could not be resolved.
  */
-inline constexpr std::string_view k_poisonType = "<poison>";
 inline constexpr std::string_view k_unknownType = "unknown";
 
 /**
- * @brief Checks whether the given type is empty, unresolved, void, or poisoned.
- * @param[in] type Type name or string view.
- * @return True if the type is unresolved or poisoned, false otherwise.
+ * @brief Tells whether resolution produced no type name worth showing or inserting.
+ * @param[in] type Resolved type name.
+ * @return True for an empty name, "unknown" and the initializer-list marker.
  */
-[[nodiscard]] inline constexpr bool IsUnresolvedOrPoisonType(std::string_view type) noexcept
+[[nodiscard]] inline constexpr bool IsUnusableTypeName(std::string_view type) noexcept
 {
-    return type.empty() || type == k_unknownType || type == "void" || type.find(k_poisonType) != std::string_view::npos;
-}
-
-/**
- * @brief Checks whether the given type is the poisoned sentinel type.
- * @param[in] type Type name or string view.
- * @return True if the type is poisoned, false otherwise.
- */
-[[nodiscard]] inline constexpr bool IsPoisonType(std::string_view type) noexcept
-{
-    if (type.size() < 8)
-    {
-        return false;
-    }
-    if (type.starts_with(k_poisonType))
-    {
-        return true;
-    }
-    return type.find('<') != std::string_view::npos && type.find(k_poisonType) != std::string_view::npos;
+    return type.empty() || type == k_unknownType || type == k_initializerListTypeSentinel;
 }
 
 /**
@@ -95,13 +75,6 @@ struct ExpressionCacheKeyHash
  */
 struct ExpressionTypeCache
 {
-    static constexpr std::string_view k_poisonType = "<poison>";
-
-    [[nodiscard]] static constexpr bool IsPoisonType(std::string_view type) noexcept
-    {
-        return angel_lsp::analysis::IsPoisonType(type);
-    }
-
     ExpressionTypeCache()
     {
         types.reserve(512);

@@ -85,6 +85,7 @@ struct GrammarSymbols
     TSSymbol symMetadata = 0;           ///< metadata
     TSSymbol symComment = 0;            ///< comment
     TSSymbol symPreprocDirective = 0;   ///< preproc_directive
+    TSSymbol symVoidArgument = 0;       ///< void_argument
 
     // Statements
     TSSymbol symStatementBlock = 0;      ///< statement_block
@@ -207,6 +208,7 @@ struct GrammarSymbols
     // Pre-resolved Field IDs (field*)
 
     TSFieldId fieldName = 0;           ///< "name"
+    TSFieldId fieldDestructor = 0;     ///< "destructor"
     TSFieldId fieldType = 0;           ///< "type"
     TSFieldId fieldReturnType = 0;     ///< "return_type"
     TSFieldId fieldParameters = 0;     ///< "parameters"

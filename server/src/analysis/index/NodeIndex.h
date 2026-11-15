@@ -487,6 +487,18 @@ class NodeIndex
     [[nodiscard]] bool NodeHasSyntaxError(TSNode node) const noexcept;
 
     /**
+     * @brief Checks in O(log E) whether a byte span contains or overlaps a syntax error.
+     *
+     * Stands in for a type-level "this expression is broken" marker: an expression whose text holds an ERROR
+     * node or a MISSING token has no trustworthy type, so checks that need its type skip it.
+     *
+     * @param[in] startByte Inclusive start of the span.
+     * @param[in] endByte Exclusive end of the span; a zero-width MISSING token at this offset still counts.
+     * @return True when an ERROR range overlaps the span or a MISSING token sits inside or at the end of it.
+     */
+    [[nodiscard]] bool SpanHasSyntaxError(uint32_t startByte, uint32_t endByte) const noexcept;
+
+    /**
      * @brief Returns all tracked disjoint syntax error byte ranges.
      * @return Span of error ranges.
      */
@@ -817,4 +829,15 @@ class NodeIndex
     bool m_hasSyntaxErrors = false;
 };
 static_assert(sizeof(NodeIndex) <= 248);
+/**
+ * @brief Null-safe form of NodeIndex::SpanHasSyntaxError for code that may run without an index.
+ * @param[in] index Node index of the document, or nullptr when none is available.
+ * @param[in] range Byte span of the expression to test.
+ * @return True when the index exists and the span holds a syntax error.
+ */
+[[nodiscard]] inline bool RangeHasSyntaxError(const NodeIndex* index, IndexedByteRange range) noexcept
+{
+    return index != nullptr && index->SpanHasSyntaxError(range.startByte, range.endByte);
+}
+
 } // namespace angel_lsp::analysis

@@ -1417,6 +1417,22 @@ TEST_CASE("Completion - Derived:: offers the members its ancestors declare")
     CHECK(HasItem(items, inherited));
 }
 
+TEST_CASE("Completion - Qualifier shared by a namespace and a class hides the class's private members")
+{
+    const std::string name = test::GenerateRandomSymbolName("BuyMenu");
+    const std::string nsFn = test::GenerateRandomSymbolName("Open");
+    const std::string hidden = test::GenerateRandomSymbolName("secret");
+    const std::string visible = test::GenerateRandomSymbolName("Show");
+    const std::string code = "namespace " + name + " { void " + nsFn + "() {} }\nclass " + name +
+                             " {\n    private int " + hidden + ";\n    void " + visible +
+                             "() {}\n}\nvoid Run() {\n    " + name + "::\n}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(6, static_cast<uint32_t>(4 + name.size() + 2));
+    CHECK(HasItem(items, nsFn));
+    CHECK_FALSE(HasItem(items, hidden));
+}
+
 TEST_CASE("Completion - Compound namespace scope trigger")
 {
     const std::string nsA = test::GenerateRandomSymbolName("RootNS");

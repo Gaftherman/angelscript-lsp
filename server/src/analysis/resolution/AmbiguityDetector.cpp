@@ -322,8 +322,7 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
                                                 [](std::string_view argType)
                                                 {
                                                     const std::string_view bare = CleanBaseTypeView(argType);
-                                                    return bare.empty() || bare == parser::keywords::Auto ||
-                                                           ExpressionTypeCache::IsPoisonType(bare);
+                                                    return bare.empty() || bare == parser::keywords::Auto;
                                                 });
     if (anyArgumentUnknown)
     {

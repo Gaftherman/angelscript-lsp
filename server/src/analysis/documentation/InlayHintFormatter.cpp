@@ -2,6 +2,7 @@
 
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/InlayTypeDeduction.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 #include "i18n/i18n.h"
 
@@ -83,7 +84,7 @@ std::optional<AutoVariableHintText> FormatAutoVariableHint(const IndexedAutoDecl
                                                            const angel_lsp::i18n::I18n* i18n)
 {
     const auto deduced = DeduceExpressionTypeAt(autoVar.initExprStartByte, autoVar.initExprEndByte, exprCtx);
-    if (deduced.empty() || deduced == "auto" || deduced == "null" || deduced == "void")
+    if (IsUnusableTypeName(deduced) || deduced == "auto" || deduced == "null" || deduced == "void")
     {
         return std::nullopt;
     }
@@ -98,7 +99,7 @@ std::optional<AutoVariableHintText> FormatAutoVariableHint(const IndexedAutoDecl
 std::string FormatLambdaReturnLabel(const IndexedLambdaSite& lambda, const ExpressionTypeContext& exprCtx)
 {
     const auto deduced = DeduceLambdaReturnTypeAt(lambda, exprCtx);
-    if (!deduced.empty() && deduced != "void" && CleanBaseTypeView(deduced) != "auto")
+    if (!IsUnusableTypeName(deduced) && deduced != "void" && CleanBaseTypeView(deduced) != "auto")
     {
         return fmt::format(": {}", deduced);
     }

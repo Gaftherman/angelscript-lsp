@@ -247,10 +247,9 @@ bool IsBuiltInValueType(std::string_view typeName, const DiagnosticContext& ctx)
     return IsPrimitiveTypeName(typeName) || IsStringType(typeName, ctx);
 }
 
-bool IsPoisonOrEmptyType(std::string_view from, std::string_view to)
+bool HasEmptyType(std::string_view from, std::string_view to)
 {
-    return from.empty() || to.empty() || ExpressionTypeCache::IsPoisonType(from) ||
-           ExpressionTypeCache::IsPoisonType(to);
+    return from.empty() || to.empty();
 }
 
 } // namespace angel_lsp::analysis
