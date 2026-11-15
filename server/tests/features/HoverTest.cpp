@@ -1011,6 +1011,35 @@ TEST_CASE("Hover - Enum member displays default value and property tag")
     CHECK(textBare.find("FIRST = 10") != std::string::npos);
 }
 
+TEST_CASE("Hover - An enum constant is visible only from the scope that declares its enum")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("Space");
+    const std::string en = angel_lsp::test::GenerateRandomSymbolName("Kind");
+    const std::string val = angel_lsp::test::GenerateRandomSymbolName("VALUE");
+    const std::string code = "namespace " + ns + " {\n" + "enum " + en + " { " + val + " }\n" + "void inside() {\n" +
+                             "    " + val + ";\n" + "}\n" + "}\n" + "void outside() {\n" + "    " + val + ";\n" +
+                             "}\n" + "void qualified() {\n" + "    " + ns + "::" + val + ";\n" + "}\n" +
+                             "void imported() {\n" + "    using namespace " + ns + ";\n" + "    " + val + ";\n" + "}\n";
+    TestEnvironment env(code);
+
+    const auto isEnumMember = [&](uint32_t line, uint32_t character)
+    {
+        const auto hover = env.HoverAt(line, character);
+        return hover.has_value() &&
+               std::get<lsp::MarkupContent>(hover->contents).value.find("(enum member)") != std::string::npos;
+    };
+
+    // Inside the declaring namespace, after a qualifier, and under a using directive the constant resolves.
+    CHECK(isEnumMember(3, 5));
+    CHECK(isEnumMember(10, static_cast<uint32_t>(ns.size() + 6)));
+    CHECK(isEnumMember(14, 5));
+    // Unqualified from outside that namespace it does not: only `Space::VALUE` reaches it, so the hover must not
+    // fall back to the enum that happens to declare the name.
+    const auto outside = env.HoverAt(7, 5);
+    CHECK(
+        (!outside.has_value() || std::get<lsp::MarkupContent>(outside->contents).value.find(en) == std::string::npos));
+}
+
 TEST_CASE("Hover - Enum member sequential values and scoped access parity")
 {
     TestEnvironment env("enum DynamicEquipmentType {\n"

@@ -63,115 +63,6 @@ static std::string ExtractFirstToken(std::string_view rawErrText)
     return firstToken;
 }
 
-using RecoveredClassContainer = SymbolCollector::RecoveredClassContainer;
-
-static ScannedClassHeader FindClassHeaderInError(TSNode node, const parser::GrammarSymbols& gs)
-{
-    ScannedClassHeader result;
-    TSTreeCursor inner = ts_tree_cursor_new(node);
-    if (!ts_tree_cursor_goto_first_child(&inner))
-    {
-        ts_tree_cursor_delete(&inner);
-        return result;
-    }
-
-    do
-    {
-        TSNode child = ts_tree_cursor_current_node(&inner);
-        TSSymbol sym = ts_node_symbol(child);
-        if (sym == gs.symComment)
-        {
-            continue;
-        }
-
-        if (sym == gs.tokClass)
-        {
-            result.isClass = true;
-            if (ts_node_is_null(result.headerStart))
-                result.headerStart = child;
-        }
-        else if (sym == gs.tokInterface)
-        {
-            result.isInterface = true;
-            if (ts_node_is_null(result.headerStart))
-                result.headerStart = child;
-        }
-        else if (sym == gs.symDeclarationModifier && ts_node_is_null(result.headerStart))
-        {
-            result.headerStart = child;
-        }
-        else if ((result.isClass || result.isInterface) && sym == gs.symIdentifier && ts_node_is_null(result.nameNode))
-        {
-            result.nameNode = child;
-            break;
-        }
-    } while (ts_tree_cursor_goto_next_sibling(&inner));
-    ts_tree_cursor_delete(&inner);
-    return result;
-}
-
-static void TryRecoverClassFromErrorNode(TSNode node, RecoverClassContext& ctx)
-{
-    ScannedClassHeader header = FindClassHeaderInError(node, ctx.gs);
-    if (ts_node_is_null(header.nameNode) || ts_node_is_null(header.headerStart))
-    {
-        return;
-    }
-
-    std::string className(parser::NodeText(header.nameNode, ctx.sourceCode));
-    if (className.empty())
-    {
-        return;
-    }
-
-    TSPoint startPt = ts_node_start_point(header.headerStart);
-    TSPoint endPt = ts_node_end_point(node);
-    TSPoint nameStartPt = ts_node_start_point(header.nameNode);
-    TSPoint nameEndPt = ts_node_end_point(header.nameNode);
-
-    Symbol sym;
-    sym.type = header.isInterface ? SymbolType::Interface : SymbolType::Class;
-    sym.name = className;
-    sym.qualifiedName = className;
-    sym.fileUri = ctx.fileUri;
-    sym.isPredefined = angel_lsp::utils::IsPredefinedFile(ctx.fileUri, ".as.predefined");
-    sym.startLine = startPt.row;
-    sym.startCharacter = startPt.column;
-    sym.endLine = endPt.row;
-    sym.endCharacter = endPt.column;
-    sym.fullRange = {startPt.row, startPt.column, endPt.row, endPt.column};
-    sym.selectionRange = {nameStartPt.row, nameStartPt.column, nameEndPt.row, nameEndPt.column};
-    if (header.isInterface)
-        sym.signature = InterfaceSignature{};
-    else
-        sym.signature = ClassSignature{};
-
-    ctx.outSymbols.push_back(std::move(sym));
-    ctx.outContainers.push_back({ts_node_start_byte(header.headerStart), ts_node_end_byte(node), std::move(className),
-                                 header.isInterface ? ContainerKind::Interface : ContainerKind::Class});
-}
-
-static void ScanRecoverableClasses(TSNode rootNode, RecoverClassContext& ctx)
-{
-    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
-    if (!ts_tree_cursor_goto_first_child(&cursor))
-    {
-        ts_tree_cursor_delete(&cursor);
-        return;
-    }
-
-    do
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        if (ts_node_is_error(node))
-        {
-            TryRecoverClassFromErrorNode(node, ctx);
-        }
-    } while (ts_tree_cursor_goto_next_sibling(&cursor));
-
-    ts_tree_cursor_delete(&cursor);
-}
-
 // Public API & Lifecycle
 
 SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger* logger)
@@ -428,35 +319,6 @@ void SymbolCollector::PushContainerIfApplicable(ProcessFn fn, TSNode node, const
     }
 }
 
-void SymbolCollector::SyncRecoveredContainers(uint32_t nodeStart,
-                                              const std::vector<RecoveredClassContainer>& recoveredClasses,
-                                              std::vector<ActiveContainer>& containerStack) const
-{
-    for (const auto& rec : recoveredClasses)
-    {
-        if (rec.startByte <= nodeStart && nodeStart < rec.endByte)
-        {
-            bool onStack = false;
-            for (const auto& c : containerStack)
-            {
-                if (c.ctx.containerPath == rec.className)
-                {
-                    onStack = true;
-                    break;
-                }
-            }
-            if (!onStack)
-            {
-                CollectionContext recCtx;
-                recCtx.containerKind = rec.kind;
-                recCtx.isInsideClass = true;
-                recCtx.containerPath = rec.className;
-                containerStack.push_back({rec.endByte, std::move(recCtx)});
-            }
-        }
-    }
-}
-
 void SymbolCollector::CollectFromIndex(const NodeIndex& index, SymbolCollectContext& sCtx)
 {
     const TSNode rootNode = index.Root();
@@ -466,18 +328,10 @@ void SymbolCollector::CollectFromIndex(const NodeIndex& index, SymbolCollectCont
     sCtx.collectedSymbols.reserve(estimatedCapacity);
     ReportParseErrors(index, sCtx);
 
-    std::vector<RecoveredClassContainer> recoveredClasses;
-    if (ts_node_has_error(rootNode))
-    {
-        RecoverClassContext recCtx{m_gs, sCtx.request.sourceCode, sCtx.request.fileUri, recoveredClasses,
-                                   sCtx.collectedSymbols};
-        ScanRecoverableClasses(rootNode, recCtx);
-    }
-
     std::vector<ActiveContainer> containerStack;
     containerStack.reserve(16);
     index.ForEachDeclaration([&](TSNode node, IndexedDeclarationKind kind)
-                             { DispatchDeclaration(node, kind, sCtx, containerStack, recoveredClasses); });
+                             { DispatchDeclaration(node, kind, sCtx, containerStack); });
 
     if (ts_node_has_error(rootNode) && !sCtx.isRecoveringSwallowed)
     {
@@ -493,8 +347,7 @@ void SymbolCollector::CollectFromIndex(const NodeIndex& index, SymbolCollectCont
 }
 
 void SymbolCollector::DispatchDeclaration(TSNode node, IndexedDeclarationKind kind, SymbolCollectContext& sCtx,
-                                          std::vector<ActiveContainer>& containerStack,
-                                          const std::vector<RecoveredClassContainer>& recoveredClasses)
+                                          std::vector<ActiveContainer>& containerStack)
 {
     if (kind == IndexedDeclarationKind::Using)
     {
@@ -512,10 +365,6 @@ void SymbolCollector::DispatchDeclaration(TSNode node, IndexedDeclarationKind ki
     while (!containerStack.empty() && containerStack.back().endByte <= nodeStart)
     {
         containerStack.pop_back();
-    }
-    if (!recoveredClasses.empty())
-    {
-        SyncRecoveredContainers(nodeStart, recoveredClasses, containerStack);
     }
 
     const CollectionContext ctx = containerStack.empty() ? CollectionContext{} : containerStack.back().ctx;
@@ -2242,6 +2091,11 @@ void SymbolCollector::EmitMissingColonDiagnostics(std::span<const MissingCaseCol
     }
 }
 
+bool SymbolCollector::IsSyntaxGap(TSNode node) const noexcept
+{
+    return ts_node_is_missing(node) || ts_node_symbol(node) == m_gs.symImplicitCloseBrace;
+}
+
 void SymbolCollector::HandleParseErrorNode(TSNode node, ParseErrorReportContext& errCtx) const
 {
     const uint32_t startByte = ts_node_start_byte(node);
@@ -2289,7 +2143,7 @@ void SymbolCollector::HandleParseErrorNode(TSNode node, ParseErrorReportContext&
         return;
     }
 
-    TSNode target = ts_node_is_missing(node) ? node : PinpointOffendingNode(node, m_gs);
+    TSNode target = IsSyntaxGap(node) ? node : PinpointOffendingNode(node, m_gs);
     if (ts_node_symbol(target) == m_gs.symComment || ts_node_symbol(node) == m_gs.symComment)
     {
         return;
@@ -2308,7 +2162,7 @@ void SymbolCollector::HandleParseErrorNode(TSNode node, ParseErrorReportContext&
 
 void SymbolCollector::ReportParseErrors(const NodeIndex& index, SymbolCollectContext& sCtx) const
 {
-    if (!ts_node_has_error(index.Root()))
+    if (!index.HasSyntaxErrors())
     {
         return;
     }
@@ -2332,6 +2186,15 @@ void SymbolCollector::ReportParseErrors(const NodeIndex& index, SymbolCollectCon
                                             sCtx);
             }
         });
+    // Every body still open at EOF closes at the same byte; one diagnostic names the gap.
+    for (const TSNode brace : index.ImplicitCloseBraces())
+    {
+        if (errCtx.implicitCloseByte != ts_node_start_byte(brace))
+        {
+            errCtx.implicitCloseByte = ts_node_start_byte(brace);
+            HandleParseErrorNode(brace, errCtx);
+        }
+    }
 }
 
 /**
@@ -2464,6 +2327,15 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
 {
     TSPoint startPt = ts_node_start_point(node);
     TSPoint endPt = ts_node_end_point(node);
+    if (ts_node_symbol(node) == m_gs.symImplicitCloseBrace)
+    {
+        // The scanner places the brace at end of file; the editor shows the gap where the last token ends.
+        const TSNode previous = ts_node_prev_sibling(node);
+        if (!ts_node_is_null(previous))
+        {
+            startPt = endPt = ts_node_end_point(previous);
+        }
+    }
 
     Diagnostic diag;
     diag.range.start.line = startPt.row;
@@ -2478,9 +2350,10 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
     std::string_view rawErrText = parser::NodeText(node, sCtx.request.sourceCode);
     std::string logMsg;
 
-    if (ts_node_is_missing(node))
+    if (IsSyntaxGap(node))
     {
-        std::string_view missingToken = parser::GetNodeType(node);
+        const std::string_view missingToken =
+            ts_node_symbol(node) == m_gs.symImplicitCloseBrace ? std::string_view("}") : parser::GetNodeType(node);
         const std::string_view pattern = sCtx.request.i18n
                                              ? sCtx.request.i18n->GetMessageView("as-syntax-error-missing")
                                              : std::string_view("Syntax error: missing '{}'");

@@ -175,14 +175,6 @@ class SymbolCollector
      */
     static void appendQualifiedName(std::string& outBuffer, std::string_view scope, std::string_view name);
 
-    struct RecoveredClassContainer
-    {
-        uint32_t startByte = 0;
-        uint32_t endByte = 0;
-        std::string className;
-        ContainerKind kind = ContainerKind::Class;
-    };
-
   private:
     utils::LspLogger* m_logger;
     const parser::GrammarSymbols& m_gs;
@@ -263,12 +255,9 @@ class SymbolCollector
     static ProcessFn DeclarationHandler(IndexedDeclarationKind kind);
     void CollectFromIndex(const NodeIndex& index, SymbolCollectContext& sCtx);
     void DispatchDeclaration(TSNode node, IndexedDeclarationKind kind, SymbolCollectContext& sCtx,
-                             std::vector<ActiveContainer>& containerStack,
-                             const std::vector<RecoveredClassContainer>& recoveredClasses);
+                             std::vector<ActiveContainer>& containerStack);
     void PushContainerIfApplicable(ProcessFn handler, TSNode node, const SymbolCollectContext& sCtx,
                                    std::vector<ActiveContainer>& stack) const;
-    void SyncRecoveredContainers(uint32_t nodeStart, const std::vector<RecoveredClassContainer>& recoveredClasses,
-                                 std::vector<ActiveContainer>& containerStack) const;
     void PushClassContainer(TSNode node, const SymbolCollectContext& sCtx, std::vector<ActiveContainer>& stack) const;
 
     void PushInterfaceContainer(TSNode node, const SymbolCollectContext& sCtx,
@@ -335,7 +324,15 @@ class SymbolCollector
         uint32_t firstErrorLine = UINT32_MAX;
         std::vector<MissingCaseColon> missingColons;
         std::vector<std::pair<uint32_t, uint32_t>> suppressedErrorRanges;
+        uint32_t implicitCloseByte = UINT32_MAX; ///< Byte of the last reported EOF `}` gap, so it is named once.
     };
+
+    /**
+     * @brief Tells whether a node marks a token the source is missing rather than text it contains.
+     * @param[in] node Candidate node.
+     * @return True for tree-sitter MISSING nodes and for the scanner's zero-width EOF `}`.
+     */
+    [[nodiscard]] bool IsSyntaxGap(TSNode node) const noexcept;
     void ReportParseErrors(const NodeIndex& index, SymbolCollectContext& sCtx) const;
     void RecoverSwallowedDeclarations(SymbolCollectContext& sCtx);
     void EmitMissingColonDiagnostics(std::span<const MissingCaseColon> missingColons, SymbolCollectContext& sCtx) const;
@@ -377,32 +374,6 @@ struct MemberNodes
 {
     TSNode declNode;
     TSNode nameNode;
-};
-
-using RecoveredClassContainer = SymbolCollector::RecoveredClassContainer;
-
-/**
- * @brief State machine context for recovering broken class definitions during error-tolerant parsing passes.
- */
-struct RecoverClassContext
-
-{
-    const parser::GrammarSymbols& gs;
-    std::string_view sourceCode;
-    const std::string& fileUri;
-    std::vector<RecoveredClassContainer>& outContainers;
-    std::vector<Symbol>& outSymbols;
-};
-
-/**
- * @brief Extracted class header metadata containing class name, base inheritance lists, and modifier tokens.
- */
-struct ScannedClassHeader
-{
-    TSNode headerStart{TSNode{}};
-    TSNode nameNode{TSNode{}};
-    bool isClass{false};
-    bool isInterface{false};
 };
 
 /**

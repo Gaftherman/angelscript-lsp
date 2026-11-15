@@ -280,12 +280,19 @@ static std::optional<IndexedCallContext> ResolveArgumentListCall(TSNode list, ui
  */
 static bool ReachesCursor(TSNode node, uint32_t cursorByte) noexcept
 {
+    const TSSymbol implicitBrace = parser::GetGrammarSymbols().symImplicitCloseBrace;
     uint32_t hops = 0;
     bool reaches = false;
     parser::ForEachAncestor(node,
                             [&](TSNode ancestor) noexcept -> bool
                             {
-                                const TSNode next = ts_node_next_sibling(ancestor);
+                                TSNode next = ts_node_next_sibling(ancestor);
+                                // The scanner's EOF braces are not source text, so they never separate the call from
+                                // the cursor.
+                                while (!ts_node_is_null(next) && ts_node_symbol(next) == implicitBrace)
+                                {
+                                    next = ts_node_next_sibling(next);
+                                }
                                 if (!ts_node_is_null(next))
                                 {
                                     reaches = ts_node_start_byte(next) >= cursorByte;

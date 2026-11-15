@@ -266,7 +266,7 @@ static std::vector<Symbol> FindEnumMemberInNamespace(const SymbolTable& symbolTa
     }
     for (const auto& enumSym : it->second)
     {
-        if (enumSym.containerName == namespaceName || IsSameOrNestedNamespace(enumSym.containerName, namespaceName))
+        if (enumSym.containerName == namespaceName)
         {
             auto enumMember = symbolTable.FindMemberSymbols(enumSym.qualifiedName, name);
             if (!enumMember.empty())
@@ -372,22 +372,6 @@ static std::vector<Symbol> FindSymbolInUsingNamespaces(const SymbolTable& symbol
     return {};
 }
 
-/**
- * @brief Fallback lookup for enum members and short-name types.
- */
-static std::vector<Symbol> FindSymbolEnumOrTypeFallback(const SymbolTable& symbolTable, std::string_view name)
-{
-    if (const auto ruleIndex = symbolTable.GetRuleIndex())
-    {
-        auto it = ruleIndex->enumSymbolsByMemberName.find(name);
-        if (it != ruleIndex->enumSymbolsByMemberName.end())
-        {
-            return it->second;
-        }
-    }
-    return symbolTable.FindTypeSymbolsByShortName(name);
-}
-
 std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std::vector<ContainerInfo>& containers,
                                        std::string_view name, std::span<const std::string> usingNamespaces)
 {
@@ -432,7 +416,9 @@ std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std
         return found;
     }
 
-    return FindSymbolEnumOrTypeFallback(symbolTable, name);
+    // Last resort: a type known only by its short name. Enum constants stay out of this fallback: an unqualified
+    // constant is visible only from the scope that declares its enum, which the lookups above already cover.
+    return symbolTable.FindTypeSymbolsByShortName(name);
 }
 
 std::vector<std::string> CollectVisibleUsingNamespaces(uint32_t byteOffset, std::string_view sourceCode,

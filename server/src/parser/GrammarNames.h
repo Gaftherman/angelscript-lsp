@@ -49,6 +49,7 @@ inline constexpr std::string_view FuncdefDeclaration = "funcdef_declaration";
 inline constexpr std::string_view FunctionalCastExpression = "functional_cast_expression";
 inline constexpr std::string_view Identifier = "identifier";
 inline constexpr std::string_view IfStatement = "if_statement";
+inline constexpr std::string_view ImplicitCloseBrace = "implicit_close_brace";
 inline constexpr std::string_view ImportDeclaration = "import_declaration";
 inline constexpr std::string_view IndexExpression = "index_expression";
 inline constexpr std::string_view InitializerList = "initializer_list";
@@ -234,6 +235,7 @@ inline constexpr std::string_view k_allNodeTypes[] = {
     nodes::FunctionalCastExpression,
     nodes::Identifier,
     nodes::IfStatement,
+    nodes::ImplicitCloseBrace,
     nodes::ImportDeclaration,
     nodes::IndexExpression,
     nodes::InitializerList,

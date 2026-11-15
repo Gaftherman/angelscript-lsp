@@ -276,6 +276,16 @@ class NodeIndex
     [[nodiscard]] std::span<const TSNode> Nodes(TSSymbol symbol) const noexcept;
 
     /**
+     * @brief Returns the zero-width `}` nodes the scanner added at end of file for bodies left open.
+     * @return Nodes in document order; empty when every body is closed. They are reported as syntax gaps but are
+     *         not ERROR nodes, so the bodies they close are indexed normally.
+     */
+    [[nodiscard]] std::span<const TSNode> ImplicitCloseBraces() const noexcept
+    {
+        return m_implicitCloseBraces;
+    }
+
+    /**
      * @brief Returns all nodes of a given node type name in document order.
      * @param typeName The grammar node type name (e.g. "call_expression").
      * @return Span of matching nodes. Empty if type name has no occurrences.
@@ -820,6 +830,8 @@ class NodeIndex
     const TSLanguage* m_language = nullptr;
     size_t m_nodeCount = 0;
     std::vector<TSNode> m_errorNodes;
+    std::vector<TSNode>
+        m_implicitCloseBraces; ///< Zero-width EOF `}` nodes; not ERROR, so analysis still indexes their bodies.
     std::vector<SymbolBucket> m_nodesBySymbol;
     std::vector<ErrorRange> m_errorRanges;
     std::vector<CommentRange> m_commentRanges;

@@ -97,6 +97,7 @@ static void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbol
     gs.symComment = SymNamed(lang, parser::nodes::Comment);
     gs.symPreprocDirective = SymNamed(lang, parser::nodes::PreprocDirective);
     gs.symVoidArgument = SymNamed(lang, parser::nodes::VoidArgument);
+    gs.symImplicitCloseBrace = SymNamed(lang, parser::nodes::ImplicitCloseBrace);
 
     gs.symStatementBlock = SymNamed(lang, parser::nodes::StatementBlock);
     gs.symReturnStatement = SymNamed(lang, parser::nodes::ReturnStatement);

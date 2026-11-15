@@ -86,6 +86,8 @@ struct GrammarSymbols
     TSSymbol symComment = 0;            ///< comment
     TSSymbol symPreprocDirective = 0;   ///< preproc_directive
     TSSymbol symVoidArgument = 0;       ///< void_argument
+    TSSymbol symImplicitCloseBrace =
+        0; ///< implicit_close_brace: zero-width `}` the scanner adds at EOF for an open body
 
     // Statements
     TSSymbol symStatementBlock = 0;      ///< statement_block

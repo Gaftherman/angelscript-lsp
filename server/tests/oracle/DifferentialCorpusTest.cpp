@@ -242,8 +242,20 @@ TEST_SUITE("oracle/DifferentialCorpus")
                                           end.object().get("line").integer() == want[2] &&
                                           end.object().get("character").integer() == want[3]);
                     }
+                    std::ostringstream reported;
+                    for (const auto& diag : report.array())
+                    {
+                        const lsp::json::Value& range = diag.object().get("range");
+                        const lsp::json::Value& start = range.object().get("start");
+                        const lsp::json::Value& end = range.object().get("end");
+                        reported << ' ' << start.object().get("line").integer() << ':'
+                                 << start.object().get("character").integer() << '-'
+                                 << end.object().get("line").integer() << ':'
+                                 << end.object().get("character").integer();
+                    }
                     CHECK_MESSAGE(found, "no diagnostic covers " << want[0] << ":" << want[1] << "-" << want[2] << ":"
-                                                                 << want[3]);
+                                                                 << want[3] << "; the server reported"
+                                                                 << reported.str());
                 }
                 continue;
             }

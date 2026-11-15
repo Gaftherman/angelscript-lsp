@@ -130,6 +130,11 @@ size_t NodeIndex::IndexNode(TSNode node, parser::TraversalBudget* budget, uint32
         m_errorRanges.push_back(ErrorRange{ts_node_start_byte(node), ts_node_end_byte(node)});
         m_errorNodes.push_back(node);
     }
+    else if (ts_node_symbol(node) == parser::GetGrammarSymbols().symImplicitCloseBrace)
+    {
+        m_errorRanges.push_back(ErrorRange{ts_node_start_byte(node), ts_node_end_byte(node)});
+        m_implicitCloseBraces.push_back(node);
+    }
 
     const TSSymbol sym = ts_node_symbol(node);
     const auto& gs = parser::GetGrammarSymbols();
@@ -1097,6 +1102,7 @@ void NodeIndex::Build(TSNode root, const NodeIndexOptions& options)
     BuildEnclosingSameSym();
     PostProcessErrorRanges();
     PostProcessCommentRanges();
+    m_hasSyntaxErrors = m_hasSyntaxErrors || !m_errorRanges.empty();
 }
 
 void NodeIndex::BuildEnclosingSameSym()
@@ -1190,8 +1196,9 @@ size_t NodeIndex::EstimateMemoryBytes() const noexcept
     const auto vectorBytes = []<typename T>(const std::vector<T>& vec) noexcept -> size_t
     { return vec.capacity() * sizeof(T); };
 
-    size_t bytes = sizeof(*this) + vectorBytes(m_errorNodes) + vectorBytes(m_nodesBySymbol) +
-                   vectorBytes(m_errorRanges) + vectorBytes(m_commentRanges) + vectorBytes(m_containerSpans);
+    size_t bytes = sizeof(*this) + vectorBytes(m_errorNodes) + vectorBytes(m_implicitCloseBraces) +
+                   vectorBytes(m_nodesBySymbol) + vectorBytes(m_errorRanges) + vectorBytes(m_commentRanges) +
+                   vectorBytes(m_containerSpans);
 
     for (const SymbolBucket& bucket : m_nodesBySymbol)
     {
@@ -1370,6 +1377,7 @@ void NodeIndex::Clear() noexcept
     m_language = nullptr;
     m_nodeCount = 0;
     m_errorNodes.clear();
+    m_implicitCloseBraces.clear();
     m_nodesBySymbol.clear();
     m_errorRanges.clear();
     m_commentRanges.clear();

@@ -3422,6 +3422,105 @@
         "DifferentialCorpus - server agrees with the verdicts the compiler confirmed",
         "DifferentialCorpus - namespaced members and qualified calls follow the compiler for any names"
       ]
+    },
+    {
+      "id": "REF-P12-RECOVERCLASSFROMERROR",
+      "phase": "M28",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/index/SymbolCollector.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "ScanRecoverableClasses, TryRecoverClassFromErrorNode, FindClassHeaderInError, SyncRecoveredContainers, RecoveredClassContainer, RecoverClassContext, ScannedClassHeader",
+      "whatItDidAndWhyInThatFile": "Rebuilt a class symbol and its container from the tokens of a top-level ERROR node, because a body left open at end of file was flattened into one ERROR.",
+      "whyChangedOrDeleted": "The grammar scanner now closes every body still open at end of file with a zero-width implicit_close_brace, so the class stays a class_declaration and is indexed like any other.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.h",
+      "replacedByCanonicalSymbol": "ImplicitCloseBraces",
+      "ramOrCpuImpact": "Drops one tree walk over the root's children and a per-declaration container sync on documents with syntax errors.",
+      "verifiedByTests": [
+        "UnclosedBody - Class and method left open at the end of the file keep their symbols",
+        "UnclosedBody - A half-typed call at the end of the file does not swallow the class around it",
+        "SymbolCollector - Unclosed method void Function() { inside class clamps to single line and does not blame leading comment"
+      ]
+    },
+    {
+      "id": "REF-P12-ENUMFALLBACK",
+      "phase": "M28",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/resolution/ScopeSymbolLookup.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "FindSymbolEnumOrTypeFallback (enum branch over enumSymbolsByMemberName)",
+      "whatItDidAndWhyInThatFile": "Returned every enum declaring a member name when the scoped lookups found nothing.",
+      "whyChangedOrDeleted": "The container, global and using lookups already find every constant that is in scope, so the fallback only added constants from unrelated namespaces; FindEnumMemberInNamespace also matched child namespaces and now requires the exact namespace.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ScopeSymbolLookup.cpp",
+      "replacedByCanonicalSymbol": "FindSymbolsInScope",
+      "ramOrCpuImpact": "Removes a rule-index lookup and a vector copy on every unresolved name.",
+      "verifiedByTests": [
+        "Hover - An enum constant is visible only from the scope that declares its enum",
+        "EnumReachability - Parent namespace attempting to access unqualified enum value in child namespace"
+      ]
+    },
+    {
+      "id": "REF-P12-POISONSENTINEL",
+      "phase": "M28",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/checkers/CallCheckerCommon.h",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "IsPoisonType, IsPoisonOrEmptyType, IsPoisonOrEmptyArg, IsUnresolvedOrPoisonType",
+      "whatItDidAndWhyInThatFile": "Recognised the <poison> type string that expressions with syntax errors resolved to.",
+      "whyChangedOrDeleted": "A syntax error is a property of a text range, not of a type, so the string sentinel carried through expression typing is replaced by a range query on the index.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.h",
+      "replacedByCanonicalSymbol": "SpanHasSyntaxError",
+      "ramOrCpuImpact": "Removes three copies of the sentinel and string compares in about 27 checks; the range query is a binary search.",
+      "verifiedByTests": [
+        "TypeConversion - Poison sentinel is completely eradicated from diagnostics"
+      ]
+    },
+    {
+      "id": "REF-P12-ERRORDECLRECOVERY",
+      "phase": "M28",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/index/LocalScopeCollector.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "InsertRecoveredDefinition, ExtractAssignmentLeftVar, RegisterRecoveredVariable, TryRecoverSplitIfDeclaration, TryRecoverErrorIfDeclaration, TryRecoverUnbracedIfDeclaration, RecoverDeclarationsFromErrorNodes",
+      "whatItDidAndWhyInThatFile": "Rebuilt local variable definitions from the text of ERROR nodes around unbraced if bodies.",
+      "whyChangedOrDeleted": "The grammar now parses a declaration as the unbraced body of if, while, for and foreach, so the locals come from a scope query instead of text recovery inside ERROR nodes.",
+      "replacedByCanonicalFile": "server/src/parser/queries/BuiltQueries.h",
+      "replacedByCanonicalSymbol": "local.definition.var",
+      "ramOrCpuImpact": "Removes a text scan over every ERROR node during local scope collection.",
+      "verifiedByTests": [
+        "SemanticAnalyzer - Unbraced if declaration recovers local variable and suppresses E184 and W108"
+      ]
+    },
+    {
+      "id": "REF-P12-DESTRUCTORTILDE",
+      "phase": "M28",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/index/SymbolCollector.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "HasDestructorTilde",
+      "whatItDidAndWhyInThatFile": "Looked for a tilde among the children of a function declaration.",
+      "whyChangedOrDeleted": "The grammar exposes the destructor marker as a field of func_declaration.",
+      "replacedByCanonicalFile": "server/src/parser/GrammarSymbols.h",
+      "replacedByCanonicalSymbol": "fieldDestructor",
+      "ramOrCpuImpact": "Removes a child scan per function declaration.",
+      "verifiedByTests": [
+        "SymbolCollector - Populates isDestructor first-pass flag for tilde declarators with whitespace"
+      ]
+    },
+    {
+      "id": "REF-P12-TRIMMEDNODETEXT",
+      "phase": "M28",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/index/ExpressionTypeASTRecovery.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "GetTrimmedNodeTextView",
+      "whatItDidAndWhyInThatFile": "Trimmed an argument node's text to compare it with the word void.",
+      "whyChangedOrDeleted": "The grammar has a void_argument node, so the text of an argument no longer has to be compared with void.",
+      "replacedByCanonicalFile": "server/src/parser/GrammarSymbols.h",
+      "replacedByCanonicalSymbol": "symVoidArgument",
+      "ramOrCpuImpact": "Removes a per-argument text read and trim.",
+      "verifiedByTests": [
+        "CallChecker - A void argument is an argument"
+      ]
     }
   ]
 }
