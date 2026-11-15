@@ -36,7 +36,7 @@ export default defineConfig([
 	{
 		...base,
 		label: 'e2e',
-		files: ['out/test/e2e.test.js', 'out/test/diagnostics.test.js'],
+		files: ['out/test/e2e.test.js', 'out/test/diagnostics.test.js', 'out/test/completion.test.js'],
 		mocha: { timeout: 60_000 },
 	},
 	{

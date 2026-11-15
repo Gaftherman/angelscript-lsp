@@ -131,3 +131,11 @@ class Cloud {}
 class Clap {}
 class Zebra {}
 Cl/*$complete*/@ makeThing() { return null; }
+
+// ==== case: ternary_else_branch_sees_locals ====
+// @expect: accept
+// @complete+ gate
+void pick() {
+    int gate = 1;
+    int v = gate > 0 ? 1 : /*$complete*/;
+}

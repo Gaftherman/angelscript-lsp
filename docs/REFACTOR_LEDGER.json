@@ -3337,6 +3337,91 @@
         "SyntaxRevisionCache - Single revision exceeding byte budget is not retained",
         "FlowBenchmark - Syntax Revision Re-request (20k lines)"
       ]
+    },
+    {
+      "id": "REF-P7-CHECKNAMESPACEORCLASSMEMBERS",
+      "phase": "M27",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/checkers/NamespaceCheckerCalls.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "CheckNamespaceOrClassMembers",
+      "whatItDidAndWhyInThatFile": "Checked qualified call callees by reconstructing qualifier candidates from text.",
+      "whyChangedOrDeleted": "Qualified callees are now validated through the namespace usage facts and ScopeSymbolLookup, so the text-based qualifier walk is redundant.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/NamespaceCheckerScopes.cpp",
+      "replacedByCanonicalSymbol": "CheckScopedIdentifier",
+      "ramOrCpuImpact": "Removes a per-call text scan; no new allocations.",
+      "verifiedByTests": [
+        "DifferentialCorpus - server agrees with the verdicts the compiler confirmed",
+        "DifferentialCorpus - namespaced members and qualified calls follow the compiler for any names"
+      ]
+    },
+    {
+      "id": "REF-P7-QUALIFIERCANDIDATES",
+      "phase": "M27",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/checkers/NamespaceCheckerCalls.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "QualifierCandidates",
+      "whatItDidAndWhyInThatFile": "Built the list of candidate namespace prefixes for a qualified call from its text.",
+      "whyChangedOrDeleted": "Replaced by utils::CompactScopedName plus ScopeSymbolLookup resolution of the qualifier.",
+      "replacedByCanonicalFile": "server/src/utils/ScopedNameUtils.h",
+      "replacedByCanonicalSymbol": "CompactScopedName",
+      "ramOrCpuImpact": "Removes a per-call text scan; no new allocations.",
+      "verifiedByTests": [
+        "DifferentialCorpus - server agrees with the verdicts the compiler confirmed",
+        "DifferentialCorpus - namespaced members and qualified calls follow the compiler for any names"
+      ]
+    },
+    {
+      "id": "REF-P7-HASCONTAINERMATCHINGPREFIX",
+      "phase": "M27",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/checkers/NamespaceCheckerScopes.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "HasContainerMatchingPrefix",
+      "whatItDidAndWhyInThatFile": "Searched known containers for a name prefix to accept partially qualified names.",
+      "whyChangedOrDeleted": "Unqualified and partially qualified names resolve through the scope tree and symbol table, so a prefix scan is unnecessary.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/NamespaceCheckerScopes.cpp",
+      "replacedByCanonicalSymbol": "CheckScopedIdentifier",
+      "ramOrCpuImpact": "Removes a per-call text scan; no new allocations.",
+      "verifiedByTests": [
+        "DifferentialCorpus - server agrees with the verdicts the compiler confirmed",
+        "DifferentialCorpus - namespaced members and qualified calls follow the compiler for any names"
+      ]
+    },
+    {
+      "id": "REF-P7-ISKNOWNSCOPEPREFIX",
+      "phase": "M27",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/checkers/NamespaceCheckerScopes.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "IsKnownScopePrefix",
+      "whatItDidAndWhyInThatFile": "Tested whether a prefix named an existing scope.",
+      "whyChangedOrDeleted": "Covered by SymbolTable scope lookups used by CheckScopedIdentifier.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/NamespaceCheckerScopes.cpp",
+      "replacedByCanonicalSymbol": "CheckScopedIdentifier",
+      "ramOrCpuImpact": "Removes a per-call text scan; no new allocations.",
+      "verifiedByTests": [
+        "DifferentialCorpus - server agrees with the verdicts the compiler confirmed",
+        "DifferentialCorpus - namespaced members and qualified calls follow the compiler for any names"
+      ]
+    },
+    {
+      "id": "REF-P7-MATCHESQUALIFIEDTYPESUFFIX",
+      "phase": "M27",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/resolution/ScopeSymbolLookup.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "MatchesQualifiedTypeSuffix",
+      "whatItDidAndWhyInThatFile": "Matched a type by qualified suffix in the rule index.",
+      "whyChangedOrDeleted": "Suffix matching across scopes is replaced by explicit scope-aware lookup (prohibition 13 forbids blind suffix matching).",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ScopeSymbolLookup.cpp",
+      "replacedByCanonicalSymbol": "IsReachableInContainerScope",
+      "ramOrCpuImpact": "Removes a per-call text scan; no new allocations.",
+      "verifiedByTests": [
+        "DifferentialCorpus - server agrees with the verdicts the compiler confirmed",
+        "DifferentialCorpus - namespaced members and qualified calls follow the compiler for any names"
+      ]
     }
   ]
 }

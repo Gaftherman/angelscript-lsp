@@ -51,6 +51,16 @@ static bool IsGlobalScopeQualified(std::string_view prefix, std::string_view que
     return before != ':' && std::isalnum(static_cast<unsigned char>(before)) == 0 && before != '_';
 }
 
+/**
+ * @brief Tells whether a single trailing ':' is the else branch of a ternary, so an expression follows.
+ * @param[in] prefix Text of the current line up to the cursor.
+ * @return True when the line holds a `?` before the colon. Case labels are handled earlier by suppression.
+ */
+static bool ColonContinuesExpression(std::string_view prefix)
+{
+    return prefix.find('?') != std::string_view::npos;
+}
+
 void CollectUnscopedSymbols(const CompletionQuery& request, const analysis::Scope* innermostScope,
                             std::string_view prefix, CompletionCollector& collector)
 {
@@ -82,10 +92,12 @@ std::vector<CompletionEntry> CollectCompletionEntries(const CompletionQuery& req
     {
         ++trailingColons;
     }
-    if (trailingColons > 0 && trailingColons != 2)
+    if (trailingColons > 2)
     {
         return {};
     }
+    // One ':' ends a label or a base list unless the else branch of a ternary follows it.
+    const bool singleColon = trailingColons == 1;
 
     if (auto earlyItems = HandleIncludeOrLexicalSuppression(request, prefix))
     {
@@ -100,6 +112,11 @@ std::vector<CompletionEntry> CollectCompletionEntries(const CompletionQuery& req
     {
         SortCompletionItemsByProximity(items);
         return items;
+    }
+
+    if (singleColon && !ColonContinuesExpression(prefix))
+    {
+        return {};
     }
 
     if (TryCompleteScopeResolution(prefix, collector))
@@ -119,6 +136,12 @@ std::vector<CompletionEntry> CollectCompletionEntries(const CompletionQuery& req
         rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
 
     if (TryCompleteMemberAccess(prefix, innermostScope, collector))
+    {
+        SortCompletionItemsByProximity(items);
+        return items;
+    }
+
+    if (TryCompletePostfixQualifiers(innermostScope, collector))
     {
         SortCompletionItemsByProximity(items);
         return items;

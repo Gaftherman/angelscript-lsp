@@ -2855,3 +2855,92 @@ TEST_CASE("Completion - Namespace enum values inside a comparison in a host clas
     const auto items = env.CompleteAt(6, static_cast<uint32_t>(head.size()));
     CHECK(HasItem(items, valueNotAimed));
 }
+
+// =====================================================================================
+// After the `)` of a declaration only the qualifiers of that declaration kind fit; the compiler
+// (angelscript_oracle) accepts `const`, `final` and `override` after a method, `explicit` after a
+// constructor, `const` after an interface method and nothing after a global function.
+// =====================================================================================
+
+TEST_CASE("Completion - A constructor header offers only its own qualifiers")
+{
+    const std::string cls = angel_lsp::test::GenerateRandomSymbolName("Ctor");
+    const std::string code = "class " + cls + "\n{\n    " + cls + "() \n    {\n    }\n}\n";
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(2, static_cast<uint32_t>(cls.size() + 7));
+    CHECK(HasItem(items, "explicit"));
+    CHECK_FALSE(HasItem(items, "override"));
+    CHECK_FALSE(HasItem(items, "class"));
+    CHECK_FALSE(HasItem(items, cls));
+}
+
+TEST_CASE("Completion - Override is offered only when a base class declares the method")
+{
+    const std::string base = angel_lsp::test::GenerateRandomSymbolName("Base");
+    const std::string derived = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const std::string known = angel_lsp::test::GenerateRandomSymbolName("known");
+    const std::string fresh = angel_lsp::test::GenerateRandomSymbolName("fresh");
+    const std::string code = "class " + base + " { void " + known + "() {} }\nclass " + derived + " : " + base +
+                             "\n{\n    void " + known + "() \n    {\n    }\n    void " + fresh +
+                             "() \n    {\n    }\n}\n";
+    TestEnvironment env(code);
+    const auto inherited = env.CompleteAt(3, static_cast<uint32_t>(known.size() + 12));
+    CHECK(HasItem(inherited, "override"));
+    CHECK(HasItem(inherited, "const"));
+    CHECK(HasItem(inherited, "final"));
+    const auto added = env.CompleteAt(6, static_cast<uint32_t>(fresh.size() + 12));
+    CHECK_FALSE(HasItem(added, "override"));
+    CHECK(HasItem(added, "final"));
+}
+
+TEST_CASE("Completion - A qualifier already written is not offered again")
+{
+    const std::string cls = angel_lsp::test::GenerateRandomSymbolName("Held");
+    const std::string method = angel_lsp::test::GenerateRandomSymbolName("run");
+    const std::string head = "    void " + method + "() const ";
+    const std::string code = "class " + cls + "\n{\n" + head + "\n    {\n    }\n}\n";
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(2, static_cast<uint32_t>(head.size()));
+    CHECK(HasItem(items, "final"));
+    CHECK_FALSE(HasItem(items, "const"));
+}
+
+TEST_CASE("Completion - Global functions and calls in a body get no signature qualifiers")
+{
+    const std::string fn = angel_lsp::test::GenerateRandomSymbolName("tick");
+    const std::string code = "void " + fn + "() \n{\n}\nvoid other()\n{\n    " + fn + "() \n}\n";
+    TestEnvironment env(code);
+    CHECK(env.CompleteAt(0, static_cast<uint32_t>(fn.size() + 8)).empty());
+    const auto inBody = env.CompleteAt(5, static_cast<uint32_t>(fn.size() + 7));
+    CHECK(HasItem(inBody, fn));
+}
+
+TEST_CASE("Completion - An interface method offers const only")
+{
+    const std::string iface = angel_lsp::test::GenerateRandomSymbolName("Shape");
+    const std::string code = "interface " + iface + "\n{\n    void area() \n}\n";
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(2, 16);
+    CHECK(HasItem(items, "const"));
+    CHECK_FALSE(HasItem(items, "final"));
+    CHECK_FALSE(HasItem(items, "override"));
+}
+
+TEST_CASE("Completion - The else branch of a ternary completes as an expression")
+{
+    const std::string var = angel_lsp::test::GenerateRandomSymbolName("flag");
+    const std::string head = "    int v = " + var + " > 0 ? 1 :";
+    const std::string code = "void main()\n{\n    int " + var + " = 1;\n" + head + "\n}\n";
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(3, static_cast<uint32_t>(head.size()));
+    CHECK(HasItem(items, var));
+}
+
+TEST_CASE("Completion - A bare label colon after an identifier offers nothing")
+{
+    const std::string var = angel_lsp::test::GenerateRandomSymbolName("slot");
+    const std::string head = "    " + var + ":";
+    const std::string code = "void main()\n{\n    float " + var + " = 1.0f;\n" + head + "\n}\n";
+    TestEnvironment env(code);
+    CHECK(env.CompleteAt(3, static_cast<uint32_t>(head.size())).empty());
+}

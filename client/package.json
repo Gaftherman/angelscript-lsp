@@ -372,6 +372,10 @@
         "*.as.predefined": "angelscript-predefined",
         "as.predefined": "angelscript-predefined",
         "*.predefined": "angelscript-predefined"
+      },
+      "[angelscript]": {
+        "editor.wordBasedSuggestions": "off",
+        "editor.snippetSuggestions": "bottom"
       }
     },
     "configuration": [

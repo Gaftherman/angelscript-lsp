@@ -207,6 +207,31 @@ std::string GetBackwardDeclarationText(std::string_view sourceCode, uint32_t lin
  */
 bool TryCompleteInheritance(std::string_view prefix, CompletionCollector& collector);
 
+/** @brief Declaration kinds that decide which qualifiers may follow the parameter list. */
+enum class PostfixOwner
+{
+    Constructor,
+    Destructor,
+    ClassMethod,
+    InterfaceMethod,
+};
+
+/** @brief The function header found before the cursor: its name, owner kind and the qualifiers already typed. */
+struct PostfixHeader
+{
+    std::string name;
+    PostfixOwner owner = PostfixOwner::ClassMethod;
+    std::vector<std::string_view> written;
+};
+
+/**
+ * @brief Offers only the qualifiers that fit after a function's parameter list (`const`, `final`, `override`...).
+ * @param[in] innermostScope Scope at the cursor; a function or block body means the text is a call, not a declaration.
+ * @param[in,out] collector Receives the keywords valid for the declaration kind.
+ * @return True when the cursor follows a declaration's `)`, so the caller must not add general symbols.
+ */
+bool TryCompletePostfixQualifiers(const analysis::Scope* innermostScope, CompletionCollector& collector);
+
 /**
  * @brief Resolves base container type name, handling unqualified template class lookups.
  * @param[in] canonicalType Canonical type name.
