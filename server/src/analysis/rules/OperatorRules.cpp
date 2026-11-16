@@ -13,12 +13,13 @@ namespace angel_lsp::analysis::rules
  * @brief The binary operator methods, each of which takes exactly one argument.
  *        The `_r` forms are the reversed-operand overloads the engine looks for when the left-hand
  */
-constexpr std::array<std::string_view, 34> k_binaryOperators = {
-    "opAdd",       "opSub",       "opMul",       "opDiv",       "opMod",       "opPow",       "opAnd",
-    "opOr",        "opXor",       "opShl",       "opShr",       "opUShr",      "opAdd_r",     "opSub_r",
-    "opMul_r",     "opDiv_r",     "opMod_r",     "opPow_r",     "opAnd_r",     "opOr_r",      "opXor_r",
-    "opShl_r",     "opShr_r",     "opUShr_r",    "opAddAssign", "opSubAssign", "opMulAssign", "opDivAssign",
-    "opModAssign", "opPowAssign", "opAndAssign", "opOrAssign",  "opXorAssign", "opAssign"};
+constexpr std::array<std::string_view, 37> k_binaryOperators = {
+    "opAdd",        "opSub",       "opMul",       "opDiv",       "opMod",       "opPow",       "opAnd",
+    "opOr",         "opXor",       "opShl",       "opShr",       "opUShr",      "opAdd_r",     "opSub_r",
+    "opMul_r",      "opDiv_r",     "opMod_r",     "opPow_r",     "opAnd_r",     "opOr_r",      "opXor_r",
+    "opShl_r",      "opShr_r",     "opUShr_r",    "opAddAssign", "opSubAssign", "opMulAssign", "opDivAssign",
+    "opModAssign",  "opPowAssign", "opAndAssign", "opOrAssign",  "opXorAssign", "opShlAssign", "opShrAssign",
+    "opUShrAssign", "opAssign"};
 
 /**
  * @brief The unary operator methods, which take no arguments.
@@ -36,6 +37,27 @@ static bool Contains(const auto& names, std::string_view name)
     return std::find(names.begin(), names.end(), name) != names.end();
 }
 
+static bool IsForValueOperator(std::string_view name) noexcept
+{
+    if (!name.starts_with("opForValue"))
+    {
+        return false;
+    }
+    const std::string_view suffix = name.substr(10);
+    if (suffix.empty())
+    {
+        return true;
+    }
+    for (const char ch : suffix)
+    {
+        if (ch < '0' || ch > '9')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 /**
  * @brief True when the name is one AngelScript gives a fixed meaning to.
  */
@@ -43,7 +65,7 @@ bool IsOperatorName(std::string_view name)
 {
     return Contains(k_binaryOperators, name) || Contains(k_unaryOperators, name) ||
            Contains(k_conversionOperators, name) || name == "opCmp" || name == "opEquals" || name == "opIndex" ||
-           name == "opForBegin" || name == "opForEnd" || name == "opForNext" || name == "opForValue" ||
+           name == "opForBegin" || name == "opForEnd" || name == "opForNext" || IsForValueOperator(name) ||
            name == "opCall" || name == "opHndlAssign";
 }
 

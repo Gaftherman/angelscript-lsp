@@ -1,4 +1,5 @@
 #include "analysis/checkers/TypeConversionCommon.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
@@ -39,7 +40,8 @@ bool CanTriviallyConvert(std::string_view from, std::string_view to, const Diagn
     return CanonicalizeType(from) == CanonicalizeType(to);
 }
 
-bool CanConvertBuiltins(std::string_view from, std::string_view to, const DiagnosticContext& ctx)
+bool CanConvertBuiltins(std::string_view from, std::string_view to, const DiagnosticContext& ctx,
+                        bool allowUnstubbedString)
 {
     if (from == to)
     {
@@ -56,21 +58,41 @@ bool CanConvertBuiltins(std::string_view from, std::string_view to, const Diagno
         return false;
     }
 
-    if (IsStringType(to, ctx))
+    if (allowUnstubbedString && IsStringType(to, ctx) && !FindTypeDeclaration(to, ctx.request.symbolTable).found)
     {
-        return true;
+        return IsNumericPrimitive(from) || from == "bool";
     }
 
     return false;
+}
+
+bool IsUnresolvedOrExternalType(std::string_view typeName, bool isBuiltIn, const SymbolTable& table)
+{
+    if (isBuiltIn || typeName == "null" || ResolvesToEnum(typeName, table) || FindFuncdef(typeName, table).has_value())
+    {
+        return false;
+    }
+    // Check the container name directly for template instantiations: FindTypeDeclaration strips `<...>`
+    // internally and reports true, while CleanBaseTypeView would reduce `array<T>` to `T` and fail visibility.
+    const auto decomp = DecomposeTemplateType(typeName);
+    if (decomp.isTemplate)
+    {
+        return !FindTypeDeclaration(decomp.containerName, table).found ||
+               !HierarchyIsFullyVisible(decomp.containerName, table);
+    }
+    if (FindTypeDeclaration(typeName, table).found)
+    {
+        return !HierarchyIsFullyVisible(CleanBaseTypeView(typeName), table);
+    }
+    return true;
 }
 
 bool CanConvertEnumTarget(std::string_view from, std::string_view to, const SymbolTable& table,
                           const DiagnosticContext& ctx)
 {
     const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
-    const TypeDeclarationInfo fromDecl = FindTypeDeclaration(from, table);
 
-    if (!fromBuiltIn && !fromDecl.found && !ResolvesToEnum(from, table))
+    if (IsUnresolvedOrExternalType(from, fromBuiltIn, table))
     {
         return true;
     }
@@ -90,7 +112,9 @@ bool CanConvertClasses(std::string_view from, std::string_view to, const Diagnos
     }
 
     const TypeDeclarationInfo toDecl = FindTypeDeclaration(to, table);
-    if (toDecl.isTemplate)
+    // A bare template name has no arguments to bind, so nothing can be judged; an instantiation is
+    // checked through its bound constructors and opAssign overloads.
+    if (toDecl.isTemplate && to.find('<') == std::string_view::npos)
     {
         return true;
     }
@@ -112,11 +136,12 @@ bool CanConvertClasses(std::string_view from, std::string_view to, const Diagnos
         if (AcceptsSingleArgument(parameters))
         {
             ConversionState nextState{state.depth + 1, state.visitedEdges};
-            auto paramType = SingleArgumentType(parameters);
+            std::string paramType = parameters[0].typeName;
             if (binding.usable)
             {
                 paramType = SubstituteTemplateParameters(paramType, binding);
             }
+            paramType = NormalizeType(paramType, ctx.request.GetEffectiveArrayTypeName());
             if (TypeConversionEvaluator::IsConvertible(from, paramType, ctx, nextState))
             {
                 convertible = true;
@@ -134,15 +159,6 @@ bool CanConvertClasses(std::string_view from, std::string_view to, const Diagnos
     return convertible;
 }
 
-bool IsUnresolvedOrExternalType(std::string_view typeName, bool isBuiltIn, const SymbolTable& table)
-{
-    if (!isBuiltIn && !FindTypeDeclaration(typeName, table).found && !ResolvesToEnum(typeName, table))
-    {
-        return true;
-    }
-    return ResolvesToNonClassDeclaration(typeName, table);
-}
-
 bool CanConvertUserTypes(std::string_view from, std::string_view to, const DiagnosticContext& ctx,
                          ConversionState& state)
 {
@@ -150,7 +166,9 @@ bool CanConvertUserTypes(std::string_view from, std::string_view to, const Diagn
     const bool toBuiltIn = IsBuiltInValueType(to, ctx);
     const SymbolTable& table = ctx.request.symbolTable;
 
-    if (!fromBuiltIn && !toBuiltIn && IsDerivedFrom(from, to, table))
+    const bool fromTemplate = from.find('<') != std::string_view::npos;
+    const bool toTemplate = to.find('<') != std::string_view::npos;
+    if (!fromBuiltIn && !toBuiltIn && !fromTemplate && !toTemplate && IsDerivedFrom(from, to, table))
     {
         return true;
     }
@@ -168,6 +186,10 @@ bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_v
     {
         return true;
     }
+    if (from == "void" || to == "void")
+    {
+        return false;
+    }
 
     if (state.depth >= TypeConversionChecker::MAX_CONVERSION_DEPTH)
     {
@@ -179,49 +201,81 @@ bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_v
         return true;
     }
 
-    auto edgeKey = MakeConversionEdgeKey(from, to);
+    const SymbolTable& table = ctx.request.symbolTable;
+    const std::string_view arrayType = ctx.request.GetEffectiveArrayTypeName();
+    const std::string unwrappedFrom = UnwrapTypedef(NormalizeType(from, arrayType), table);
+    const std::string unwrappedTo = UnwrapTypedef(NormalizeType(to, arrayType), table);
+    const std::string_view uFrom = unwrappedFrom;
+    const std::string_view uTo = unwrappedTo;
+    if (uFrom == "void" || uTo == "void")
+    {
+        return false;
+    }
+    if (CanTriviallyConvert(uFrom, uTo, ctx))
+    {
+        return true;
+    }
+
+    if (uFrom == "null" || CanonicalizeType(uFrom) == "null")
+    {
+        return !IsPrimitiveTypeName(uTo) && !ResolvesToEnum(uTo, table);
+    }
+
+    auto edgeKey = MakeConversionEdgeKey(uFrom, uTo);
     if (!state.visitedEdges.insert(edgeKey).second)
     {
         return false;
     }
 
-    const SymbolTable& table = ctx.request.symbolTable;
-
     EdgeGuard guard{state.visitedEdges, std::move(edgeKey)};
 
-    const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
-    const bool toBuiltIn = IsBuiltInValueType(to, ctx);
+    const bool fromBuiltIn = IsBuiltInValueType(uFrom, ctx);
+    const bool toBuiltIn = IsBuiltInValueType(uTo, ctx);
     if (fromBuiltIn && toBuiltIn)
     {
-        return CanConvertBuiltins(from, to, ctx);
+        return CanConvertBuiltins(uFrom, uTo, ctx, state.depth == 0);
     }
 
-    if (ResolvesToEnum(from, table) && IsNumericPrimitive(CanonicalizeType(to)))
+    if (ResolvesToEnum(uFrom, table) && IsNumericPrimitive(CanonicalizeType(uTo)))
     {
         return true;
     }
 
-    if (ResolvesToEnum(to, table))
+    if (ResolvesToEnum(uTo, table))
     {
-        return CanConvertEnumTarget(from, to, table, ctx);
+        return CanConvertEnumTarget(uFrom, uTo, table, ctx);
     }
 
-    if (IsSameType(from, to))
+    if (const auto fromFd = FindFuncdef(uFrom, table))
     {
-        return true;
+        if (const auto toFd = FindFuncdef(uTo, table))
+        {
+            return AreFuncdefSignaturesCompatible(fromFd->GetFuncdef(), toFd->GetFuncdef(), table);
+        }
     }
 
-    if (IsUnresolvedOrExternalType(from, fromBuiltIn, table) || IsUnresolvedOrExternalType(to, toBuiltIn, table))
-    {
-        return true;
-    }
-
-    if (CanConvertUserTypes(from, to, ctx, state))
+    if (IsSameType(uFrom, uTo))
     {
         return true;
     }
 
-    if (AreIncompatibleTemplateTypes(from, to))
+    if (uFrom.find('<') != std::string_view::npos && uTo.find('<') != std::string_view::npos &&
+        AreIncompatibleTemplateTypes(uFrom, uTo))
+    {
+        return false;
+    }
+
+    if (IsUnresolvedOrExternalType(uFrom, fromBuiltIn, table) || IsUnresolvedOrExternalType(uTo, toBuiltIn, table))
+    {
+        return true;
+    }
+
+    if (CanConvertUserTypes(uFrom, uTo, ctx, state))
+    {
+        return true;
+    }
+
+    if (AreIncompatibleTemplateTypes(uFrom, uTo))
     {
         return false;
     }

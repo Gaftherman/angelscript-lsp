@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/CallBindings.h"
+#include "analysis/index/OperatorSiteIndex.h"
 #include "analysis/index/SymbolTable.h"
 
 #include <ankerl/unordered_dense.h>
@@ -208,8 +209,10 @@ struct ScopeEnclosingContext
     std::string enclosingClass;
     std::string enclosingNamespace;
     std::string caller;
+    std::string returnType;
     std::shared_ptr<const IndexedReferenceReceivers> receivers;
     std::shared_ptr<const CallBindings> callBindings;
+    std::shared_ptr<const IndexedOperatorSites> operatorSites;
 };
 
 /**
@@ -257,6 +260,16 @@ struct Scope
     [[nodiscard]] std::string_view GetCaller() const noexcept
     {
         return enclosingContext ? std::string_view(enclosingContext->caller) : std::string_view{};
+    }
+
+    [[nodiscard]] std::string_view GetReturnType() const noexcept
+    {
+        return enclosingContext ? std::string_view(enclosingContext->returnType) : std::string_view{};
+    }
+
+    [[nodiscard]] const IndexedOperatorSites* GetOperatorSites() const noexcept
+    {
+        return enclosingContext ? enclosingContext->operatorSites.get() : nullptr;
     }
 
     /**

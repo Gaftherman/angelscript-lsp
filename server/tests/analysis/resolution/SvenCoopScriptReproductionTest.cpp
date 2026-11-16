@@ -535,4 +535,161 @@ class custom_item : ScriptBasePlayerItemEntity
         REQUIRE_FALSE(diags.empty());
         CHECK(diags.front().range.start.line == 5);
     }
+
+    TEST_CASE("SvenCoopScriptReproduction - Script property accessor rejects void, funcdef handle, and unrelated class")
+    {
+        SvenTestContext ctx;
+        const std::string script = R"AS(
+funcdef void MyCb();
+void VoidAction() {}
+MyCb@ GetCallback() { return null; }
+class Unrelated {}
+class PlayerWrapper
+{
+    private string _p;
+    string get_p() const property { return _p; }
+    void set_p(const string&in v) property { _p = v; }
+}
+void Test()
+{
+    PlayerWrapper obj;
+    Unrelated u;
+    obj.p = VoidAction();
+    obj.p = GetCallback();
+    obj.p = u;
+}
+)AS";
+        const auto diags = ctx.Analyze(script, "file:///sven_prop_assign.as");
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 15; }));
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 16; }));
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 17; }));
+    }
+
+    TEST_CASE(
+        "SvenCoopScriptReproduction - Plain string field and local reject void, funcdef handle, and unrelated class")
+    {
+        SvenTestContext ctx;
+        const std::string script = R"AS(
+funcdef void MyCb();
+void VoidAction() {}
+MyCb@ GetCallback() { return null; }
+class Unrelated {}
+class Holder
+{
+    string name;
+}
+void Test()
+{
+    Holder obj;
+    string localStr = "";
+    Unrelated u;
+    obj.name = VoidAction();
+    obj.name = GetCallback();
+    localStr = VoidAction();
+    localStr = u;
+}
+)AS";
+        const auto diags = ctx.Analyze(script, "file:///sven_string_assign.as");
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 14; }));
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 15; }));
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 16; }));
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 17; }));
+    }
+
+    TEST_CASE("SvenCoopScriptReproduction - Sven string_t field rejects void, funcdef handle, and unrelated class")
+    {
+        SvenTestContext ctx;
+        const std::string script = R"AS(
+funcdef void MyCb();
+void VoidAction() {}
+MyCb@ GetCallback() { return null; }
+class Unrelated {}
+void Test(CBasePlayer@ player)
+{
+    if( player !is null && player.pev !is null )
+    {
+        Unrelated u;
+        player.pev.targetname = VoidAction();
+        player.pev.targetname = GetCallback();
+        player.pev.targetname = u;
+    }
+}
+)AS";
+        const auto diags = ctx.Analyze(script, "file:///sven_string_t_assign.as");
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 10; }));
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 11; }));
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 12; }));
+    }
+
+    TEST_CASE("SvenCoopScriptReproduction - Multi-line assignment reports conversion error on RHS line")
+    {
+        SvenTestContext ctx;
+        const std::string script = R"AS(
+void VoidAction() {}
+class PlayerWrapper
+{
+    void set_p(const string&in v) property {}
+}
+void Test(CBasePlayer@ player)
+{
+    PlayerWrapper obj;
+    obj.p =
+
+        VoidAction();
+    if( player !is null && player.pev !is null )
+    {
+        player.pev.targetname =
+
+            VoidAction();
+    }
+}
+)AS";
+        const auto diags = ctx.Analyze(script, "file:///sven_multiline_assign.as");
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 9; }));
+        CHECK(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                          { return d.code == "as-err-no-implicit-conversion" && d.range.start.line == 16; }));
+    }
+
+    TEST_CASE(
+        "SvenCoopScriptReproduction - Valid assignments to property, string, and Sven string_t emit zero diagnostics")
+    {
+        SvenTestContext ctx;
+        const std::string script = R"AS(
+class PlayerWrapper
+{
+    private string _p;
+    string get_p() const property { return _p; }
+    void set_p(const string&in v) property { _p = v; }
+}
+void Test(CBasePlayer@ player)
+{
+    PlayerWrapper obj;
+    obj.p = "ok";
+    string s = "hello";
+    s = 1.5f;
+    if( player !is null && player.pev !is null )
+    {
+        player.pev.targetname = "spawn_point";
+        player.pev.targetname = 1;
+    }
+}
+)AS";
+        const auto diags = ctx.Analyze(script, "file:///sven_valid_assign.as");
+        for (const auto& d : diags)
+        {
+            MESSAGE("Valid assign diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+        }
+        CHECK(diags.empty());
+    }
 }

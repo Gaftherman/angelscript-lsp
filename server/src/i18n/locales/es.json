@@ -283,5 +283,6 @@
   "mcp-tool-completion": "Devuelve los elementos de autocompletado ofrecidos en una línea y carácter base cero.",
   "mcp-tool-signature-help": "Devuelve la ayuda de firma mostrada en una línea y carácter base cero dentro de una llamada.",
   "mcp-tool-definition": "Devuelve dónde está definido el símbolo en una línea y carácter base cero.",
-  "mcp-tool-document-symbols": "Devuelve el esquema de símbolos de un documento."
+  "mcp-tool-document-symbols": "Devuelve el esquema de símbolos de un documento.",
+  "warn-invalid-no-handle-type": "Ignorando entrada inválida '{}' en angelscript.engine.noHandleTypes: se esperaba un identificador o nombre calificado no vacío."
 }

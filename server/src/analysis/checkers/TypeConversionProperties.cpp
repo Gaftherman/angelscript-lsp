@@ -203,7 +203,11 @@ PropertyAccessInfo InspectPropertyAccess(const PropertyAccessFact& access, const
 
     info.propName = access.text;
     info.receiverType = ResolveExpressionType(access.receiver, ExpressionTypeContext(scope, ctx));
-    const auto cleanObj = CleanBaseType(info.receiverType);
+    std::string cleanObj = MemberOwnerType(info.receiverType, ctx.request.GetEffectiveArrayTypeName());
+    if (cleanObj.empty())
+    {
+        cleanObj = CleanBaseType(info.receiverType);
+    }
     if (cleanObj.empty())
     {
         return info;
@@ -221,19 +225,20 @@ PropertyAccessInfo InspectPropertyAccess(const PropertyAccessFact& access, const
     return info;
 }
 
-void CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
+PropertyAccessInfo CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* scope,
+                                                 DiagnosticContext& ctx)
 {
     const PropertyAccessInfo pInfo = InspectPropertyAccess(site.leftProperty, scope, ctx);
     if (!pInfo.isProperty)
     {
-        return;
+        return pInfo;
     }
 
     if (site.leftIsIndex)
     {
         if (!pInfo.isIndexed)
         {
-            return;
+            return pInfo;
         }
         if (!site.opIsAssign)
         {
@@ -243,13 +248,14 @@ void CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* 
         {
             ctx.EmitAtRange(site.left.range, "as-err-read-only-property", pInfo.propName);
         }
-        return;
+        return pInfo;
     }
 
     if (!pInfo.hasSet && pInfo.hasGet)
     {
         ctx.EmitAtRange(site.left.range, "as-err-read-only-property", pInfo.propName);
     }
+    return pInfo;
 }
 
 } // namespace angel_lsp::analysis

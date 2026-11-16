@@ -62,6 +62,29 @@ static std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, cons
     return std::nullopt;
 }
 
+static const lsp::LSPArray* FindSectionArray(const lsp::LSPObject* initSection, const lsp::LSPObject* engineObj,
+                                             std::string_view name)
+{
+    if (engineObj)
+    {
+        if (const auto* val = engineObj->find(std::string(name)); val && val->isArray())
+        {
+            return &val->array();
+        }
+    }
+    const std::string dotKey = "engine." + std::string(name);
+    if (const auto* val = initSection->find(dotKey); val && val->isArray())
+    {
+        return &val->array();
+    }
+    const std::string fullKey = "angelscript.engine." + std::string(name);
+    if (const auto* val = initSection->find(fullKey); val && val->isArray())
+    {
+        return &val->array();
+    }
+    return nullptr;
+}
+
 void ExtractInitialWorkspaceRoots(WorkspaceStateStore& workspaceStore, std::mutex& runtimeConfigMutex,
                                   const lsp::requests::Initialize::Params& params)
 {
@@ -131,8 +154,15 @@ void ApplyEngineInitializationOptions(Server& server, const std::optional<lsp::L
         if (auto v = FindSectionInt(initSection, engineObj, name))
             target = *v;
     };
+    auto applyStringList = [&](std::string_view name, std::vector<std::string>& target)
+    {
+        if (const auto* arr = FindSectionArray(initSection, engineObj, name))
+        {
+            target = server.ParseNoHandleTypesArray(*arr, true);
+        }
+    };
 
-    server.BindEngineConfiguration(applyBool, applyInt);
+    server.BindEngineConfiguration(applyBool, applyInt, applyStringList);
 }
 
 static void LogNonDefaultEngineProperties(const config::EngineProperties& engine, utils::LspLogger* logger)
@@ -182,6 +212,24 @@ static void LogNonDefaultEngineProperties(const config::EngineProperties& engine
     noteInt(engine.useCharacterLiterals, defaults.useCharacterLiterals, "useCharacterLiterals");
     noteInt(engine.alterSyntaxNamedArgs, defaults.alterSyntaxNamedArgs, "alterSyntaxNamedArgs");
     noteInt(engine.compilerWarnings, defaults.compilerWarnings, "compilerWarnings");
+
+    if (!engine.noHandleTypes.empty())
+    {
+        if (!changed.empty())
+        {
+            changed += ", ";
+        }
+        changed += "noHandleTypes=[";
+        for (size_t idx = 0; idx < engine.noHandleTypes.size(); ++idx)
+        {
+            if (idx > 0)
+            {
+                changed += ", ";
+            }
+            changed += engine.noHandleTypes[idx];
+        }
+        changed += "]";
+    }
 
     if (!changed.empty() && logger)
     {

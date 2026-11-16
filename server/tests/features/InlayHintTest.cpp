@@ -1214,11 +1214,8 @@ TEST_SUITE("features/InlayHint")
                 REQUIRE(std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label));
                 const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
                 REQUIRE_FALSE(parts.empty());
-                REQUIRE(parts[0].tooltip.has_value());
-                std::string tooltip = GetTooltipText(parts[0].tooltip);
-                CHECK(tooltip.find("Default parameter:") != std::string::npos);
-                CHECK(tooltip.find(argsParam) != std::string::npos);
-                CHECK(tooltip.find("null") != std::string::npos);
+                // The location makes the client request the hover; a tooltip would show it twice.
+                CHECK_FALSE(parts[0].tooltip.has_value());
                 REQUIRE(parts[0].location.has_value());
                 CHECK(parts[0].location->range.start.line == 1);
                 CHECK(parts[0].location->range.end.line == 1);
@@ -1267,7 +1264,7 @@ TEST_SUITE("features/InlayHint")
                 const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
                 REQUIRE_FALSE(parts.empty());
                 REQUIRE(parts[0].location.has_value());
-                CHECK(parts[0].tooltip.has_value());
+                CHECK_FALSE(parts[0].tooltip.has_value());
                 CHECK_FALSE(hint.tooltip.has_value());
             }
         }
@@ -1324,7 +1321,7 @@ TEST_SUITE("features/InlayHint")
                     const auto& range = part.location->range;
                     CHECK(range.start.line == 4);
                     CHECK(range.end.line == 4);
-                    CHECK(part.tooltip.has_value());
+                    CHECK_FALSE(part.tooltip.has_value());
                     CHECK_FALSE(hint.tooltip.has_value());
                     foundTypeHintWithDeclLocation = true;
                 }
@@ -1351,8 +1348,7 @@ TEST_SUITE("features/InlayHint")
 
         TestEnvironment env(code);
 
-        // 1. Default config: location and tooltip travel together so the client never has to open
-        //    the declaring document to show the hover.
+        // 1. Default config: the location carries the hover, so the tooltip is not repeated.
         auto defaultHints = env.InlayHints();
         REQUIRE(defaultHints.has_value());
         REQUIRE_FALSE(defaultHints->empty());
@@ -1371,8 +1367,7 @@ TEST_SUITE("features/InlayHint")
                 {
                     foundParamHint = true;
                     CHECK(part.location.has_value());
-                    REQUIRE(part.tooltip.has_value());
-                    CHECK(GetTooltipText(part.tooltip).find(paramName) != std::string::npos);
+                    CHECK_FALSE(part.tooltip.has_value());
                 }
             }
         }

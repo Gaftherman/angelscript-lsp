@@ -86,6 +86,7 @@ struct LambdaCheckFactsContext
     SourceRange calleeRange;                     ///< Callee diagnostic source range.
     std::string_view reportedName;               ///< Callee name for error messages.
     const SymbolTable& table;                    ///< Symbol table for funcdef lookup.
+    const CallSiteFacts& facts;                  ///< Call site facts owning source and lambda param pool.
     std::span<const CallArgumentFact> arguments; ///< Call argument facts.
     std::vector<size_t> lambdaPositions;         ///< Sliced argument indices of lambdas.
 };
@@ -123,13 +124,15 @@ void CheckLambdaArguments(std::span<const Symbol* const> candidates, const Lambd
                           DiagnosticContext& ctx);
 
 /**
- * @brief Checks whether an object operand fact resolves to a const variable or property.
- * @param[in] objectOperand Binary operand fact for the object receiver.
+ * @brief Checks whether an operand span resolves to a const variable or property.
+ * @param[in] operandBytes Byte span of the operand expression.
+ * @param[in] sourceCode Document source text backing operandBytes.
  * @param[in] scope Lexical scope at call site.
  * @param[in] symbolTable Symbol table.
- * @return True if the object is const.
+ * @return True if the operand is const.
  */
-bool IsObjectOperandConst(const BinaryOperandFact& objectOperand, const Scope* scope, const SymbolTable& symbolTable);
+bool IsObjectOperandConst(IndexedByteRange operandBytes, std::string_view sourceCode, const Scope* scope,
+                          const SymbolTable& symbolTable);
 
 /**
  * @brief Applies template argument substitutions across candidate methods.
@@ -273,6 +276,7 @@ void CheckInitializerListArgs(std::span<const CallArgumentFact> arguments, const
  */
 struct MalformedTernaryCheckRequest
 {
+    const CallSiteFacts& facts;                  ///< Call site facts owning ternary branch pool.
     std::span<const CallArgumentFact> arguments; ///< Call argument facts.
     std::span<const std::string> argTypes;       ///< Resolved argument types.
     std::span<const Symbol* const> candidates;   ///< Available matching candidates.
@@ -361,6 +365,7 @@ void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticConte
  */
 struct CallCheckFactRequest
 {
+    const CallSiteFacts& facts;                      ///< Precomputed call site facts and argument pools.
     const CallSiteFact& site;                        ///< Precomputed call site fact.
     std::span<const CallArgumentFact> arguments;     ///< Precomputed argument facts for this call site.
     const InitializerListFacts* initFacts = nullptr; ///< Precomputed initializer list facts for the document.

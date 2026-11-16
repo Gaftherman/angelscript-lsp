@@ -827,7 +827,7 @@ TEST_SUITE("features/CodeLens")
         CHECK((*found->command->arguments)[2].integer() == 7);
     }
 
-    TEST_CASE("CodeLens - Operator overloads without call sites are suppressed")
+    TEST_CASE("CodeLens - Zero-reference operator overload honors codeLensShowZeroReferences")
     {
         const std::string mathClass = angel_lsp::test::GenerateRandomSymbolName("VectorMath");
         const std::string normalMethod = angel_lsp::test::GenerateRandomSymbolName("open");
@@ -845,27 +845,38 @@ TEST_SUITE("features/CodeLens")
                            "void UseIt() {}\n";
 
         CodeLensFixture fixture(std::move(code));
-        auto lenses = fixture.GetLenses();
+        config::ServerConfig showConfig;
+        showConfig.features.codeLensShowZeroReferences = true;
+        auto lenses = fixture.GetLenses(nullptr, nullptr, &showConfig);
         REQUIRE(lenses.has_value());
 
         bool foundOpAssignLens = false;
         bool foundNormalLens = false;
         for (const auto& lens : *lenses)
         {
-            // Line 2 is `void opAssign...`
             if (lens.range.start.line == 2 && lens.command.has_value())
             {
+                CHECK(lens.command->title == "0 references");
                 foundOpAssignLens = true;
             }
-            // The ordinary op-prefixed method remains visible with zero references.
             if (lens.range.start.line == 3 && lens.command.has_value())
             {
                 CHECK(lens.command->title == "0 references");
                 foundNormalLens = true;
             }
         }
-        CHECK_FALSE(foundOpAssignLens);
+        CHECK(foundOpAssignLens);
         CHECK(foundNormalLens);
+
+        config::ServerConfig hideConfig;
+        hideConfig.features.codeLensShowZeroReferences = false;
+        auto hiddenLenses = fixture.GetLenses(nullptr, nullptr, &hideConfig);
+        REQUIRE(hiddenLenses.has_value());
+        for (const auto& lens : *hiddenLenses)
+        {
+            CHECK(lens.range.start.line != 2);
+            CHECK(lens.range.start.line != 3);
+        }
     }
 
     TEST_CASE("CodeLens - Virtual property blocks report references")

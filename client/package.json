@@ -1188,6 +1188,15 @@
             "default": 1,
             "markdownDescription": "%config.engine.compilerWarnings.description%"
           },
+          "angelscript.engine.noHandleTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true,
+            "default": [],
+            "markdownDescription": "%config.engine.noHandleTypes.description%"
+          },
           "angelscript.preprocessor.elseSupport": {
             "type": "boolean",
             "default": false,

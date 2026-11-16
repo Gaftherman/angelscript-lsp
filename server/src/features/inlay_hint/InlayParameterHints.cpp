@@ -51,9 +51,8 @@ static lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const anal
     {
         part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param, ctx.callee.selectionRange);
     }
-    // The tooltip is always sent with the location: without it the client resolves the hover by
-    // opening the target document (a full read and parse of the declaring file) on first hover.
-    if (enableTooltip)
+    // With a location the client already asks the server for a hover at it; a tooltip would repeat it.
+    if (enableTooltip && !part.location.has_value())
     {
         part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
                                           analysis::FormatParameterTooltip(param, label)};
@@ -193,24 +192,11 @@ static lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, const ana
                               lsp::Position{param.endLine, param.endCharacter}};
         part.location = lsp::Location{common::ParseOrConvertUri(fileUri), paramRange};
     }
-    if (enableTooltip)
+    // With a location the client already asks the server for a hover at it; a tooltip would repeat it.
+    if (enableTooltip && !part.location.has_value())
     {
-        if (part.location.has_value())
-        {
-            part.tooltip =
-                lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
-                                   analysis::FormatDefaultParamTooltip(
-                                       param,
-                                       analysis::FormatGoToDefinitionLink(
-                                           part.location->uri.toString(), part.location->range.start.line + 1,
-                                           part.location->range.start.character + 1, request.i18n),
-                                       request.i18n)};
-        }
-        else
-        {
-            part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
-                                              analysis::FormatDefaultParamTooltip(param, {}, request.i18n)};
-        }
+        part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
+                                          analysis::FormatDefaultParamTooltip(param, {}, request.i18n)};
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.tooltip = std::nullopt;

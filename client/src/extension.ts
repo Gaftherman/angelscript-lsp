@@ -1251,6 +1251,17 @@ export function buildServerArgs(): string[] {
         args.push(`--engine-property=compilerWarnings=${compilerWarnings}`);
     }
 
+    // Host value types that disallow object handles ('@'). Merged (set union) server-side with the
+    // top-level `noHandleTypes` array from `angelscript.rules.json`.
+    for (const entry of config.get<string[]>('engine.noHandleTypes', [])) {
+        if (typeof entry === 'string') {
+            const name = entry.trim();
+            if (name.length > 0) {
+                args.push(`--no-handle-type=${name}`);
+            }
+        }
+    }
+
     // Where a block's opening brace goes. Only "kr" moves it; anything else, a typo included, is
     // the Allman default, so a misspelling reformats nothing unexpectedly. A list or a lambda body
     // keeps its brace on the line under either style - that is not a matter of taste.

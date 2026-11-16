@@ -46,4 +46,32 @@ namespace angel_lsp::analysis
  */
 [[nodiscard]] bool IsInsideNamespace(std::string_view fileUri, uint32_t line, std::string_view nsName,
                                      const SymbolTable& symbolTable, EnclosingClassCache& classCache);
+
+/**
+ * @brief Checks if a using-namespace directive for targetNs is active at refByte.
+ * @param[in] scope Lexical scope containing the reference.
+ * @param[in] refByte Start byte offset of the reference.
+ * @param[in] targetNs Target namespace name.
+ * @return True if an enclosing using-namespace directive imports targetNs.
+ */
+[[nodiscard]] bool IsUsingNamespaceActive(const Scope* scope, uint32_t refByte, std::string_view targetNs) noexcept;
+
+/**
+ * @brief Checks if a type qualifier matches any compatible class or active using-namespace class.
+ * @param[in] qualifier Extracted scope qualifier string.
+ * @param[in] scope Lexical scope containing the reference.
+ * @param[in] refByte Start byte offset of the reference.
+ * @param[in] criteria Active reference collection criteria.
+ * @return True if qualifier resolves to one of criteria.compatibleClasses.
+ */
+[[nodiscard]] bool MatchesClassTypeQualifier(std::string_view qualifier, const Scope* scope, uint32_t refByte,
+                                             const ReferenceCollectionCriteria& criteria);
+
+/**
+ * @brief Checks if a global type target is shadowed by an enclosing class or namespace type.
+ * @param[in] scope Lexical scope containing the reference.
+ * @param[in] criteria Active reference collection criteria.
+ * @return True if shadowed by a homonymous type in an enclosing container.
+ */
+[[nodiscard]] bool IsGlobalTypeShadowed(const Scope* scope, const ReferenceCollectionCriteria& criteria);
 } // namespace angel_lsp::analysis

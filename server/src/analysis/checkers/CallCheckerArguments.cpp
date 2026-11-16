@@ -63,13 +63,14 @@ static bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, 
     return false;
 }
 
-static bool CheckArgIsLValue(const CallArgumentFact& arg, const Scope* scope, const SymbolTable& table)
+static bool CheckArgIsLValue(const CallArgumentFact& arg, const Scope* scope, const SymbolTable& table,
+                             std::string_view sourceCode)
 {
-    if (arg.operand.isThis || arg.operand.text == "this")
+    std::string_view text = CallSiteFacts::SliceText(sourceCode, arg.bytes);
+    if (arg.isThis || text == "this")
     {
         return true;
     }
-    std::string_view text = arg.text;
     TrimTypeWhitespace(text);
     if (text.starts_with('@'))
     {
@@ -89,9 +90,10 @@ static bool CheckArgIsLValue(const CallArgumentFact& arg, const Scope* scope, co
         }
         return IsAssignableLValueSymbol(text, scope, table, arg.bytes.startByte);
     }
-    if (!arg.operand.foldedName.empty())
+    const std::string_view foldedName = CallSiteFacts::SliceText(sourceCode, arg.foldedBytes);
+    if (!foldedName.empty())
     {
-        return IsAssignableLValueSymbol(arg.operand.foldedName, scope, table, arg.operand.foldedByte);
+        return IsAssignableLValueSymbol(foldedName, scope, table, arg.foldedBytes.startByte);
     }
     if (arg.kind == CallArgumentKind::Member)
     {
@@ -121,12 +123,12 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
 
     for (const auto& arg : arguments)
     {
-        result.argNames.emplace_back(arg.name);
-        result.argIsLValue.push_back(CheckArgIsLValue(arg, scope, ctx.request.symbolTable));
+        result.argNames.emplace_back(CallSiteFacts::SliceText(ctx.request.sourceCode, arg.nameBytes));
+        result.argIsLValue.push_back(CheckArgIsLValue(arg, scope, ctx.request.symbolTable, ctx.request.sourceCode));
 
-        std::string_view trimmedArg = arg.text;
+        std::string_view trimmedArg = CallSiteFacts::SliceText(ctx.request.sourceCode, arg.bytes);
         TrimTypeWhitespace(trimmedArg);
-        if (trimmedArg == "void" || arg.operand.text == "void")
+        if (trimmedArg == "void")
         {
             result.argTypes.push_back("void");
             continue;
@@ -159,7 +161,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
         std::string argType = ResolveExpressionType(arg.bytes, exprCtx);
         if (argType.empty())
         {
-            if (arg.operand.isNullLiteral)
+            if (arg.isNullLiteral)
             {
                 argType = "null";
             }
@@ -172,7 +174,8 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
                 result.allArgsResolved = false;
             }
         }
-        else if (!HasConstModifier(argType) && IsObjectOperandConst(arg.operand, scope, ctx.request.symbolTable))
+        else if (!HasConstModifier(argType) &&
+                 IsObjectOperandConst(arg.bytes, ctx.request.sourceCode, scope, ctx.request.symbolTable))
         {
             argType.insert(0, "const ");
         }
@@ -255,14 +258,14 @@ void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentF
             continue;
         }
 
-        std::string_view aText = arguments[i].text;
+        std::string_view aText = CallSiteFacts::SliceText(ctx.request.sourceCode, arguments[i].bytes);
         TrimTypeWhitespace(aText);
         if (aText == "void" && (param.isOutRef || param.modifier == ParameterModifier::Out))
         {
             continue;
         }
 
-        if (!CheckArgIsLValue(arguments[i], scope, ctx.request.symbolTable))
+        if (!CheckArgIsLValue(arguments[i], scope, ctx.request.symbolTable, ctx.request.sourceCode))
         {
             ctx.EmitAtRange(arguments[i].range, "as-err-lvalue-required-for-out-param");
         }

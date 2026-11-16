@@ -15,16 +15,18 @@
 namespace angel_lsp::analysis
 {
 
-bool IsObjectOperandConst(const BinaryOperandFact& objectOperand, const Scope* scope, const SymbolTable& symbolTable)
+bool IsObjectOperandConst(IndexedByteRange operandBytes, std::string_view sourceCode, const Scope* scope,
+                          const SymbolTable& symbolTable)
 {
-    if (objectOperand.text.empty())
+    const std::string_view operandText = CallSiteFacts::SliceText(sourceCode, operandBytes);
+    if (operandText.empty())
     {
         return false;
     }
 
     if (scope)
     {
-        if (const auto* def = ResolveInScopeAt(scope, objectOperand.text, objectOperand.bytes.startByte))
+        if (const auto* def = ResolveInScopeAt(scope, operandText, operandBytes.startByte))
         {
             if (!def->typeName.empty() && HasConstModifier(def->typeName))
             {
@@ -33,7 +35,7 @@ bool IsObjectOperandConst(const BinaryOperandFact& objectOperand, const Scope* s
         }
     }
 
-    if (const auto syms = symbolTable.FindSymbolsPtr(objectOperand.text))
+    if (const auto syms = symbolTable.FindSymbolsPtr(operandText))
     {
         for (const auto& symbol : *syms)
         {
@@ -52,11 +54,12 @@ static ObjectTypeInfo ResolveMemberObjectType(const CallSiteFact& site, const Sc
 {
     ObjectTypeInfo info;
     const std::string rawObjType =
-        CanonicalizeArrayType(ResolveExpressionType(site.objectOperand.bytes, ExpressionTypeContext(scope, ctx)),
+        CanonicalizeArrayType(ResolveExpressionType(site.objectBytes, ExpressionTypeContext(scope, ctx)),
                               ctx.request.GetEffectiveArrayTypeName());
     info.objectType = CleanBaseType(rawObjType);
     const bool isObjConst = site.isThisCall ? site.isEnclosingMethodConst
-                                            : IsObjectOperandConst(site.objectOperand, scope, ctx.request.symbolTable);
+                                            : IsObjectOperandConst(site.objectBytes, ctx.request.sourceCode, scope,
+                                                                   ctx.request.symbolTable);
     info.qualifiers.isConst = IsConstTypeView(rawObjType) || isObjConst;
 
     if (rawObjType.find('<') != std::string_view::npos && rawObjType.ends_with('>'))
@@ -104,9 +107,10 @@ static bool CheckNonCallableVariable(const NonCallableCheckRequest& req, Diagnos
 bool CheckMemberNonCallableVariable(const CallSiteFact& site, std::string_view objType, DiagnosticContext& ctx,
                                     CalleeResolution& res)
 {
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
     for (const auto& cls : GetInheritedTypeHierarchy(objType, ctx.request.symbolTable, ctx.request.exprCache))
     {
-        if (auto found = ctx.request.symbolTable.FindMemberSymbolPtr(cls, site.calleeName))
+        if (auto found = ctx.request.symbolTable.FindMemberSymbolPtr(cls, calleeName))
         {
             for (const auto& sym : *found)
             {
@@ -114,8 +118,7 @@ bool CheckMemberNonCallableVariable(const CallSiteFact& site, std::string_view o
                     std::holds_alternative<VariableSignature>(sym.signature))
                 {
                     return CheckNonCallableVariable(
-                        NonCallableCheckRequest{site.calleeName, sym.GetVariable().typeName, site.calleeRange}, ctx,
-                        res);
+                        NonCallableCheckRequest{calleeName, sym.GetVariable().typeName, site.calleeRange}, ctx, res);
                 }
             }
         }
@@ -126,7 +129,8 @@ bool CheckMemberNonCallableVariable(const CallSiteFact& site, std::string_view o
 CalleeResolution ResolveMemberCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
     CalleeResolution res;
-    if (site.objectOperand.bytes.Empty() || site.calleeName.empty())
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
+    if (site.objectBytes.Empty() || calleeName.empty())
     {
         res.shouldCheck = false;
         return res;
@@ -139,7 +143,7 @@ CalleeResolution ResolveMemberCallee(const CallSiteFact& site, const Scope* scop
         return res;
     }
 
-    res.reportedName = site.calleeName;
+    res.reportedName = calleeName;
     if (IsConstructorOrDestructorName(res.reportedName, objInfo.objectType))
     {
         ctx.EmitAtRange(site.calleeNameRange, "as-err-constructor-not-callable", res.reportedName, objInfo.objectType);
@@ -171,12 +175,13 @@ bool CheckLocalNonCallable(const CallSiteFact& site, const Scope* scope, Diagnos
 {
     if (scope)
     {
-        if (const LocalDefinition* shadow = ResolveInScopeAt(scope, site.calleeName, site.calleeNameBytes.startByte))
+        const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
+        if (const LocalDefinition* shadow = ResolveInScopeAt(scope, calleeName, site.calleeNameBytes.startByte))
         {
             if (shadow->kind == LocalDefinitionKind::Variable || shadow->kind == LocalDefinitionKind::Parameter)
             {
-                return CheckNonCallableVariable(
-                    NonCallableCheckRequest{site.calleeName, shadow->typeName, site.calleeRange}, ctx, res);
+                return CheckNonCallableVariable(NonCallableCheckRequest{calleeName, shadow->typeName, site.calleeRange},
+                                                ctx, res);
             }
         }
     }
@@ -185,7 +190,9 @@ bool CheckLocalNonCallable(const CallSiteFact& site, const Scope* scope, Diagnos
 
 bool CheckScopedNonCallableVariable(const CallSiteFact& site, DiagnosticContext& ctx, CalleeResolution& res)
 {
-    if (const auto found = ctx.request.symbolTable.FindSymbolsPtr(site.calleeText))
+    const std::string_view calleeText = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeBytes);
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
+    if (const auto found = ctx.request.symbolTable.FindSymbolsPtr(calleeText))
     {
         for (const auto& sym : *found)
         {
@@ -193,7 +200,7 @@ bool CheckScopedNonCallableVariable(const CallSiteFact& site, DiagnosticContext&
                 std::holds_alternative<VariableSignature>(sym.signature))
             {
                 return CheckNonCallableVariable(
-                    NonCallableCheckRequest{site.calleeName, sym.GetVariable().typeName, site.calleeRange}, ctx, res);
+                    NonCallableCheckRequest{calleeName, sym.GetVariable().typeName, site.calleeRange}, ctx, res);
             }
         }
     }
@@ -202,12 +209,14 @@ bool CheckScopedNonCallableVariable(const CallSiteFact& site, DiagnosticContext&
 
 bool CheckGlobalNonCallableVariable(const CallSiteFact& site, DiagnosticContext& ctx, CalleeResolution& res)
 {
+    const std::string_view calleeText = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeBytes);
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
     const auto reachableScopes =
         CollectReachableScopes(site.bytes.startByte, ctx.request.sourceCode, ctx.request.nodeIndex);
     for (const auto& scopeName : reachableScopes)
     {
-        const auto found = scopeName.empty() ? ctx.request.symbolTable.FindSymbolsPtr(site.calleeText)
-                                             : ctx.request.symbolTable.FindMemberSymbolPtr(scopeName, site.calleeName);
+        const auto found = scopeName.empty() ? ctx.request.symbolTable.FindSymbolsPtr(calleeText)
+                                             : ctx.request.symbolTable.FindMemberSymbolPtr(scopeName, calleeName);
         if (!found)
         {
             continue;
@@ -230,8 +239,7 @@ bool CheckGlobalNonCallableVariable(const CallSiteFact& site, DiagnosticContext&
         }
         if (hasVar && !hasFunc)
         {
-            return CheckNonCallableVariable(NonCallableCheckRequest{site.calleeName, varType, site.calleeRange}, ctx,
-                                            res);
+            return CheckNonCallableVariable(NonCallableCheckRequest{calleeName, varType, site.calleeRange}, ctx, res);
         }
     }
     return false;

@@ -119,6 +119,11 @@ void IndexReferenceReceiver(TSNode parent, std::string_view source, LocalReferen
 {
     const auto& grammar = parser::GetGrammarSymbols();
     const auto symbol = ts_node_symbol(parent);
+    if (symbol == grammar.symDatatype || symbol == grammar.symNestedTypeName)
+    {
+        IndexTypeQualifier(parent, source, reference, *context.receivers);
+        return;
+    }
     if (symbol != grammar.symScopedIdentifier && symbol != grammar.symMemberExpression)
     {
         return;

@@ -1,6 +1,7 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
+#include "analysis/types/TypeSanitization.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -10,11 +11,27 @@
 namespace angel_lsp::analysis
 {
 
+static std::string_view StripTemplateOrBaseTypeView(std::string_view typeName)
+{
+    const std::string_view stripped = StripTrailingDecorationsView(StripLeadingConst(typeName));
+    const auto tmpl = DecomposeTemplateType(stripped);
+    if (tmpl.isTemplate && !tmpl.containerName.empty())
+    {
+        return tmpl.containerName;
+    }
+    if (stripped.empty())
+    {
+        return typeName;
+    }
+    return stripped;
+}
+
 void ForEachMethod(std::string_view typeName, std::string_view memberName, const SymbolTable& table,
                    const std::function<bool(const Symbol&)>& visitor)
 {
     bool stopped = false;
-    for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
+    const std::string_view lookupType = StripTemplateOrBaseTypeView(typeName);
+    for (const auto& cls : GetInheritedTypeHierarchy(lookupType, table))
     {
         ForEachMemberSymbolNamed(cls, memberName, table,
                                  [&](const Symbol& sym)
@@ -127,7 +144,14 @@ bool DeclaresOperatorMethod(std::string_view typeName, std::string_view methodNa
     {
         return false;
     }
-    return table.FindMemberSymbolPtr(typeName, methodName) != nullptr;
+    bool found = false;
+    ForEachMethod(typeName, methodName, table,
+                  [&](const Symbol&)
+                  {
+                      found = true;
+                      return true;
+                  });
+    return found;
 }
 
 /**
@@ -174,6 +198,8 @@ bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, co
     {
         binding = BindTemplateArguments(fromType, table);
     }
+    const std::string_view strippedTo = StripTrailingDecorationsView(StripLeadingConst(toType));
+    const bool toIsTemplate = DecomposeTemplateType(strippedTo).isTemplate;
     const bool toIsNumeric = IsNumericPrimitive(toType);
     const auto matches = [&](const Symbol& sym)
     {
@@ -186,9 +212,12 @@ bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, co
         {
             ret = SubstituteTemplateParameters(ret, binding);
         }
-        const auto cleanRet = CleanBaseType(ret);
-        if (IsSameType(cleanRet, toType) ||
-            (toIsNumeric && (IsNumericPrimitive(cleanRet) || ResolvesToEnum(cleanRet, table))))
+        const std::string_view strippedRet = StripTrailingDecorationsView(StripLeadingConst(ret));
+        const bool eitherTemplate = toIsTemplate || DecomposeTemplateType(strippedRet).isTemplate;
+        const bool sameType = eitherTemplate
+                                  ? IsSameType(strippedRet, strippedTo)
+                                  : (IsSameType(strippedRet, strippedTo) || IsSameType(CleanBaseType(ret), toType));
+        if (sameType || (toIsNumeric && (IsNumericPrimitive(strippedRet) || ResolvesToEnum(strippedRet, table))))
         {
             found = true;
             return true;
@@ -224,6 +253,12 @@ bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, co
 
 bool AreHierarchyRelated(std::string_view a, std::string_view b, const SymbolTable& table)
 {
+    const std::string_view strippedA = StripTrailingDecorationsView(StripLeadingConst(a));
+    const std::string_view strippedB = StripTrailingDecorationsView(StripLeadingConst(b));
+    if (DecomposeTemplateType(strippedA).isTemplate || DecomposeTemplateType(strippedB).isTemplate)
+    {
+        return IsSameType(strippedA, strippedB);
+    }
     const auto cleanA = CleanBaseType(a);
     const auto cleanB = CleanBaseType(b);
     for (const auto& base : GetInheritedTypeHierarchy(cleanA, table))

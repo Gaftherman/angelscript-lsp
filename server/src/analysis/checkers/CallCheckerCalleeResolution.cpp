@@ -25,9 +25,9 @@ static std::string_view FindEnclosingClassOrInterface(const CallSiteFact& site, 
             return enc;
         }
     }
-    if (!site.enclosingClassName.empty())
+    if (const std::string_view enc = CallSiteFacts::SliceText(sourceCode, site.enclosingClassNameBytes); !enc.empty())
     {
-        return site.enclosingClassName;
+        return enc;
     }
     if (nodeIndex && !sourceCode.empty())
     {
@@ -92,14 +92,15 @@ static void FilterScopedCandidatesByCallerContext(std::vector<Symbol>& candidate
 static bool ResolveScopedCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx,
                                 CalleeResolution& res)
 {
-    if (NamesAType(site.calleeText, ctx.request.symbolTable))
+    const std::string_view calleeText = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeBytes);
+    if (NamesAType(calleeText, ctx.request.symbolTable))
     {
         res.shouldCheck = false;
         return true;
     }
-    res.candidates = CollectScopedFunctionCandidates(site.calleeText, ctx.request.symbolTable);
+    res.candidates = CollectScopedFunctionCandidates(calleeText, ctx.request.symbolTable);
 
-    const std::string_view qualifier = GetScopeQualifierPrefix(site.calleeText);
+    const std::string_view qualifier = GetScopeQualifierPrefix(calleeText);
     const bool insideTarget = IsInsideTargetClassOrSubclass(site, qualifier, scope, ctx);
     FilterScopedCandidatesByCallerContext(res.candidates, insideTarget);
 
@@ -114,7 +115,10 @@ static bool ResolveScopedCallee(const CallSiteFact& site, const Scope* scope, Di
 static bool ResolveSuperCallee(const CallSiteFact& site, std::string_view enclosingClass, DiagnosticContext& ctx,
                                CalleeResolution& res)
 {
-    if (site.calleeName != "super" || site.enclosingFunctionName != LastScopeSegment(enclosingClass))
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
+    const std::string_view enclosingFn =
+        CallSiteFacts::SliceText(ctx.request.sourceCode, site.enclosingFunctionNameBytes);
+    if (calleeName != "super" || enclosingFn != LastScopeSegment(enclosingClass))
     {
         return false;
     }
@@ -169,8 +173,8 @@ static bool ResolveEnclosingClassCallee(const CallSiteFact& site, const Scope* s
     {
         return false;
     }
-    res.candidates =
-        FindMethodCandidates(enclosingClass, site.calleeName, ctx.request.symbolTable, ctx.request.exprCache);
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
+    res.candidates = FindMethodCandidates(enclosingClass, calleeName, ctx.request.symbolTable, ctx.request.exprCache);
     if (!res.candidates.empty())
     {
         res.candidatesAreFreeFunctions = false;
@@ -180,8 +184,8 @@ static bool ResolveEnclosingClassCallee(const CallSiteFact& site, const Scope* s
         ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, ctx.request.symbolTable);
         return true;
     }
-    if (auto callableSym = TryResolveMemberCallableFuncdef(enclosingClass, site.calleeName, ctx.request.symbolTable,
-                                                           ctx.request.exprCache))
+    if (auto callableSym =
+            TryResolveMemberCallableFuncdef(enclosingClass, calleeName, ctx.request.symbolTable, ctx.request.exprCache))
     {
         res.candidates = {std::move(*callableSym)};
         res.candidatesAreFreeFunctions = true;
@@ -199,13 +203,15 @@ static bool ResolveEnclosingClassCallee(const CallSiteFact& site, const Scope* s
 static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
     CalleeResolution res;
-    if (site.calleeText.empty())
+    const std::string_view calleeText = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeBytes);
+    if (calleeText.empty())
     {
         res.shouldCheck = false;
         return res;
     }
 
-    res.reportedName = site.calleeName;
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
+    res.reportedName = calleeName;
 
     if (site.calleeKind == CalleeKind::Scoped)
     {
@@ -214,7 +220,7 @@ static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const 
     }
 
     if (auto callableSym =
-            TryResolveCallableFuncdef(site.calleeName, scope, ctx.request.symbolTable, site.calleeNameBytes.startByte))
+            TryResolveCallableFuncdef(calleeName, scope, ctx.request.symbolTable, site.calleeNameBytes.startByte))
     {
         res.candidates = {std::move(*callableSym)};
         res.candidatesAreFreeFunctions = true;
@@ -227,7 +233,7 @@ static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const 
         return res;
     }
 
-    if (NamesAType(site.calleeName, ctx.request.symbolTable))
+    if (NamesAType(calleeName, ctx.request.symbolTable))
     {
         res.shouldCheck = false;
         return res;
@@ -238,7 +244,7 @@ static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const 
                                     ctx.request.fileUri,        ctx.request.predefinedFileExtension,
                                     ctx.request.symbolTable,    ctx.request.GetRuleIndex(),
                                     ctx.request.moduleFileUris, ctx.request.nodeIndex};
-    res.candidates = FindFreeCandidates(site.calleeText, freeCtx);
+    res.candidates = FindFreeCandidates(calleeText, freeCtx);
     if (!res.candidates.empty() || CheckGlobalNonCallableVariable(site, ctx, res))
     {
         return res;

@@ -1,5 +1,8 @@
 #include "config/EngineRuleParser.h"
 
+#include "utils/ScopedNameUtils.h"
+
+#include <cctype>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <sstream>
@@ -385,11 +388,64 @@ static void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& r
     ParseEngineCallbackSignatures(u, rules.engineCallbackSignatures);
 }
 
+std::optional<std::string_view> ValidateNoHandleTypeName(std::string_view rawTypeName) noexcept
+{
+    if (rawTypeName.empty())
+    {
+        return std::nullopt;
+    }
+
+    const std::string_view normalized = utils::StripGlobalPrefix(rawTypeName);
+    if (normalized.empty() || utils::EndsWithScopeSeparator(normalized))
+    {
+        return std::nullopt;
+    }
+
+    std::string_view remaining = normalized;
+    while (!remaining.empty())
+    {
+        const auto [segment, rest] = utils::SplitFirstScopeSegment(remaining);
+        if (segment.empty())
+        {
+            return std::nullopt;
+        }
+        const unsigned char firstChar = static_cast<unsigned char>(segment[0]);
+        if (!std::isalpha(firstChar) && firstChar != '_')
+        {
+            return std::nullopt;
+        }
+        for (size_t idx = 1; idx < segment.size(); ++idx)
+        {
+            const unsigned char ch = static_cast<unsigned char>(segment[idx]);
+            if (!std::isalnum(ch) && ch != '_')
+            {
+                return std::nullopt;
+            }
+        }
+        remaining = rest;
+    }
+
+    return normalized;
+}
+
+void MergeNoHandleTypes(EngineRuleConfig& effective, const TransparentStringSet& fromRulesFile,
+                        std::span<const std::string> fromSettings)
+{
+    effective.noHandleTypes = fromRulesFile;
+    for (const auto& entry : fromSettings)
+    {
+        if (const auto normalized = ValidateNoHandleTypeName(entry))
+        {
+            effective.noHandleTypes.emplace(*normalized);
+        }
+    }
+}
+
 /**
  * @brief Parses and validates the top-level noHandleTypes array from JSON.
  * @param[in] j Root JSON object.
  * @param[out] noHandleTypes Destination set receiving configured no-handle type names.
- * @return True if absent or a valid array of non-empty strings; false if malformed.
+ * @return True if absent or a valid array of identifier/scoped type names; false if malformed.
  */
 static bool ParseNoHandleTypes(const nlohmann::json& j, TransparentStringSet& noHandleTypes)
 {
@@ -408,12 +464,12 @@ static bool ParseNoHandleTypes(const nlohmann::json& j, TransparentStringSet& no
         {
             return false;
         }
-        const std::string typeName = entry.get<std::string>();
-        if (typeName.empty())
+        const auto valid = ValidateNoHandleTypeName(entry.get_ref<const std::string&>());
+        if (!valid)
         {
             return false;
         }
-        noHandleTypes.insert(typeName);
+        noHandleTypes.emplace(*valid);
     }
     return true;
 }

@@ -104,13 +104,13 @@ static void CheckCall(const CallCheckFactRequest& req, DiagnosticContext& ctx)
     {
         const SourceRange calleeRange =
             req.site.calleeNameRange != SourceRange{} ? req.site.calleeNameRange : req.site.calleeRange;
-        const LambdaCheckFactsContext lctx{calleeRange, calleeRes.reportedName, ctx.request.symbolTable, req.arguments,
-                                           FindLambdaPositions(req.arguments)};
+        const LambdaCheckFactsContext lctx{calleeRange, calleeRes.reportedName, ctx.request.symbolTable,
+                                           req.facts,   req.arguments,          FindLambdaPositions(req.arguments)};
         CheckLambdaArguments(matchingArity, lctx, ctx);
     }
 
-    CheckMalformedTernaryArgs(MalformedTernaryCheckRequest{req.arguments, args.argTypes, matchingArity, req.scope},
-                              ctx);
+    CheckMalformedTernaryArgs(
+        MalformedTernaryCheckRequest{req.facts, req.arguments, args.argTypes, matchingArity, req.scope}, ctx);
     CheckCallOverloads(
         CallOverloadCheckRequest{matchingArity, args, calleeRes, req.site, req.arguments, req.initFacts, req.scope},
         ctx);
@@ -123,7 +123,7 @@ static void CheckCall(const CallCheckFactRequest& req, DiagnosticContext& ctx)
     schedulerSite.call.endColumn = req.site.range.endCharacter;
     if (req.site.isMemberCall)
     {
-        schedulerSite.receiverText = req.site.objectOperand.text;
+        schedulerSite.receiverText = CallSiteFacts::SliceText(req.request.sourceCode, req.site.objectBytes);
     }
     schedulerSite.args.reserve(req.arguments.size());
     for (const auto& a : req.arguments)
@@ -171,9 +171,9 @@ void CheckCallArguments(const CallSiteFacts& facts, const InitializerListFacts& 
         if (takeCall)
         {
             const auto& site = facts.callSites[callIdx++];
-            const auto arguments = std::span(facts.arguments.data() + site.argumentBegin, site.argumentCount);
+            const auto arguments = facts.ArgumentsOf(site);
             const Scope* scope = FindInnermostScope(request.scopeRoot, site.range.startLine, site.range.startCharacter);
-            CheckCall(CallCheckFactRequest{site, arguments, &initFacts, request, scope}, ctx);
+            CheckCall(CallCheckFactRequest{facts, site, arguments, &initFacts, request, scope}, ctx);
         }
         else
         {

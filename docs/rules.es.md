@@ -300,6 +300,7 @@ Lista los tipos de valor registrados por el motor anfitrión que no admiten hand
 
 * **Para qué se usa**: Emite un error (`as-err-handle-on-no-handle-type`, `E261`) siempre que se use un handle `@` sobre alguno de los tipos listados (incluso mediante alias `typedef`), cubriendo variables locales, globales, miembros de clase, parámetros y tipos de retorno de funciones o `funcdef`, elementos de arreglo (`T@[]`), argumentos de plantilla (`array<T@>`) y expresiones unarias `@x`.
 * **Resultado**: Escribir `string@ s;` o `array<string@> items;` se marca de inmediato, mientras que los handles a arreglos de esos tipos (`string[]@` o `array<string>@`) siguen siendo válidos.
+* **Combinación con la configuración del complemento**: También puede configurarse mediante el ajuste `angelscript.engine.noHandleTypes` en VS Code (o `--no-handle-type=<name>`). El servidor combina la configuración del complemento con la clave `noHandleTypes` del archivo de reglas mediante unión de conjuntos, por lo que ambos funcionan por separado y juntos se combinan sin duplicados.
 
 ---
 

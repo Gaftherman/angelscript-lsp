@@ -116,8 +116,15 @@ class Server
     [[nodiscard]] bool CurrentKeepEmptyBlocksOnSingleLine() const noexcept;
     [[nodiscard]] analysis::formatting::PointerAlignment CurrentPointerAlignment() const noexcept;
     [[nodiscard]] std::string ResolveConfiguredPath(std::string_view configured) const;
-    void BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
-                                 const std::function<void(std::string_view, int&)>& applyInt);
+    void BindEngineConfiguration(
+        const std::function<void(std::string_view, bool&)>& applyBool,
+        const std::function<void(std::string_view, int&)>& applyInt,
+        const std::function<void(std::string_view, std::vector<std::string>&)>& applyStringList = {});
+    void SyncEffectiveNoHandleTypes();
+    std::vector<std::string> ParseNoHandleTypesArray(const lsp::LSPArray& arr, bool deferWarnings);
+    void RecordInvalidNoHandleType(std::string_view entry);
+    void WarnInvalidNoHandleType(std::string_view entry) const;
+    void FlushInvalidNoHandleTypeWarnings();
     [[nodiscard]] std::vector<std::string> IncludeAllowedRoots() const;
     [[nodiscard]] std::shared_ptr<const std::string> FindDocumentText(std::string_view uri) const;
     static std::string UriFromPath(std::string_view path);
@@ -311,6 +318,7 @@ class Server
     std::vector<std::string> m_discoveredPredefined;
     std::string m_effectivePredefined;
     TransparentStringSet m_predefinedTransitiveIncludes;
+    TransparentStringSet m_fileNoHandleTypes;
     std::string m_workspaceProgressToken;
     unsigned m_workspaceProgressCounter = 0;
 

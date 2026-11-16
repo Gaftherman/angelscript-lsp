@@ -45,8 +45,10 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
         return;
     }
 
-    const std::string declaredType = CleanExpressionType(init.declaredType);
-    if (declaredType.empty() || declaredType == "auto" || init.declaredType.find('[') != std::string_view::npos)
+    std::string_view rawDeclaredType = CallSiteFacts::SliceText(request.sourceCode, init.declaredTypeBytes);
+    TrimTypeWhitespace(rawDeclaredType);
+    const std::string declaredType = CleanExpressionType(rawDeclaredType);
+    if (declaredType.empty() || declaredType == "auto" || rawDeclaredType.find('[') != std::string_view::npos)
     {
         return;
     }
@@ -61,7 +63,7 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
                              ? FindInnermostScope(request.scopeRoot, init.range.startLine, init.range.startCharacter)
                              : nullptr;
 
-    const auto argSlice = std::span(facts.arguments).subspan(init.argumentBegin, init.argumentCount);
+    const auto argSlice = facts.ArgumentsOf(init);
     std::vector<std::string> argTypes;
     argTypes.reserve(argSlice.size());
     for (const auto& arg : argSlice)

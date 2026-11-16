@@ -29,6 +29,9 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
     m_i18n = std::make_unique<angel_lsp::i18n::I18n>(
         params.locale.value_or(m_config.info.locale.empty() ? "en" : m_config.info.locale));
 
+    SyncEffectiveNoHandleTypes();
+    FlushInvalidNoHandleTypeWarnings();
+
     NegotiateClientCapabilities(*m_sessionCoordinator, params.capabilities);
     const bool usePullDiagnostics =
         m_config.features.enablePullDiagnostics && m_sessionCoordinator->GetClientPullsDiagnostics();

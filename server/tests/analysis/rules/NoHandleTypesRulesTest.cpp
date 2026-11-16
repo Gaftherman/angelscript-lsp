@@ -8,13 +8,17 @@
 #include "analysis/index/SymbolTable.h"
 #include "config/EngineRuleConfig.h"
 #include "config/EngineRuleParser.h"
+#include "config/ServerConfig.h"
+#include "helpers/ScriptedStream.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
+#include "lsp/Server.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
 #include <doctest/doctest.h>
 #include <filesystem>
+#include <lsp/json/json.h>
 #include <random>
 #include <string>
 #include <string_view>
@@ -195,5 +199,115 @@ TEST_SUITE("analysis/rules/NoHandleTypes")
                                  "}\n";
         const auto diags = AnalyzeSnippet(code, &*rules);
         CHECK(CountCode(diags, codes::HandleOnNoHandleType) == 1);
+    }
+
+    TEST_CASE("NoHandleTypes - Flags string@ only when configured via plugin setting and merges with rules file")
+    {
+        const std::string code = "class string {}\n"
+                                 "void main() {\n"
+                                 "    string@ s;\n"
+                                 "}\n";
+
+        // Without setting or rules file, string@ is not flagged as HandleOnNoHandleType.
+        const angel_lsp::config::ServerConfig defaultCfg;
+        angel_lsp::config::EngineRuleConfig effectiveDefault;
+        angel_lsp::config::MergeNoHandleTypes(effectiveDefault, {}, defaultCfg.engine.noHandleTypes);
+        CHECK(CountCode(AnalyzeSnippet(code, &effectiveDefault), codes::HandleOnNoHandleType) == 0);
+
+        // Configured through CLI / plugin setting flag alone: string@ s; IS flagged.
+        std::string exe = "angel_lsp";
+        std::string flag = "--no-handle-type=string";
+        char* argv[] = {exe.data(), flag.data()};
+        const angel_lsp::config::ServerConfig settingCfg = angel_lsp::config::FromArgs(2, argv);
+
+        angel_lsp::config::EngineRuleConfig effectiveSetting;
+        angel_lsp::config::MergeNoHandleTypes(effectiveSetting, {}, settingCfg.engine.noHandleTypes);
+        CHECK(CountCode(AnalyzeSnippet(code, &effectiveSetting), codes::HandleOnNoHandleType) == 1);
+
+        // Union with a rules-file set: both fileType and settingType are flagged.
+        const std::string fileType = angel_lsp::test::GenerateRandomSymbolName("FileVal");
+        const std::string settingType = angel_lsp::test::GenerateRandomSymbolName("SettingVal");
+        const std::string allowedType = angel_lsp::test::GenerateRandomSymbolName("AllowedRef");
+
+        angel_lsp::TransparentStringSet fromRulesFile;
+        fromRulesFile.insert(fileType);
+
+        const std::vector<std::string> fromSetting{fileType, settingType};
+        angel_lsp::config::EngineRuleConfig mergedRules;
+        angel_lsp::config::MergeNoHandleTypes(mergedRules, fromRulesFile, fromSetting);
+
+        const std::string unionCode = "class " + fileType +
+                                      " {}\n"
+                                      "class " +
+                                      settingType +
+                                      " {}\n"
+                                      "class " +
+                                      allowedType +
+                                      " {}\n"
+                                      "void main() {\n"
+                                      "    " +
+                                      fileType +
+                                      "@ a;\n"
+                                      "    " +
+                                      settingType +
+                                      "@ b;\n"
+                                      "    " +
+                                      allowedType +
+                                      "@ c;\n"
+                                      "}\n";
+        CHECK(CountCode(AnalyzeSnippet(unionCode, &mergedRules), codes::HandleOnNoHandleType) == 2);
+    }
+
+    TEST_CASE(
+        "NoHandleTypes - Server applies initializationOptions, warns on invalid, and updates on didChangeConfiguration")
+    {
+        const std::string typeA = angel_lsp::test::GenerateRandomSymbolName("InitVal");
+        const std::string typeB = angel_lsp::test::GenerateRandomSymbolName("UpdatedVal");
+        const std::string invalidEntry = "123_invalid_type";
+
+        angel_lsp::test::ScriptedStream stream;
+        angel_lsp::config::ServerConfig cfg;
+        angel_lsp::Server server(cfg, stream);
+
+        auto makeEngineSection = [](const std::vector<std::string>& items)
+        {
+            lsp::json::Array arr;
+            for (const auto& item : items)
+            {
+                arr.push_back(lsp::json::Value(lsp::json::String(item)));
+            }
+            lsp::json::Object engineObj;
+            engineObj["noHandleTypes"] = lsp::json::Value(std::move(arr));
+
+            lsp::json::Object asObj;
+            asObj["engine"] = lsp::json::Value(std::move(engineObj));
+
+            lsp::json::Object root;
+            root["angelscript"] = lsp::json::Value(std::move(asObj));
+            return lsp::json::Value(std::move(root));
+        };
+
+        lsp::requests::Initialize::Params initParams;
+        initParams.initializationOptions = makeEngineSection({typeA, invalidEntry, typeA});
+        server.HandleRequestsInitialized(std::move(initParams));
+
+        CHECK(server.GetConfig().engine.noHandleTypes == std::vector<std::string>{typeA});
+        CHECK(server.GetConfig().engineRules.noHandleTypes.contains(typeA));
+        CHECK_FALSE(server.GetConfig().engineRules.noHandleTypes.contains(invalidEntry));
+        CHECK(stream.Output().find(invalidEntry) != std::string::npos);
+
+        const uint64_t revBefore = server.GetSessionCoordinator().GetConfigRevision();
+
+        lsp::notifications::Workspace_DidChangeConfiguration::Params changeParams;
+        changeParams.settings = makeEngineSection({typeB, "string"});
+        server.HandleNotificationsWorkspace_DidChangeConfiguration(std::move(changeParams));
+
+        CHECK(server.GetSessionCoordinator().GetConfigRevision() > revBefore);
+        CHECK_FALSE(server.GetConfig().engineRules.noHandleTypes.contains(typeA));
+        CHECK(server.GetConfig().engineRules.noHandleTypes.contains(typeB));
+        CHECK(server.GetConfig().engineRules.noHandleTypes.contains("string"));
+
+        const std::string code = "class string {}\nvoid main() { string@ s; }\n";
+        CHECK(CountCode(AnalyzeSnippet(code, &server.GetConfig().engineRules), codes::HandleOnNoHandleType) == 1);
     }
 }

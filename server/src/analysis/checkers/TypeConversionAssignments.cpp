@@ -36,55 +36,6 @@ static void CheckHandleConstAssignment(const AssignmentSiteFact& site, const Con
 }
 
 /**
- * @brief Reports a deleted opAssign and a missing implicit conversion on the assigned type.
- * @param[in] site Indexed assignment.
- * @param[in] types Cleaned source and target types of the assignment.
- * @param[in,out] ctx Diagnostic context.
- */
-static void CheckAssignmentOperatorConversion(const AssignmentSiteFact& site, const ConversionTypePair& types,
-                                              DiagnosticContext& ctx)
-{
-    if (types.to.empty())
-    {
-        return;
-    }
-
-    auto opSyms = ctx.request.symbolTable.FindMemberSymbolPtr(types.to, "opAssign");
-    if (opSyms)
-    {
-        for (const auto& sym : *opSyms)
-        {
-            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature) &&
-                sym.GetFunction().modifiers.isDelete)
-            {
-                ctx.EmitAtRange(site.range, "as-err-deleted-method-called", {types.to, "opAssign"});
-                break;
-            }
-        }
-    }
-
-    const std::string_view overload = site.op.empty() ? std::string_view() : AssignmentOverloadName(site.op);
-    if (!site.opIsAssign && site.op != "=" && !overload.empty())
-    {
-        const std::string toUnwrapped = UnwrapTypedef(types.to, ctx.request.symbolTable);
-        if (toUnwrapped == "bool")
-        {
-            ctx.EmitAtRange(site.range, diagnostics::codes::NoMathConversion, types.to);
-            return;
-        }
-    }
-
-    if (!types.from.empty() && types.to != types.from)
-    {
-        const bool operatorHandlesIt = DeclaresOperatorMethod(types.to, overload, ctx.request.symbolTable);
-        if (!operatorHandlesIt && !IsConvertible(types.from, types.to, ctx))
-        {
-            ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion", {types.from, types.to});
-        }
-    }
-}
-
-/**
  * @brief Reports whether a type accepts a handle through opAssign or opHndlAssign.
  * @param[in] clean Type name without decorations.
  * @param[in] table Symbol table searched for members.
@@ -243,10 +194,11 @@ void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionC
         return;
     }
 
-    CheckAssignmentPropertyAccess(site, scope, ctx);
+    const PropertyAccessInfo pInfo = CheckAssignmentPropertyAccess(site, scope, ctx);
+    const bool isPropertySetter = pInfo.isProperty && (!site.leftIsIndex || pInfo.isIndexed);
 
     const auto leftType = ResolveExpressionType(site.left.bytes, ExpressionTypeContext(scope, ctx));
-    if (CheckNullAssignmentToNonHandle(site, leftType, ctx))
+    if (!isPropertySetter && CheckNullAssignmentToNonHandle(site, leftType, ctx))
     {
         return;
     }
@@ -257,22 +209,48 @@ void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionC
     {
         return;
     }
-    const ConversionTypePair types{CleanBaseType(rightType), CleanBaseType(leftType)};
+    if (rightType == "<init_list>")
+    {
+        return;
+    }
+
+    const AssignmentConversionInput input{site, pInfo, scope, leftType, rightType};
+    if (isPropertySetter)
+    {
+        CheckPropertySetterAssignment(input, ctx);
+        return;
+    }
+
+    const SymbolTable& table = ctx.request.symbolTable;
+    const std::string_view arrayType = ctx.request.GetEffectiveArrayTypeName();
+    const std::string normFrom =
+        rightType.empty() ? std::string() : UnwrapTypedef(NormalizeType(rightType, arrayType), table);
+    const std::string normTo =
+        leftType.empty() ? std::string() : UnwrapTypedef(NormalizeType(leftType, arrayType), table);
+
+    if (normFrom == "void")
+    {
+        ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion",
+                        {"void", normTo.empty() ? std::string_view("value") : std::string_view(normTo)});
+        return;
+    }
+
+    const ConversionTypePair types{normFrom, normTo};
 
     CheckFloatTruncation(site.right, types, scope, ctx);
 
-    auto leftFuncdef = FindFuncdef(types.to, ctx.request.symbolTable);
+    auto leftFuncdef = FindFuncdef(types.to, table);
     if (leftFuncdef)
     {
         CheckFuncdefAssignment(site.range, leftFuncdef->GetFuncdef(), site.rightFuncdef, ctx);
     }
-    else if (types.from.empty() && IsFunctionReference(site.right.bytes, ExpressionTypeContext(scope, ctx)))
+    else if (types.from.empty() && !types.to.empty() && IsAssignmentRhsFunctionReference(site, scope, ctx))
     {
         ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion", {TrimString(site.right.text), types.to});
     }
 
     CheckHandleConstAssignment(site, types, scope, ctx);
-    CheckAssignmentOperatorConversion(site, types, ctx);
+    CheckAssignmentOperatorConversion(input, types, ctx);
 }
 
 } // namespace angel_lsp::analysis

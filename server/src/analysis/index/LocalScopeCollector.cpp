@@ -223,6 +223,7 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
     CollectRawCaptures(rootNode, captures);
 
     DocumentContext docCtx = BuildDocumentContext(*nodeIndex, m_gs);
+    docCtx.operatorSites = BuildOperatorSites(*nodeIndex, sourceCode);
     auto root = BuildScopeTree(captures, sourceCode, docCtx);
     if (root)
     {
@@ -463,6 +464,9 @@ static void UpdateFuncScopeContext(LocalScopeCollector::OpenScope& openScope, TS
         auto newCtx = std::make_shared<ScopeEnclosingContext>(
             openScope.scope->enclosingContext ? *openScope.scope->enclosingContext : ScopeEnclosingContext{});
         newCtx->caller = utils::JoinScopedName(parentPrefix, fnName);
+        TSNode retNode = parser::GetChildByField(node, gs.fieldReturnType);
+        newCtx->returnType =
+            !ts_node_is_null(retNode) ? std::string(parser::NodeText(retNode, sourceCode)) : std::string{};
         openScope.scope->enclosingContext = std::move(newCtx);
     }
     openScope.scope->isConstMethod = CheckMethodIsConst(node, gs);
@@ -483,6 +487,13 @@ static void UpdateScopeContextAndOpen(LocalScopeCollector::OpenScope& openScope,
     else if (sym == gs.symFuncDeclaration)
     {
         UpdateFuncScopeContext(openScope, node, gs, sourceCode);
+    }
+    else if (sym == gs.symLambdaExpression && openScope.scope->enclosingContext &&
+             !openScope.scope->enclosingContext->returnType.empty())
+    {
+        auto newCtx = std::make_shared<ScopeEnclosingContext>(*openScope.scope->enclosingContext);
+        newCtx->returnType.clear();
+        openScope.scope->enclosingContext = std::move(newCtx);
     }
 }
 
@@ -752,7 +763,7 @@ void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode pare
 static bool IsTypeSpecifierSymbol(TSSymbol sym, const parser::GrammarSymbols& syms) noexcept
 {
     return sym == syms.symDatatype || sym == syms.symTemplateTypeList || sym == syms.symBaseClassList ||
-           sym == syms.symType;
+           sym == syms.symType || sym == syms.symNestedTypeName;
 }
 
 static bool IsTypeSpecifierContext(TSNode parent, const parser::GrammarSymbols& syms) noexcept
@@ -854,7 +865,7 @@ bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcep
     return sym == m_gs.symParameter || sym == m_gs.symLambdaParameterList || sym == m_gs.symVariableDeclarator ||
            sym == m_gs.symForeachVariable || sym == m_gs.symClassDeclaration || sym == m_gs.symInterfaceDeclaration ||
            sym == m_gs.symEnumDeclaration || sym == m_gs.symFuncDeclaration || sym == m_gs.symInterfaceMethod ||
-           sym == m_gs.symMixinDeclaration || sym == m_gs.symFuncdefDeclaration;
+           sym == m_gs.symMixinDeclaration || sym == m_gs.symFuncdefDeclaration || sym == m_gs.symTypedefDeclaration;
 }
 
 static bool HasBaseClassList(TSNode classNode)
@@ -1043,7 +1054,8 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
             grandparent = parser::GetParent(parent);
         }
         ref.isNamedArgument = IsNamedArgumentNode(capture.node, parent);
-        ref.isTypeSpecifier = IsTypeSpecifierContext(parent, m_gs);
+        ref.isTypeSpecifier =
+            IsTypeSpecifierContext(parent, m_gs) || ts_node_symbol(parent) == m_gs.symTypedefDeclaration;
         ref.isMemberAccess =
             IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
         ref.isWriteTarget = IsWriteTargetNode(capture.node, parent, grandparent, m_gs) ? 1 : 0;
@@ -1112,6 +1124,7 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
             {
                 auto context = std::make_shared<ScopeEnclosingContext>(*root->enclosingContext);
                 context->receivers = docCtx.receivers;
+                context->operatorSites = docCtx.operatorSites;
                 root->enclosingContext = std::move(context);
             }
             continue;

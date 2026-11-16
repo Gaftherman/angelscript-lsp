@@ -99,11 +99,11 @@ std::vector<Symbol> ResolveNamedArgCalleeCandidates(IndexedByteRange callRange, 
 
     if (site->isMemberCall)
     {
-        std::string receiverTypeName = ResolveReceiverTypeName(site->objectOperand.bytes, ctx, config);
-        return CollectReceiverMemberSymbols(receiverTypeName, site->calleeName, ctx.symbolTable);
+        std::string receiverTypeName = ResolveReceiverTypeName(site->objectBytes, ctx, config);
+        return CollectReceiverMemberSymbols(receiverTypeName, callFacts.TextOf(site->calleeNameBytes), ctx.symbolTable);
     }
 
-    if (const auto found = ctx.symbolTable.FindSymbolsPtr(site->calleeText))
+    if (const auto found = ctx.symbolTable.FindSymbolsPtr(callFacts.TextOf(site->calleeBytes)))
     {
         return *found;
     }

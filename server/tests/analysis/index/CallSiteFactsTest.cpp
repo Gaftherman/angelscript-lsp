@@ -2,6 +2,7 @@
 
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "utils/ScopedNameUtils.h"
 
 #include <cstdint>
 #include <doctest/doctest.h>
@@ -37,8 +38,8 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         // 1. Unqualified identifier call
         const auto& call0 = facts.callSites[0];
         CHECK(call0.calleeKind == angel_lsp::analysis::CalleeKind::Identifier);
-        CHECK(call0.calleeName == funcA);
-        CHECK(call0.calleeText == funcA);
+        CHECK(facts.TextOf(call0.calleeNameBytes) == funcA);
+        CHECK(facts.TextOf(call0.calleeBytes) == funcA);
         CHECK(call0.isMemberCall == false);
         CHECK(call0.isThisCall == false);
         CHECK(call0.argumentCount == 0);
@@ -47,26 +48,26 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         // 2. Scoped identifier call
         const auto& call1 = facts.callSites[1];
         CHECK(call1.calleeKind == angel_lsp::analysis::CalleeKind::Scoped);
-        CHECK(call1.calleeName == funcB);
-        CHECK(call1.scopeQualifier == nsName);
-        CHECK(call1.calleeText == (nsName + "::" + funcB));
+        CHECK(facts.TextOf(call1.calleeNameBytes) == funcB);
+        CHECK(angel_lsp::utils::ParentScopeView(facts.TextOf(call1.calleeBytes)) == nsName);
+        CHECK(facts.TextOf(call1.calleeBytes) == (nsName + "::" + funcB));
         CHECK(call1.isMemberCall == false);
 
         // 3. Object member call
         const auto& call2 = facts.callSites[2];
         CHECK(call2.calleeKind == angel_lsp::analysis::CalleeKind::Member);
-        CHECK(call2.calleeName == methodName);
+        CHECK(facts.TextOf(call2.calleeNameBytes) == methodName);
         CHECK(call2.isMemberCall == true);
         CHECK(call2.isThisCall == false);
-        CHECK(call2.objectOperand.text == objName);
+        CHECK(facts.TextOf(call2.objectBytes) == objName);
 
         // 4. this member call
         const auto& call3 = facts.callSites[3];
         CHECK(call3.calleeKind == angel_lsp::analysis::CalleeKind::Member);
-        CHECK(call3.calleeName == methodName);
+        CHECK(facts.TextOf(call3.calleeNameBytes) == methodName);
         CHECK(call3.isMemberCall == true);
         CHECK(call3.isThisCall == true);
-        CHECK(call3.objectOperand.text == "this");
+        CHECK(facts.TextOf(call3.objectBytes) == "this");
 
         ts_tree_delete(tree);
     }
@@ -96,46 +97,52 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         const auto& call = facts.callSites[0];
         CHECK(call.hasArgumentList == true);
         CHECK(call.argumentCount == 7);
-        REQUIRE(facts.arguments.size() >= 7);
+        const auto args = facts.ArgumentsOf(call);
+        REQUIRE(args.size() == 7);
 
         // Arg 0: Number literal
-        const auto& arg0 = facts.arguments[call.argumentBegin];
+        const auto& arg0 = args[0];
         CHECK(arg0.kind == angel_lsp::analysis::CallArgumentKind::Literal);
-        CHECK(arg0.text == "123");
+        CHECK(facts.TextOf(arg0.bytes) == "123");
         CHECK(arg0.isNamed == false);
-        CHECK(arg0.operand.isNumericLiteral == true);
+        CHECK(arg0.isNumericLiteral == true);
 
         // Arg 1: String literal
-        const auto& arg1 = facts.arguments[call.argumentBegin + 1];
+        const auto& arg1 = args[1];
         CHECK(arg1.kind == angel_lsp::analysis::CallArgumentKind::Literal);
-        CHECK(arg1.text == "\"test\"");
+        CHECK(facts.TextOf(arg1.bytes) == "\"test\"");
 
         // Arg 2: Null literal
-        const auto& arg2 = facts.arguments[call.argumentBegin + 2];
+        const auto& arg2 = args[2];
         CHECK(arg2.kind == angel_lsp::analysis::CallArgumentKind::Literal);
-        CHECK(arg2.operand.isNullLiteral == true);
+        CHECK(arg2.isNullLiteral == true);
 
         // Arg 3: Named argument
-        const auto& arg3 = facts.arguments[call.argumentBegin + 3];
+        const auto& arg3 = args[3];
         CHECK(arg3.isNamed == true);
-        CHECK(arg3.name == paramName);
-        CHECK(arg3.text == varA);
+        CHECK(facts.TextOf(arg3.nameBytes) == paramName);
+        CHECK(facts.TextOf(arg3.bytes) == varA);
+        CHECK(facts.TextOf(arg3.foldedBytes) == varA);
 
         // Arg 4: Initializer list
-        const auto& arg4 = facts.arguments[call.argumentBegin + 4];
+        const auto& arg4 = args[4];
         CHECK(arg4.kind == angel_lsp::analysis::CallArgumentKind::InitializerList);
 
         // Arg 5: Lambda
-        const auto& arg5 = facts.arguments[call.argumentBegin + 5];
+        const auto& arg5 = args[5];
         CHECK(arg5.kind == angel_lsp::analysis::CallArgumentKind::Lambda);
-        CHECK(arg5.funcdefValue.isLambda == true);
+        CHECK(arg5.hasLambdaParameterList == true);
+        const auto lambdaParams = facts.LambdaParamsOf(arg5);
+        REQUIRE(lambdaParams.size() == 1);
+        CHECK(lambdaParams[0].hasWrittenType == true);
+        CHECK(facts.TextOf(lambdaParams[0].typeBytes) == "int");
 
         // Arg 6: Ternary conditional expression
-        const auto& arg6 = facts.arguments[call.argumentBegin + 6];
+        const auto& arg6 = args[6];
         CHECK(arg6.kind == angel_lsp::analysis::CallArgumentKind::Ternary);
-        CHECK(arg6.isTernary == true);
-        CHECK(arg6.ternaryConsequence.text == varA);
-        CHECK(arg6.ternaryAlternative.text == varC);
+        const auto ternary = facts.TernaryOf(arg6);
+        CHECK(facts.TextOf(ternary.consequenceBytes) == varA);
+        CHECK(facts.TextOf(ternary.alternativeBytes) == varC);
 
         ts_tree_delete(tree);
     }
@@ -172,12 +179,12 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         const auto& c1 = facts.callSites[1];
         CHECK(c1.isDelegateConstruction == true);
         CHECK(facts.arguments[c1.argumentBegin].isThisMemberAccess == true);
-        CHECK(facts.arguments[c1.argumentBegin].thisMemberName == callDelegate);
+        CHECK(facts.ThisMemberName(facts.arguments[c1.argumentBegin]) == callDelegate);
 
         ts_tree_delete(tree);
     }
 
-    TEST_CASE("CallSiteFacts - Construct call expression and template arguments")
+    TEST_CASE("CallSiteFacts - Construct call expression")
     {
         angel_lsp::parser::AngelScriptParser parser;
         const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
@@ -197,14 +204,11 @@ TEST_SUITE("analysis/index/CallSiteFacts")
 
         const auto& call0 = facts.callSites[0];
         CHECK(call0.isConstructCall == true);
-        CHECK(call0.hasTemplateArguments == true);
-        CHECK(call0.templateArgsText == "<int>");
         CHECK(call0.argumentCount == 1);
+        CHECK(facts.TextOf(facts.ArgumentsOf(call0)[0].bytes) == "10");
 
         const auto& call1 = facts.callSites[1];
         CHECK(call1.isConstructCall == true);
-        CHECK(call1.hasTemplateArguments == true);
-        CHECK(call1.templateArgsText == "<string>");
         CHECK(call1.argumentCount == 0);
 
         ts_tree_delete(tree);
@@ -237,16 +241,16 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         const auto& call0 = facts.callSites[0];
         CHECK(call0.insideClass == true);
         CHECK(call0.insideMixin == false);
-        CHECK(call0.enclosingClassName == clsName);
-        CHECK(call0.enclosingFunctionName == constMethod);
+        CHECK(facts.TextOf(call0.enclosingClassNameBytes) == clsName);
+        CHECK(facts.TextOf(call0.enclosingFunctionNameBytes) == constMethod);
         CHECK(call0.isEnclosingMethodConst == true);
 
         // Call inside mixin class non-const method
         const auto& call1 = facts.callSites[1];
         CHECK(call1.insideClass == true);
         CHECK(call1.insideMixin == true);
-        CHECK(call1.enclosingClassName == mixinName);
-        CHECK(call1.enclosingFunctionName == mutMethod);
+        CHECK(facts.TextOf(call1.enclosingClassNameBytes) == mixinName);
+        CHECK(facts.TextOf(call1.enclosingFunctionNameBytes) == mutMethod);
         CHECK(call1.isEnclosingMethodConst == false);
 
         ts_tree_delete(tree);
@@ -271,15 +275,80 @@ TEST_SUITE("analysis/index/CallSiteFacts")
 
         REQUIRE(facts.directInits.size() == 1);
         const auto& init = facts.directInits[0];
-        CHECK(init.declaredType == typeName);
-        CHECK(init.baseTypeName == typeName);
-        CHECK(init.declaratorName == varName);
+        CHECK(facts.TextOf(init.declaredTypeBytes) == typeName);
         CHECK(init.argumentCount == 2);
         CHECK(facts.FindDirectInit(init.bytes) == &init);
 
-        REQUIRE(facts.arguments.size() >= 2);
-        CHECK(facts.arguments[init.argumentBegin].text == "10");
-        CHECK(facts.arguments[init.argumentBegin + 1].text == "20");
+        const auto args = facts.ArgumentsOf(init);
+        REQUIRE(args.size() == 2);
+        CHECK(facts.TextOf(args[0].bytes) == "10");
+        CHECK(facts.TextOf(args[1].bytes) == "20");
+
+        ts_tree_delete(tree);
+    }
+
+    TEST_CASE("CallSiteFacts - Compact RAM layout, empty-call reserve, and pool slicing")
+    {
+        CHECK(sizeof(angel_lsp::analysis::CallArgumentTernaryFact) <= 16);
+        CHECK(sizeof(angel_lsp::analysis::CallLambdaParamFact) <= 12);
+        CHECK(sizeof(angel_lsp::analysis::CallArgumentFact) <= 48);
+        CHECK(sizeof(angel_lsp::analysis::CallSiteFact) <= 108);
+        CHECK(sizeof(angel_lsp::analysis::DirectInitSiteFact) <= 56);
+
+        angel_lsp::parser::AngelScriptParser parser;
+        std::string noCallsCode;
+        for (int i = 0; i < 8; ++i)
+        {
+            noCallsCode += "namespace " + angel_lsp::test::GenerateRandomSymbolName("ns") + " {}\n";
+        }
+        {
+            TSTree* tree = parser.Parse(noCallsCode);
+            REQUIRE(tree != nullptr);
+            TSNode root = ts_tree_root_node(tree);
+            angel_lsp::analysis::NodeIndex index(root, angel_lsp::analysis::NodeIndexOptions{.source = noCallsCode});
+            const auto emptyFacts = angel_lsp::analysis::BuildCallSiteFacts(index, noCallsCode);
+            CHECK(emptyFacts.callSites.empty());
+            CHECK(emptyFacts.directInits.empty());
+            CHECK(emptyFacts.arguments.empty());
+            CHECK(emptyFacts.ternaryBranches.empty());
+            CHECK(emptyFacts.lambdaParams.empty());
+            CHECK(emptyFacts.thisMemberNames.empty());
+            ts_tree_delete(tree);
+        }
+
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string calleeA = angel_lsp::test::GenerateRandomSymbolName("callA");
+        const std::string calleeB = angel_lsp::test::GenerateRandomSymbolName("callB");
+        const std::string argVar = angel_lsp::test::GenerateRandomSymbolName("argV");
+        const std::string code = "void " + fnName + "()\n{\n    " + calleeA + "((" + argVar + "));\n    " + calleeB +
+                                 "(this, function(const int& in x, y) {});\n}\n";
+
+        TSTree* tree = parser.Parse(code);
+        REQUIRE(tree != nullptr);
+        TSNode root = ts_tree_root_node(tree);
+        angel_lsp::analysis::NodeIndex index(root, angel_lsp::analysis::NodeIndexOptions{.source = code});
+        const auto facts = angel_lsp::analysis::BuildCallSiteFacts(index, code);
+
+        REQUIRE(facts.callSites.size() == 2);
+        const auto args0 = facts.ArgumentsOf(facts.callSites[0]);
+        REQUIRE(args0.size() == 1);
+        CHECK(args0[0].kind == angel_lsp::analysis::CallArgumentKind::Identifier);
+        CHECK(facts.TextOf(args0[0].foldedBytes) == argVar);
+        CHECK(facts.TernaryOf(args0[0]).consequenceBytes.Empty());
+        CHECK(facts.LambdaParamsOf(args0[0]).empty());
+        CHECK(facts.ThisMemberName(args0[0]).empty());
+
+        const auto args1 = facts.ArgumentsOf(facts.callSites[1]);
+        REQUIRE(args1.size() == 2);
+        CHECK(args1[0].isThis == true);
+        CHECK(args1[1].kind == angel_lsp::analysis::CallArgumentKind::Lambda);
+        const auto lparams = facts.LambdaParamsOf(args1[1]);
+        REQUIRE(lparams.size() == 2);
+        CHECK(lparams[0].hasWrittenType == true);
+        CHECK(lparams[0].isConst == true);
+        CHECK(lparams[0].isReference == true);
+        CHECK(lparams[0].modifier == angel_lsp::analysis::ParameterModifier::In);
+        CHECK(lparams[1].hasWrittenType == false);
 
         ts_tree_delete(tree);
     }

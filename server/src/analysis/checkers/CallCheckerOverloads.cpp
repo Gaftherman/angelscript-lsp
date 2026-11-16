@@ -92,7 +92,8 @@ static void RecordBoundCall(const Symbol& declaration, const CallSiteFact& site,
     {
         return;
     }
-    if (site.calleeName.empty() || site.calleeName != declaration.name)
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
+    if (calleeName.empty() || calleeName != declaration.name)
     {
         return;
     }

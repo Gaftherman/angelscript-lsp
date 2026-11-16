@@ -49,6 +49,7 @@ struct ReferenceCountTarget
     bool isEnumConstant = false;
     AccessModifier targetAccess = AccessModifier::Public;
     bool isFunction = false;
+    bool isTypeTarget = false;
     size_t minArgs = 0;
     size_t maxArgs = 0;
     ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
@@ -81,6 +82,7 @@ struct ReferenceCollectionCriteria
     bool isEnumConstant = false;
     AccessModifier targetAccess = AccessModifier::Public;
     bool isFunction = false;
+    bool isTypeTarget = false;
     size_t minArgs = 0;
     size_t maxArgs = 0;
     const SymbolTable& symbolTable;

@@ -300,6 +300,7 @@ Lists registered host value types that do not support object handles (`@`), matc
 
 * **What it does**: Reports an error (`as-err-handle-on-no-handle-type`, `E261`) wherever a handle `@` is applied to one of the listed types (including through `typedef` aliases), across local variables, globals, class members, function/funcdef parameters and return types, array elements (`T@[]`), template arguments (`array<T@>`), and unary handle-of expressions (`@x`).
 * **Resulting Behavior**: Writing `string@ s;` or `array<string@> items;` is flagged immediately, while handles to arrays of those types (`string[]@` or `array<string>@`) remain allowed.
+* **Plugin Setting Merge**: Also configurable via the `angelscript.engine.noHandleTypes` VS Code setting (or `--no-handle-type=<name>`). The server merges the plugin setting with the rules file's `noHandleTypes` array as a set union, so either source works standalone and both together combine without duplicates.
 
 ---
 

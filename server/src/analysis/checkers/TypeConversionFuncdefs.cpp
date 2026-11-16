@@ -14,31 +14,29 @@
 namespace angel_lsp::analysis
 {
 
-static bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSignature& fd)
+template <typename SigA, typename SigB>
+static bool SignaturesMatchShape(const SigA& lhs, const SigB& rhs, const SymbolTable& table)
 {
-    if (CleanBaseType(fn.returnType) != CleanBaseType(fd.returnType))
+    const std::string_view arrayType = table.GetDefaultArrayType();
+    if (UnwrapTypedef(NormalizeType(lhs.returnType, arrayType), table) !=
+        UnwrapTypedef(NormalizeType(rhs.returnType, arrayType), table))
     {
         return false;
     }
-    if (fn.parameters.size() != fd.parameters.size())
+    if (lhs.parameters.size() != rhs.parameters.size())
     {
         return false;
     }
-    for (size_t i = 0; i < fn.parameters.size(); ++i)
+    for (size_t i = 0; i < lhs.parameters.size(); ++i)
     {
-        if (CleanBaseType(fn.parameters[i].typeName) != CleanBaseType(fd.parameters[i].typeName))
+        const auto& lp = lhs.parameters[i];
+        const auto& rp = rhs.parameters[i];
+        if (UnwrapTypedef(NormalizeType(lp.typeName, arrayType), table) !=
+            UnwrapTypedef(NormalizeType(rp.typeName, arrayType), table))
         {
             return false;
         }
-        if (fn.parameters[i].modifier != fd.parameters[i].modifier)
-        {
-            return false;
-        }
-        if (fn.parameters[i].isReference != fd.parameters[i].isReference)
-        {
-            return false;
-        }
-        if (fn.parameters[i].isHandle != fd.parameters[i].isHandle)
+        if (lp.modifier != rp.modifier || lp.isReference != rp.isReference || lp.isHandle != rp.isHandle)
         {
             return false;
         }
@@ -46,11 +44,17 @@ static bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSi
     return true;
 }
 
-static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, const FuncdefSignature& funcdefSig)
+bool AreFuncdefSignaturesCompatible(const FuncdefSignature& a, const FuncdefSignature& b, const SymbolTable& table)
+{
+    return SignaturesMatchShape(a, b, table);
+}
+
+static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, const FuncdefSignature& funcdefSig,
+                                        const SymbolTable& table)
 {
     for (const auto& cand : candidates)
     {
-        if (MatchesFuncdefSignature(cand.GetFunction(), funcdefSig))
+        if (SignaturesMatchShape(cand.GetFunction(), funcdefSig, table))
         {
             return true;
         }
@@ -101,7 +105,7 @@ static void CheckNamedFunctionFuncdefAssignment(SourceRange target, const Funcde
         return;
     }
 
-    if (!HasMatchingFuncdefCandidate(candidates, funcdefSig))
+    if (!HasMatchingFuncdefCandidate(candidates, funcdefSig, ctx.request.symbolTable))
     {
         ctx.EmitAtRange(target, "as-err-signature-mismatch-func-handle");
     }
@@ -174,7 +178,7 @@ void CheckDelegateConstruction(const CallConstructSiteFact& site, const FuncdefS
         }
     }
 
-    if (!candidates.empty() && !HasMatchingFuncdefCandidate(candidates, funcdefSig))
+    if (!candidates.empty() && !HasMatchingFuncdefCandidate(candidates, funcdefSig, table))
     {
         ctx.EmitAtRange(site.range, diagnostics::codes::CannotCreateDelegate);
     }

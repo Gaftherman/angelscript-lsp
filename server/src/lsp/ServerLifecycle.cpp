@@ -74,6 +74,7 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
         });
 
     BuildDiagnosticSeverityOverrides(m_diagnosticsPipeline.get(), m_config, m_logger.get());
+    SyncEffectiveNoHandleTypes();
     InitHandles();
 }
 

@@ -85,8 +85,9 @@ static bool IsSpecialContextCallee(std::string_view name, const CallSiteFact& ca
 
     if (name == "super")
     {
-        return call.insideClass && !call.enclosingClassName.empty() &&
-               call.enclosingClassName == call.enclosingFunctionName;
+        const std::string_view encClass = CallSiteFacts::SliceText(cctx.sourceCode, call.enclosingClassNameBytes);
+        const std::string_view encFunc = CallSiteFacts::SliceText(cctx.sourceCode, call.enclosingFunctionNameBytes);
+        return call.insideClass && !encClass.empty() && encClass == encFunc;
     }
 
     return false;
@@ -214,7 +215,8 @@ static void CheckQualifiedCallee(std::string_view calleeName, bool globalQualifi
 
 void CheckCallExpression(const CallSiteFact& call, const NamespaceCallCheckContext& cctx, DiagnosticContext& ctx)
 {
-    const std::string compactCallee = utils::CompactScopedName(call.calleeText);
+    const std::string compactCallee =
+        utils::CompactScopedName(CallSiteFacts::SliceText(cctx.sourceCode, call.calleeBytes));
     std::string_view calleeName = compactCallee;
     if (call.isMemberCall || calleeName.empty() || calleeName.find('.') != std::string_view::npos)
     {

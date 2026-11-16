@@ -1,4 +1,5 @@
 #include "config/EngineRuleParser.h"
+#include "i18n/i18n.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
 
@@ -123,6 +124,63 @@ static std::string ResolveRulesPath(std::string_view configuredPath, std::span<c
     return {};
 }
 
+void Server::SyncEffectiveNoHandleTypes()
+{
+    config::MergeNoHandleTypes(m_config.engineRules, m_fileNoHandleTypes, m_config.engine.noHandleTypes);
+}
+
+std::vector<std::string> Server::ParseNoHandleTypesArray(const lsp::LSPArray& arr, bool deferWarnings)
+{
+    std::vector<std::string> parsed;
+    const auto reportInvalid = [this, deferWarnings](std::string_view invalidEntry)
+    {
+        if (deferWarnings)
+        {
+            RecordInvalidNoHandleType(invalidEntry);
+        }
+        else
+        {
+            WarnInvalidNoHandleType(invalidEntry);
+        }
+    };
+
+    for (const auto& entry : arr)
+    {
+        if (!entry.isString())
+        {
+            reportInvalid("<non-string>");
+            continue;
+        }
+        if (!config::AppendValidatedNoHandleType(entry.string(), parsed))
+        {
+            reportInvalid(entry.string());
+        }
+    }
+    return parsed;
+}
+
+void Server::RecordInvalidNoHandleType(std::string_view entry)
+{
+    m_config.engine.invalidNoHandleTypes.emplace_back(entry);
+}
+
+void Server::WarnInvalidNoHandleType(std::string_view entry) const
+{
+    LogWarning(i18n::FormatMessage(
+        m_i18n.get(), "warn-invalid-no-handle-type",
+        "Ignoring invalid angelscript.engine.noHandleTypes entry '{}': expected a non-empty identifier or scoped name.",
+        entry));
+}
+
+void Server::FlushInvalidNoHandleTypeWarnings()
+{
+    for (const auto& entry : m_config.engine.invalidNoHandleTypes)
+    {
+        WarnInvalidNoHandleType(entry);
+    }
+    m_config.engine.invalidNoHandleTypes.clear();
+}
+
 void Server::LoadWorkspaceEngineRules(std::span<const std::string> workspaceRoots)
 {
     std::string effectivePredef;
@@ -137,10 +195,17 @@ void Server::LoadWorkspaceEngineRules(std::span<const std::string> workspaceRoot
     const std::string rulesPath = ResolveRulesPath(m_config.rulesFile, workspaceRoots, effectivePredef, fallbackStubs);
     if (rulesPath.empty())
     {
-        if (m_config.engineRules.HasRules())
+        const bool hadFileRules = !m_fileNoHandleTypes.empty() || !m_config.engineRules.storageRules.empty() ||
+                                  !m_config.engineRules.typeSuggestions.empty() ||
+                                  !m_config.engineRules.schedulerRules.empty() ||
+                                  m_config.engineRules.unusedRules.HasActiveRules() ||
+                                  m_config.engineRules.engineProperties.HasActiveProperties();
+        m_fileNoHandleTypes.clear();
+        m_config.engineRules = config::EngineRuleConfig{};
+        SyncEffectiveNoHandleTypes();
+        if (hadFileRules)
         {
             LogInfo("No engine rules file found. Resetting to vanilla AngelScript safety rules.");
-            m_config.engineRules = config::EngineRuleConfig{};
             m_symbolTable.SetBaseClassDelegateProperties({});
         }
         return;
@@ -154,7 +219,9 @@ void Server::LoadWorkspaceEngineRules(std::span<const std::string> workspaceRoot
         return;
     }
 
+    m_fileNoHandleTypes = parsed->noHandleTypes;
     m_config.engineRules = std::move(*parsed);
+    SyncEffectiveNoHandleTypes();
     m_symbolTable.SetBaseClassDelegateProperties(m_config.engineRules.unusedRules.baseClassDelegateProperties);
     LogInfo(fmt::format("Loaded engine rules: {} storage rule(s), {} type suggestion(s), {} scheduler rule(s)",
                         m_config.engineRules.storageRules.size(), m_config.engineRules.typeSuggestions.size(),

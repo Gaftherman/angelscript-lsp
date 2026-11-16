@@ -104,6 +104,7 @@
   "config.engine.compilerWarnings.enum.0": "Suppress compiler warnings entirely.",
   "config.engine.compilerWarnings.enum.1": "Emit compiler warnings (engine default).",
   "config.engine.compilerWarnings.enum.2": "Treat compiler warnings as compilation errors.",
+  "config.engine.noHandleTypes.description": "Host value type names that do not support object handles (`@`), such as `string` or `datetime`.\n\nMerged (set union) with the top-level `noHandleTypes` array in `angelscript.rules.json`. Declaring a handle to any listed type (e.g. `string@ s;` or `array<string@>`) reports `as-err-handle-on-no-handle-type` (`E261`).",
   "config.format.onSave.description": "Format the whole document when you save it manually.\n\nOff by default: your editor already has `editor.formatOnSave`, and a language server that reformats every save regardless would override that choice silently. Autosave and focus-change saves never format, whatever this is set to - rewriting a file while you are still typing in it is not on offer.",
   "config.format.braceStyle.description": "Where a block's opening brace goes. An initializer list and a lambda body keep their brace on the line under either style.",
   "config.format.braceStyle.enum.0": "The opening brace of a block goes on its own line, aligned with the statement that owns it.",

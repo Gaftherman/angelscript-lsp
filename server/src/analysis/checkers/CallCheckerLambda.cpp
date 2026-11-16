@@ -44,10 +44,26 @@ static LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidat
             return LambdaCandidateStatus::UnresolvableFuncdef;
         }
         const auto& arg = lctx.arguments[position];
-        if (arg.funcdefValue.hasParameterList &&
-            LambdaContradictsFuncdef(arg.funcdefValue.lambdaParameters, funcdef->GetFuncdef(), lctx.table))
+        if (arg.hasLambdaParameterList)
         {
-            return LambdaCandidateStatus::Rejected;
+            const auto rawParams = lctx.facts.LambdaParamsOf(arg);
+            std::vector<LambdaParameter> lambdaParams;
+            lambdaParams.reserve(rawParams.size());
+            for (const auto& rp : rawParams)
+            {
+                LambdaParameter lp;
+                lp.typeName = CleanBaseType(CallSiteFacts::SliceText(lctx.facts.source, rp.typeBytes));
+                lp.modifier = rp.modifier;
+                lp.hasWrittenType = rp.hasWrittenType;
+                lp.isConst = rp.isConst;
+                lp.isHandle = rp.isHandle;
+                lp.isReference = rp.isReference;
+                lambdaParams.push_back(std::move(lp));
+            }
+            if (LambdaContradictsFuncdef(lambdaParams, funcdef->GetFuncdef(), lctx.table))
+            {
+                return LambdaCandidateStatus::Rejected;
+            }
         }
         shape.push_back(funcdef->name);
     }

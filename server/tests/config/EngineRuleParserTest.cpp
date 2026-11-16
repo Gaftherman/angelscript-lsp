@@ -55,4 +55,23 @@ TEST_SUITE("config/EngineRuleParser")
         CHECK(parsed->noHandleTypes.contains("datetime"));
         CHECK(parsed->noHandleTypes.contains("complex"));
     }
+
+    TEST_CASE("EngineRuleParser - Validates scoped names and rejects invalid identifiers in noHandleTypes")
+    {
+        const std::string ns = angel_lsp::test::GenerateRandomSymbolName("Ns");
+        const std::string ty = angel_lsp::test::GenerateRandomSymbolName("Val");
+        const std::string scoped = ns + "::" + ty;
+
+        const auto validScoped =
+            angel_lsp::config::ParseEngineRuleConfigJson(R"({"noHandleTypes": ["::)" + scoped + R"("]})");
+        REQUIRE(validScoped.has_value());
+        CHECK(validScoped->noHandleTypes.contains(scoped));
+
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson(R"({"noHandleTypes": ["123bad"]})").has_value());
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson(R"({"noHandleTypes": ["foo bar"]})").has_value());
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson(R"({"noHandleTypes": ["type@"]})").has_value());
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson(R"({"noHandleTypes": ["Ns::"]})").has_value());
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson(R"({"noHandleTypes": ["Ns::::Type"]})").has_value());
+        CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson(R"({"noHandleTypes": ["::"]})").has_value());
+    }
 }

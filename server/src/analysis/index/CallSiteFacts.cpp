@@ -1,19 +1,17 @@
 #include "analysis/index/CallSiteFacts.h"
 
-#include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ReferenceReceiverIndex.h"
 #include "analysis/index/SpanFactSearch.h"
 #include "analysis/index/SyntaxOperands.h"
-#include "analysis/index/ValueExpressionFacts.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/ScopedNameUtils.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <string_view>
 #include <tree_sitter/api.h>
-#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -54,21 +52,28 @@ static IndexedByteRange BytesOf(TSNode node) noexcept
 }
 
 /**
- * @brief Trims ASCII whitespace from both ends of a view.
- * @param[in] text View to trim.
- * @return Sub-view of text without leading or trailing whitespace.
+ * @brief Computes a node's byte span with leading and trailing ASCII whitespace trimmed.
+ * @param[in] node Syntax node.
+ * @param[in] source Document text backing node bytes.
+ * @return Trimmed byte span, or empty when node is null or whitespace-only.
  */
-static std::string_view Trim(std::string_view text) noexcept
+static IndexedByteRange TrimmedBytesOf(TSNode node, std::string_view source) noexcept
 {
-    while (!text.empty() && isspace(static_cast<unsigned char>(text.front())))
+    if (ts_node_is_null(node))
     {
-        text.remove_prefix(1);
+        return {};
     }
-    while (!text.empty() && isspace(static_cast<unsigned char>(text.back())))
+    uint32_t start = ts_node_start_byte(node);
+    uint32_t end = ts_node_end_byte(node);
+    while (start < end && start < source.size() && std::isspace(static_cast<unsigned char>(source[start])))
     {
-        text.remove_suffix(1);
+        ++start;
     }
-    return text;
+    while (end > start && end <= source.size() && std::isspace(static_cast<unsigned char>(source[end - 1])))
+    {
+        --end;
+    }
+    return {start, end};
 }
 
 static void ReadEnclosingContext(uint32_t startByte, const NodeIndex& index, std::string_view source,
@@ -79,10 +84,8 @@ static void ReadEnclosingContext(uint32_t startByte, const NodeIndex& index, std
     {
         fact.insideClass = true;
         fact.insideMixin = classSpan->isMixin;
-        fact.enclosingClassName =
-            source.substr(classSpan->nameStartByte, classSpan->nameEndByte - classSpan->nameStartByte);
+        fact.enclosingClassNameBytes = {classSpan->nameStartByte, classSpan->nameEndByte};
     }
-    fact.isInsideLambda = index.IsInsideLambdaClosure(startByte);
     const TSNode callable = index.FindEnclosingCallable(startByte);
     const auto& gs = parser::GetGrammarSymbols();
     if (!ts_node_is_null(callable) && ts_node_symbol(callable) == gs.symFuncDeclaration)
@@ -91,7 +94,7 @@ static void ReadEnclosingContext(uint32_t startByte, const NodeIndex& index, std
         const TSNode nameNode = fnSyntax.Field(gs.fieldName);
         if (!ts_node_is_null(nameNode))
         {
-            fact.enclosingFunctionName = parser::NodeText(nameNode, source);
+            fact.enclosingFunctionNameBytes = BytesOf(nameNode);
         }
         const TSNode attr = parser::FindChildWithSymbol(callable, gs.symFuncAttributes);
         fact.isEnclosingMethodConst =
@@ -100,8 +103,7 @@ static void ReadEnclosingContext(uint32_t startByte, const NodeIndex& index, std
     }
 }
 
-static void ReadCallee(TSNode node, TSNode calleeNode, const NodeIndex& index, std::string_view source,
-                       CallSiteFact& fact)
+static void ReadCallee(TSNode calleeNode, std::string_view source, CallSiteFact& fact)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_is_null(calleeNode))
@@ -110,7 +112,7 @@ static void ReadCallee(TSNode node, TSNode calleeNode, const NodeIndex& index, s
     }
     fact.calleeBytes = BytesOf(calleeNode);
     fact.calleeRange = RangeOf(calleeNode);
-    fact.calleeText = parser::NodeText(calleeNode, source);
+    const std::string_view calleeText = parser::NodeText(calleeNode, source);
     const TSSymbol calleeSym = ts_node_symbol(calleeNode);
     if (calleeSym == gs.symMemberExpression)
     {
@@ -120,15 +122,13 @@ static void ReadCallee(TSNode node, TSNode calleeNode, const NodeIndex& index, s
         const TSNode mem = parser::GetChildByField(calleeNode, gs.fieldMember);
         if (!ts_node_is_null(obj))
         {
-            fact.objectOperand = BuildBinaryOperandFact(obj, index, source);
-            fact.objectValue = ReadValueExpression(obj, &index, source);
-            fact.isThisCall = (fact.objectOperand.text == "this");
+            fact.objectBytes = BytesOf(obj);
+            fact.isThisCall = (parser::NodeText(obj, source) == "this");
         }
         if (!ts_node_is_null(mem))
         {
             fact.calleeNameBytes = BytesOf(mem);
             fact.calleeNameRange = RangeOf(mem);
-            fact.calleeName = parser::NodeText(mem, source);
         }
     }
     else if (calleeSym == gs.symScopedIdentifier)
@@ -137,38 +137,17 @@ static void ReadCallee(TSNode node, TSNode calleeNode, const NodeIndex& index, s
         const TSNode target = !ts_node_is_null(tail) ? tail : calleeNode;
         fact.calleeNameBytes = BytesOf(target);
         fact.calleeNameRange = RangeOf(target);
-        fact.calleeName = parser::NodeText(target, source);
-        if (utils::ContainsScopeSeparator(fact.calleeText))
-        {
-            fact.calleeKind = CalleeKind::Scoped;
-            fact.scopeQualifier = utils::ParentScopeView(fact.calleeText);
-        }
-        else
-        {
-            fact.calleeKind = CalleeKind::Identifier;
-        }
+        fact.calleeKind = utils::ContainsScopeSeparator(calleeText) ? CalleeKind::Scoped : CalleeKind::Identifier;
     }
     else
     {
         fact.calleeKind = CalleeKind::Identifier;
         fact.calleeNameBytes = fact.calleeBytes;
         fact.calleeNameRange = fact.calleeRange;
-        fact.calleeName = fact.calleeText;
-    }
-
-    const SyntaxOperands callSyntax(node, &index);
-    TSNode tmplNode = callSyntax.FirstNamed(gs.symTemplateTypeList);
-    if (ts_node_is_null(tmplNode))
-        tmplNode = SyntaxOperands(calleeNode, &index).FirstNamed(gs.symTemplateTypeList);
-    if (!ts_node_is_null(tmplNode))
-    {
-        fact.hasTemplateArguments = true;
-        fact.templateArgsBytes = BytesOf(tmplNode);
-        fact.templateArgsText = parser::NodeText(tmplNode, source);
     }
 }
 
-static CallSiteFact ReadCallSite(TSNode node, const NodeIndex& index, std::string_view source, CallSiteFacts& facts)
+static CallSiteFact ReadCallSite(TSNode node, const NodeIndex& index, CallSiteFacts& facts)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const SyntaxOperands syntax(node, &index);
@@ -180,8 +159,8 @@ static CallSiteFact ReadCallSite(TSNode node, const NodeIndex& index, std::strin
     TSNode calleeNode = fact.isConstructCall ? syntax.Field(gs.fieldType) : syntax.Callee();
     if (ts_node_is_null(calleeNode) && ts_node_named_child_count(node) > 0)
         calleeNode = ts_node_named_child(node, 0);
-    ReadCallee(node, calleeNode, index, source, fact);
-    ReadEnclosingContext(fact.bytes.startByte, index, source, fact);
+    ReadCallee(calleeNode, facts.source, fact);
+    ReadEnclosingContext(fact.bytes.startByte, index, facts.source, fact);
 
     TSNode argsNode = syntax.Field(gs.fieldArguments);
     if (ts_node_is_null(argsNode))
@@ -189,10 +168,8 @@ static CallSiteFact ReadCallSite(TSNode node, const NodeIndex& index, std::strin
     if (!ts_node_is_null(argsNode))
     {
         fact.hasArgumentList = true;
-        fact.argumentListBytes = BytesOf(argsNode);
-        fact.argumentListRange = RangeOf(argsNode);
         fact.argumentBegin = static_cast<uint32_t>(facts.arguments.size());
-        ExtractCallArguments(argsNode, index, source, facts);
+        ExtractCallArguments(argsNode, index, facts);
         fact.argumentCount = static_cast<uint32_t>(facts.arguments.size()) - fact.argumentBegin;
 
         bool sawNamed = false;
@@ -213,26 +190,27 @@ static CallSiteFact ReadCallSite(TSNode node, const NodeIndex& index, std::strin
         if (fact.argumentCount == 1)
         {
             const auto& soleArg = facts.arguments[fact.argumentBegin];
-            fact.isDelegateConstruction = (soleArg.isThisMemberAccess && soleArg.thisMemberName == fact.calleeName);
+            fact.isDelegateConstruction =
+                (soleArg.isThisMemberAccess && facts.ThisMemberName(soleArg) == facts.TextOf(fact.calleeNameBytes));
         }
     }
     return fact;
 }
 
-static void CollectCallSites(const NodeIndex& index, std::string_view source, CallSiteFacts& facts)
+static void CollectCallSites(const NodeIndex& index, CallSiteFacts& facts)
 {
     const auto& gs = parser::GetGrammarSymbols();
     for (const TSNode node : index.Nodes(gs.symCallExpression))
     {
-        facts.callSites.push_back(ReadCallSite(node, index, source, facts));
+        facts.callSites.push_back(ReadCallSite(node, index, facts));
     }
     for (const TSNode node : index.Nodes(gs.symConstructCallExpression))
     {
-        facts.callSites.push_back(ReadCallSite(node, index, source, facts));
+        facts.callSites.push_back(ReadCallSite(node, index, facts));
     }
 }
 
-static void CollectDirectInits(const NodeIndex& index, std::string_view source, CallSiteFacts& facts)
+static void CollectDirectInits(const NodeIndex& index, CallSiteFacts& facts)
 {
     const auto& gs = parser::GetGrammarSymbols();
     for (const TSNode varDecl : index.Nodes(gs.symVariableDeclaration))
@@ -247,7 +225,7 @@ static void CollectDirectInits(const NodeIndex& index, std::string_view source, 
         {
             continue;
         }
-        const std::string_view rawType = Trim(parser::NodeText(varTypeNode, source));
+        const IndexedByteRange rawTypeBytes = TrimmedBytesOf(varTypeNode, facts.source);
         varSyntax.ForEachNamed(
             [&](TSNode declarator)
             {
@@ -264,28 +242,10 @@ static void CollectDirectInits(const NodeIndex& index, std::string_view source, 
                 DirectInitSiteFact initFact;
                 initFact.bytes = BytesOf(declarator);
                 initFact.range = RangeOf(declarator);
-                initFact.declaredType = rawType;
-                const size_t openBracket = rawType.find('<');
-                if (openBracket != std::string_view::npos && rawType.ends_with('>'))
-                {
-                    initFact.baseTypeName = Trim(rawType.substr(0, openBracket));
-                    initFact.templateArgsText = rawType.substr(openBracket);
-                }
-                else
-                {
-                    initFact.baseTypeName = rawType;
-                }
-                const TSNode nameNode = declSyntax.Field(gs.fieldName);
-                if (!ts_node_is_null(nameNode))
-                {
-                    initFact.declaratorNameBytes = BytesOf(nameNode);
-                    initFact.declaratorNameRange = RangeOf(nameNode);
-                    initFact.declaratorName = parser::NodeText(nameNode, source);
-                }
-                initFact.argumentListBytes = BytesOf(argsNode);
+                initFact.declaredTypeBytes = rawTypeBytes;
                 initFact.argumentListRange = RangeOf(argsNode);
                 initFact.argumentBegin = static_cast<uint32_t>(facts.arguments.size());
-                ExtractCallArguments(argsNode, index, source, facts);
+                ExtractCallArguments(argsNode, index, facts);
                 initFact.argumentCount = static_cast<uint32_t>(facts.arguments.size()) - initFact.argumentBegin;
                 facts.directInits.push_back(initFact);
                 return true;
@@ -295,9 +255,18 @@ static void CollectDirectInits(const NodeIndex& index, std::string_view source, 
 
 CallSiteFacts BuildCallSiteFacts(const NodeIndex& index, std::string_view source)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     CallSiteFacts facts;
-    CollectCallSites(index, source, facts);
-    CollectDirectInits(index, source, facts);
+    facts.source = source;
+    const auto callNodes = index.Nodes(gs.symCallExpression);
+    const auto constructNodes = index.Nodes(gs.symConstructCallExpression);
+    const auto varDeclNodes = index.Nodes(gs.symVariableDeclaration);
+    const auto argListNodes = index.Nodes(gs.symArgumentList);
+    facts.callSites.reserve(callNodes.size() + constructNodes.size());
+    facts.directInits.reserve(std::min(varDeclNodes.size(), argListNodes.size()));
+    facts.arguments.reserve(argListNodes.size());
+    CollectCallSites(index, facts);
+    CollectDirectInits(index, facts);
     SortBySpan(facts.callSites);
     SortBySpan(facts.directInits);
     return facts;

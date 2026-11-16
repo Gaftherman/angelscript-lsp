@@ -70,6 +70,7 @@ class LocalScopeCollector
         bool hasMetadata = false;
         std::vector<ByteSpan> metadataOrErrorSpans;
         std::shared_ptr<IndexedReferenceReceivers> receivers = std::make_shared<IndexedReferenceReceivers>();
+        std::shared_ptr<const IndexedOperatorSites> operatorSites;
         ankerl::unordered_dense::map<uint64_t, uint32_t> receiverIds;
 
         [[nodiscard]] bool Contains(uint32_t start, uint32_t end) const noexcept

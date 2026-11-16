@@ -204,28 +204,46 @@ bool IsValidAccess(std::string_view fileUri, const LocalReference& ref, const Sc
     {
         return IsValidConstructorAccess(fileUri, ref, scope, criteria);
     }
+    const std::string_view qualifier = scope ? GetIndexedReferenceQualifier(ref, *scope) : std::string_view{};
     if (!criteria.compatibleClasses.empty())
     {
         if (IsEnclosingClassIncompatible(fileUri, ref.startLine, criteria))
         {
             return false;
         }
+        if (criteria.isTypeTarget)
+        {
+            if (!qualifier.empty())
+            {
+                return MatchesClassTypeQualifier(qualifier, scope, ref.startByte, criteria);
+            }
+            return IsCompatibleNonMemberAccess(fileUri, ref, scope, criteria);
+        }
         return ref.isMemberAccess ? IsCompatibleMemberAccess(fileUri, ref, scope, criteria)
                                   : IsCompatibleNonMemberAccess(fileUri, ref, scope, criteria);
     }
 
-    if (ref.isMemberAccess)
+    if (ref.isMemberAccess || !qualifier.empty())
     {
-        return MatchesTargetNamespaceQualifier(ref, scope, criteria);
+        if (criteria.targetNamespace.empty())
+        {
+            return !ref.isMemberAccess && qualifier == utils::k_scopeSeparator;
+        }
+        return scope && MatchesReferenceQualifier(qualifier, criteria.targetNamespace, *scope);
     }
 
     if (!criteria.targetNamespace.empty())
     {
         if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable,
-                               criteria.classCache))
+                               criteria.classCache) &&
+            !IsUsingNamespaceActive(scope, ref.startByte, criteria.targetNamespace))
         {
             return false;
         }
+    }
+    else if (IsGlobalTypeShadowed(scope, criteria))
+    {
+        return false;
     }
 
     return !IsLocalShadowingTarget(scope, ref.name, fileUri, criteria);

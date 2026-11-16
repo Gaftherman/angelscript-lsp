@@ -1,5 +1,6 @@
 #include "config/ServerConfig.h"
 
+#include "config/EngineRuleParser.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -334,6 +335,8 @@ void PrintOptionsHelp()
         << "                                          (repeatable). A list factory is registered in C++\n"
         << "                                          and no predefined stub can express it, so a host\n"
         << "                                          that registers its own has to say so here.\n"
+        << "  --no-handle-type=<name>                 Disallow object handles '@' on <name> (repeatable;\n"
+        << "                                          merged with noHandleTypes in angelscript.rules.json)\n"
         << "  --preprocessor-feature=<name>=<value>   Preprocessor extensions the host added to its own copy\n"
         << "                                          of CScriptBuilder. None exist in the stock add-on, so\n"
         << "                                          all default off and the defaults match it exactly:\n"
@@ -1059,6 +1062,18 @@ static bool TryParseEngineFlags(ServerConfig& config, ArgParseContext& ctx)
         }
         return true;
     }
+    if (ctx.key == "--no-handle-type" || ctx.key == "--engine-no-handle-type")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val))
+        {
+            if (!AppendValidatedNoHandleType(val, config.engine.noHandleTypes))
+            {
+                config.engine.invalidNoHandleTypes.emplace_back(val);
+            }
+        }
+        return true;
+    }
     return false;
 }
 
@@ -1153,6 +1168,20 @@ ServerConfig FromArgs(int argc, char** argv)
     }
 
     return config;
+}
+
+bool AppendValidatedNoHandleType(std::string_view rawTypeName, std::vector<std::string>& target)
+{
+    const auto normalized = ValidateNoHandleTypeName(rawTypeName);
+    if (!normalized)
+    {
+        return false;
+    }
+    if (std::find(target.begin(), target.end(), *normalized) == target.end())
+    {
+        target.emplace_back(*normalized);
+    }
+    return true;
 }
 
 template <typename T> static void AssignIfPresent(const std::optional<T>& opt, T& target)

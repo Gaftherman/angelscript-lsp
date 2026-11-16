@@ -250,8 +250,10 @@ PropertyAccessInfo InspectPropertyAccess(const PropertyAccessFact& access, const
  * @param[in] site Indexed assignment with its left property access.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic context.
+ * @return Inspected property access metadata for the assignment target.
  */
-void CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* scope, DiagnosticContext& ctx);
+PropertyAccessInfo CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* scope,
+                                                 DiagnosticContext& ctx);
 
 /**
  * @brief Emits an ExpressionIsDataType diagnostic for an indexed expression unless suppressed due to syntax errors.
@@ -324,6 +326,15 @@ void CheckDefaultConstructor(const SourceRange& target, std::string_view typeNam
  */
 void CheckConstructorDelegation(const ConstructorDelegationSiteFact& site, const DeclarationSiteFacts& facts,
                                 DiagnosticContext& ctx);
+
+/**
+ * @brief Checks whether two funcdef signatures have matching return and parameter shapes.
+ * @param[in] a First funcdef signature.
+ * @param[in] b Second funcdef signature.
+ * @param[in] table Symbol table for typedef and array normalization.
+ * @return True when both funcdefs describe compatible signatures.
+ */
+bool AreFuncdefSignaturesCompatible(const FuncdefSignature& a, const FuncdefSignature& b, const SymbolTable& table);
 
 /**
  * @brief Validates an indexed funcdef value against a target funcdef signature.
@@ -412,6 +423,67 @@ void ProcessVariableDeclarationSite(const VariableDeclarationSiteFact& site, con
  */
 void ProcessAutoDeclarationSite(const AutoDeclarationSiteFact& site, const TypeConversionCheckRequest& request,
                                 DiagnosticContext& ctx);
+
+/**
+ * @brief Resolved operands and property context for validating an assignment expression.
+ */
+struct AssignmentConversionInput
+{
+    const AssignmentSiteFact& site;
+    const PropertyAccessInfo& propertyInfo;
+    const Scope* scope = nullptr;
+    std::string_view leftType;
+    std::string_view rightType;
+};
+
+/**
+ * @brief Reports whether an assignment's right-hand side is a bare or `@`-prefixed function reference.
+ * @param[in] site Indexed assignment site.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] ctx Diagnostic context.
+ * @return True when the right-hand side names a function rather than a value.
+ */
+bool IsAssignmentRhsFunctionReference(const AssignmentSiteFact& site, const Scope* scope, const DiagnosticContext& ctx);
+
+/**
+ * @brief Checks whether a resolved RHS type is compatible with a target parameter (setter or operator overload).
+ * @param[in] rawArgType Resolved RHS expression type spelling.
+ * @param[in] param Target parameter signature.
+ * @param[in] ctx Diagnostic context.
+ * @return True when the RHS type can bind or convert to the parameter.
+ */
+bool IsAssignmentValueCompatibleWithParam(std::string_view rawArgType, const ParameterInformation& param,
+                                          const DiagnosticContext& ctx);
+
+/**
+ * @brief Maps a compound assignment operator spelling to the underlying binary operator method name.
+ * @param[in] op Compound assignment operator spelling such as `+=`.
+ * @return Binary operator method name such as `opAdd`, or empty view if unmapped.
+ */
+std::string_view CompoundAssignmentBinaryOpName(std::string_view op) noexcept;
+
+/**
+ * @brief Reports whether a compound assignment operator is a bitwise or shift operation requiring integer operands.
+ * @param[in] op Compound assignment operator spelling such as `&=`.
+ * @return True for bitwise/shift compound operators.
+ */
+bool IsBitwiseCompoundOp(std::string_view op) noexcept;
+
+/**
+ * @brief Validates assigning to a property setter (direct or indexed) against its `set_` overloads or getter type.
+ * @param[in] input Assignment site, resolved types, scope, and property metadata.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckPropertySetterAssignment(const AssignmentConversionInput& input, DiagnosticContext& ctx);
+
+/**
+ * @brief Validates assigning or compound-assigning to a non-property target against operator overloads and conversions.
+ * @param[in] input Assignment site, resolved types, scope, and property metadata.
+ * @param[in] types Normalized source and target types.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckAssignmentOperatorConversion(const AssignmentConversionInput& input, const ConversionTypePair& types,
+                                       DiagnosticContext& ctx);
 
 /**
  * @brief Validates assignment expression semantics and type compatibility.

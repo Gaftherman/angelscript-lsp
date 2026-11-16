@@ -245,6 +245,19 @@ struct EngineProperties
      */
     int heredocTrimMode = 1;
 
+    /**
+     * @brief Host value type names that do not support object handles ('@').
+     *        Merged (set union) with `noHandleTypes` from `angelscript.rules.json` when building
+     *        the effective engine rules for analysis.
+     */
+    std::vector<std::string> noHandleTypes;
+
+    /**
+     * @brief Invalid `noHandleTypes` entries rejected during startup parsing, deferred until the
+     *        server's i18n bundle and LSP logger are ready.
+     */
+    std::vector<std::string> invalidNoHandleTypes;
+
     bool RequiresEnumScope() const
     {
         return requireEnumScope;
@@ -582,6 +595,14 @@ struct ServerConfig
      */
     std::unordered_map<std::string, std::string, TransparentStringHash, std::equal_to<>> diagnosticSeverities;
 };
+
+/**
+ * @brief Validates a `noHandleTypes` type name and appends it to `target` if not already present.
+ * @param[in] rawTypeName Candidate type name (unqualified identifier or `::`-scoped name).
+ * @param[in,out] target Destination list preserving insertion order without duplicates.
+ * @return True if `rawTypeName` is valid (inserted or already present); false if invalid.
+ */
+bool AppendValidatedNoHandleType(std::string_view rawTypeName, std::vector<std::string>& target);
 
 /**
  * @brief Applies populated native engine properties from engine rules config to Server EngineProperties.

@@ -81,7 +81,7 @@ static std::optional<LambdaTargetFact> FindLambdaTargetFact(IndexedByteRange lam
                 {
                     bestSpanSize = span;
                     bestTarget = LambdaTargetFact{.kind = LambdaTargetKind::CallArgument,
-                                                  .text = call.calleeText,
+                                                  .text = callFacts.TextOf(call.calleeBytes),
                                                   .position = i,
                                                   .soleArgument = (call.argumentCount == 1)};
                 }

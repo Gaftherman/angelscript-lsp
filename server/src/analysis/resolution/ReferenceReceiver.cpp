@@ -143,7 +143,8 @@ std::string ResolveIndexedReferenceReceiver(const LocalReference& reference, con
 
 std::string_view GetIndexedReferenceQualifier(const LocalReference& reference, const Scope& scope) noexcept
 {
-    if (!reference.isScopedIdentifier || !scope.enclosingContext || !scope.enclosingContext->receivers)
+    if ((!reference.isScopedIdentifier && !reference.isTypeSpecifier) || !scope.enclosingContext ||
+        !scope.enclosingContext->receivers)
     {
         return {};
     }

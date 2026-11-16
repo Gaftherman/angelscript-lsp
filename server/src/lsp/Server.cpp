@@ -65,8 +65,10 @@ analysis::formatting::PointerAlignment Server::CurrentPointerAlignment() const n
     return m_sessionCoordinator->GetFormatPointerAlignment();
 }
 
-void Server::BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
-                                     const std::function<void(std::string_view, int&)>& applyInt)
+void Server::BindEngineConfiguration(
+    const std::function<void(std::string_view, bool&)>& applyBool,
+    const std::function<void(std::string_view, int&)>& applyInt,
+    const std::function<void(std::string_view, std::vector<std::string>&)>& applyStringList)
 {
     applyBool("allowUnsafeReferences", m_config.engine.allowUnsafeReferences);
     applyBool("privatePropAsProtected", m_config.engine.privatePropAsProtected);
@@ -86,6 +88,11 @@ void Server::BindEngineConfiguration(const std::function<void(std::string_view, 
     applyInt("useCharacterLiterals", m_config.engine.useCharacterLiterals);
     applyInt("alterSyntaxNamedArgs", m_config.engine.alterSyntaxNamedArgs);
     applyInt("compilerWarnings", m_config.engine.compilerWarnings);
+
+    if (applyStringList)
+    {
+        applyStringList("noHandleTypes", m_config.engine.noHandleTypes);
+    }
 }
 
 } // namespace angel_lsp

@@ -1,8 +1,10 @@
 #include "analysis/resolution/ReferenceCounting.h"
 
 #include "analysis/resolution/ReferenceCountingAccess.h"
+#include "analysis/resolution/ReferenceCountingOperators.h"
 #include "analysis/resolution/ReferenceCountingScope.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/rules/OperatorRules.h"
 #include "i18n/i18n.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -25,7 +27,10 @@ static void CountStringLiteralReferences(std::string_view fileUri, const Scope& 
                 const uint64_t pos = (static_cast<uint64_t>(strRef.line) << 32) | strRef.column;
                 for (size_t targetIdx : it->second)
                 {
-                    ctx.targets[targetIdx].seenRefs.insert({std::string(fileUri), pos});
+                    if (!ctx.targets[targetIdx].isTypeTarget)
+                    {
+                        ctx.targets[targetIdx].seenRefs.insert({std::string(fileUri), pos});
+                    }
                 }
             }
         }
@@ -52,6 +57,14 @@ static void ProcessScopeReferencesBatch(std::string_view fileUri, const Scope* s
             {
                 continue;
             }
+            if (target.isTypeTarget && !ref.isTypeSpecifier)
+            {
+                continue;
+            }
+            if (target.isFunction && !bound && ref.isCall && rules::IsOperatorName(target.targetName))
+            {
+                continue;
+            }
             if (bound && target.isFunction &&
                 (target.compatibleClasses.empty() || target.group.front().qualifiedName == bound->qualifiedName))
             {
@@ -67,6 +80,7 @@ static void ProcessScopeReferencesBatch(std::string_view fileUri, const Scope* s
                 .isEnumConstant = target.isEnumConstant,
                 .targetAccess = target.targetAccess,
                 .isFunction = target.isFunction,
+                .isTypeTarget = target.isTypeTarget,
                 .minArgs = target.minArgs,
                 .maxArgs = target.maxArgs,
                 .symbolTable = ctx.request.symbolTable,
@@ -150,6 +164,7 @@ void CountReferences(std::span<ReferenceCountTarget> targets, const TargetIndexM
             if (root && !angel_lsp::utils::IsPredefinedFile(fileUri, request.predefinedExtension))
             {
                 CollectReferencesInScopeTreeBatch(fileUri, root.get(), ctx);
+                CountOperatorSiteReferences(fileUri, root.get(), ctx);
             }
         });
 }

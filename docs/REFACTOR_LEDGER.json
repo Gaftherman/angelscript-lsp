@@ -3653,6 +3653,23 @@
       "verifiedByTests": [
         "NoHandleTypes - Flags direct handles in local, global, member, param, return, and funcdef"
       ]
+    },
+    {
+      "id": "REF-P15-CALLSITEFACTS",
+      "phase": "M31",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/index/CallSiteFactsArguments.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "CallArgumentFact, CallSiteFact, DirectInitSiteFact (inline BinaryOperandFact, ValueExpressionFact, FuncdefValueFact, and duplicated string_view/SourceRange fields)",
+      "whatItDidAndWhyInThatFile": "Embedded full BinaryOperandFact, ValueExpressionFact, and FuncdefValueFact structs plus duplicated SourceRange and string_view copies in every CallArgumentFact, CallSiteFact, and DirectInitSiteFact without reserving vectors.",
+      "whyChangedOrDeleted": "Checkers and hover resolution only read spans, flags, and occasional ternary/lambda/this-member details. Facts now store IndexedByteRange spans, bit-fields, and shared pools on CallSiteFacts with index-based reserve.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CallSiteFacts.h",
+      "replacedByCanonicalSymbol": "CallSiteFacts",
+      "ramOrCpuImpact": "CallArgumentFact 424 B -> 48 B, CallSiteFact 368 B -> 108 B, DirectInitSiteFact 160 B -> 56 B; zero per-argument vector/string heap allocations.",
+      "verifiedByTests": [
+        "CallSiteFacts tests in server/tests/analysis/index/CallSiteFactsTest.cpp",
+        "CallChecker, ControlFlowChecker, and NamespaceChecker suites"
+      ]
     }
   ]
 }

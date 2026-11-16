@@ -5,7 +5,6 @@
 #include "analysis/resolution/MixinInclusion.h"
 #include "analysis/resolution/ReferenceCounting.h"
 #include "analysis/rules/EngineRuleChecker.h"
-#include "analysis/rules/OperatorRules.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "features/code_lens/CodeLensHandlerInternal.h"
 #include "utils/AccessorNames.h"
@@ -34,10 +33,6 @@ static void AppendReferenceLens(const analysis::SourceRange& key, const analysis
         refCount += 1;
     }
     if (refCount == 0 && ctx.request.config && !ctx.request.config->features.codeLensShowZeroReferences)
-    {
-        return;
-    }
-    if (refCount == 0 && sym.type == analysis::SymbolType::Function && analysis::rules::IsOperatorName(sym.name))
     {
         return;
     }
@@ -88,7 +83,8 @@ static void AppendLensesForGroup(const analysis::SourceRange& key, const std::ve
         size_t implCount = analysis::CountInterfaceImplementations(sym, ctx.request.symbolTable);
         lenses.push_back(MakeCommandLens(key, analysis::FormatImplementationCount(implCount, ctx.request.i18n)));
     }
-    else if (sym.type == analysis::SymbolType::Class)
+    else if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Funcdef ||
+             sym.type == analysis::SymbolType::Typedef)
     {
         AppendReferenceLens(key, sym, ctx, lenses);
     }

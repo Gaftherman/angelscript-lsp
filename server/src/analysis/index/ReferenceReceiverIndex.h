@@ -27,4 +27,14 @@ TSNode ScopedIdentifierTail(TSNode scoped) noexcept;
  * @param[in,out] context Scope extraction state for this document.
  */
 void IndexCallArguments(TSNode callNode, LocalScopeCollector::DocumentContext& context);
+
+/**
+ * @brief Captures scope or nested-type qualifiers for a type-specifier identifier.
+ * @param[in] parent Parent AST node (`datatype` or `nested_type_name`).
+ * @param[in] source Parsed document text.
+ * @param[in] reference Occurrence with startByte populated.
+ * @param[in,out] receivers Receiver table storing extracted qualifiers.
+ */
+void IndexTypeQualifier(TSNode parent, std::string_view source, const LocalReference& reference,
+                        IndexedReferenceReceivers& receivers);
 } // namespace angel_lsp::analysis

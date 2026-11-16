@@ -428,6 +428,23 @@ suite('debug settings in buildServerArgs', () => {
     });
 });
 
+suite('engine.noHandleTypes in buildServerArgs', () => {
+    test('forwards non-empty trimmed type names as repeated --no-handle-type flags', async () => {
+        const args = await withSetting('engine.noHandleTypes', ['string', ' Ns::ValType '], buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--no-handle-type='), ['string', 'Ns::ValType']);
+    });
+
+    test('empty array emits no --no-handle-type flag', async () => {
+        const args = await withSetting('engine.noHandleTypes', [], buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--no-handle-type='), []);
+    });
+
+    test('blank entries are dropped', async () => {
+        const args = await withSetting('engine.noHandleTypes', ['   ', 'datetime'], buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--no-handle-type='), ['datetime']);
+    });
+});
+
 suite('portableStubPath', () => {
     test('a stub inside a workspace folder is stored as ${workspaceFolder}/...', () => {
         // The picker used to write the absolute path it had in hand, which pins the setting to one

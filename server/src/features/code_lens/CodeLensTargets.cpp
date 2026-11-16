@@ -4,6 +4,7 @@
 #include "analysis/resolution/ReferenceCounting.h"
 #include "analysis/resolution/ReferenceCountingScope.h"
 #include "features/code_lens/CodeLensHandlerInternal.h"
+#include "utils/TransparentHash.h"
 
 #include <algorithm>
 #include <vector>
@@ -21,7 +22,7 @@ static bool IsSymbolTypeEnabledForCodeLens(const analysis::Symbol& sym, const co
         return config->features.codeLensShowOnFunctions;
     }
     if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface ||
-        sym.type == analysis::SymbolType::Funcdef)
+        sym.type == analysis::SymbolType::Funcdef || sym.type == analysis::SymbolType::Typedef)
     {
         return config->features.codeLensShowOnClassesAndInterfaces;
     }
@@ -166,24 +167,35 @@ static analysis::ReferenceCountTarget CreateFunctionOrVariableTarget(const analy
     return target;
 }
 
-static analysis::ReferenceCountTarget CreateClassTarget(const analysis::SourceRange& key, const analysis::Symbol& sym,
-                                                        const std::vector<analysis::Symbol>& symGroup,
-                                                        const analysis::SymbolTable& symbolTable)
+static analysis::ReferenceCountTarget CreateTypeTarget(const analysis::SourceRange& key, const analysis::Symbol& sym,
+                                                       const std::vector<analysis::Symbol>& symGroup,
+                                                       const analysis::MixinClassContext& ctx)
 {
+    const bool isAliasType = (sym.type == analysis::SymbolType::Funcdef || sym.type == analysis::SymbolType::Typedef);
+    TransparentStringSet compatibleClasses;
     analysis::DeclRangeSet allDeclRanges;
-    analysis::AddSymbolDeclRanges(symGroup, allDeclRanges);
+    if (sym.type == analysis::SymbolType::Funcdef && analysis::IsSymbolInClassContainer(sym, ctx.symbolTable))
+    {
+        compatibleClasses = analysis::CollectCompatibleClasses(symGroup, sym, analysis::AccessModifier::Public, ctx);
+        allDeclRanges = analysis::CollectAllDeclRanges(sym.name, symGroup, compatibleClasses, ctx.symbolTable);
+    }
+    else
+    {
+        analysis::AddSymbolDeclRanges(symGroup, allDeclRanges);
+    }
 
     analysis::ReferenceCountTarget target{
         .key = key,
         .targetName = sym.name,
         .group = symGroup,
-        .compatibleClasses = {},
+        .compatibleClasses = std::move(compatibleClasses),
         .allDeclRanges = std::move(allDeclRanges),
-        .targetNamespace = analysis::ComputeTargetNamespace(false, {}, sym, symbolTable),
+        .targetNamespace = analysis::ComputeTargetNamespace(false, {}, sym, ctx.symbolTable),
         .targetEnumContainer = {},
         .isEnumConstant = false,
         .targetAccess = analysis::AccessModifier::Public,
         .isFunction = false,
+        .isTypeTarget = isAliasType,
         .minArgs = 0,
         .maxArgs = 0,
         .seenRefs = {},
@@ -219,10 +231,11 @@ void CollectReferenceTargets(const SymbolGroups& symGroups, const TargetCollecti
             ctx.keyToTarget[key] = targets.size();
             targets.push_back(CreateFunctionOrVariableTarget(key, sym, symGroup, ctx.mixinCtx));
         }
-        else if (sym.type == analysis::SymbolType::Class)
+        else if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Funcdef ||
+                 sym.type == analysis::SymbolType::Typedef)
         {
             ctx.keyToTarget[key] = targets.size();
-            targets.push_back(CreateClassTarget(key, sym, symGroup, ctx.mixinCtx.symbolTable));
+            targets.push_back(CreateTypeTarget(key, sym, symGroup, ctx.mixinCtx));
         }
     }
 }

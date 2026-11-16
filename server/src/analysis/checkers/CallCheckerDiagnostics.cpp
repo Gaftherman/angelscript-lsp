@@ -55,7 +55,7 @@ void CheckMalformedTernaryArgs(const MalformedTernaryCheckRequest& req, Diagnost
     for (size_t i = 0; i < limit; ++i)
     {
         const auto& arg = req.arguments[i];
-        if (!arg.isTernary || !req.argTypes[i].empty())
+        if (arg.kind != CallArgumentKind::Ternary || !req.argTypes[i].empty())
         {
             continue;
         }
@@ -65,8 +65,9 @@ void CheckMalformedTernaryArgs(const MalformedTernaryCheckRequest& req, Diagnost
         }
 
         const std::string_view expected = fn.parameters[i].typeName;
-        std::string t1 = ResolveExpressionType(arg.ternaryConsequence.bytes, ExpressionTypeContext(req.scope, ctx));
-        std::string t2 = ResolveExpressionType(arg.ternaryAlternative.bytes, ExpressionTypeContext(req.scope, ctx));
+        const auto ternary = req.facts.TernaryOf(arg);
+        std::string t1 = ResolveExpressionType(ternary.consequenceBytes, ExpressionTypeContext(req.scope, ctx));
+        std::string t2 = ResolveExpressionType(ternary.alternativeBytes, ExpressionTypeContext(req.scope, ctx));
 
         if (IsTernaryBranchCompatible(t1, expected) && IsTernaryBranchCompatible(t2, expected))
         {
@@ -142,6 +143,7 @@ static std::string FormatCallDescriptionWithNull(std::string_view calleeName, st
 
 void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, DiagnosticContext& ctx)
 {
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, req.site.calleeNameBytes);
     const auto blamedArg = FindAgreedBlamedArgument(req.candidates, req.args.argTypes, ctx.request.symbolTable);
     if (blamedArg && *blamedArg < req.arguments.size())
     {
@@ -150,7 +152,7 @@ void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, Di
             const SourceRange emitRange =
                 req.site.calleeNameRange != SourceRange{} ? req.site.calleeNameRange : req.site.calleeRange;
             ctx.EmitAtRange(emitRange, "as-err-call-no-matching-signature",
-                            FormatCallDescriptionWithNull(req.site.calleeName, req.args.argTypes));
+                            FormatCallDescriptionWithNull(calleeName, req.args.argTypes));
             return;
         }
 
@@ -170,8 +172,7 @@ void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, Di
         const SourceRange emitRange =
             req.site.calleeNameRange != SourceRange{} ? req.site.calleeNameRange : req.site.calleeRange;
         ctx.EmitAtRange(emitRange, "as-err-call-no-matching-signature",
-                        hasNull ? FormatCallDescriptionWithNull(req.site.calleeName, req.args.argTypes)
-                                : req.site.calleeName);
+                        hasNull ? FormatCallDescriptionWithNull(calleeName, req.args.argTypes) : calleeName);
     }
 }
 

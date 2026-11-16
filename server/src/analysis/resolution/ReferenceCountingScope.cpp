@@ -1,5 +1,6 @@
 #include "analysis/resolution/ReferenceCountingScope.h"
 
+#include "analysis/resolution/ReferenceReceiver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "utils/ScopedNameUtils.h"
 
@@ -115,5 +116,106 @@ bool IsInsideNamespace(std::string_view fileUri, uint32_t line, std::string_view
         }
     }
     return false;
+}
+
+bool IsUsingNamespaceActive(const Scope* scope, uint32_t refByte, std::string_view targetNs) noexcept
+{
+    if (!scope || targetNs.empty())
+    {
+        return false;
+    }
+    const IndexedOperatorSites* sites = scope->GetOperatorSites();
+    if (!sites || sites->usings.empty())
+    {
+        return false;
+    }
+    for (const auto& u : sites->usings)
+    {
+        if (u.startByte <= refByte && refByte <= u.scopeEndByte && u.namespaceName == targetNs)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool MatchesClassTypeQualifier(std::string_view qualifier, const Scope* scope, uint32_t refByte,
+                               const ReferenceCollectionCriteria& criteria)
+{
+    if (qualifier.empty() || !scope)
+    {
+        return false;
+    }
+    for (const auto& cls : criteria.compatibleClasses)
+    {
+        if (MatchesReferenceQualifier(qualifier, cls, *scope))
+        {
+            return true;
+        }
+    }
+    const IndexedOperatorSites* sites = scope->GetOperatorSites();
+    if (sites)
+    {
+        for (const auto& u : sites->usings)
+        {
+            if (u.startByte <= refByte && refByte <= u.scopeEndByte)
+            {
+                for (const auto& cls : criteria.compatibleClasses)
+                {
+                    if (MatchesScopedPair(cls, u.namespaceName, qualifier))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+static bool ContainsTypeSymbol(const SymbolTable& table, std::string_view container, std::string_view name)
+{
+    if (container.empty())
+    {
+        return false;
+    }
+    const auto found = table.FindMemberSymbolPtr(container, name);
+    if (!found)
+    {
+        return false;
+    }
+    for (const auto& s : *found)
+    {
+        if (s.type == SymbolType::Funcdef || s.type == SymbolType::Typedef || s.type == SymbolType::Class ||
+            s.type == SymbolType::Interface || s.type == SymbolType::Enum)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsGlobalTypeShadowed(const Scope* scope, const ReferenceCollectionCriteria& criteria)
+{
+    if (!criteria.isTypeTarget || !scope)
+    {
+        return false;
+    }
+    if (ContainsTypeSymbol(criteria.symbolTable, scope->GetEnclosingClass(), criteria.targetName))
+    {
+        return true;
+    }
+    bool shadowed = false;
+    utils::ForEachEnclosingScope(scope->GetEnclosingNamespace(),
+                                 [&](std::string_view ns) -> bool
+                                 {
+                                     if (ContainsTypeSymbol(criteria.symbolTable, ns, criteria.targetName))
+                                     {
+                                         shadowed = true;
+                                         return true;
+                                     }
+                                     return false;
+                                 });
+    return shadowed;
 }
 } // namespace angel_lsp::analysis

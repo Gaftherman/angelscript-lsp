@@ -35,8 +35,27 @@ bool UpdateEngineConfiguration(Server& server, const lsp::LSPObject& section)
             engineChanged = true;
         }
     };
+    auto applyStringList = [&](std::string_view name, std::vector<std::string>& target)
+    {
+        const auto* arrayVal =
+            FindSectionValue(section, engineObj, name, "engine", [](const auto& v) { return v.isArray(); });
+        if (!arrayVal)
+        {
+            return;
+        }
+        auto next = server.ParseNoHandleTypesArray(arrayVal->array(), false);
+        if (next != target)
+        {
+            target = std::move(next);
+            engineChanged = true;
+        }
+    };
 
-    server.BindEngineConfiguration(applyBool, applyInt);
+    server.BindEngineConfiguration(applyBool, applyInt, applyStringList);
+    if (engineChanged)
+    {
+        server.SyncEffectiveNoHandleTypes();
+    }
 
     return engineChanged;
 }

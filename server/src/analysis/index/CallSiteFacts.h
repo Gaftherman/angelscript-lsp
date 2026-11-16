@@ -1,12 +1,11 @@
 #pragma once
 
-#include "analysis/index/AssignmentSiteFacts.h"
-#include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SpanFactSearch.h"
-#include "analysis/index/ValueExpressionFacts.h"
+#include "analysis/index/Symbol.h"
 
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <tree_sitter/api.h>
 #include <vector>
@@ -40,95 +39,134 @@ enum class CallArgumentKind : uint8_t
 };
 
 /**
- * @brief AST-free facts for a single argument in a call or constructor argument list.
+ * @brief Consequence and alternative byte spans for a ternary call argument.
+ */
+struct CallArgumentTernaryFact
+{
+    IndexedByteRange consequenceBytes; ///< Byte span of the consequence branch expression.
+    IndexedByteRange alternativeBytes; ///< Byte span of the alternative branch expression.
+};
+static_assert(sizeof(CallArgumentTernaryFact) <= 16);
+
+/**
+ * @brief Compact lambda parameter metadata stored in CallSiteFacts::lambdaParams.
+ */
+struct CallLambdaParamFact
+{
+    IndexedByteRange typeBytes;                           ///< Byte span of the written parameter type node.
+    ParameterModifier modifier = ParameterModifier::None; ///< Reference direction modifier (`in`, `out`, `inout`).
+    bool hasWrittenType : 1 = false;                      ///< True when the parameter spells a type.
+    bool isConst : 1 = false;                             ///< True when the written type carries `const`.
+    bool isHandle : 1 = false;                            ///< True when the written type carries `@`.
+    bool isReference : 1 = false;                         ///< True when `&` or a direction modifier is present.
+};
+static_assert(sizeof(CallLambdaParamFact) <= 12);
+
+/**
+ * @brief Compact AST-free facts for a single argument in a call or constructor argument list.
  */
 struct CallArgumentFact
 {
-    IndexedByteRange bytes;              ///< Byte span of the argument expression.
-    SourceRange range;                   ///< Line and column span used for diagnostics.
-    std::string_view text;               ///< Raw source spelling of the argument expression.
-    std::string_view name;               ///< Parameter name if named argument; empty for positional.
-    SourceRange nameRange;               ///< Line and column span of the parameter name identifier.
-    bool isNamed = false;                ///< True if explicitly written as a named argument.
-    bool isPositionalAfterNamed = false; ///< True if this positional argument follows a named argument.
+    IndexedByteRange bytes;                               ///< Byte span of the argument expression.
+    SourceRange range;                                    ///< Line and column span used for diagnostics.
+    IndexedByteRange nameBytes;                           ///< Byte span of parameter name if named; empty otherwise.
+    IndexedByteRange foldedBytes;                         ///< Byte span of unwrapped identifier if any.
+    uint32_t detailIndex = 0;                             ///< Pool index into ternary, lambda, or member pools.
+    uint16_t detailCount = 0;                             ///< Number of pool entries owned by this argument.
     CallArgumentKind kind = CallArgumentKind::Expression; ///< Syntactic classification of the argument.
-    BinaryOperandFact operand;            ///< Binary operand fact with constant-folding and unary syntax flags.
-    ValueExpressionFact value;            ///< Value expression fact; input of ResolveValueType.
-    FuncdefValueFact funcdefValue;        ///< Lambda parameter list and funcdef values; filled for lambdas.
-    bool isThisMemberAccess = false;      ///< True if argument is a member access on `this` (`this.name`).
-    std::string_view thisMemberName;      ///< Member identifier if isThisMemberAccess is true.
-    bool isTernary = false;               ///< True if argument is a ternary conditional expression.
-    BinaryOperandFact ternaryConsequence; ///< Consequence branch operand if ternary expression.
-    BinaryOperandFact ternaryAlternative; ///< Alternative branch operand if ternary expression.
+    bool isNamed : 1 = false;                             ///< True if explicitly written as a named argument.
+    bool isPositionalAfterNamed : 1 = false;              ///< True if positional argument follows a named argument.
+    bool isThis : 1 = false;                              ///< True if argument expression is `this`.
+    bool isNullLiteral : 1 = false;                       ///< True if argument expression is a null literal.
+    bool isNumericLiteral : 1 = false;                    ///< True if argument expression is a numeric literal.
+    bool hasLambdaParameterList : 1 = false;              ///< True when a lambda argument spells a parameter list.
+    bool isThisMemberAccess : 1 = false;                  ///< True if argument is `this.<member>`.
 };
+static_assert(sizeof(CallArgumentFact) <= 48);
 
 /**
  * @brief AST-free representation of a call or construct-call expression site.
  */
 struct CallSiteFact
 {
-    IndexedByteRange bytes;                   ///< Byte span of the entire call expression.
-    SourceRange range;                        ///< Line and column span; start point selects lexical scope.
-    bool isConstructCall = false;             ///< True if construct_call_expression syntax (`Type(...)`).
-    CalleeKind calleeKind = CalleeKind::None; ///< Classification of callee syntax (identifier, scoped, member).
-    IndexedByteRange calleeBytes;             ///< Byte span of the callee expression.
-    SourceRange calleeRange;                  ///< Line and column span of the callee expression.
-    std::string_view calleeText;              ///< Raw source spelling of the callee expression.
-    IndexedByteRange calleeNameBytes;         ///< Byte span of the callee identifier token or member name.
-    SourceRange calleeNameRange;              ///< Line and column span of callee identifier; anchors diagnostics.
-    std::string_view calleeName;              ///< Unqualified identifier or member name (e.g. `foo`).
-    std::string_view scopeQualifier;          ///< Scope qualifier prefix for scoped callee (e.g. `ns` in `ns::foo`).
-    bool isMemberCall = false;                ///< True if callee is a member access (`obj.method()`).
-    BinaryOperandFact objectOperand;          ///< Object receiver operand fact for member calls.
-    ValueExpressionFact objectValue;          ///< Object receiver read as a value expression.
-    bool isThisCall = false;                  ///< True if object operand is `this` (`this.method()`).
-    bool hasTemplateArguments = false;        ///< True if explicit template argument list is present.
-    IndexedByteRange templateArgsBytes;       ///< Byte span of the template argument list.
-    std::string_view templateArgsText;        ///< Template argument list spelling (e.g. `<int, string>`).
-    bool hasArgumentList = false;             ///< True if argument list syntax was present (`(...)`).
-    IndexedByteRange argumentListBytes;       ///< Byte span of the argument list.
-    SourceRange argumentListRange;            ///< Line and column span of the argument list.
-    uint32_t argumentBegin = 0;               ///< First slice index into CallSiteFacts::arguments.
-    uint32_t argumentCount = 0;               ///< Number of arguments in CallSiteFacts::arguments.
-    bool hasNamedArguments = false;           ///< True if at least one named argument was supplied.
-    bool hasPositionalAfterNamed = false;     ///< True if a positional argument follows a named argument.
-    bool isDelegateConstruction = false;      ///< True if single argument is `this.<calleeName>`.
-    std::string_view enclosingClassName;      ///< Innermost enclosing class or interface name; empty if outside.
-    bool insideClass = false;                 ///< True if call is enclosed within a class or interface definition.
-    bool insideMixin = false;                 ///< True if enclosing class is a mixin class.
-    bool isInsideLambda = false;              ///< True if call is enclosed within an intermediate lambda closure.
-    std::string_view enclosingFunctionName;   ///< Enclosing function or method declaration name; empty if global.
-    bool isEnclosingMethodConst = false;      ///< True if call is enclosed within a const method declaration.
+    IndexedByteRange bytes;                      ///< Byte span of the entire call expression.
+    SourceRange range;                           ///< Line and column span; start point selects lexical scope.
+    IndexedByteRange calleeBytes;                ///< Byte span of the callee expression.
+    SourceRange calleeRange;                     ///< Line and column span of the callee expression.
+    IndexedByteRange calleeNameBytes;            ///< Byte span of the callee identifier token or member name.
+    SourceRange calleeNameRange;                 ///< Line and column span of callee identifier; anchors diagnostics.
+    IndexedByteRange objectBytes;                ///< Byte span of the receiver object for member calls.
+    IndexedByteRange enclosingClassNameBytes;    ///< Byte span of enclosing class or interface name; empty if outside.
+    IndexedByteRange enclosingFunctionNameBytes; ///< Byte span of enclosing function or method name; empty if global.
+    uint32_t argumentBegin = 0;                  ///< First slice index into CallSiteFacts::arguments.
+    uint32_t argumentCount = 0;                  ///< Number of arguments in CallSiteFacts::arguments.
+    CalleeKind calleeKind = CalleeKind::None;    ///< Classification of callee syntax (identifier, scoped, member).
+    bool isConstructCall : 1 = false;            ///< True if construct_call_expression syntax (`Type(...)`).
+    bool isMemberCall : 1 = false;               ///< True if callee is a member access (`obj.method()`).
+    bool isThisCall : 1 = false;                 ///< True if object operand is `this` (`this.method()`).
+    bool hasArgumentList : 1 = false;            ///< True if argument list syntax was present (`(...)`).
+    bool hasNamedArguments : 1 = false;          ///< True if at least one named argument was supplied.
+    bool hasPositionalAfterNamed : 1 = false;    ///< True if a positional argument follows a named argument.
+    bool isDelegateConstruction : 1 = false;     ///< True if single argument is `this.<calleeName>`.
+    bool insideClass : 1 = false;                ///< True if call is enclosed within a class or interface definition.
+    bool insideMixin : 1 = false;                ///< True if enclosing class is a mixin class.
+    bool isEnclosingMethodConst : 1 = false;     ///< True if call is enclosed within a const method declaration.
 };
+static_assert(sizeof(CallSiteFact) <= 108);
 
 /**
  * @brief AST-free representation of a variable direct-initialization declarator (`Type var(args)`).
  */
 struct DirectInitSiteFact
 {
-    IndexedByteRange bytes;               ///< Byte span of the variable declarator node.
-    SourceRange range;                    ///< Line and column span; start point selects lexical scope.
-    std::string_view declaredType;        ///< Raw declared type spelling from variable declaration.
-    std::string_view baseTypeName;        ///< Base type name without template arguments (e.g. `Foo`).
-    std::string_view templateArgsText;    ///< Template arguments spelling if parameterized (e.g. `<int>`).
-    IndexedByteRange declaratorNameBytes; ///< Byte span of the variable name identifier.
-    SourceRange declaratorNameRange;      ///< Line and column span of the variable name identifier.
-    std::string_view declaratorName;      ///< Variable name identifier spelling.
-    IndexedByteRange argumentListBytes;   ///< Byte span of the constructor argument list.
-    SourceRange argumentListRange;        ///< Line and column span of the constructor argument list.
-    uint32_t argumentBegin = 0;           ///< First slice index into CallSiteFacts::arguments.
-    uint32_t argumentCount = 0;           ///< Number of arguments in CallSiteFacts::arguments.
+    IndexedByteRange bytes;             ///< Byte span of the variable declarator node.
+    SourceRange range;                  ///< Line and column span; start point selects lexical scope.
+    IndexedByteRange declaredTypeBytes; ///< Byte span of trimmed declared type in variable declaration.
+    SourceRange argumentListRange;      ///< Line and column span of the constructor argument list.
+    uint32_t argumentBegin = 0;         ///< First slice index into CallSiteFacts::arguments.
+    uint32_t argumentCount = 0;         ///< Number of arguments in CallSiteFacts::arguments.
 };
+static_assert(sizeof(DirectInitSiteFact) <= 56);
 
 /**
  * @brief AST-free call, construct-call, and direct-initialization site facts of one revision.
- * @note All string_view fields point into the source passed to BuildCallSiteFacts, which must outlive this object.
+ * @note Byte spans and TextOf() views refer to source passed to BuildCallSiteFacts, which must outlive this object.
  */
 struct CallSiteFacts
 {
-    std::vector<CallSiteFact> callSites;         ///< Call and construct-call sites ordered by start byte.
-    std::vector<DirectInitSiteFact> directInits; ///< Variable direct-initializations ordered by start byte.
-    std::vector<CallArgumentFact> arguments;     ///< Flat arguments container sliced by begin/count indices.
+    std::string_view source;                              ///< Document source text; must outlive this object.
+    std::vector<CallSiteFact> callSites;                  ///< Call and construct-call sites ordered by start byte.
+    std::vector<DirectInitSiteFact> directInits;          ///< Variable direct-initializations ordered by start byte.
+    std::vector<CallArgumentFact> arguments;              ///< Flat arguments container sliced by begin/count indices.
+    std::vector<CallArgumentTernaryFact> ternaryBranches; ///< Ternary argument branches indexed by CallArgumentFact.
+    std::vector<CallLambdaParamFact> lambdaParams;        ///< Lambda argument parameters sliced by CallArgumentFact.
+    std::vector<IndexedByteRange> thisMemberNames;        ///< Member spans for `this.<member>` call arguments.
+
+    /**
+     * @brief Slices a byte span out of an arbitrary source text buffer with bounds validation.
+     * @param[in] sourceCode Document source buffer.
+     * @param[in] bytes Half-open byte span within sourceCode.
+     * @return View into sourceCode for bytes, or empty when out of bounds.
+     */
+    [[nodiscard]] static std::string_view SliceText(std::string_view sourceCode, IndexedByteRange bytes) noexcept
+    {
+        if (bytes.startByte >= sourceCode.size() || bytes.endByte > sourceCode.size() ||
+            bytes.startByte >= bytes.endByte)
+        {
+            return {};
+        }
+        return sourceCode.substr(bytes.startByte, bytes.endByte - bytes.startByte);
+    }
+
+    /**
+     * @brief Returns the source spelling covered by the given byte span.
+     * @param[in] bytes Half-open byte span within source.
+     * @return View into source, or empty when out of bounds.
+     */
+    [[nodiscard]] std::string_view TextOf(IndexedByteRange bytes) const noexcept
+    {
+        return SliceText(source, bytes);
+    }
 
     /**
      * @brief Finds the call or construct-call site that spans exactly the given bytes.
@@ -145,32 +183,110 @@ struct CallSiteFacts
      * @note Cost O(log N) binary search.
      */
     [[nodiscard]] const DirectInitSiteFact* FindDirectInit(IndexedByteRange bytes) const noexcept;
+
+    /**
+     * @brief Returns the argument slice owned by a call site.
+     * @param[in] site Call site fact.
+     * @return Span of argument facts, or empty when absent or out of range.
+     */
+    [[nodiscard]] std::span<const CallArgumentFact> ArgumentsOf(const CallSiteFact& site) const noexcept
+    {
+        if (site.argumentCount == 0 || site.argumentBegin >= arguments.size() ||
+            site.argumentCount > arguments.size() - site.argumentBegin)
+        {
+            return {};
+        }
+        return std::span<const CallArgumentFact>(arguments.data() + site.argumentBegin, site.argumentCount);
+    }
+
+    /**
+     * @brief Returns the argument slice owned by a direct initialization site.
+     * @param[in] init Direct initialization site fact.
+     * @return Span of argument facts, or empty when absent or out of range.
+     */
+    [[nodiscard]] std::span<const CallArgumentFact> ArgumentsOf(const DirectInitSiteFact& init) const noexcept
+    {
+        if (init.argumentCount == 0 || init.argumentBegin >= arguments.size() ||
+            init.argumentCount > arguments.size() - init.argumentBegin)
+        {
+            return {};
+        }
+        return std::span<const CallArgumentFact>(arguments.data() + init.argumentBegin, init.argumentCount);
+    }
+
+    /**
+     * @brief Returns the ternary consequence and alternative byte spans for a Ternary argument.
+     * @param[in] arg Call argument fact of kind Ternary.
+     * @return Branch span pair, or empty spans when absent.
+     */
+    [[nodiscard]] CallArgumentTernaryFact TernaryOf(const CallArgumentFact& arg) const noexcept
+    {
+        if (arg.kind != CallArgumentKind::Ternary || arg.detailCount == 0 || arg.detailIndex >= ternaryBranches.size())
+        {
+            return {};
+        }
+        return ternaryBranches[arg.detailIndex];
+    }
+
+    /**
+     * @brief Returns the lambda parameter slice owned by a Lambda argument.
+     * @param[in] arg Call argument fact of kind Lambda.
+     * @return Span of compact lambda parameter facts, or empty when absent.
+     */
+    [[nodiscard]] std::span<const CallLambdaParamFact> LambdaParamsOf(const CallArgumentFact& arg) const noexcept
+    {
+        if (arg.kind != CallArgumentKind::Lambda || !arg.hasLambdaParameterList || arg.detailCount == 0)
+        {
+            return {};
+        }
+        const size_t begin = arg.detailIndex;
+        const size_t count = arg.detailCount;
+        if (begin >= lambdaParams.size() || count > lambdaParams.size() - begin)
+        {
+            return {};
+        }
+        return std::span<const CallLambdaParamFact>(lambdaParams.data() + begin, count);
+    }
+
+    /**
+     * @brief Returns the member identifier spelling for a `this.<member>` argument.
+     * @param[in] arg Call argument fact with isThisMemberAccess set.
+     * @return Member name view into source, or empty when absent.
+     */
+    [[nodiscard]] std::string_view ThisMemberName(const CallArgumentFact& arg) const noexcept
+    {
+        if (arg.kind != CallArgumentKind::Member || !arg.isThisMemberAccess || arg.detailCount == 0 ||
+            arg.detailIndex >= thisMemberNames.size())
+        {
+            return {};
+        }
+        return TextOf(thisMemberNames[arg.detailIndex]);
+    }
 };
 
 /**
- * @brief Captures the spans, spelling, and syntactic facts of a single call argument.
+ * @brief Captures the spans, flags, and pooled details of a single call argument.
  * @param[in] exprNode Argument expression syntax node.
  * @param[in] nameNode Named argument identifier node, or null for positional arguments.
  * @param[in] index Precomputed node index of the document.
- * @param[in] source Document text; the fact's views point into it.
- * @return Call argument fact.
+ * @param[in,out] facts Call site facts container owning source and detail pools.
+ * @return Compact call argument fact.
  */
 [[nodiscard]] CallArgumentFact ReadCallArgument(TSNode exprNode, TSNode nameNode, const NodeIndex& index,
-                                                std::string_view source);
+                                                CallSiteFacts& facts);
 
 /**
  * @brief Extracts all arguments from an argument list node into the call site facts sink.
  * @param[in] argListNode Argument list syntax node (`argument_list`).
  * @param[in] index Precomputed node index of the document.
- * @param[in] source Document text; the facts' views point into it.
  * @param[in,out] facts Destination call site facts container.
  */
-void ExtractCallArguments(TSNode argListNode, const NodeIndex& index, std::string_view source, CallSiteFacts& facts);
+void ExtractCallArguments(TSNode argListNode, const NodeIndex& index, CallSiteFacts& facts);
 
 /**
  * @brief Captures all call, construct-call, and variable direct-initialization sites of a document.
  * @param[in] index Precomputed node index of the document.
- * @param[in] source Document text; the facts' views point into it.
+ * @param[in] source Document text; must outlive the returned facts.
  * @return Call site facts ordered by source position.
  */
 [[nodiscard]] CallSiteFacts BuildCallSiteFacts(const NodeIndex& index, std::string_view source);

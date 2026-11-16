@@ -283,5 +283,6 @@
   "mcp-tool-completion": "Returns the completion items offered at a zero-based line and character.",
   "mcp-tool-signature-help": "Returns the signature help shown at a zero-based line and character inside a call.",
   "mcp-tool-definition": "Returns where the symbol at a zero-based line and character is defined.",
-  "mcp-tool-document-symbols": "Returns the symbol outline of a document."
+  "mcp-tool-document-symbols": "Returns the symbol outline of a document.",
+  "warn-invalid-no-handle-type": "Ignoring invalid angelscript.engine.noHandleTypes entry '{}': expected a non-empty identifier or scoped name."
 }
