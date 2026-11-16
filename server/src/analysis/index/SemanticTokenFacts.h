@@ -157,4 +157,14 @@ struct SemanticTokenFacts
  */
 [[nodiscard]] SemanticTokenFacts CollectSemanticTokenFacts(const NodeIndex& index, std::string_view sourceCode);
 
+/**
+ * @brief Extracts AST-free syntax facts for semantic token highlighting within a target source range.
+ * @param[in] index Pre-indexed syntax tree facts.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] range Target 0-based line/column range to restrict fact extraction.
+ * @return Populated SemanticTokenFacts collection for the requested range.
+ */
+[[nodiscard]] SemanticTokenFacts CollectSemanticTokenFacts(const NodeIndex& index, std::string_view sourceCode,
+                                                           const SourceRange& range);
+
 } // namespace angel_lsp::analysis

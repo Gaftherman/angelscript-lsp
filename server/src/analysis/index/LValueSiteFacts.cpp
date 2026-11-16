@@ -2,7 +2,6 @@
 
 #include "analysis/index/SpanFactSearch.h"
 #include "analysis/index/SyntaxOperands.h"
-#include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 
@@ -38,29 +37,44 @@ static IndexedByteRange BytesOf(TSNode node) noexcept
 }
 
 /**
- * @brief Reads receiver object and member spans and text from a member expression.
+ * @brief Enqueues a child node onto the candidate expansion worklist if its span strictly differs from parent.
+ * @param[in] parent Enclosing AST node.
+ * @param[in] child Child AST node to evaluate as an l-value candidate.
+ * @param[in,out] worklist Iterative worklist of pending candidate nodes.
+ */
+static void EnqueueSubCandidate(TSNode parent, TSNode child, std::vector<TSNode>& worklist)
+{
+    if (ts_node_is_null(child))
+    {
+        return;
+    }
+    if (ts_node_start_byte(child) == ts_node_start_byte(parent) && ts_node_end_byte(child) == ts_node_end_byte(parent))
+    {
+        return;
+    }
+    worklist.push_back(child);
+}
+
+/**
+ * @brief Extracts receiver object and member identifier byte spans from a member expression node.
  * @param[in] node Member expression node.
  * @param[in] index Precomputed node index of the document.
- * @param[in] source Document source text.
- * @return LValueMemberParts containing receiver and member information.
+ * @return Compact receiver and member span pair.
  */
-static LValueMemberParts ReadMemberParts(TSNode node, const NodeIndex& index, std::string_view source)
+static LValueMemberCandidateFact ReadMemberParts(TSNode node, const NodeIndex& index) noexcept
 {
-    LValueMemberParts parts{};
+    LValueMemberCandidateFact parts{};
     const SyntaxOperands syntax(node, &index);
-    const TSNode obj = syntax.Field(parser::GetGrammarSymbols().fieldObject);
-    const TSNode mem = syntax.Field(parser::GetGrammarSymbols().fieldMember);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSNode obj = syntax.Field(gs.fieldObject);
+    const TSNode mem = syntax.Field(gs.fieldMember);
     if (!ts_node_is_null(obj))
     {
-        parts.objBytes = BytesOf(obj);
-        parts.objRange = RangeOf(obj);
-        parts.objText = parser::NodeText(obj, source);
+        parts.objectBytes = BytesOf(obj);
     }
     if (!ts_node_is_null(mem))
     {
-        parts.memBytes = BytesOf(mem);
-        parts.memRange = RangeOf(mem);
-        parts.memText = parser::NodeText(mem, source);
+        parts.memberBytes = BytesOf(mem);
     }
     return parts;
 }
@@ -69,10 +83,9 @@ static LValueMemberParts ReadMemberParts(TSNode node, const NodeIndex& index, st
  * @brief Extracts call l-value details from a call expression node.
  * @param[in] callNode Call expression node.
  * @param[in] index Precomputed node index of the document.
- * @param[in] source Document source text.
  * @return Call site fact for the call node.
  */
-static LValueCallSiteFact ReadCallSite(TSNode callNode, const NodeIndex& index, std::string_view source)
+static LValueCallSiteFact ReadCallSite(TSNode callNode, const NodeIndex& index) noexcept
 {
     LValueCallSiteFact fact;
     if (ts_node_is_null(callNode))
@@ -87,15 +100,15 @@ static LValueCallSiteFact ReadCallSite(TSNode callNode, const NodeIndex& index, 
         return fact;
     }
     fact.calleeBytes = BytesOf(funcNode);
-    fact.calleeRange = RangeOf(funcNode);
-    fact.calleeText = parser::NodeText(funcNode, source);
 
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol funcSym = ts_node_symbol(funcNode);
     if (funcSym == gs.symMemberExpression)
     {
         fact.calleeKind = LValueCalleeKind::Member;
-        ReadMemberParts(funcNode, index, source).ApplyTo(fact);
+        const LValueMemberCandidateFact parts = ReadMemberParts(funcNode, index);
+        fact.objectBytes = parts.objectBytes;
+        fact.memberBytes = parts.memberBytes;
     }
     else if (funcSym == gs.symScopedIdentifier)
     {
@@ -109,15 +122,15 @@ static LValueCallSiteFact ReadCallSite(TSNode callNode, const NodeIndex& index, 
 }
 
 /**
- * @brief Reads an l-value candidate fact from an expression node.
+ * @brief Reads a compact l-value candidate fact and queues any nested branch or dereference operands.
  * @param[in] rawNode Expression node (may be parenthesized).
  * @param[in] index Precomputed node index of the document.
- * @param[in] source Document source text.
- * @param[in,out] branches Flat buffer to append ternary branches into.
- * @return Candidate fact with flattened recursive structure.
+ * @param[in,out] facts Target site container holding shared ternary, member, and unary pools.
+ * @param[in,out] worklist Iterative worklist receiving nested branch/operand nodes queried by FindCandidate.
+ * @return Compact candidate fact for rawNode.
  */
-static LValueCandidateFact ReadCandidate(TSNode rawNode, const NodeIndex& index, std::string_view source,
-                                         std::vector<LValueBranchFact>& branches)
+static LValueCandidateFact ReadCandidate(TSNode rawNode, const NodeIndex& index, LValueSiteFacts& facts,
+                                         std::vector<TSNode>& worklist)
 {
     LValueCandidateFact fact;
     if (ts_node_is_null(rawNode))
@@ -125,15 +138,12 @@ static LValueCandidateFact ReadCandidate(TSNode rawNode, const NodeIndex& index,
         return fact;
     }
     fact.bytes = BytesOf(rawNode);
-    fact.range = RangeOf(rawNode);
     const TSNode node = UnwrapIndexedParentheses(rawNode, &index);
     if (ts_node_is_null(node))
     {
         return fact;
     }
     fact.unwrappedBytes = BytesOf(node);
-    fact.unwrappedRange = RangeOf(node);
-    fact.text = parser::NodeText(node, source);
     fact.isParenthesized =
         (fact.bytes.startByte != fact.unwrappedBytes.startByte || fact.bytes.endByte != fact.unwrappedBytes.endByte);
 
@@ -150,45 +160,43 @@ static LValueCandidateFact ReadCandidate(TSNode rawNode, const NodeIndex& index,
             cons = ts_node_named_child(node, 1);
             alt = ts_node_named_child(node, 2);
         }
-        fact.branchBegin = static_cast<uint32_t>(branches.size());
+        const uint32_t branchBegin = static_cast<uint32_t>(facts.ternaryBranches.size());
         if (!ts_node_is_null(cons))
         {
-            fact.consequenceBytes = BytesOf(cons);
-            fact.consequenceRange = RangeOf(cons);
-            fact.consequenceText = parser::NodeText(cons, source);
-            branches.push_back(
-                LValueBranchFact{fact.consequenceBytes, fact.consequenceRange, fact.consequenceText, true});
+            facts.ternaryBranches.push_back(LValueBranchFact{BytesOf(cons), true});
+            EnqueueSubCandidate(node, cons, worklist);
         }
         if (!ts_node_is_null(alt))
         {
-            fact.alternativeBytes = BytesOf(alt);
-            fact.alternativeRange = RangeOf(alt);
-            fact.alternativeText = parser::NodeText(alt, source);
-            branches.push_back(
-                LValueBranchFact{fact.alternativeBytes, fact.alternativeRange, fact.alternativeText, false});
+            facts.ternaryBranches.push_back(LValueBranchFact{BytesOf(alt), false});
+            EnqueueSubCandidate(node, alt, worklist);
         }
-        fact.branchCount = static_cast<uint32_t>(branches.size() - fact.branchBegin);
+        fact.detailIndex = branchBegin;
+        fact.detailCount = static_cast<uint16_t>(facts.ternaryBranches.size() - branchBegin);
     }
     else if (sym == gs.symUnaryExpression)
     {
         const SyntaxOperands syntax(node, &index);
         const TSNode op = syntax.Field(gs.fieldOperator);
-        if (!ts_node_is_null(op) && (ts_node_symbol(op) == gs.tokAt || parser::NodeText(op, source) == "@"))
+        if (!ts_node_is_null(op) && (ts_node_symbol(op) == gs.tokAt || parser::NodeText(op, facts.source) == "@"))
         {
             fact.kind = LValueCandidateKind::UnaryDereference;
             const TSNode operand = syntax.Field(gs.fieldOperand);
             if (!ts_node_is_null(operand))
             {
-                fact.operandBytes = BytesOf(operand);
-                fact.operandRange = RangeOf(operand);
-                fact.operandText = parser::NodeText(operand, source);
+                fact.detailIndex = static_cast<uint32_t>(facts.unaryOperands.size());
+                fact.detailCount = 1;
+                facts.unaryOperands.push_back(BytesOf(operand));
+                EnqueueSubCandidate(node, operand, worklist);
             }
         }
     }
     else if (sym == gs.symMemberExpression)
     {
         fact.kind = LValueCandidateKind::Member;
-        ReadMemberParts(node, index, source).ApplyTo(fact);
+        fact.detailIndex = static_cast<uint32_t>(facts.members.size());
+        fact.detailCount = 1;
+        facts.members.push_back(ReadMemberParts(node, index));
     }
     else if (sym == gs.symIndexExpression)
     {
@@ -198,57 +206,62 @@ static LValueCandidateFact ReadCandidate(TSNode rawNode, const NodeIndex& index,
              sym == gs.symThisExpression)
     {
         fact.kind = LValueCandidateKind::Identifier;
-        fact.name = fact.text;
-        fact.refByte = ts_node_start_byte(node);
-        fact.isBareDataType = IsPrimitiveTypeName(fact.text);
     }
     else if (sym == gs.symCallExpression)
     {
         fact.kind = LValueCandidateKind::Call;
-        fact.isCall = true;
-        fact.callBytes = fact.unwrappedBytes;
     }
     else
     {
         fact.kind = LValueCandidateKind::Other;
-        fact.isBareDataType = (sym == gs.symPrimitiveType || IsPrimitiveTypeName(fact.text));
     }
     return fact;
 }
 
 /**
- * @brief Reads an assignment expression into an assignment fact.
+ * @brief Collects an assignment expression's left-hand target and optional call-lvalue site.
  * @param[in] node Assignment expression node.
  * @param[in] index Precomputed node index of the document.
- * @param[in] source Document source text.
- * @param[in,out] branches Flat buffer to append ternary branches into.
- * @return Assignment fact for the node.
+ * @param[in,out] facts Destination l-value site facts.
+ * @param[in,out] worklist Iterative worklist receiving nested branch/operand nodes.
  */
-static LValueAssignmentFact ReadAssignment(TSNode node, const NodeIndex& index, std::string_view source,
-                                           std::vector<LValueBranchFact>& branches)
+static void CollectAssignmentTarget(TSNode node, const NodeIndex& index, LValueSiteFacts& facts,
+                                    std::vector<TSNode>& worklist)
 {
-    LValueAssignmentFact fact;
-    fact.bytes = BytesOf(node);
-    fact.range = RangeOf(node);
     const auto& gs = parser::GetGrammarSymbols();
     const TSNode target = SyntaxOperands(node, &index).Field(gs.fieldLeft);
     if (ts_node_is_null(target))
     {
-        return fact;
+        return;
     }
+
     const TSNode unwrapped = UnwrapIndexedParentheses(target, &index);
-    fact.targetBytes = BytesOf(target);
+    LValueAssignmentFact fact;
+    fact.bytes = BytesOf(node);
+    fact.range = RangeOf(node);
     fact.targetRange = RangeOf(target);
-    fact.targetText = parser::NodeText(target, source);
     fact.targetIsDirectCall = (ts_node_symbol(target) == gs.symCallExpression);
     fact.targetIsUnwrappedCall = (!ts_node_is_null(unwrapped) && ts_node_symbol(unwrapped) == gs.symCallExpression);
-    fact.callBytes = fact.targetIsDirectCall ? fact.targetBytes : BytesOf(unwrapped);
     fact.targetIsDirectTernary = (ts_node_symbol(target) == gs.symTernaryExpression);
-    fact.targetCandidate = ReadCandidate(target, index, source, branches);
-    return fact;
+    fact.targetCandidate = ReadCandidate(target, index, facts, worklist);
+
+    if (fact.targetIsDirectCall || fact.targetIsUnwrappedCall)
+    {
+        const TSNode callNode = fact.targetIsDirectCall ? target : unwrapped;
+        facts.callSites.push_back(ReadCallSite(callNode, index));
+    }
+    facts.assignments.push_back(fact);
 }
 
-static void CollectIncDecTargets(TSNode node, const NodeIndex& index, std::string_view source, LValueSiteFacts& facts)
+/**
+ * @brief Collects an increment or decrement operator's operand target when it is not a call expression.
+ * @param[in] node Unary or postfix expression node.
+ * @param[in] index Precomputed node index of the document.
+ * @param[in,out] facts Destination l-value site facts.
+ * @param[in,out] worklist Iterative worklist receiving nested branch/operand nodes.
+ */
+static void CollectIncDecTargets(TSNode node, const NodeIndex& index, LValueSiteFacts& facts,
+                                 std::vector<TSNode>& worklist)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const SyntaxOperands syntax(node, &index);
@@ -257,7 +270,7 @@ static void CollectIncDecTargets(TSNode node, const NodeIndex& index, std::strin
     {
         return;
     }
-    const std::string_view opText = parser::NodeText(op, source);
+    const std::string_view opText = parser::NodeText(op, facts.source);
     if (opText != "++" && opText != "--")
     {
         return;
@@ -276,57 +289,55 @@ static void CollectIncDecTargets(TSNode node, const NodeIndex& index, std::strin
     LValueAssignmentFact fact;
     fact.bytes = BytesOf(node);
     fact.range = RangeOf(node);
-    fact.targetBytes = BytesOf(target);
     fact.targetRange = RangeOf(target);
-    fact.targetText = parser::NodeText(target, source);
     fact.targetIsDirectTernary = (ts_node_symbol(target) == gs.symTernaryExpression);
-    fact.targetCandidate = ReadCandidate(target, index, source, facts.ternaryBranches);
-    facts.assignments.push_back(std::move(fact));
+    fact.targetCandidate = ReadCandidate(target, index, facts, worklist);
+    facts.assignments.push_back(fact);
 }
 
 LValueSiteFacts BuildLValueSiteFacts(const NodeIndex& index, std::string_view source)
 {
     const auto& gs = parser::GetGrammarSymbols();
     LValueSiteFacts facts;
+    facts.source = source;
 
-    for (const TSNode node : index.Nodes(gs.symAssignmentExpression))
+    const auto assignNodes = index.Nodes(gs.symAssignmentExpression);
+    const auto unaryNodes = index.Nodes(gs.symUnaryExpression);
+    const auto postfixNodes = index.Nodes(gs.symPostfixExpression);
+
+    facts.assignments.reserve(assignNodes.size() + unaryNodes.size() + postfixNodes.size());
+    facts.callSites.reserve(assignNodes.size());
+
+    std::vector<TSNode> worklist;
+    for (const TSNode node : assignNodes)
     {
-        const TSNode target = SyntaxOperands(node, &index).Field(gs.fieldLeft);
-        if (ts_node_is_null(target))
-        {
-            continue;
-        }
+        CollectAssignmentTarget(node, index, facts, worklist);
+    }
+    for (const TSNode node : unaryNodes)
+    {
+        CollectIncDecTargets(node, index, facts, worklist);
+    }
+    for (const TSNode node : postfixNodes)
+    {
+        CollectIncDecTargets(node, index, facts, worklist);
+    }
 
-        const LValueAssignmentFact assignFact = ReadAssignment(node, index, source, facts.ternaryBranches);
-        facts.assignments.push_back(assignFact);
-
-        if (assignFact.targetIsDirectCall || assignFact.targetIsUnwrappedCall)
+    if (!facts.assignments.empty())
+    {
+        const size_t maxSubCandidates =
+            worklist.empty() ? 0 : (index.Nodes(gs.symTernaryExpression).size() * 2 + unaryNodes.size());
+        facts.candidates.reserve(facts.assignments.size() + maxSubCandidates);
+        for (const auto& assignment : facts.assignments)
         {
-            const TSNode callNode = assignFact.targetIsDirectCall ? target : UnwrapIndexedParentheses(target, &index);
-            facts.callSites.push_back(ReadCallSite(callNode, index, source));
+            facts.candidates.push_back(assignment.targetCandidate);
         }
     }
 
-    for (const TSNode node : index.Nodes(gs.symUnaryExpression))
+    while (!worklist.empty())
     {
-        CollectIncDecTargets(node, index, source, facts);
-    }
-    for (const TSNode node : index.Nodes(gs.symPostfixExpression))
-    {
-        CollectIncDecTargets(node, index, source, facts);
-    }
-
-    const TSSymbol candidateSymbols[] = {
-        gs.symIdentifier,        gs.symScopedIdentifier, gs.tokFunction,
-        gs.symMemberExpression,  gs.symIndexExpression,  gs.symUnaryExpression,
-        gs.symTernaryExpression, gs.symCallExpression,   gs.symParenthesizedExpression};
-
-    for (const TSSymbol sym : candidateSymbols)
-    {
-        for (const TSNode node : index.Nodes(sym))
-        {
-            facts.candidates.push_back(ReadCandidate(node, index, source, facts.ternaryBranches));
-        }
+        const TSNode workNode = worklist.back();
+        worklist.pop_back();
+        facts.candidates.push_back(ReadCandidate(workNode, index, facts, worklist));
     }
 
     SortBySpan(facts.assignments);

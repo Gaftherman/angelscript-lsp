@@ -1267,7 +1267,7 @@ TEST_SUITE("features/InlayHint")
                 const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
                 REQUIRE_FALSE(parts.empty());
                 REQUIRE(parts[0].location.has_value());
-                CHECK_FALSE(parts[0].tooltip.has_value());
+                CHECK(parts[0].tooltip.has_value());
                 CHECK_FALSE(hint.tooltip.has_value());
             }
         }
@@ -1324,7 +1324,7 @@ TEST_SUITE("features/InlayHint")
                     const auto& range = part.location->range;
                     CHECK(range.start.line == 4);
                     CHECK(range.end.line == 4);
-                    CHECK_FALSE(part.tooltip.has_value());
+                    CHECK(part.tooltip.has_value());
                     CHECK_FALSE(hint.tooltip.has_value());
                     foundTypeHintWithDeclLocation = true;
                 }
@@ -1351,7 +1351,8 @@ TEST_SUITE("features/InlayHint")
 
         TestEnvironment env(code);
 
-        // 1. Default config: tooltip contains parameter code block card
+        // 1. Default config: location and tooltip travel together so the client never has to open
+        //    the declaring document to show the hover.
         auto defaultHints = env.InlayHints();
         REQUIRE(defaultHints.has_value());
         REQUIRE_FALSE(defaultHints->empty());
@@ -1370,7 +1371,8 @@ TEST_SUITE("features/InlayHint")
                 {
                     foundParamHint = true;
                     CHECK(part.location.has_value());
-                    CHECK_FALSE(part.tooltip.has_value());
+                    REQUIRE(part.tooltip.has_value());
+                    CHECK(GetTooltipText(part.tooltip).find(paramName) != std::string::npos);
                 }
             }
         }

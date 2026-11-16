@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <lsp/json/json.h>
+#include <random>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -1791,6 +1792,162 @@ TEST_CASE("Semantic Tokens - Scoped identifier in namespace declaration breaks d
     CHECK_FALSE(foundMonolithic);
     CHECK(foundA);
     CHECK(foundB);
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("SemanticTokensHandler - Ranged tokens equal the corresponding slice of full for generated ranges")
+{
+    constexpr uint32_t kSeed = 0x5EED1234u;
+    INFO("seed=" << kSeed);
+    std::mt19937 rng(kSeed);
+
+    auto genIdent = [&rng](std::string_view prefix)
+    {
+        static constexpr char kAlphabet[] = "abcdefghijklmnopqrstuvwxyz";
+        std::string out(prefix);
+        out.push_back('_');
+        for (int i = 0; i < 6; ++i)
+        {
+            out.push_back(kAlphabet[rng() % (sizeof(kAlphabet) - 1)]);
+        }
+        return out;
+    };
+
+    const std::string nsName = genIdent("ns");
+    const std::string enumName = genIdent("En");
+    const std::string enumMember = genIdent("EM");
+    const std::string className = genIdent("Cls");
+    const std::string fieldName = genIdent("fld");
+    const std::string methodName = genIdent("mth");
+
+    std::string code;
+    code += "namespace " + nsName + "\n{\n";
+    code += "enum " + enumName + " { " + enumMember + " = 1 }\n";
+    code += "class " + className + "\n{\n";
+    code += "    int " + fieldName + " = 0;\n";
+    code += "    /* multi-line\n       comment block\n       spanning lines */\n";
+    code += "    int " + methodName + "(int " + genIdent("prm") + ")\n    {\n";
+    for (int i = 0; i < 12; ++i)
+    {
+        const std::string localVar = genIdent("loc");
+        code += "        int " + localVar + " = " + nsName + "::" + enumName + "::" + enumMember + ";\n";
+        code += "        " + fieldName + " += " + localVar + ";\n";
+    }
+    code += "        return " + fieldName + ";\n";
+    code += "    }\n}\n}\n";
+    for (int i = 0; i < 10; ++i)
+    {
+        const std::string fnName = genIdent("fn");
+        const std::string argName = genIdent("arg");
+        code += "int " + fnName + "(int " + argName + ")\n{\n";
+        code += "    int " + genIdent("v") + " = " + argName + " + 1;\n";
+        code += "    return " + argName + ";\n}\n";
+    }
+
+    std::vector<uint32_t> lineLengths;
+    {
+        size_t pos = 0;
+        while (pos < code.size())
+        {
+            const size_t nl = code.find('\n', pos);
+            const size_t end = (nl == std::string::npos) ? code.size() : nl;
+            lineLengths.push_back(static_cast<uint32_t>(end - pos));
+            if (nl == std::string::npos)
+            {
+                break;
+            }
+            pos = nl + 1;
+        }
+    }
+    REQUIRE(lineLengths.size() > 20);
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///range_parity.as", code, parser, table);
+
+    NodeIndex nodeIndex(ts_tree_root_node(tree));
+    LocalScopeCollector scopeCollector;
+    std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopesFromIndex(nodeIndex, code);
+
+    const SemanticTokenFacts fullFacts = CollectSemanticTokenFacts(nodeIndex, code);
+    SemanticTokensRequest fullRequest{"file:///range_parity.as", code, fullFacts, table};
+    fullRequest.scopeRoot = scopeRoot;
+    const auto fullTokens = GetSemanticTokens(fullRequest);
+    REQUIRE(fullTokens.data.size() >= 5);
+
+    auto sliceFullToRange = [&fullTokens](const lsp::Range& range)
+    {
+        std::vector<lsp::uint> sliced;
+        uint32_t absLine = 0;
+        uint32_t absChar = 0;
+        uint32_t outPrevLine = 0;
+        uint32_t outPrevChar = 0;
+
+        for (size_t i = 0; i + 4 < fullTokens.data.size(); i += 5)
+        {
+            const uint32_t deltaLine = fullTokens.data[i];
+            const uint32_t deltaStart = fullTokens.data[i + 1];
+            const uint32_t length = fullTokens.data[i + 2];
+            const uint32_t type = fullTokens.data[i + 3];
+            const uint32_t mods = fullTokens.data[i + 4];
+
+            absLine += deltaLine;
+            absChar = (deltaLine == 0) ? (absChar + deltaStart) : deltaStart;
+
+            if (absLine < range.start.line ||
+                (absLine == range.start.line && absChar + length <= range.start.character))
+            {
+                continue;
+            }
+            if (absLine > range.end.line || (absLine == range.end.line && absChar >= range.end.character))
+            {
+                continue;
+            }
+
+            const uint32_t outDeltaLine = absLine - outPrevLine;
+            const uint32_t outDeltaChar = (outDeltaLine == 0) ? (absChar - outPrevChar) : absChar;
+            sliced.push_back(outDeltaLine);
+            sliced.push_back(outDeltaChar);
+            sliced.push_back(length);
+            sliced.push_back(type);
+            sliced.push_back(mods);
+            outPrevLine = absLine;
+            outPrevChar = absChar;
+        }
+        return sliced;
+    };
+
+    const uint32_t totalLines = static_cast<uint32_t>(lineLengths.size());
+    for (int trial = 0; trial < 12; ++trial)
+    {
+        const auto draw = [&rng](uint32_t bound) { return static_cast<uint32_t>(rng() % bound); };
+        const uint32_t l0 = draw(totalLines);
+        const uint32_t l1 = std::min<uint32_t>(totalLines - 1, l0 + draw(15));
+        const uint32_t c0 = (lineLengths[l0] > 0) ? draw(lineLengths[l0] + 1) : 0u;
+        const uint32_t c1 = (l0 == l1) ? std::min<uint32_t>(lineLengths[l1], c0 + draw(lineLengths[l1] - c0 + 1))
+                                       : ((lineLengths[l1] > 0) ? draw(lineLengths[l1] + 1) : 0u);
+
+        const lsp::Range range{{l0, c0}, {l1, c1}};
+        INFO("trial=" << trial << " range=(" << l0 << ":" << c0 << " .. " << l1 << ":" << c1 << ")");
+
+        const auto expected = sliceFullToRange(range);
+
+        const SemanticTokenFacts rangedFacts = CollectSemanticTokenFacts(nodeIndex, code, SourceRange{l0, c0, l1, c1});
+        SemanticTokensRequest reqRangedFacts{"file:///range_parity.as", code, rangedFacts, table};
+        reqRangedFacts.scopeRoot = scopeRoot;
+        reqRangedFacts.range = range;
+        CHECK(GetSemanticTokens(reqRangedFacts).data == expected);
+
+        SemanticTokensRequest reqFullFacts{"file:///range_parity.as", code, fullFacts, table};
+        reqFullFacts.scopeRoot = scopeRoot;
+        reqFullFacts.range = range;
+        CHECK(GetSemanticTokens(reqFullFacts).data == expected);
+    }
 
     ts_tree_delete(tree);
 }

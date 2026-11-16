@@ -44,7 +44,7 @@ void CheckLValues(const AstCheckContext& request, DiagnosticContext& ctx)
 
         if (assignment.targetIsDirectCall || assignment.targetIsUnwrappedCall)
         {
-            if (const auto* callSite = facts.FindCallSite(assignment.callBytes))
+            if (const auto* callSite = facts.FindCallSite(assignment.targetCandidate.unwrappedBytes))
             {
                 CheckCallLValue(*callSite, request, scope, ctx);
             }
@@ -61,11 +61,11 @@ void CheckLValues(const AstCheckContext& request, DiagnosticContext& ctx)
             const ExpressionTypeContext exprCtx(scope, ctx);
             if (const auto dt = IsBareDataType(assignment.targetCandidate.unwrappedBytes, exprCtx))
             {
-                ctx.EmitAtRange(assignment.targetCandidate.range, diagnostics::codes::ExpressionIsDataType, *dt);
+                ctx.EmitAtRange(assignment.targetRange, diagnostics::codes::ExpressionIsDataType, *dt);
             }
             else
             {
-                ctx.EmitAtRange(assignment.targetCandidate.range, "as-err-not-lvalue");
+                ctx.EmitAtRange(assignment.targetRange, "as-err-not-lvalue");
             }
         }
     }

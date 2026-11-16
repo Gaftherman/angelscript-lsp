@@ -26,7 +26,8 @@ namespace angel_lsp::analysis
 static void CollectMemberCandidates(const LValueCallSiteFact& callSite, const CallCandidateContext& cctx,
                                     std::vector<Symbol>& candidates)
 {
-    if (callSite.memberName.empty() || callSite.objectBytes.endByte == 0)
+    const std::string_view memberName = LValueSiteFacts::SliceText(cctx.request.sourceCode, callSite.memberBytes);
+    if (memberName.empty() || callSite.objectBytes.endByte == 0)
     {
         return;
     }
@@ -39,7 +40,7 @@ static void CollectMemberCandidates(const LValueCallSiteFact& callSite, const Ca
     }
     for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, cctx.ctx.request.symbolTable))
     {
-        if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(typeName, callSite.memberName))
+        if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(typeName, memberName))
         {
             for (const auto& sym : *found)
             {
@@ -61,7 +62,8 @@ static void CollectMemberCandidates(const LValueCallSiteFact& callSite, const Ca
 static void CollectScopedCandidates(const LValueCallSiteFact& callSite, const CallCandidateContext& cctx,
                                     std::vector<Symbol>& candidates)
 {
-    if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(callSite.calleeText))
+    const std::string_view calleeText = LValueSiteFacts::SliceText(cctx.request.sourceCode, callSite.calleeBytes);
+    if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(calleeText))
     {
         for (const auto& sym : *found)
         {
@@ -82,13 +84,14 @@ static void CollectScopedCandidates(const LValueCallSiteFact& callSite, const Ca
 static void CollectIdentifierCandidates(const LValueCallSiteFact& callSite, const CallCandidateContext& cctx,
                                         std::vector<Symbol>& candidates)
 {
+    const std::string_view calleeText = LValueSiteFacts::SliceText(cctx.request.sourceCode, callSite.calleeBytes);
     std::vector<ContainerInfo> containers;
     if (cctx.request.nodeIndex)
     {
         containers = cctx.request.nodeIndex->CollectLookupContainers(
             callSite.calleeBytes.startByte, callSite.calleeBytes.endByte, 0, cctx.request.sourceCode);
     }
-    for (const auto& sym : FindSymbolsInScope(cctx.ctx.request.symbolTable, containers, callSite.calleeText))
+    for (const auto& sym : FindSymbolsInScope(cctx.ctx.request.symbolTable, containers, calleeText))
     {
         if (sym.type == SymbolType::Function)
         {
@@ -107,7 +110,7 @@ static void CollectIdentifierCandidates(const LValueCallSiteFact& callSite, cons
                                                              cctx.ctx.request.symbolTable);
             for (const auto& cls : hierarchy)
             {
-                if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(cls, callSite.calleeText))
+                if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(cls, calleeText))
                 {
                     for (const auto& sym : *found)
                     {

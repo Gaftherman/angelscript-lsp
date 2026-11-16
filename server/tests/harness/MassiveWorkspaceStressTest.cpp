@@ -1,4 +1,5 @@
 #include "config/ServerConfig.h"
+#include "helpers/ProcessMemory.h"
 #include "helpers/ScriptedStream.h"
 #include "lsp/Server.h"
 #include "utils/Timer.h"
@@ -13,52 +14,8 @@
 #include <string>
 #include <vector>
 
-#if defined(_WIN32)
-// clang-format off
-#include <windows.h>
-#include <psapi.h>
-// clang-format on
-#elif defined(__linux__)
-#include <sys/resource.h>
-#elif defined(__APPLE__)
-#include <mach/mach.h>
-#endif
-
 namespace
 {
-/**
- * @brief Queries peak resident memory (Working Set / RSS) of current process in bytes.
- * @return Peak resident memory in bytes, or 0 if query unavailable.
- */
-size_t GetPeakWorkingSetBytes()
-{
-#if defined(_WIN32)
-    PROCESS_MEMORY_COUNTERS info;
-    if (GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info)))
-    {
-        return info.PeakWorkingSetSize;
-    }
-    return 0;
-#elif defined(__linux__)
-    struct rusage usage;
-    if (getrusage(RUSAGE_SELF, &usage) == 0)
-    {
-        return static_cast<size_t>(usage.ru_maxrss) * 1024;
-    }
-    return 0;
-#elif defined(__APPLE__)
-    struct mach_task_basic_info info;
-    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
-    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &count) == KERN_SUCCESS)
-    {
-        return info.resident_size_max;
-    }
-    return 0;
-#else
-    return 0;
-#endif
-}
-
 /**
  * @brief Temporary workspace fixture directory with disk cleanup on destruction.
  */
@@ -365,6 +322,11 @@ TEST_CASE("Massive Workspace Stress - 400 Files, Deep DAGs, 50k LOC Stub, and 50
     stream.Push("{\"jsonrpc\":\"2.0\",\"id\":" + std::to_string(shutdownId) + ",\"method\":\"shutdown\"}");
     stream.Push("{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}");
 
+    // Peak is measured since this point so earlier tests in the same process cannot inflate it;
+    // platforms that cannot reset the peak fall back to the lifetime peak of the process.
+    const bool peakReset = angel_lsp::test::ResetPeakMemory();
+    const size_t baselineBytes = peakReset ? angel_lsp::test::CurrentResidentBytes() : 0;
+
     angel_lsp::utils::HighResTimer timer;
     {
         angel_lsp::Server server(serverConfig, stream);
@@ -372,10 +334,12 @@ TEST_CASE("Massive Workspace Stress - 400 Files, Deep DAGs, 50k LOC Stub, and 50
     }
     const double elapsedMs = timer.ElapsedMs();
 
-    const size_t peakMemBytes = GetPeakWorkingSetBytes();
+    const size_t peakBytes = angel_lsp::test::PeakResidentBytes();
+    const size_t peakMemBytes = peakBytes > baselineBytes ? peakBytes - baselineBytes : 0;
     const size_t peakMemMB = peakMemBytes / (1024 * 1024);
     MESSAGE("400-file massive stress test completed in ", elapsedMs, " ms");
-    MESSAGE("Peak Working Set RAM: ", peakMemMB, " MB (Ceiling: 300 MB)");
+    MESSAGE("Peak Working Set RAM: ", peakMemMB, " MB above baseline ", baselineBytes / (1024 * 1024),
+            " MB (Ceiling: 300 MB)");
 
     CHECK(peakMemMB <= 300);
 

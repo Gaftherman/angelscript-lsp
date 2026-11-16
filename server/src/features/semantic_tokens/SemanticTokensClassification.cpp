@@ -5,34 +5,67 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace angel_lsp::features
 {
 
 void CollectReferenceKinds(const analysis::Scope* scope,
-                           ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& out)
+                           ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& out,
+                           const std::optional<lsp::Range>& range)
 {
-    for (const auto& def : scope->definitions)
+    if (!scope)
     {
-        out[PositionKey(def.startLine, def.startCharacter)] = def.kind;
+        return;
     }
 
-    for (const auto& ref : scope->references)
+    std::vector<const analysis::Scope*> worklist;
+    worklist.push_back(scope);
+
+    while (!worklist.empty())
     {
-        if (ref.isMemberAccess)
+        const analysis::Scope* current = worklist.back();
+        worklist.pop_back();
+
+        if (range.has_value() && (current->endLine < range->start.line || current->startLine > range->end.line))
         {
             continue;
         }
 
-        if (const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, ref.name))
+        for (const auto& def : current->definitions)
         {
-            out[PositionKey(ref.startLine, ref.startCharacter)] = def->kind;
+            if (range.has_value() && (def.startLine < range->start.line || def.startLine > range->end.line))
+            {
+                continue;
+            }
+            out[PositionKey(def.startLine, def.startCharacter)] = def.kind;
         }
-    }
 
-    for (const auto& child : scope->children)
-    {
-        CollectReferenceKinds(child.get(), out);
+        for (const auto& ref : current->references)
+        {
+            if (ref.isMemberAccess)
+            {
+                continue;
+            }
+            if (range.has_value() && (ref.startLine < range->start.line || ref.startLine > range->end.line))
+            {
+                continue;
+            }
+
+            if (const analysis::LocalDefinition* def = analysis::ResolveInScope(current, ref.name))
+            {
+                out[PositionKey(ref.startLine, ref.startCharacter)] = def->kind;
+            }
+        }
+
+        for (const auto& child : current->children)
+        {
+            if (range.has_value() && (child->endLine < range->start.line || child->startLine > range->end.line))
+            {
+                continue;
+            }
+            worklist.push_back(child.get());
+        }
     }
 }
 

@@ -73,39 +73,69 @@ struct TokenRefinementContext
 }
 
 /**
- * @brief Splits source buffer into views of individual lines.
- * @param[in] str Source buffer view.
- * @return Vector of line string views.
+ * @brief Slice of source lines covering a [baseLine, baseLine + lines.size()) window.
  */
-[[nodiscard]] std::vector<std::string_view> SplitLinesView(std::string_view str);
+struct SourceLineWindow
+{
+    uint32_t baseLine = 0;
+    std::vector<std::string_view> lines;
+
+    /**
+     * @brief Checks whether the given 0-based line is within this window.
+     * @param[in] line Zero-based line number.
+     * @return True if line is present in this window.
+     */
+    [[nodiscard]] bool HasLine(uint32_t line) const noexcept
+    {
+        return line >= baseLine && (line - baseLine) < lines.size();
+    }
+
+    /**
+     * @brief Returns the view for a 0-based line, or empty if outside the window.
+     * @param[in] line Zero-based line number.
+     * @return View of the line text without trailing line endings.
+     */
+    [[nodiscard]] std::string_view GetLine(uint32_t line) const noexcept
+    {
+        return HasLine(line) ? lines[line - baseLine] : std::string_view{};
+    }
+};
+
+/**
+ * @brief Splits source buffer into views of lines overlapping an optional range.
+ * @param[in] str Source buffer view.
+ * @param[in] range Optional target LSP range; splits entire document when absent.
+ * @return Line window covering the requested range (or full document).
+ */
+[[nodiscard]] SourceLineWindow SplitLinesWindow(std::string_view str, const std::optional<lsp::Range>& range);
 
 /**
  * @brief Emits boundary tokens for template angle brackets.
  * @param[in] capture AST-free highlight capture item.
  * @param[in] meta Token metadata.
- * @param[in] sourceLines Views of individual source lines.
+ * @param[in] sourceLines Window of source lines.
  * @param[in,out] rawTokens Vector accumulating raw tokens.
  */
 void EmitTemplatePunctuationTokens(const analysis::IndexedHighlightCapture& capture, TokenMeta meta,
-                                   const std::vector<std::string_view>& sourceLines, std::vector<RawToken>& rawTokens);
+                                   const SourceLineWindow& sourceLines, std::vector<RawToken>& rawTokens);
 
 /**
  * @brief Emits a single token or splits multi-line tokens into line-delimited items.
  * @param[in] capture AST-free highlight capture item.
  * @param[in] meta Token metadata.
- * @param[in] sourceLines Views of individual source lines.
+ * @param[in] sourceLines Window of source lines.
  * @param[in,out] rawTokens Vector accumulating raw tokens.
  */
 void EmitTokenOrSplitLines(const analysis::IndexedHighlightCapture& capture, TokenMeta meta,
-                           const std::vector<std::string_view>& sourceLines, std::vector<RawToken>& rawTokens);
+                           const SourceLineWindow& sourceLines, std::vector<RawToken>& rawTokens);
 
 /**
  * @brief Collects semantic tokens from pre-extracted captures using refinement rules.
  * @param[in] ctx Refinement context.
- * @param[in] sourceLines Views of individual source lines.
+ * @param[in] sourceLines Window of source lines.
  * @param[in,out] rawTokens Vector accumulating raw tokens.
  */
-void CollectHighlightsTokens(const TokenRefinementContext& ctx, const std::vector<std::string_view>& sourceLines,
+void CollectHighlightsTokens(const TokenRefinementContext& ctx, const SourceLineWindow& sourceLines,
                              std::vector<RawToken>& rawTokens);
 
 /**
@@ -125,17 +155,19 @@ void NarrowTokensToRange(std::vector<RawToken>& tokens, const lsp::Range& range)
 /**
  * @brief Filters out invalid standalone operator tokens that do not match genuine AngelScript operators.
  * @param[in,out] tokens Vector of tokens to inspect.
- * @param[in] sourceLines Views of individual source lines.
+ * @param[in] sourceLines Window of source lines.
  */
-void FilterInvalidOperators(std::vector<RawToken>& tokens, const std::vector<std::string_view>& sourceLines);
+void FilterInvalidOperators(std::vector<RawToken>& tokens, const SourceLineWindow& sourceLines);
 
 /**
  * @brief Collects definition kinds for reference identifiers by walking the lexical scope tree.
  * @param[in] scope Pointer to scope root.
  * @param[out] referenceKinds Output map from coordinate key to definition kind.
+ * @param[in] range Optional target LSP range to prune non-overlapping scopes and entries.
  */
 void CollectReferenceKinds(const analysis::Scope* scope,
-                           ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& referenceKinds);
+                           ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& referenceKinds,
+                           const std::optional<lsp::Range>& range = std::nullopt);
 
 /**
  * @brief Resolves variable reference token type to Parameter or Variable based on definition kind.
@@ -204,10 +236,12 @@ ResolveReferenceTokenType(uint32_t line, uint32_t column,
  * @param[in] facts Pre-extracted semantic token facts.
  * @param[in] sourceCode Source text buffer view.
  * @param[in] symbolTable Global symbol table.
+ * @param[in] range Optional target LSP range to restrict upgrades.
  * @return Map from start byte to upgraded token type.
  */
 [[nodiscard]] ankerl::unordered_dense::map<uint32_t, uint32_t>
 PrecalculateScopedEnumUpgrades(const analysis::SemanticTokenFacts& facts, std::string_view sourceCode,
-                               const analysis::SymbolTable& symbolTable);
+                               const analysis::SymbolTable& symbolTable,
+                               const std::optional<lsp::Range>& range = std::nullopt);
 
 } // namespace angel_lsp::features

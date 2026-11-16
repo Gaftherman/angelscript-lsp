@@ -51,7 +51,9 @@ static lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const anal
     {
         part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param, ctx.callee.selectionRange);
     }
-    if (enableTooltip && !part.location.has_value())
+    // The tooltip is always sent with the location: without it the client resolves the hover by
+    // opening the target document (a full read and parse of the declaring file) on first hover.
+    if (enableTooltip)
     {
         part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
                                           analysis::FormatParameterTooltip(param, label)};

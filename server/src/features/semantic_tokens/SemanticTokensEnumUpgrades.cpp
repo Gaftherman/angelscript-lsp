@@ -146,17 +146,79 @@ static void UpgradeScopedTypeEnumTokens(const analysis::IndexedScopedType& item,
     }
 }
 
+/**
+ * @brief Computes half-open byte bounds in sourceCode for an LSP range.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in] range Target LSP range.
+ * @return Pair of [startByte, endByte).
+ */
+static std::pair<uint32_t, uint32_t> ComputeRangeBytes(std::string_view sourceCode, const lsp::Range& range) noexcept
+{
+    uint32_t startByte = static_cast<uint32_t>(sourceCode.size());
+    uint32_t endByte = static_cast<uint32_t>(sourceCode.size());
+    uint32_t line = 0;
+    size_t pos = 0;
+    bool foundStart = false;
+
+    while (pos <= sourceCode.size())
+    {
+        const size_t nl = sourceCode.find('\n', pos);
+        const size_t lineEnd = (nl == std::string_view::npos) ? sourceCode.size() : nl;
+        if (!foundStart && line == range.start.line)
+        {
+            startByte = static_cast<uint32_t>(std::min(pos + range.start.character, lineEnd));
+            foundStart = true;
+        }
+        if (line == range.end.line)
+        {
+            endByte = static_cast<uint32_t>(std::min(pos + range.end.character, lineEnd));
+            break;
+        }
+        if (nl == std::string_view::npos)
+        {
+            break;
+        }
+        pos = nl + 1;
+        ++line;
+    }
+
+    if (endByte < startByte)
+    {
+        endByte = startByte;
+    }
+    return {startByte, endByte};
+}
+
 ankerl::unordered_dense::map<uint32_t, uint32_t>
 PrecalculateScopedEnumUpgrades(const analysis::SemanticTokenFacts& facts, std::string_view sourceCode,
-                               const analysis::SymbolTable& symbolTable)
+                               const analysis::SymbolTable& symbolTable, const std::optional<lsp::Range>& range)
 {
     ankerl::unordered_dense::map<uint32_t, uint32_t> upgrades;
+    if (facts.scopedNames.empty() && facts.scopedTypes.empty())
+    {
+        return upgrades;
+    }
+
+    const std::optional<std::pair<uint32_t, uint32_t>> byteBounds =
+        range.has_value() ? std::optional<std::pair<uint32_t, uint32_t>>(ComputeRangeBytes(sourceCode, *range))
+                          : std::nullopt;
+
     for (const auto& scopedName : facts.scopedNames)
     {
+        if (byteBounds.has_value() &&
+            (scopedName.nodeEndByte <= byteBounds->first || scopedName.nodeStartByte >= byteBounds->second))
+        {
+            continue;
+        }
         UpgradeScopedIdentifierEnumTokens(scopedName, sourceCode, symbolTable, upgrades);
     }
     for (const auto& scopedType : facts.scopedTypes)
     {
+        if (byteBounds.has_value() &&
+            (scopedType.memberTextEndByte <= byteBounds->first || scopedType.scopeTextStartByte >= byteBounds->second))
+        {
+            continue;
+        }
         UpgradeScopedTypeEnumTokens(scopedType, sourceCode, symbolTable, upgrades);
     }
     return upgrades;

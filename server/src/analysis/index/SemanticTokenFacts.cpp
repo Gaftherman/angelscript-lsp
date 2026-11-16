@@ -19,17 +19,27 @@ namespace angel_lsp::analysis
 {
 
 /**
- * @brief Builds class spans for all class declarations in the AST.
+ * @brief Builds class spans for class declarations in the AST, optionally restricted to a byte range.
  * @param[in] index Syntax node index.
  * @param[in] sourceCode Document source text buffer.
- * @param[in] syms Grammar symbols table.
+ * @param[in] byteRange Optional byte range to filter overlapping class declarations.
  * @param[out] classSpans Output vector of IndexedClassSpan items.
  */
-static void BuildClassSpans(const NodeIndex& index, std::string_view sourceCode, const parser::GrammarSymbols& syms,
-                            std::vector<IndexedClassSpan>& classSpans)
+static void BuildClassSpans(const NodeIndex& index, std::string_view sourceCode,
+                            std::optional<IndexedByteRange> byteRange, std::vector<IndexedClassSpan>& classSpans)
 {
+    const auto& syms = parser::GetGrammarSymbols();
     for (TSNode classDecl : index.Nodes(syms.symClassDeclaration))
     {
+        if (byteRange.has_value())
+        {
+            const uint32_t declStart = ts_node_start_byte(classDecl);
+            const uint32_t declEnd = ts_node_end_byte(classDecl);
+            if (declEnd <= byteRange->startByte || declStart >= byteRange->endByte)
+            {
+                continue;
+            }
+        }
         TSNode classNameNode = parser::GetChildByField(classDecl, syms.fieldName);
         if (!ts_node_is_null(classNameNode))
         {
@@ -182,29 +192,127 @@ static void AppendScopedType(TSNode typeNode, std::string_view sourceCode, const
     scopedTypes.push_back(st);
 }
 
-SemanticTokenFacts CollectSemanticTokenFacts(const NodeIndex& index, std::string_view sourceCode)
+/**
+ * @brief Computes half-open byte bounds in sourceCode for a 0-based line/column SourceRange.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] range Target line/column range.
+ * @return Clamped IndexedByteRange covering the requested range.
+ */
+static IndexedByteRange ComputeRangeByteBounds(std::string_view sourceCode, const SourceRange& range) noexcept
+{
+    uint32_t startByte = static_cast<uint32_t>(sourceCode.size());
+    uint32_t endByte = static_cast<uint32_t>(sourceCode.size());
+    uint32_t line = 0;
+    size_t pos = 0;
+    bool foundStart = false;
+
+    while (pos <= sourceCode.size())
+    {
+        const size_t nl = sourceCode.find('\n', pos);
+        const size_t lineEnd = (nl == std::string_view::npos) ? sourceCode.size() : nl;
+        if (!foundStart && line == range.startLine)
+        {
+            startByte = static_cast<uint32_t>(std::min(pos + range.startCharacter, lineEnd));
+            foundStart = true;
+        }
+        if (line == range.endLine)
+        {
+            endByte = static_cast<uint32_t>(std::min(pos + range.endCharacter, lineEnd));
+            break;
+        }
+        if (nl == std::string_view::npos)
+        {
+            break;
+        }
+        pos = nl + 1;
+        ++line;
+    }
+
+    if (endByte < startByte)
+    {
+        endByte = startByte;
+    }
+    return IndexedByteRange{startByte, endByte};
+}
+
+/**
+ * @brief Returns the contiguous slice of ordered nodes that may overlap a byte range.
+ * @param[in] nodes Ordered span of AST nodes sorted by start byte.
+ * @param[in] byteRange Target byte interval.
+ * @return Subspan of nodes starting at or before byteRange.startByte and before byteRange.endByte.
+ */
+static std::span<const TSNode> FindOverlappingNodes(std::span<const TSNode> nodes, IndexedByteRange byteRange) noexcept
+{
+    if (nodes.empty() || byteRange.startByte >= byteRange.endByte)
+    {
+        return {};
+    }
+    auto endIt = std::lower_bound(nodes.begin(), nodes.end(), byteRange.endByte,
+                                  [](TSNode n, uint32_t b) { return ts_node_start_byte(n) < b; });
+    auto startIt = std::lower_bound(nodes.begin(), endIt, byteRange.startByte,
+                                    [](TSNode n, uint32_t b) { return ts_node_start_byte(n) < b; });
+    while (startIt != nodes.begin())
+    {
+        auto prev = std::prev(startIt);
+        if (ts_node_end_byte(*prev) > byteRange.startByte)
+        {
+            startIt = prev;
+        }
+        else if (prev != nodes.begin() && ts_node_start_byte(*std::prev(prev)) == ts_node_start_byte(*prev))
+        {
+            startIt = prev;
+        }
+        else
+        {
+            break;
+        }
+    }
+    return nodes.subspan(static_cast<size_t>(startIt - nodes.begin()), static_cast<size_t>(endIt - startIt));
+}
+
+/**
+ * @brief Shared implementation for full and ranged semantic token fact extraction.
+ * @param[in] index Pre-indexed syntax tree facts.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] range Optional line/column range to restrict extraction.
+ * @return Populated SemanticTokenFacts collection.
+ */
+static SemanticTokenFacts CollectSemanticTokenFactsImpl(const NodeIndex& index, std::string_view sourceCode,
+                                                        const std::optional<SourceRange>& range)
 {
     SemanticTokenFacts facts;
     if (sourceCode.empty())
     {
         return facts;
     }
-
-    const auto& highlightsData = GetHighlightsQueryData();
-    if (!highlightsData.query)
+    if (range.has_value() && (range->endLine < range->startLine ||
+                              (range->endLine == range->startLine && range->endCharacter < range->startCharacter) ||
+                              (range->endLine == 0 && range->endCharacter == 0)))
     {
         return facts;
     }
 
+    const auto& highlightsData = GetHighlightsQueryData();
     TSNode root = index.Root();
-    if (ts_node_is_null(root))
+    if (!highlightsData.query || ts_node_is_null(root))
     {
         return facts;
     }
 
     const auto& syms = parser::GetGrammarSymbols();
+    const std::optional<IndexedByteRange> byteRange =
+        range.has_value() ? std::optional<IndexedByteRange>(ComputeRangeByteBounds(sourceCode, *range)) : std::nullopt;
 
     TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
+    if (range.has_value())
+    {
+        ts_query_cursor_set_point_range(cursor, TSPoint{range->startLine, range->startCharacter},
+                                        TSPoint{range->endLine, range->endCharacter});
+    }
+    else
+    {
+        ts_query_cursor_set_point_range(cursor, TSPoint{0, 0}, TSPoint{0, 0});
+    }
     ts_query_cursor_exec(cursor, highlightsData.query, root);
 
     TSQueryMatch match;
@@ -255,9 +363,17 @@ SemanticTokenFacts CollectSemanticTokenFacts(const NodeIndex& index, std::string
         MarkBaseListScopedLeaf(node, syms, cap);
         facts.captures.push_back(cap);
     }
+    ts_query_cursor_set_point_range(cursor, TSPoint{0, 0}, TSPoint{0, 0});
 
-    for (TSNode scopedNode : index.Nodes(syms.symScopedIdentifier))
+    const std::span<const TSNode> scopedNodes =
+        byteRange.has_value() ? FindOverlappingNodes(index.Nodes(syms.symScopedIdentifier), *byteRange)
+                              : index.Nodes(syms.symScopedIdentifier);
+    for (TSNode scopedNode : scopedNodes)
     {
+        if (byteRange.has_value() && ts_node_end_byte(scopedNode) <= byteRange->startByte)
+        {
+            continue;
+        }
         const uint32_t namedCount = ts_node_named_child_count(scopedNode);
         if (namedCount >= 2)
         {
@@ -277,8 +393,15 @@ SemanticTokenFacts CollectSemanticTokenFacts(const NodeIndex& index, std::string
         }
     }
 
-    for (TSNode scopeNode : index.Nodes(syms.symScope))
+    const std::span<const TSNode> scopeNodes = byteRange.has_value()
+                                                   ? FindOverlappingNodes(index.Nodes(syms.symScope), *byteRange)
+                                                   : index.Nodes(syms.symScope);
+    for (TSNode scopeNode : scopeNodes)
     {
+        if (byteRange.has_value() && ts_node_end_byte(scopeNode) <= byteRange->startByte)
+        {
+            continue;
+        }
         TSNode parent = parser::GetParent(scopeNode);
         if (!ts_node_is_null(parent) && ts_node_symbol(parent) == syms.symType)
         {
@@ -286,9 +409,20 @@ SemanticTokenFacts CollectSemanticTokenFacts(const NodeIndex& index, std::string
         }
     }
 
-    BuildClassSpans(index, sourceCode, syms, facts.classSpans);
+    BuildClassSpans(index, sourceCode, byteRange, facts.classSpans);
 
     return facts;
+}
+
+SemanticTokenFacts CollectSemanticTokenFacts(const NodeIndex& index, std::string_view sourceCode)
+{
+    return CollectSemanticTokenFactsImpl(index, sourceCode, std::nullopt);
+}
+
+SemanticTokenFacts CollectSemanticTokenFacts(const NodeIndex& index, std::string_view sourceCode,
+                                             const SourceRange& range)
+{
+    return CollectSemanticTokenFactsImpl(index, sourceCode, range);
 }
 
 } // namespace angel_lsp::analysis

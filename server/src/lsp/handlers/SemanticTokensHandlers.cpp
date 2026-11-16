@@ -130,8 +130,12 @@ Server::HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocum
         doc->docHandle && doc->docHandle->tree
             ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
             : nullptr;
+    const lsp::Range decodedRange = codec::Decode(*doc->text, GetPositionEncoding(), req.range);
+    const analysis::SourceRange factsRange{decodedRange.start.line, decodedRange.start.character, decodedRange.end.line,
+                                           decodedRange.end.character};
     const analysis::SemanticTokenFacts facts =
-        syntax ? analysis::CollectSemanticTokenFacts(syntax->index, *doc->text) : analysis::SemanticTokenFacts{};
+        syntax ? analysis::CollectSemanticTokenFacts(syntax->index, *doc->text, factsRange)
+               : analysis::SemanticTokenFacts{};
     features::SemanticTokensRequest sr{doc->uri, *doc->text, facts, m_symbolTable};
     sr.scopeRoot = m_scopeIndex.GetRoot(doc->uri);
     if (syntax && m_localScopeCollector && !sr.scopeRoot)
@@ -139,7 +143,7 @@ Server::HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocum
         sr.scopeRoot = m_localScopeCollector->CollectScopesFromIndex(syntax->index, *doc->text);
     }
     sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
-    sr.range = codec::Decode(*doc->text, GetPositionEncoding(), req.range);
+    sr.range = decodedRange;
 
     lsp::SemanticTokens tokens = features::GetSemanticTokens(sr);
     codec::EncodeSemanticTokens(*doc->text, GetPositionEncoding(), tokens.data);

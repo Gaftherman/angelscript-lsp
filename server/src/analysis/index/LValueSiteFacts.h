@@ -4,6 +4,7 @@
 #include "analysis/index/SpanFactSearch.h"
 
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -16,7 +17,7 @@ namespace angel_lsp::analysis
 enum class LValueCandidateKind : uint8_t
 {
     None,             ///< Missing operand, null node, or unrecognized expression.
-    Identifier,       ///< Identifier, scoped identifier, or tokFunction symbol.
+    Identifier,       ///< Identifier, scoped identifier, tokFunction, or this expression.
     Member,           ///< Member access expression (object.member).
     Index,            ///< Index expression (e.g. array[i]), always assignable.
     UnaryDereference, ///< Unary handle dereference (@operand).
@@ -41,11 +42,20 @@ enum class LValueCalleeKind : uint8_t
  */
 struct LValueBranchFact
 {
-    IndexedByteRange bytes;     ///< Byte span of the branch expression.
-    SourceRange range;          ///< Line and column span of the branch expression.
-    std::string_view text;      ///< Trimmed source spelling of the branch.
-    bool isConsequence = false; ///< True for consequence branch; false for alternative branch.
+    IndexedByteRange bytes;         ///< Byte span of the branch expression.
+    bool isConsequence : 1 = false; ///< True for consequence branch; false for alternative branch.
 };
+static_assert(sizeof(LValueBranchFact) <= 12);
+
+/**
+ * @brief Receiver object and member identifier byte spans for a member l-value candidate.
+ */
+struct LValueMemberCandidateFact
+{
+    IndexedByteRange objectBytes; ///< Receiver object byte span.
+    IndexedByteRange memberBytes; ///< Member identifier byte span.
+};
+static_assert(sizeof(LValueMemberCandidateFact) <= 16);
 
 /**
  * @brief Call expression evaluated as an l-value on the left side of an assignment.
@@ -54,128 +64,81 @@ struct LValueCallSiteFact
 {
     IndexedByteRange bytes;                               ///< Byte span of the call expression.
     SourceRange range;                                    ///< Line and column span of the call expression.
-    LValueCalleeKind calleeKind = LValueCalleeKind::None; ///< Callee syntactic category.
     IndexedByteRange calleeBytes;                         ///< Byte span of the callee node.
-    SourceRange calleeRange;                              ///< Line and column span of the callee node.
-    std::string_view calleeText;                          ///< Spelling of callee identifier or scoped name.
     IndexedByteRange objectBytes;                         ///< Member callee: byte span of receiver object.
-    SourceRange objectRange;                              ///< Member callee: line and column span of receiver object.
-    std::string_view objectText;                          ///< Member callee: source spelling of receiver object.
     IndexedByteRange memberBytes;                         ///< Member callee: byte span of member identifier.
-    SourceRange memberRange;                              ///< Member callee: line and column span of member identifier.
-    std::string_view memberName;                          ///< Member callee: spelling of member method.
+    LValueCalleeKind calleeKind = LValueCalleeKind::None; ///< Callee syntactic category.
 };
+static_assert(sizeof(LValueCallSiteFact) <= 52);
 
 /**
- * @brief One expression node evaluated for modifiable l-value assignability.
+ * @brief Compact expression node evaluated for modifiable l-value assignability.
  */
 struct LValueCandidateFact
 {
-    IndexedByteRange bytes;                               ///< Byte span of the expression (including outer parens).
-    SourceRange range;                                    ///< Line and column span of the expression.
-    IndexedByteRange unwrappedBytes;                      ///< Byte span after unwrapping all outer parentheses.
-    SourceRange unwrappedRange;                           ///< Line and column span after unwrapping outer parens.
-    std::string_view text;                                ///< Source spelling of the unwrapped node.
+    IndexedByteRange bytes;          ///< Byte span of the expression (including outer parens).
+    IndexedByteRange unwrappedBytes; ///< Byte span after unwrapping all outer parentheses.
+    uint32_t detailIndex = 0;        ///< Pool index into ternaryBranches, members, or unaryOperands.
+    uint16_t detailCount = 0;        ///< Number of pool entries owned by this candidate.
     LValueCandidateKind kind = LValueCandidateKind::None; ///< Evaluated l-value candidate shape.
-    bool isParenthesized = false;                         ///< Whether outer parentheses were present.
-    bool isBareDataType = false;                          ///< Whether the unwrapped spelling is a primitive type.
-
-    std::string_view name; ///< Identifier or member name.
-    uint32_t refByte = 0;  ///< Start byte offset of identifier for scope lookup.
-
-    IndexedByteRange objectBytes; ///< Member: receiver object byte span.
-    SourceRange objectRange;      ///< Member: receiver object line and column span.
-    std::string_view objectText;  ///< Member: receiver object source spelling.
-    IndexedByteRange memberBytes; ///< Member: member identifier byte span.
-    SourceRange memberRange;      ///< Member: member identifier line and column span.
-    std::string_view memberName;  ///< Member: member identifier spelling.
-
-    IndexedByteRange operandBytes; ///< Unary @: inner operand byte span.
-    SourceRange operandRange;      ///< Unary @: inner operand line and column span.
-    std::string_view operandText;  ///< Unary @: inner operand source spelling.
-
-    IndexedByteRange consequenceBytes; ///< Ternary: consequence branch byte span.
-    SourceRange consequenceRange;      ///< Ternary: consequence branch line and column span.
-    std::string_view consequenceText;  ///< Ternary: consequence branch source spelling.
-    IndexedByteRange alternativeBytes; ///< Ternary: alternative branch byte span.
-    SourceRange alternativeRange;      ///< Ternary: alternative branch line and column span.
-    std::string_view alternativeText;  ///< Ternary: alternative branch source spelling.
-    uint32_t branchBegin = 0;          ///< First slice index into LValueSiteFacts::ternaryBranches.
-    uint32_t branchCount = 0;          ///< Number of branches in ternaryBranches slice.
-
-    bool isCall = false;        ///< Unwrapped expression is a call expression.
-    IndexedByteRange callBytes; ///< Byte span of the call expression if isCall.
+    bool isParenthesized : 1 = false;                     ///< True when outer parentheses surrounded the expression.
 };
-
-/**
- * @brief Plain struct holding receiver object and member identifier details.
- */
-struct LValueMemberParts
-{
-    IndexedByteRange objBytes; ///< Receiver object byte span.
-    SourceRange objRange;      ///< Receiver object line and column span.
-    std::string_view objText;  ///< Receiver object source spelling.
-    IndexedByteRange memBytes; ///< Member identifier byte span.
-    SourceRange memRange;      ///< Member identifier line and column span.
-    std::string_view memText;  ///< Member identifier spelling.
-
-    /**
-     * @brief Copies member details to a candidate fact.
-     * @param[out] f Target candidate fact.
-     */
-    void ApplyTo(LValueCandidateFact& f) const noexcept
-    {
-        f.objectBytes = objBytes;
-        f.objectRange = objRange;
-        f.objectText = objText;
-        f.memberBytes = memBytes;
-        f.memberRange = memRange;
-        f.memberName = memText;
-        f.name = memText;
-    }
-
-    /**
-     * @brief Copies member details to a call site fact.
-     * @param[out] f Target call site fact.
-     */
-    void ApplyTo(LValueCallSiteFact& f) const noexcept
-    {
-        f.objectBytes = objBytes;
-        f.objectRange = objRange;
-        f.objectText = objText;
-        f.memberBytes = memBytes;
-        f.memberRange = memRange;
-        f.memberName = memText;
-    }
-};
+static_assert(sizeof(LValueCandidateFact) <= 24);
 
 /**
  * @brief An assignment expression whose left-hand target was evaluated for l-value validity.
  */
 struct LValueAssignmentFact
 {
-    IndexedByteRange bytes;              ///< Byte span of the assignment expression.
-    SourceRange range;                   ///< Line and column span of the assignment expression.
-    IndexedByteRange targetBytes;        ///< Byte span of the left-hand target expression.
-    SourceRange targetRange;             ///< Line and column span of the target expression.
-    std::string_view targetText;         ///< Source spelling of the left-hand target expression.
-    bool targetIsDirectCall = false;     ///< Top-level target node symbol is symCallExpression.
-    bool targetIsUnwrappedCall = false;  ///< Target unwrapped from parentheses is symCallExpression.
-    IndexedByteRange callBytes;          ///< Byte span of the call expression if target is a call.
-    bool targetIsDirectTernary = false;  ///< Top-level target node symbol is symTernaryExpression.
-    LValueCandidateFact targetCandidate; ///< Flattened candidate fact for the target node.
+    IndexedByteRange bytes;                 ///< Byte span of the assignment expression.
+    SourceRange range;                      ///< Line and column span of the assignment expression.
+    SourceRange targetRange;                ///< Line and column span of the target expression.
+    LValueCandidateFact targetCandidate;    ///< Flattened candidate fact for the target node.
+    bool targetIsDirectCall : 1 = false;    ///< Top-level target node symbol is symCallExpression.
+    bool targetIsUnwrappedCall : 1 = false; ///< Target unwrapped from parentheses is symCallExpression.
+    bool targetIsDirectTernary : 1 = false; ///< Top-level target node symbol is symTernaryExpression.
 };
+static_assert(sizeof(LValueAssignmentFact) <= 68);
 
 /**
  * @brief AST-free facts for assignment targets, call l-values, and candidate l-value expressions.
- * @note Text views point into the source passed to BuildLValueSiteFacts, which must outlive this object.
+ * @note Byte spans and TextOf() views refer to source passed to BuildLValueSiteFacts, which must outlive this object.
  */
 struct LValueSiteFacts
 {
-    std::vector<LValueAssignmentFact> assignments; ///< Ordered by start byte, then by end byte descending.
-    std::vector<LValueCallSiteFact> callSites;     ///< Ordered by start byte, then by end byte descending.
-    std::vector<LValueCandidateFact> candidates;   ///< Ordered by start byte, then by end byte descending.
-    std::vector<LValueBranchFact> ternaryBranches; ///< Ternary branches sliced by LValueCandidateFact.
+    std::string_view source;                        ///< Document source text; must outlive this object.
+    std::vector<LValueAssignmentFact> assignments;  ///< Ordered by start byte, then by end byte descending.
+    std::vector<LValueCallSiteFact> callSites;      ///< Ordered by start byte, then by end byte descending.
+    std::vector<LValueCandidateFact> candidates;    ///< Ordered by start byte, then by end byte descending.
+    std::vector<LValueBranchFact> ternaryBranches;  ///< Ternary branches sliced by LValueCandidateFact.
+    std::vector<LValueMemberCandidateFact> members; ///< Member receiver and member spans indexed by candidates.
+    std::vector<IndexedByteRange> unaryOperands;    ///< Unary @ operand spans indexed by candidates.
+
+    /**
+     * @brief Slices a byte span out of an arbitrary source text buffer with bounds validation.
+     * @param[in] sourceCode Document source buffer.
+     * @param[in] bytes Half-open byte span within sourceCode.
+     * @return View into sourceCode for bytes, or empty when out of bounds.
+     */
+    [[nodiscard]] static std::string_view SliceText(std::string_view sourceCode, IndexedByteRange bytes) noexcept
+    {
+        if (bytes.startByte >= sourceCode.size() || bytes.endByte > sourceCode.size() ||
+            bytes.startByte >= bytes.endByte)
+        {
+            return {};
+        }
+        return sourceCode.substr(bytes.startByte, bytes.endByte - bytes.startByte);
+    }
+
+    /**
+     * @brief Returns the source spelling covered by the given byte span.
+     * @param[in] bytes Half-open byte span within source.
+     * @return View into source, or empty when out of bounds.
+     */
+    [[nodiscard]] std::string_view TextOf(IndexedByteRange bytes) const noexcept
+    {
+        return SliceText(source, bytes);
+    }
 
     /**
      * @brief Finds the assignment fact that spans exactly the given bytes.
@@ -208,6 +171,56 @@ struct LValueSiteFacts
     [[nodiscard]] const LValueCandidateFact* FindCandidate(IndexedByteRange bytes) const noexcept
     {
         return FindExactSpan(candidates, bytes);
+    }
+
+    /**
+     * @brief Returns the ternary branch slice owned by a Ternary candidate.
+     * @param[in] candidate Candidate fact of kind Ternary.
+     * @return Span of branch facts, or empty when absent or out of range.
+     */
+    [[nodiscard]] std::span<const LValueBranchFact> TernaryBranches(const LValueCandidateFact& candidate) const noexcept
+    {
+        if (candidate.kind != LValueCandidateKind::Ternary || candidate.detailCount == 0)
+        {
+            return {};
+        }
+        const size_t begin = candidate.detailIndex;
+        const size_t count = candidate.detailCount;
+        if (begin >= ternaryBranches.size() || count > ternaryBranches.size() - begin)
+        {
+            return {};
+        }
+        return std::span<const LValueBranchFact>(ternaryBranches.data() + begin, count);
+    }
+
+    /**
+     * @brief Returns the receiver and member byte spans owned by a Member candidate.
+     * @param[in] candidate Candidate fact of kind Member.
+     * @return Member span pair, or default empty spans when absent.
+     */
+    [[nodiscard]] LValueMemberCandidateFact MemberOf(const LValueCandidateFact& candidate) const noexcept
+    {
+        if (candidate.kind != LValueCandidateKind::Member || candidate.detailCount == 0 ||
+            candidate.detailIndex >= members.size())
+        {
+            return {};
+        }
+        return members[candidate.detailIndex];
+    }
+
+    /**
+     * @brief Returns the inner operand byte span owned by a UnaryDereference candidate.
+     * @param[in] candidate Candidate fact of kind UnaryDereference.
+     * @return Operand byte span, or empty range when absent.
+     */
+    [[nodiscard]] IndexedByteRange UnaryOperandBytes(const LValueCandidateFact& candidate) const noexcept
+    {
+        if (candidate.kind != LValueCandidateKind::UnaryDereference || candidate.detailCount == 0 ||
+            candidate.detailIndex >= unaryOperands.size())
+        {
+            return {};
+        }
+        return unaryOperands[candidate.detailIndex];
     }
 };
 

@@ -62,19 +62,26 @@ lsp::SemanticTokens GetSemanticTokens(const SemanticTokensRequest& request)
     {
         return lsp::SemanticTokens{};
     }
+    if (request.range.has_value() && (request.range->end.line < request.range->start.line ||
+                                      (request.range->end.line == request.range->start.line &&
+                                       request.range->end.character < request.range->start.character)))
+    {
+        return lsp::SemanticTokens{};
+    }
 
-    auto scopedEnumUpgrades = PrecalculateScopedEnumUpgrades(request.facts, request.sourceCode, request.symbolTable);
+    auto scopedEnumUpgrades =
+        PrecalculateScopedEnumUpgrades(request.facts, request.sourceCode, request.symbolTable, request.range);
 
     ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind> referenceKinds;
     if (request.scopeRoot)
     {
-        CollectReferenceKinds(request.scopeRoot.get(), referenceKinds);
+        CollectReferenceKinds(request.scopeRoot.get(), referenceKinds, request.range);
     }
 
     TokenRefinementContext ctx{request, referenceKinds, scopedEnumUpgrades, request.symbolTable.GetRuleIndex()};
 
     std::vector<RawToken> rawTokens;
-    auto sourceLines = SplitLinesView(request.sourceCode);
+    auto sourceLines = SplitLinesWindow(request.sourceCode, request.range);
     CollectHighlightsTokens(ctx, sourceLines, rawTokens);
 
     if (!request.excludedLineRanges.empty())

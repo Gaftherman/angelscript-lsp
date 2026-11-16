@@ -30,9 +30,9 @@ TEST_SUITE("analysis/index/LValueSiteFacts")
         REQUIRE(facts.assignments.size() == 1);
         const auto& assign = facts.assignments.front();
 
-        CHECK(assign.targetText == varA);
+        CHECK(facts.TextOf(assign.targetCandidate.bytes) == varA);
         CHECK(assign.targetCandidate.kind == angel_lsp::analysis::LValueCandidateKind::Identifier);
-        CHECK(assign.targetCandidate.name == varA);
+        CHECK(facts.TextOf(assign.targetCandidate.unwrappedBytes) == varA);
         CHECK_FALSE(assign.targetIsDirectCall);
         CHECK_FALSE(assign.targetIsUnwrappedCall);
         CHECK_FALSE(assign.targetIsDirectTernary);
@@ -41,9 +41,9 @@ TEST_SUITE("analysis/index/LValueSiteFacts")
         REQUIRE(foundAssign != nullptr);
         CHECK(foundAssign == &assign);
 
-        const auto* foundCand = facts.FindCandidate(assign.targetBytes);
+        const auto* foundCand = facts.FindCandidate(assign.targetCandidate.bytes);
         REQUIRE(foundCand != nullptr);
-        CHECK(foundCand->name == varA);
+        CHECK(facts.TextOf(foundCand->unwrappedBytes) == varA);
         CHECK(foundCand->kind == angel_lsp::analysis::LValueCandidateKind::Identifier);
 
         ts_tree_delete(tree);
@@ -72,22 +72,22 @@ TEST_SUITE("analysis/index/LValueSiteFacts")
         REQUIRE(facts.assignments.size() == 3);
         REQUIRE(facts.callSites.size() == 3);
 
-        const auto* call0 = facts.FindCallSite(facts.assignments[0].callBytes);
+        const auto* call0 = facts.FindCallSite(facts.assignments[0].targetCandidate.unwrappedBytes);
         REQUIRE(call0 != nullptr);
         // The grammar wraps every plain name in scoped_identifier, so it classifies as Scoped.
         CHECK(call0->calleeKind == angel_lsp::analysis::LValueCalleeKind::Scoped);
-        CHECK(call0->calleeText == fnName);
+        CHECK(facts.TextOf(call0->calleeBytes) == fnName);
 
-        const auto* call1 = facts.FindCallSite(facts.assignments[1].callBytes);
+        const auto* call1 = facts.FindCallSite(facts.assignments[1].targetCandidate.unwrappedBytes);
         REQUIRE(call1 != nullptr);
         CHECK(call1->calleeKind == angel_lsp::analysis::LValueCalleeKind::Member);
-        CHECK(call1->memberName == memName);
-        CHECK(call1->objectText == objName);
+        CHECK(facts.TextOf(call1->memberBytes) == memName);
+        CHECK(facts.TextOf(call1->objectBytes) == objName);
 
-        const auto* call2 = facts.FindCallSite(facts.assignments[2].callBytes);
+        const auto* call2 = facts.FindCallSite(facts.assignments[2].targetCandidate.unwrappedBytes);
         REQUIRE(call2 != nullptr);
         CHECK(call2->calleeKind == angel_lsp::analysis::LValueCalleeKind::Scoped);
-        CHECK(call2->calleeText == nsName + "::" + scopedFunc);
+        CHECK(facts.TextOf(call2->calleeBytes) == nsName + "::" + scopedFunc);
 
         ts_tree_delete(tree);
     }
@@ -115,15 +115,15 @@ TEST_SUITE("analysis/index/LValueSiteFacts")
         CHECK_FALSE(assign0.targetIsDirectCall);
         CHECK_FALSE(assign0.targetIsUnwrappedCall);
         CHECK(assign0.targetCandidate.isParenthesized);
-        CHECK(assign0.targetCandidate.name == varA);
-        CHECK(assign0.targetCandidate.unwrappedBytes.startByte > assign0.targetBytes.startByte);
+        CHECK(facts.TextOf(assign0.targetCandidate.unwrappedBytes) == varA);
+        CHECK(assign0.targetCandidate.unwrappedBytes.startByte > assign0.targetCandidate.bytes.startByte);
 
         const auto& assign1 = facts.assignments[1];
         CHECK_FALSE(assign1.targetIsDirectCall);
         CHECK(assign1.targetIsUnwrappedCall);
-        const auto* callFact = facts.FindCallSite(assign1.callBytes);
+        const auto* callFact = facts.FindCallSite(assign1.targetCandidate.unwrappedBytes);
         REQUIRE(callFact != nullptr);
-        CHECK(callFact->calleeText == fnName);
+        CHECK(facts.TextOf(callFact->calleeBytes) == fnName);
 
         ts_tree_delete(tree);
     }
@@ -154,20 +154,22 @@ TEST_SUITE("analysis/index/LValueSiteFacts")
 
         const auto& assign0 = facts.assignments[0];
         CHECK(assign0.targetCandidate.kind == angel_lsp::analysis::LValueCandidateKind::Member);
-        CHECK(assign0.targetCandidate.memberName == propName);
-        CHECK(assign0.targetCandidate.objectText == objName);
+        const auto member0 = facts.MemberOf(assign0.targetCandidate);
+        CHECK(facts.TextOf(member0.memberBytes) == propName);
+        CHECK(facts.TextOf(member0.objectBytes) == objName);
 
         const auto& assign1 = facts.assignments[1];
         CHECK(assign1.targetCandidate.kind == angel_lsp::analysis::LValueCandidateKind::Index);
 
         const auto& assign2 = facts.assignments[2];
         CHECK(assign2.targetCandidate.kind == angel_lsp::analysis::LValueCandidateKind::UnaryDereference);
-        CHECK(assign2.targetCandidate.operandText == hName);
+        const auto operandBytes2 = facts.UnaryOperandBytes(assign2.targetCandidate);
+        CHECK(facts.TextOf(operandBytes2) == hName);
 
-        const auto* candH = facts.FindCandidate(assign2.targetCandidate.operandBytes);
+        const auto* candH = facts.FindCandidate(operandBytes2);
         REQUIRE(candH != nullptr);
         CHECK(candH->kind == angel_lsp::analysis::LValueCandidateKind::Identifier);
-        CHECK(candH->name == hName);
+        CHECK(facts.TextOf(candH->unwrappedBytes) == hName);
 
         ts_tree_delete(tree);
     }
@@ -193,23 +195,45 @@ TEST_SUITE("analysis/index/LValueSiteFacts")
         REQUIRE(facts.assignments.size() == 1);
         const auto& cand = facts.assignments[0].targetCandidate;
         CHECK(cand.kind == angel_lsp::analysis::LValueCandidateKind::Ternary);
-        CHECK(cand.consequenceText == varA);
-        CHECK(cand.alternativeText == varB);
-        CHECK(cand.branchCount == 2);
-        REQUIRE(cand.branchBegin + cand.branchCount <= facts.ternaryBranches.size());
+        const auto branches = facts.TernaryBranches(cand);
+        REQUIRE(branches.size() == 2);
+        CHECK(cand.detailCount == 2);
+        REQUIRE(cand.detailIndex + cand.detailCount <= facts.ternaryBranches.size());
 
-        CHECK(facts.ternaryBranches[cand.branchBegin].isConsequence);
-        CHECK(facts.ternaryBranches[cand.branchBegin].text == varA);
-        CHECK_FALSE(facts.ternaryBranches[cand.branchBegin + 1].isConsequence);
-        CHECK(facts.ternaryBranches[cand.branchBegin + 1].text == varB);
+        CHECK(branches[0].isConsequence);
+        CHECK(facts.TextOf(branches[0].bytes) == varA);
+        CHECK_FALSE(branches[1].isConsequence);
+        CHECK(facts.TextOf(branches[1].bytes) == varB);
 
-        const auto* branchA = facts.FindCandidate(cand.consequenceBytes);
+        const auto* branchA = facts.FindCandidate(branches[0].bytes);
         REQUIRE(branchA != nullptr);
-        CHECK(branchA->name == varA);
+        CHECK(facts.TextOf(branchA->unwrappedBytes) == varA);
 
-        const auto* branchB = facts.FindCandidate(cand.alternativeBytes);
+        const auto* branchB = facts.FindCandidate(branches[1].bytes);
         REQUIRE(branchB != nullptr);
-        CHECK(branchB->name == varB);
+        CHECK(facts.TextOf(branchB->unwrappedBytes) == varB);
+
+        ts_tree_delete(tree);
+    }
+
+    TEST_CASE("LValueSiteFacts - Non-assignment declarations produce zero candidates")
+    {
+        angel_lsp::parser::AngelScriptParser parser;
+        std::string code;
+        for (int i = 0; i < 16; ++i)
+        {
+            code += "namespace " + angel_lsp::test::GenerateRandomSymbolName("ns") + " {}\n";
+        }
+
+        TSTree* tree = parser.Parse(code);
+        REQUIRE(tree != nullptr);
+        TSNode root = ts_tree_root_node(tree);
+        angel_lsp::analysis::NodeIndex index(root, angel_lsp::analysis::NodeIndexOptions{.source = code});
+
+        const auto facts = angel_lsp::analysis::BuildLValueSiteFacts(index, code);
+        CHECK(facts.assignments.empty());
+        CHECK(facts.callSites.empty());
+        CHECK(facts.candidates.empty());
 
         ts_tree_delete(tree);
     }

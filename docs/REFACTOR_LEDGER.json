@@ -3570,6 +3570,56 @@
       "verifiedByTests": [
         "TypeConversion - A call whose overloads return different types is not judged without choosing one"
       ]
+    },
+    {
+      "id": "REF-P14-LVALUECANDIDATES",
+      "phase": "M30",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/index/LValueSiteFacts.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "BuildLValueSiteFacts candidate collection over every identifier and expression node",
+      "whatItDidAndWhyInThatFile": "Stored one LValueCandidateFact of about 320 bytes for every identifier, member, index, unary, ternary, call and parenthesized node of the document.",
+      "whyChangedOrDeleted": "Only assignment, increment and decrement targets and the ternary and handle operands under them are queried by exact span; the rest was dead weight. Facts now use shared pools, packed flags and one reserve.",
+      "replacedByCanonicalFile": "server/src/analysis/index/LValueSiteFacts.cpp",
+      "replacedByCanonicalSymbol": "BuildLValueSiteFacts",
+      "ramOrCpuImpact": "Heap peak for a 65535 namespace document went from 291 MB to 216 MB; LValueCandidateFact 320 B to 24 B.",
+      "verifiedByTests": [
+        "LValueSiteFacts tests in tests/analysis/index/LValueSiteFactsTest.cpp",
+        "LValueChecker and CallChecker suites",
+        "Differential corpus"
+      ]
+    },
+    {
+      "id": "REF-P14-SEMTOKENRANGE",
+      "phase": "M30",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "HandleRequestsTextDocument_SemanticTokens_Range classifying the whole document before slicing",
+      "whatItDidAndWhyInThatFile": "Collected token facts, enum upgrades, reference kinds and line windows for the whole AST and then narrowed the result to the requested range.",
+      "whyChangedOrDeleted": "A range request now restricts fact collection, scope traversal and emission to the requested lines while keeping origin-relative delta encoding identical to a slice of the full result.",
+      "replacedByCanonicalFile": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+      "replacedByCanonicalSymbol": "GetSemanticTokens",
+      "ramOrCpuImpact": "semanticTokens/range on 20000 lines went from 217 ms to 16 ms (p95).",
+      "verifiedByTests": [
+        "SemanticTokens range parity test against full output with a recorded seed"
+      ]
+    },
+    {
+      "id": "REF-P14-INLAYTOOLTIP",
+      "phase": "M30",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/inlay_hint/InlayParameterHints.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "BuildParameterHint omitted the tooltip whenever a location was present",
+      "whatItDidAndWhyInThatFile": "Parameter hints with a location carried no tooltip, so the client resolved the hover by opening the declaring document.",
+      "whyChangedOrDeleted": "The tooltip now travels with the location so hover is answered from the hint itself without opening the target file.",
+      "replacedByCanonicalFile": "server/src/features/inlay_hint/InlayParameterHints.cpp",
+      "replacedByCanonicalSymbol": "BuildParameterHint",
+      "ramOrCpuImpact": "No document open or parse is needed to show the hover of a parameter hint.",
+      "verifiedByTests": [
+        "InlayHintHandler - Parameter hint label part location navigates to callee parameter declaration"
+      ]
     }
   ]
 }

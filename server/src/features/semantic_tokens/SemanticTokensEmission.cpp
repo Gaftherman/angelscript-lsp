@@ -9,55 +9,84 @@
 namespace angel_lsp::features
 {
 
-std::vector<std::string_view> SplitLinesView(std::string_view str)
+/**
+ * @brief Checks whether a highlight capture overlaps the requested LSP range.
+ * @param[in] capture AST-free highlight capture item.
+ * @param[in] range Target LSP coordinate range.
+ * @return True if the capture overlaps the range.
+ */
+static bool CaptureOverlapsRange(const analysis::IndexedHighlightCapture& capture, const lsp::Range& range) noexcept
 {
-    std::vector<std::string_view> lines;
-    size_t start = 0;
-    for (size_t i = 0; i < str.size(); ++i)
+    if (capture.endLine < range.start.line ||
+        (capture.endLine == range.start.line && capture.endColumn <= range.start.character))
     {
-        if (str[i] == '\n')
+        return false;
+    }
+    if (capture.startLine > range.end.line ||
+        (capture.startLine == range.end.line && capture.startColumn >= range.end.character))
+    {
+        return false;
+    }
+    return true;
+}
+
+SourceLineWindow SplitLinesWindow(std::string_view str, const std::optional<lsp::Range>& range)
+{
+    SourceLineWindow window;
+    const uint32_t startLine = range.has_value() ? range->start.line : 0u;
+    const uint32_t endLine = range.has_value() ? range->end.line : UINT32_MAX;
+    window.baseLine = startLine;
+
+    if (startLine > endLine)
+    {
+        return window;
+    }
+
+    uint32_t line = 0;
+    size_t pos = 0;
+    while (pos < str.size())
+    {
+        const size_t nl = str.find('\n', pos);
+        const size_t lineEnd = (nl == std::string_view::npos) ? str.size() : nl;
+        if (line >= startLine)
         {
-            size_t len = i - start;
-            if (len > 0 && str[i - 1] == '\r')
+            size_t len = lineEnd - pos;
+            if (len > 0 && str[pos + len - 1] == '\r')
             {
-                len--;
+                --len;
             }
-            lines.emplace_back(str.data() + start, len);
-            start = i + 1;
+            window.lines.emplace_back(str.data() + pos, len);
         }
-    }
-    if (start < str.size())
-    {
-        size_t len = str.size() - start;
-        if (len > 0 && str.back() == '\r')
+        if (nl == std::string_view::npos || line >= endLine)
         {
-            len--;
+            break;
         }
-        lines.emplace_back(str.data() + start, len);
+        pos = nl + 1;
+        ++line;
     }
-    return lines;
+    return window;
 }
 
 void EmitTemplatePunctuationTokens(const analysis::IndexedHighlightCapture& capture, TokenMeta meta,
-                                   const std::vector<std::string_view>& sourceLines, std::vector<RawToken>& rawTokens)
+                                   const SourceLineWindow& sourceLines, std::vector<RawToken>& rawTokens)
 {
     const uint32_t startRow = capture.startLine;
     const uint32_t startCol = capture.startColumn;
     const uint32_t endRow = capture.endLine;
     const uint32_t endCol = capture.endColumn;
 
-    if (startRow < sourceLines.size() && startCol < sourceLines[startRow].size())
+    if (sourceLines.HasLine(startRow) && startCol < sourceLines.GetLine(startRow).size())
     {
         rawTokens.push_back(RawToken{startRow, startCol, 1, meta.tokenType, meta.tokenMod, meta.priority});
     }
-    if (endCol > 0 && endRow < sourceLines.size() && (endCol - 1) < sourceLines[endRow].size())
+    if (endCol > 0 && sourceLines.HasLine(endRow) && (endCol - 1) < sourceLines.GetLine(endRow).size())
     {
         rawTokens.push_back(RawToken{endRow, endCol - 1, 1, meta.tokenType, meta.tokenMod, meta.priority});
     }
 }
 
 void EmitTokenOrSplitLines(const analysis::IndexedHighlightCapture& capture, TokenMeta meta,
-                           const std::vector<std::string_view>& sourceLines, std::vector<RawToken>& rawTokens)
+                           const SourceLineWindow& sourceLines, std::vector<RawToken>& rawTokens)
 {
     if (meta.tokenType == analysis::Type_TemplatePunctuation)
     {
@@ -72,9 +101,9 @@ void EmitTokenOrSplitLines(const analysis::IndexedHighlightCapture& capture, Tok
 
     if (startRow == endRow)
     {
-        if (startRow < sourceLines.size())
+        if (sourceLines.HasLine(startRow))
         {
-            const uint32_t lineLen = static_cast<uint32_t>(sourceLines[startRow].size());
+            const uint32_t lineLen = static_cast<uint32_t>(sourceLines.GetLine(startRow).size());
             const uint32_t sc = std::min(startCol, lineLen);
             const uint32_t ec = std::min(endCol, lineLen);
             if (ec > sc)
@@ -83,15 +112,14 @@ void EmitTokenOrSplitLines(const analysis::IndexedHighlightCapture& capture, Tok
             }
         }
     }
-    else if (meta.tokenType != analysis::Type_Operator)
+    else if (meta.tokenType != analysis::Type_Operator && !sourceLines.lines.empty())
     {
-        for (uint32_t r = startRow; r <= endRow; ++r)
+        const uint32_t maxWindowLine = sourceLines.baseLine + static_cast<uint32_t>(sourceLines.lines.size()) - 1;
+        const uint32_t rBegin = std::max(startRow, sourceLines.baseLine);
+        const uint32_t rEnd = std::min(endRow, maxWindowLine);
+        for (uint32_t r = rBegin; r <= rEnd; ++r)
         {
-            if (r >= sourceLines.size())
-            {
-                break;
-            }
-            const uint32_t lineLen = static_cast<uint32_t>(sourceLines[r].size());
+            const uint32_t lineLen = static_cast<uint32_t>(sourceLines.GetLine(r).size());
             const uint32_t sc = std::min((r == startRow) ? startCol : 0u, lineLen);
             const uint32_t ec = std::min((r == endRow) ? endCol : lineLen, lineLen);
             if (ec > sc)
@@ -102,11 +130,16 @@ void EmitTokenOrSplitLines(const analysis::IndexedHighlightCapture& capture, Tok
     }
 }
 
-void CollectHighlightsTokens(const TokenRefinementContext& ctx, const std::vector<std::string_view>& sourceLines,
+void CollectHighlightsTokens(const TokenRefinementContext& ctx, const SourceLineWindow& sourceLines,
                              std::vector<RawToken>& rawTokens)
 {
+    const auto& range = ctx.request.range;
     for (const auto& capture : ctx.request.facts.captures)
     {
+        if (range.has_value() && !CaptureOverlapsRange(capture, *range))
+        {
+            continue;
+        }
         uint32_t tokenType = capture.tokenType;
         tokenType = RefineCapturedTokenType(capture, tokenType, ctx);
         if (tokenType == UINT32_MAX)
@@ -215,19 +248,19 @@ void NarrowTokensToRange(std::vector<RawToken>& tokens, const lsp::Range& range)
     }
 }
 
-void FilterInvalidOperators(std::vector<RawToken>& tokens, const std::vector<std::string_view>& sourceLines)
+void FilterInvalidOperators(std::vector<RawToken>& tokens, const SourceLineWindow& sourceLines)
 {
     std::erase_if(tokens,
                   [&sourceLines](const RawToken& tok)
                   {
                       if (tok.tokenType == analysis::Type_Operator)
                       {
-                          if (tok.line >= sourceLines.size() ||
-                              tok.startChar + tok.length > sourceLines[tok.line].size())
+                          const std::string_view lineText = sourceLines.GetLine(tok.line);
+                          if (!sourceLines.HasLine(tok.line) || tok.startChar + tok.length > lineText.size())
                           {
                               return true;
                           }
-                          std::string_view slice(sourceLines[tok.line].data() + tok.startChar, tok.length);
+                          std::string_view slice(lineText.data() + tok.startChar, tok.length);
                           if (analysis::IsPunctuationOrBracket(slice) || !analysis::IsGenuineOperator(slice))
                           {
                               return true;

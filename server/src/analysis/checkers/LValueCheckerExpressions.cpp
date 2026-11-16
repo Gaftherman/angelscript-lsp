@@ -58,17 +58,21 @@ static bool IsIdentifierAssignable(std::string_view name, const Scope* scope, co
 /**
  * @brief Checks if a member expression denotes an assignable property, variable, or setter method.
  * @param[in] candidate Member candidate fact.
+ * @param[in] facts Document-wide l-value facts holding member and source pools.
  * @param[in] scope Current lexical scope.
  * @param[in] ctx Diagnostic context containing symbol table and expression cache.
  * @return True if member expression can be assigned to; false otherwise.
  */
-static bool IsAssignableMember(const LValueCandidateFact& candidate, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsAssignableMember(const LValueCandidateFact& candidate, const LValueSiteFacts& facts, const Scope* scope,
+                               const DiagnosticContext& ctx)
 {
-    if (candidate.memberName.empty() || candidate.objectBytes.endByte == 0)
+    const LValueMemberCandidateFact member = facts.MemberOf(candidate);
+    const std::string_view memberName = facts.TextOf(member.memberBytes);
+    if (memberName.empty() || member.objectBytes.endByte == 0)
     {
         return true;
     }
-    const std::string objType = ResolveExpressionType(candidate.objectBytes, ExpressionTypeContext(scope, ctx));
+    const std::string objType = ResolveExpressionType(member.objectBytes, ExpressionTypeContext(scope, ctx));
     const auto cleanObj = CleanBaseType(objType);
     if (cleanObj.empty())
     {
@@ -76,7 +80,7 @@ static bool IsAssignableMember(const LValueCandidateFact& candidate, const Scope
     }
     for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable, ctx.request.exprCache))
     {
-        if (auto found = ctx.request.symbolTable.FindMemberSymbolPtr(typeName, candidate.memberName))
+        if (auto found = ctx.request.symbolTable.FindMemberSymbolPtr(typeName, memberName))
         {
             bool hasAssignable = false;
             for (const auto& sym : *found)
@@ -95,7 +99,7 @@ static bool IsAssignableMember(const LValueCandidateFact& candidate, const Scope
                 {
                     char setterBuf[512];
                     const std::string_view setterName =
-                        utils::ComposeAccessorName(utils::k_setterPrefix, candidate.memberName, setterBuf);
+                        utils::ComposeAccessorName(utils::k_setterPrefix, memberName, setterBuf);
                     auto setters = setterName.empty()
                                        ? nullptr
                                        : ctx.request.symbolTable.FindMemberSymbolPtr(ancestor, setterName);
@@ -126,8 +130,21 @@ static bool IsAssignableMember(const LValueCandidateFact& candidate, const Scope
 static bool IsTernaryAssignable(const LValueCandidateFact& candidate, const LValueSiteFacts& facts, const Scope* scope,
                                 const DiagnosticContext& ctx)
 {
-    const auto* consCand = facts.FindCandidate(candidate.consequenceBytes);
-    const auto* altCand = facts.FindCandidate(candidate.alternativeBytes);
+    IndexedByteRange consequenceBytes{};
+    IndexedByteRange alternativeBytes{};
+    for (const auto& branch : facts.TernaryBranches(candidate))
+    {
+        if (branch.isConsequence)
+        {
+            consequenceBytes = branch.bytes;
+        }
+        else
+        {
+            alternativeBytes = branch.bytes;
+        }
+    }
+    const auto* consCand = facts.FindCandidate(consequenceBytes);
+    const auto* altCand = facts.FindCandidate(alternativeBytes);
     if (!consCand || !altCand)
     {
         return false;
@@ -137,8 +154,8 @@ static bool IsTernaryAssignable(const LValueCandidateFact& candidate, const LVal
     {
         return false;
     }
-    const std::string type1 = ResolveExpressionType(candidate.consequenceBytes, ExpressionTypeContext(scope, ctx));
-    const std::string type2 = ResolveExpressionType(candidate.alternativeBytes, ExpressionTypeContext(scope, ctx));
+    const std::string type1 = ResolveExpressionType(consequenceBytes, ExpressionTypeContext(scope, ctx));
+    const std::string type2 = ResolveExpressionType(alternativeBytes, ExpressionTypeContext(scope, ctx));
     if (!type1.empty() && !type2.empty() && CleanBaseType(type1) != CleanBaseType(type2))
     {
         return false;
@@ -161,7 +178,7 @@ static bool IsUnaryAssignable(const LValueCandidateFact& candidate, const LValue
     {
         return false;
     }
-    const auto* operand = facts.FindCandidate(candidate.operandBytes);
+    const auto* operand = facts.FindCandidate(facts.UnaryOperandBytes(candidate));
     if (!operand)
     {
         return false;
@@ -179,11 +196,12 @@ bool LValueNodeValidator::IsAssignableLValueNode(const LValueCandidateFact& cand
     case LValueCandidateKind::UnaryDereference:
         return IsUnaryAssignable(candidate, facts, scope, ctx);
     case LValueCandidateKind::Member:
-        return IsAssignableMember(candidate, scope, ctx);
+        return IsAssignableMember(candidate, facts, scope, ctx);
     case LValueCandidateKind::Index:
         return true;
     case LValueCandidateKind::Identifier:
-        return IsIdentifierAssignable(candidate.name, scope, ctx.request.symbolTable, candidate.refByte);
+        return IsIdentifierAssignable(facts.TextOf(candidate.unwrappedBytes), scope, ctx.request.symbolTable,
+                                      candidate.unwrappedBytes.startByte);
     default:
         return false;
     }
