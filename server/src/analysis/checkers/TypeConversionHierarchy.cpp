@@ -174,15 +174,21 @@ bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, co
     {
         binding = BindTemplateArguments(fromType, table);
     }
+    const bool toIsNumeric = IsNumericPrimitive(toType);
     const auto matches = [&](const Symbol& sym)
     {
+        if (!sym.GetFunction().parameters.empty())
+        {
+            return false;
+        }
         auto ret = sym.GetFunction().returnType;
         if (binding.usable)
         {
             ret = SubstituteTemplateParameters(ret, binding);
         }
         const auto cleanRet = CleanBaseType(ret);
-        if (IsSameType(cleanRet, toType))
+        if (IsSameType(cleanRet, toType) ||
+            (toIsNumeric && (IsNumericPrimitive(cleanRet) || ResolvesToEnum(cleanRet, table))))
         {
             found = true;
             return true;

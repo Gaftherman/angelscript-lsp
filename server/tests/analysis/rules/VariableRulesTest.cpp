@@ -257,6 +257,23 @@ TEST_SUITE("analysis/rules/VariableRules")
         CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-class-member-const"));
     }
 
+    TEST_CASE("VariableRules - Reports an auto class member while allowing explicit member and local auto")
+    {
+        const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Holder");
+        const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("value");
+        const std::string localName = angel_lsp::test::GenerateRandomSymbolName("localVal");
+
+        const std::string goodCode = "class " + clsName + " { int " + memberName + " = 10; }\n";
+        CHECK_FALSE(HasCode(AnalyzeVariableSnippet(goodCode), "as-err-auto-not-allowed"));
+
+        const std::string normalCode =
+            "class " + clsName + " { int " + memberName + " = 10; }\nvoid main() { auto " + localName + " = 10; }\n";
+        CHECK_FALSE(HasCode(AnalyzeVariableSnippet(normalCode), "as-err-auto-not-allowed"));
+
+        const std::string badCode = "class " + clsName + " { auto " + memberName + " = 10; }\n";
+        CHECK(HasCode(AnalyzeVariableSnippet(badCode), "as-err-auto-not-allowed"));
+    }
+
     TEST_CASE("VariableRules - A const at namespace or global scope is accepted")
     {
         const std::string code = "const int MAX = 10;\n"

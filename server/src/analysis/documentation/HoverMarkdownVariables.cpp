@@ -7,6 +7,7 @@
 #include "analysis/types/TypeSanitization.h"
 #include "i18n/i18n.h"
 #include "parser/Primitives.h"
+#include "utils/PositionEncoding.h"
 
 #include <optional>
 #include <sstream>
@@ -136,8 +137,11 @@ static std::optional<Symbol> FindMatchingGlobalSymbol(const LocalDefinition& def
                                                       std::string_view uri, std::string_view sourceCode,
                                                       const NodeIndex* nodeIndex)
 {
+    // Definitions carry line/column (Tree-sitter columns are bytes); the container lookup wants a byte offset.
+    const auto definitionByte =
+        static_cast<uint32_t>(utils::LineStartOffset(sourceCode, def.startLine) + def.startCharacter);
     auto containers =
-        nodeIndex ? nodeIndex->CollectEnclosingContainers(def.startLine, sourceCode) : std::vector<ContainerInfo>{};
+        nodeIndex ? nodeIndex->CollectEnclosingContainers(definitionByte, sourceCode) : std::vector<ContainerInfo>{};
     auto candidates = FindSymbolsInScope(symbolTable, containers, def.name);
     for (const auto& cand : candidates)
     {

@@ -3,6 +3,7 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
@@ -156,5 +157,52 @@ TEST_SUITE("analysis/checkers/LValueChecker")
         bool hasAssignNonRefError = std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
                                                 { return d.code == "as-err-assign-non-ref-call"; });
         CHECK(hasAssignNonRefError);
+    }
+
+    TEST_CASE("LValueChecker - Cannot assign to const reference return value")
+    {
+        const std::string globalName = test::GenerateRandomSymbolName("g_num");
+        const std::string fnName = test::GenerateRandomSymbolName("getNum");
+
+        const std::string goodCode = "int " + globalName + " = 100;\nint& " + fnName + "() { return " + globalName +
+                                     "; }\nvoid main() { " + fnName + "() = 200; }\n";
+        const auto goodDiags = RunAnalysis(goodCode);
+        CHECK_FALSE(std::any_of(goodDiags.begin(), goodDiags.end(),
+                                [](const Diagnostic& d) { return d.code == "as-err-readonly-reference"; }));
+
+        const std::string normalCode = "int " + globalName + " = 100;\nconst int& " + fnName + "() { return " +
+                                       globalName + "; }\nvoid main() { int v = " + fnName + "(); }\n";
+        const auto normalDiags = RunAnalysis(normalCode);
+        CHECK_FALSE(std::any_of(normalDiags.begin(), normalDiags.end(),
+                                [](const Diagnostic& d) { return d.code == "as-err-readonly-reference"; }));
+
+        const std::string badCode = "int " + globalName + " = 100;\nconst int& " + fnName + "() { return " +
+                                    globalName + "; }\nvoid main() { " + fnName + "() = 200; }\n";
+        const auto badDiags = RunAnalysis(badCode);
+        CHECK(std::any_of(badDiags.begin(), badDiags.end(),
+                          [](const Diagnostic& d) { return d.code == "as-err-readonly-reference"; }));
+    }
+
+    TEST_CASE("LValueChecker - Postfix increment on non-lvalue parenthesized binary expression")
+    {
+        const std::string varName = test::GenerateRandomSymbolName("val");
+        const std::string outName = test::GenerateRandomSymbolName("res");
+
+        const std::string goodCode =
+            "void main() { int " + varName + " = 1; int " + outName + " = (" + varName + ")++; }\n";
+        const auto goodDiags = RunAnalysis(goodCode);
+        CHECK_FALSE(std::any_of(goodDiags.begin(), goodDiags.end(),
+                                [](const Diagnostic& d) { return d.code == "as-err-not-lvalue"; }));
+
+        const std::string normalCode =
+            "void main() { int " + varName + " = 1; int " + outName + " = " + varName + "++ + 2; }\n";
+        const auto normalDiags = RunAnalysis(normalCode);
+        CHECK_FALSE(std::any_of(normalDiags.begin(), normalDiags.end(),
+                                [](const Diagnostic& d) { return d.code == "as-err-not-lvalue"; }));
+
+        const std::string badCode = "void main() { int " + outName + " = (1 + 2)++; }\n";
+        const auto badDiags = RunAnalysis(badCode);
+        CHECK(std::any_of(badDiags.begin(), badDiags.end(),
+                          [](const Diagnostic& d) { return d.code == "as-err-not-lvalue"; }));
     }
 }

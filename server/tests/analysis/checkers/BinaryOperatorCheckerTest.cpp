@@ -253,6 +253,35 @@ TEST_SUITE("analysis/checkers/BinaryOperatorChecker")
         CHECK_FALSE(HasDiagnostic(okDiags, diagnostics::codes::CallNoMatchingSignature));
     }
 
+    TEST_CASE("Indexing - A type indexed through get_opIndex and set_opIndex accessors is indexable")
+    {
+        const std::string fnName = GenerateRandomSymbolName("TestAccessorIndex");
+        const std::string clsName = GenerateRandomSymbolName("Row");
+        const std::string cls = "class " + clsName +
+                                " {\n    array<int> cells;\n"
+                                "    int get_opIndex(int col) const property { return cells[col]; }\n"
+                                "    void set_opIndex(int col, int val) property { cells[col] = val; }\n}\n";
+
+        // Good: read and write through the accessor pair.
+        const auto okDiags = AnalyzeScriptWithStandardProfile(cls + "void " + fnName + "() {\n    " + clsName +
+                                                              " r;\n    r[3] = 42;\n    int v = r[3];\n}\n");
+        CHECK_FALSE(HasDiagnostic(okDiags, diagnostics::codes::TypeNotIndexable));
+        CHECK_FALSE(HasDiagnostic(okDiags, diagnostics::codes::CallNoMatchingSignature));
+
+        // Normal: only a setter still indexes for assignment.
+        const std::string setOnly =
+            "class " + clsName + "Set {\n    void set_opIndex(int col, int val) property {}\n}\n";
+        const auto setDiags = AnalyzeScriptWithStandardProfile(setOnly + "void " + fnName + "() {\n    " + clsName +
+                                                               "Set r;\n    r[1] = 2;\n}\n");
+        CHECK_FALSE(HasDiagnostic(setDiags, diagnostics::codes::TypeNotIndexable));
+
+        // Bad: the setter's value parameter is not an index argument, so two indices do not match.
+        const auto badDiags = AnalyzeScriptWithStandardProfile(cls + "void " + fnName + "() {\n    " + clsName +
+                                                               " r;\n    int v = r[1, 2];\n}\n");
+        CHECK((HasDiagnostic(badDiags, diagnostics::codes::CallNoMatchingSignature) ||
+               HasDiagnostic(badDiags, diagnostics::codes::TypeNotIndexable)));
+    }
+
     TEST_CASE("BinaryOperator - Compound assignment on bool is rejected while numeric and string are accepted")
     {
         const std::string fnName = GenerateRandomSymbolName("TestCompoundBool");

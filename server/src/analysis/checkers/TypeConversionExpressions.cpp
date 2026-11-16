@@ -72,6 +72,77 @@ static bool CheckUnaryInvalidOperand(const UnaryPostfixSiteFact& site, const Sco
     return false;
 }
 
+static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
+{
+    if (site.isPostfix || !site.hasOperand || (site.op != "-" && site.op != "~") ||
+        site.operandValue.kind == ValueExpressionKind::Number)
+    {
+        return;
+    }
+    const std::string rawType = ResolveExpressionType(site.operandBytes, ExpressionTypeContext(scope, ctx));
+    const SymbolTable& table = ctx.request.symbolTable;
+    const std::string cleanType = UnwrapTypedef(CleanBaseType(rawType), table);
+    if (cleanType.empty() || cleanType == "auto" || cleanType == "?" || cleanType == "any" ||
+        IsBuiltInValueType(cleanType, ctx) || ResolvesToEnum(cleanType, table) ||
+        cleanType.find('<') != std::string::npos || rawType.find('[') != std::string::npos ||
+        ctx.request.IsRegisteredSymbol(cleanType) || !HierarchyIsFullyVisible(cleanType, table))
+    {
+        return;
+    }
+
+    const std::string_view opMethod = (site.op == "-") ? "opNeg" : "opCom";
+    bool foundClass = false;
+    for (const auto& ancestor : GetInheritedTypeHierarchy(cleanType, table))
+    {
+        if (const auto syms = table.FindSymbolsPtr(ancestor))
+        {
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
+                {
+                    foundClass = true;
+                    if ((!ctx.request.predefinedFileExtension.empty() &&
+                         s.fileUri.ends_with(ctx.request.predefinedFileExtension)) ||
+                        (s.type == SymbolType::Class && s.GetClass().isTemplate))
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+        if (const auto ops = table.FindMemberSymbolPtr(ancestor, opMethod))
+        {
+            for (const auto& sym : *ops)
+            {
+                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature) &&
+                    sym.GetFunction().parameters.empty())
+                {
+                    return;
+                }
+            }
+        }
+        if (const auto convs = table.FindMemberSymbolPtr(ancestor, "opImplConv"))
+        {
+            for (const auto& sym : *convs)
+            {
+                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature) &&
+                    sym.GetFunction().parameters.empty())
+                {
+                    const std::string ret = UnwrapTypedef(CleanBaseType(sym.GetFunction().returnType), table);
+                    if (IsNumericPrimitive(ret) || ResolvesToEnum(ret, table))
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    if (foundClass)
+    {
+        ctx.EmitAtRange(site.range, diagnostics::codes::UnaryOperatorNotFound, opMethod);
+    }
+}
+
 void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConversionCheckRequest& request,
                                DiagnosticContext& ctx)
 {
@@ -80,6 +151,8 @@ void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConve
     {
         return;
     }
+
+    CheckPrefixUnaryOperator(site, scope, ctx);
 
     if (!site.isIncrementOrDecrement || !site.hasOperand)
     {
@@ -135,9 +208,22 @@ static std::string FormatOpIndexCall(std::string_view owner, const std::vector<s
     return out + ")";
 }
 
+/**
+ * @brief Collects the indexing candidates a type offers for `argCount` index arguments.
+ *        `opIndex` takes the arguments as written. The index property accessors `get_opIndex` and `set_opIndex`
+ *        index as well: the setter's last parameter is the assigned value, so it is not an index argument.
+ * @param[in] owner Type whose hierarchy is searched.
+ * @param[in] normalizedObj Full receiver type, used to bind template arguments.
+ * @param[in] argCount Number of index arguments in the expression.
+ * @param[in] table Symbol table to search.
+ * @param[out] outOverloads Candidates whose arity admits `argCount`, with template parameters substituted.
+ * @return Number of indexing members found before the arity filter; zero means the type is not indexable.
+ */
 static size_t CollectMatchingOpIndexOverloads(std::string_view owner, std::string_view normalizedObj, uint32_t argCount,
                                               const SymbolTable& table, std::vector<Symbol>& outOverloads)
 {
+    static constexpr std::string_view k_indexMembers[] = {"opIndex", "get_opIndex", "set_opIndex"};
+
     TemplateBinding binding;
     if (normalizedObj.find('<') != std::string::npos)
         binding = BindTemplateArguments(normalizedObj, table);
@@ -145,24 +231,29 @@ static size_t CollectMatchingOpIndexOverloads(std::string_view owner, std::strin
     size_t totalOpIndex = 0;
     for (const auto& cls : GetInheritedTypeHierarchy(owner, table))
     {
-        const auto found = table.FindMemberSymbolPtr(cls, "opIndex");
-        if (!found)
-            continue;
-        for (const auto& sym : *found)
+        for (const auto memberName : k_indexMembers)
         {
-            if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+            const auto found = table.FindMemberSymbolPtr(cls, memberName);
+            if (!found)
                 continue;
-            ++totalOpIndex;
-            const auto arity = InspectFunctionArity(sym.GetFunction());
-            if (argCount < arity.requiredParams || (!arity.isVariadic && argCount > arity.maxParams))
-                continue;
-            Symbol copy = sym;
-            if (binding.usable)
+            for (const auto& sym : *found)
             {
-                for (auto& param : copy.GetFunction().parameters)
-                    param.typeName = SubstituteTemplateParameters(param.typeName, binding);
+                if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+                    continue;
+                ++totalOpIndex;
+                Symbol copy = sym;
+                if (memberName == "set_opIndex" && !copy.GetFunction().parameters.empty())
+                    copy.GetFunction().parameters.pop_back();
+                const auto arity = InspectFunctionArity(copy.GetFunction());
+                if (argCount < arity.requiredParams || (!arity.isVariadic && argCount > arity.maxParams))
+                    continue;
+                if (binding.usable)
+                {
+                    for (auto& param : copy.GetFunction().parameters)
+                        param.typeName = SubstituteTemplateParameters(param.typeName, binding);
+                }
+                outOverloads.push_back(std::move(copy));
             }
-            outOverloads.push_back(std::move(copy));
         }
     }
     return totalOpIndex;
@@ -299,7 +390,21 @@ void ProcessCastSite(const CastExpressionSiteFact& site, const TypeConversionChe
     const bool targetIsScalar = IsScalarCastTarget(targetName, table);
 
     const ExpressionType source = ResolveValueType(site.value, scope, ctx);
-    if (!source.known || source.baseName.empty() || IsSameType(source.baseName, targetName))
+    if (!source.known || source.baseName.empty())
+    {
+        return;
+    }
+
+    if (targetIsScalar)
+    {
+        if (!ctx.request.IsRegisteredSymbol(source.baseName) && !ctx.request.IsRegisteredSymbol(targetName))
+        {
+            ctx.EmitAtRange(site.range, "as-err-invalid-cast", {source.baseName, targetName});
+        }
+        return;
+    }
+
+    if (IsSameType(source.baseName, targetName))
     {
         return;
     }

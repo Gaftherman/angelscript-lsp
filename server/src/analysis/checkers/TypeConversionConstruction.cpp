@@ -90,6 +90,38 @@ static bool IsTargetTypeIgnoredForConstruction(std::string_view targetType, cons
     return !FindTypeDeclaration(targetType, table).found && !ResolvesToEnum(targetType, table);
 }
 
+static bool IsVisibleScriptClassForPrimitiveCast(std::string_view typeName, const DiagnosticContext& ctx)
+{
+    const SymbolTable& table = ctx.request.symbolTable;
+    if (typeName.empty() || typeName == "auto" || typeName == "?" || typeName == "any" ||
+        typeName.find('<') != std::string_view::npos || ctx.request.IsRegisteredSymbol(typeName) ||
+        !HierarchyIsFullyVisible(typeName, table))
+    {
+        return false;
+    }
+    bool found = false;
+    for (const auto& ancestor : GetInheritedTypeHierarchy(typeName, table))
+    {
+        if (const auto syms = table.FindSymbolsPtr(ancestor))
+        {
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
+                {
+                    found = true;
+                    if ((!ctx.request.predefinedFileExtension.empty() &&
+                         s.fileUri.ends_with(ctx.request.predefinedFileExtension)) ||
+                        (s.type == SymbolType::Class && s.GetClass().isTemplate))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    return found;
+}
+
 /**
  * @brief Checks if the source type is compatible with target type via hierarchy or conversion operators.
  * @param[in] sourceBaseName Base name of the source expression type.
@@ -125,6 +157,15 @@ void CheckConstruction(const ConstructionArgumentFact& argument, std::string_vie
     }
 
     const SymbolTable& table = ctx.request.symbolTable;
+    if (IsPrimitiveTypeName(targetType) && IsVisibleScriptClassForPrimitiveCast(source.baseName, ctx))
+    {
+        if (!DeclaresConversionTo(source.baseName, targetType, table, false))
+        {
+            ctx.EmitAtNodeRange(argument.operand.range, "as-err-no-implicit-conversion", {source.baseName, targetType});
+        }
+        return;
+    }
+
     if (IsTargetTypeIgnoredForConstruction(targetType, table, ctx) ||
         IsSourceCompatibleWithTarget(source.baseName, targetType, table))
     {

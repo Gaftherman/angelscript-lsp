@@ -105,7 +105,6 @@ inline constexpr std::string_view CharacterLiteralIsString = "as-err-character-l
 inline constexpr std::string_view CircularInherit = "as-err-circular-inherit";
 inline constexpr std::string_view ClassMemberConst = "as-err-class-member-const";
 inline constexpr std::string_view CompoundAssignOnIndexedProp = "as-err-compound-assign-on-indexed-prop";
-inline constexpr std::string_view CompoundAssignOnValueProp = "as-err-compound-assign-on-value-prop";
 inline constexpr std::string_view ConstOutParam = "as-err-const-out-param";
 inline constexpr std::string_view ConstVoidReturn = "as-err-const-void-return";
 inline constexpr std::string_view ConstructorDelegationDisallowed = "as-err-constructor-delegation-disallowed";
@@ -246,4 +245,8 @@ inline constexpr std::string_view ClassFinalAbstractConflict = "as-err-class-fin
 inline constexpr std::string_view AutoNotAllowedHere = "as-err-auto-not-allowed";
 inline constexpr std::string_view HandleToHandle = "as-err-handle-to-handle";
 inline constexpr std::string_view CannotInferLambda = "as-err-cannot-infer-lambda";
+inline constexpr std::string_view MethodNamedWithClassName = "as-err-method-named-with-class-name";
+inline constexpr std::string_view CannotCreateDelegate = "as-err-cannot-create-delegate";
+inline constexpr std::string_view DefaultArgTypeMismatch = "as-err-default-arg-type-mismatch";
+inline constexpr std::string_view UnaryOperatorNotFound = "as-err-unary-operator-not-found";
 } // namespace angel_lsp::diagnostics::codes

@@ -25,12 +25,7 @@ void ProcessCallConstructSite(const CallConstructSiteFact& site, const TypeConve
                               DiagnosticContext& ctx)
 {
     const auto calleeName = CleanBaseType(site.calleeText);
-
-    std::optional<Symbol> calleeFuncdef;
-    if (site.soleArgumentIsLambda)
-    {
-        calleeFuncdef = FindFuncdef(calleeName, ctx.request.symbolTable);
-    }
+    const std::optional<Symbol> calleeFuncdef = FindFuncdef(calleeName, ctx.request.symbolTable);
 
     const NonInstantiableKind calleeNonInst = ClassifyNonInstantiable(calleeName, ctx.request.symbolTable);
     if (calleeNonInst == NonInstantiableKind::Abstract)
@@ -43,7 +38,14 @@ void ProcessCallConstructSite(const CallConstructSiteFact& site, const TypeConve
     }
     else if (calleeFuncdef)
     {
-        CheckFuncdefAssignment(site.range, calleeFuncdef->GetFuncdef(), site.soleArgumentFuncdef, ctx);
+        if (site.soleArgumentIsLambda)
+        {
+            CheckFuncdefAssignment(site.range, calleeFuncdef->GetFuncdef(), site.soleArgumentFuncdef, ctx);
+        }
+        else
+        {
+            CheckDelegateConstruction(site, calleeFuncdef->GetFuncdef(), request, ctx);
+        }
     }
     else
     {

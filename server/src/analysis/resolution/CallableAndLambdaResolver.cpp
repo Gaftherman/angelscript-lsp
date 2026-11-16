@@ -423,6 +423,10 @@ Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callNa
         fnSig.returnArrayDepth = fd.returnArrayDepth;
         fnSig.modifiers = fd.modifiers;
         fnSig.parameters = fd.parameters;
+        for (auto& param : fnSig.parameters)
+        {
+            param.defaultValue.clear();
+        }
         sym.signature = std::move(fnSig);
     }
     return sym;

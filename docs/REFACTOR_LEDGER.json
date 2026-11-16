@@ -3521,6 +3521,55 @@
       "verifiedByTests": [
         "CallChecker - A void argument is an argument"
       ]
+    },
+    {
+      "id": "REF-P13-COMPOUNDVALUEPROP",
+      "phase": "M29",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionProperties.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "as-err-compound-assign-on-value-prop branch of CheckAssignmentPropertyAccess (diagnostic code, i18n keys, E163 mapping)",
+      "whatItDidAndWhyInThatFile": "Rejected a compound assignment through a get/set accessor pair on a non-handle receiver.",
+      "whyChangedOrDeleted": "The real compiler accepts `+=`, `-=` and `*=` through an accessor pair on any receiver and rejects only `++`/`--` and indexed compound assignment, which have their own rules.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/TypeConversionProperties.cpp",
+      "replacedByCanonicalSymbol": "CheckAssignmentPropertyAccess",
+      "ramOrCpuImpact": "Removes one receiver-type resolution per compound property assignment.",
+      "verifiedByTests": [
+        "OperatorRules - Compound assignment through a get/set accessor pair is accepted like the compiler does",
+        "OperatorRules - Restrictions: Increment/Decrement and Indexed Compound Assignment"
+      ]
+    },
+    {
+      "id": "REF-P13-OPINDEXACCESSORS",
+      "phase": "M29",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionExpressions.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "CollectMatchingOpIndexOverloads (opIndex only)",
+      "whatItDidAndWhyInThatFile": "Collected indexing candidates from opIndex alone, so a type indexed through get_opIndex/set_opIndex was reported as not indexable.",
+      "whyChangedOrDeleted": "Index property accessors index too; the three member names now share one collection loop and the setter drops its value parameter.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/TypeConversionExpressions.cpp",
+      "replacedByCanonicalSymbol": "CollectMatchingOpIndexOverloads",
+      "ramOrCpuImpact": "One extra member lookup per hierarchy class on index expressions.",
+      "verifiedByTests": [
+        "Indexing - A type indexed through get_opIndex and set_opIndex accessors is indexable"
+      ]
+    },
+    {
+      "id": "REF-P13-CALLRESULTOVERLOADS",
+      "phase": "M29",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionValueType.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "ResolveCallValueType (first function named like the callee)",
+      "whatItDidAndWhyInThatFile": "Took the return type of the first function with the callee name.",
+      "whyChangedOrDeleted": "Overloads that return different types make the result depend on the arguments; the type is now unknown when they disagree, which removed a false positive on handle assignment.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/TypeConversionValueType.cpp",
+      "replacedByCanonicalSymbol": "ResolveCallValueType",
+      "ramOrCpuImpact": "Visits every overload instead of stopping at the first.",
+      "verifiedByTests": [
+        "TypeConversion - A call whose overloads return different types is not judged without choosing one"
+      ]
     }
   ]
 }

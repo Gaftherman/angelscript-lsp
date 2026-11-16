@@ -356,7 +356,7 @@ TEST_SUITE("analysis/rules/OperatorRules")
         CHECK(HasCode(diags, "as-err-property-type-mismatch"));
     }
 
-    TEST_CASE("OperatorRules - Lifetime Constraints: Compound assignment on Value Type vs Reference Type")
+    TEST_CASE("OperatorRules - Compound assignment through a get/set accessor pair is accepted like the compiler does")
     {
         const std::string script = "class ValueObject {\n"
                                    "    int score { get const { return 0; } set {} }\n"
@@ -372,7 +372,9 @@ TEST_SUITE("analysis/rules/OperatorRules")
                                    "}\n";
 
         auto diags = AnalyzeOperatorSnippet(script);
-        CHECK(HasCode(diags, "as-err-compound-assign-on-value-prop"));
+        // The compiler reads through the getter and writes through the setter for `+=`, whatever the receiver is.
+        CHECK(std::none_of(diags.begin(), diags.end(),
+                           [](const Diagnostic& diag) { return diag.severity == DiagnosticSeverity::Error; }));
     }
 
     TEST_CASE("OperatorRules - Restrictions: Increment/Decrement and Indexed Compound Assignment")

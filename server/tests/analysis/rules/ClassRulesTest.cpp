@@ -322,6 +322,53 @@ TEST_CASE("ClassRules - An interface this analyzer cannot see is never judged")
     CHECK_FALSE(HasCode(AnalyzeClassSnippet("class Entity : IEngineThing {}\n"), "as-err-interface-impl-missing"));
 }
 
+TEST_CASE("ClassRules - Interface virtual property implementation checking")
+{
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IHasNum");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("num");
+    const std::string goodClass = angel_lsp::test::GenerateRandomSymbolName("GoodBox");
+    const std::string normalClass = angel_lsp::test::GenerateRandomSymbolName("NormalBox");
+    const std::string badClass = angel_lsp::test::GenerateRandomSymbolName("BadBox");
+
+    const std::string goodCode = "interface " + ifaceName + " { int " + propName +
+                                 " { get const; set; } }\n"
+                                 "class " +
+                                 goodClass + " : " + ifaceName +
+                                 " {\n"
+                                 "    int " +
+                                 propName +
+                                 " { get const { return 1; } set {} }\n"
+                                 "}\n";
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet(goodCode), "as-err-interface-impl-missing"));
+
+    const std::string normalCode = "interface " + ifaceName + " { int " + propName +
+                                   " { get const; set; } }\n"
+                                   "class " +
+                                   normalClass + " : " + ifaceName +
+                                   " {\n"
+                                   "    int get_" +
+                                   propName +
+                                   "() const property { return 1; }\n"
+                                   "    void set_" +
+                                   propName +
+                                   "(int v) property {}\n"
+                                   "}\n";
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet(normalCode), "as-err-interface-impl-missing"));
+
+    const std::string badCode = "interface " + ifaceName + " { int " + propName +
+                                " { get const; set; } }\n"
+                                "class " +
+                                badClass + " : " + ifaceName +
+                                " {\n"
+                                "    string " +
+                                propName +
+                                " { get const { return \"\"; } set {} }\n"
+                                "}\n";
+    const auto badDiags = AnalyzeClassSnippet(badCode);
+    CHECK(HasCode(badDiags, "as-err-interface-impl-missing"));
+    CHECK(CountCode(badDiags, "as-err-interface-impl-missing") == 2);
+}
+
 TEST_CASE("ClassRules - Reports replacing a method the base declared final")
 {
     const std::string code = "class Base { void Tick() final {} }\n"

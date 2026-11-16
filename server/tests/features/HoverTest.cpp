@@ -1040,6 +1040,23 @@ TEST_CASE("Hover - An enum constant is visible only from the scope that declares
         (!outside.has_value() || std::get<lsp::MarkupContent>(outside->contents).value.find(en) == std::string::npos));
 }
 
+TEST_CASE("Hover - A namespace variable resolves to the namespace that encloses its declaration")
+{
+    const std::string first = angel_lsp::test::GenerateRandomSymbolName("First");
+    const std::string second = angel_lsp::test::GenerateRandomSymbolName("Second");
+    const std::string var = angel_lsp::test::GenerateRandomSymbolName("counter");
+    // Both namespaces declare the same name; the declaration far below line 0 sits in the second one.
+    const std::string code = "namespace " + first + " {\n    int " + var + " = 1;\n}\nnamespace " + second +
+                             " {\n    int " + var + " = 2;\n    void use() {\n        " + var + " = 3;\n    }\n}\n";
+    TestEnvironment env(code);
+
+    const auto hover = env.HoverAt(6, 9);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find(second + "::" + var) != std::string::npos);
+    CHECK(text.find(first + "::" + var) == std::string::npos);
+}
+
 TEST_CASE("Hover - Enum member sequential values and scoped access parity")
 {
     TestEnvironment env("enum DynamicEquipmentType {\n"

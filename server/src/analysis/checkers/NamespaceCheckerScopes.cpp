@@ -2,7 +2,9 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -61,6 +63,39 @@ static bool HasNonReferenceMemberSymbol(const SymbolTable& table, std::string_vi
     }
     return std::any_of(found->begin(), found->end(),
                        [](const Symbol& sym) { return sym.type != SymbolType::CallReference; });
+}
+
+static bool ClassOrInterfaceHasMember(std::string_view className, std::string_view member, bool reqKeyword,
+                                      const DiagnosticContext& ctx)
+{
+    const SymbolTable& table = ctx.request.symbolTable;
+    if (!HierarchyIsFullyVisible(className, table))
+    {
+        return true;
+    }
+    const auto& ruleIndex = ctx.request.GetRuleIndex();
+    for (const auto& ancestor : GetInheritedTypeHierarchy(className, table))
+    {
+        if (const auto syms = table.FindSymbolsPtr(ancestor))
+        {
+            for (const auto& s : *syms)
+            {
+                if (utils::IsPredefinedFile(s.fileUri, ctx.request.predefinedFileExtension) ||
+                    (s.type == SymbolType::Class && std::holds_alternative<ClassSignature>(s.signature) &&
+                     !s.GetClass().templateParams.empty()))
+                {
+                    return true;
+                }
+            }
+        }
+        if (member == utils::LastScopeSegment(ancestor) ||
+            HasContainerOrAccessorMember(member, ruleIndex.Members(ancestor), reqKeyword) ||
+            HasNonReferenceMemberSymbol(table, ancestor, member) || table.HasScopedSymbol(ancestor, member))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -147,10 +182,17 @@ QualifiedLookupStatus ResolveQualifiedMember(const QualifiedLookupRequest& req, 
         {
             for (const auto& sym : *qualSyms)
             {
-                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
-                    sym.type == SymbolType::Typedef)
+                if (sym.type == SymbolType::Typedef)
                 {
                     return QualifiedLookupStatus::Resolved;
+                }
+                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+                {
+                    anyMatched = true;
+                    if (!req.checkMember || ClassOrInterfaceHasMember(candQual, req.member, reqKeyword, ctx))
+                    {
+                        return QualifiedLookupStatus::Resolved;
+                    }
                 }
                 if (sym.type == SymbolType::Enum)
                 {

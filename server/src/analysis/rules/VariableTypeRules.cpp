@@ -201,6 +201,13 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
     CheckPrimitiveOrVoidType(sym, sig, ctx);
 
     const std::string_view baseType = CleanBaseTypeView(sig.baseTypeName.empty() ? sig.typeName : sig.baseTypeName);
+    if (baseType == "auto" && IsClassOrInterfaceMember(sym, ctx.request.symbolTable))
+    {
+        ctx.LogRule("CheckDeclaredType", "as-err-auto-not-allowed", sym);
+        ctx.Emit(sym, "as-err-auto-not-allowed");
+        return;
+    }
+
     const std::string_view enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable);
     std::shared_ptr<const std::vector<Symbol>> keepAlive;
     const Symbol* declaration = FindTypeDeclaration(baseType, ctx.request.symbolTable, keepAlive, enclosingNs);

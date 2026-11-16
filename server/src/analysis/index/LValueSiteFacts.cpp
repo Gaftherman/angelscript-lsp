@@ -194,7 +194,8 @@ static LValueCandidateFact ReadCandidate(TSNode rawNode, const NodeIndex& index,
     {
         fact.kind = LValueCandidateKind::Index;
     }
-    else if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier || sym == gs.tokFunction)
+    else if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier || sym == gs.tokFunction ||
+             sym == gs.symThisExpression)
     {
         fact.kind = LValueCandidateKind::Identifier;
         fact.name = fact.text;
@@ -247,6 +248,42 @@ static LValueAssignmentFact ReadAssignment(TSNode node, const NodeIndex& index, 
     return fact;
 }
 
+static void CollectIncDecTargets(TSNode node, const NodeIndex& index, std::string_view source, LValueSiteFacts& facts)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const SyntaxOperands syntax(node, &index);
+    const TSNode op = syntax.Field(gs.fieldOperator);
+    if (ts_node_is_null(op))
+    {
+        return;
+    }
+    const std::string_view opText = parser::NodeText(op, source);
+    if (opText != "++" && opText != "--")
+    {
+        return;
+    }
+    const TSNode target = syntax.Field(gs.fieldOperand);
+    if (ts_node_is_null(target))
+    {
+        return;
+    }
+    const TSNode unwrapped = UnwrapIndexedParentheses(target, &index);
+    if (ts_node_is_null(unwrapped) || ts_node_symbol(unwrapped) == gs.symCallExpression)
+    {
+        return;
+    }
+
+    LValueAssignmentFact fact;
+    fact.bytes = BytesOf(node);
+    fact.range = RangeOf(node);
+    fact.targetBytes = BytesOf(target);
+    fact.targetRange = RangeOf(target);
+    fact.targetText = parser::NodeText(target, source);
+    fact.targetIsDirectTernary = (ts_node_symbol(target) == gs.symTernaryExpression);
+    fact.targetCandidate = ReadCandidate(target, index, source, facts.ternaryBranches);
+    facts.assignments.push_back(std::move(fact));
+}
+
 LValueSiteFacts BuildLValueSiteFacts(const NodeIndex& index, std::string_view source)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -268,6 +305,15 @@ LValueSiteFacts BuildLValueSiteFacts(const NodeIndex& index, std::string_view so
             const TSNode callNode = assignFact.targetIsDirectCall ? target : UnwrapIndexedParentheses(target, &index);
             facts.callSites.push_back(ReadCallSite(callNode, index, source));
         }
+    }
+
+    for (const TSNode node : index.Nodes(gs.symUnaryExpression))
+    {
+        CollectIncDecTargets(node, index, source, facts);
+    }
+    for (const TSNode node : index.Nodes(gs.symPostfixExpression))
+    {
+        CollectIncDecTargets(node, index, source, facts);
     }
 
     const TSSymbol candidateSymbols[] = {

@@ -67,36 +67,140 @@ static bool IsInterfaceMethodCandidate(const Symbol& symbol)
            !IsDestructorSymbol(symbol) && symbol.name != utils::LastScopeSegment(symbol.containerName);
 }
 
+static void ExpandVirtualPropertyAccessors(const Symbol& propSym, std::vector<Symbol>& outMethods)
+{
+    if (propSym.type != SymbolType::Property || !std::holds_alternative<VariableSignature>(propSym.signature))
+    {
+        return;
+    }
+    const auto& var = propSym.GetVariable();
+    if (!var.isVirtualProperty)
+    {
+        return;
+    }
+
+    if (var.hasGet)
+    {
+        Symbol getter = propSym;
+        getter.type = SymbolType::Function;
+        getter.name = "get_" + propSym.name;
+        FunctionSignature fn;
+        fn.returnType = var.typeName;
+        fn.returnBaseTypeName = var.baseTypeName;
+        fn.returnIsConst = IsConstTypeView(var.typeName);
+        fn.modifiers.access = var.modifiers.access;
+        fn.modifiers.isHandle = var.modifiers.isHandle || IsHandleTypeView(var.typeName);
+        fn.modifiers.isReturnReference = IsReferenceTypeView(var.typeName);
+        fn.modifiers.isConst = var.isGetConst;
+        fn.modifiers.isFinal = var.isGetFinal;
+        fn.modifiers.isProperty = true;
+        getter.signature = std::move(fn);
+        outMethods.push_back(std::move(getter));
+    }
+
+    if (var.hasSet)
+    {
+        Symbol setter = propSym;
+        setter.type = SymbolType::Function;
+        setter.name = "set_" + propSym.name;
+        FunctionSignature fn;
+        fn.returnType = "void";
+        fn.returnBaseTypeName = "void";
+        fn.returnTypeKind = TypeKind::Void;
+        fn.modifiers.access = var.modifiers.access;
+        fn.modifiers.isFinal = var.isSetFinal;
+        fn.modifiers.isProperty = true;
+        ParameterInformation param;
+        param.name = "value";
+        param.typeName = var.typeName;
+        param.baseTypeName = var.baseTypeName;
+        param.isHandle = var.modifiers.isHandle || IsHandleTypeView(var.typeName);
+        param.isReference = IsReferenceTypeView(var.typeName);
+        param.isConst = IsConstTypeView(var.typeName);
+        fn.parameters.push_back(std::move(param));
+        setter.signature = std::move(fn);
+        outMethods.push_back(std::move(setter));
+    }
+}
+
+static bool EvaluateCandidateImplementation(const Symbol& candidate, const Symbol& method, bool isDirectOwner,
+                                            const SymbolTable& table, bool& canOverride)
+{
+    if (!IsInterfaceMethodCandidate(candidate) || !MatchesInterfaceParameters(candidate, method, table))
+    {
+        return false;
+    }
+    const auto& fn = candidate.GetFunction();
+    const bool returnMatches = MatchesInterfaceReturn(candidate, method, table);
+    if (returnMatches && !fn.modifiers.isAbstract && !fn.modifiers.isDeclarationAbstract &&
+        fn.modifiers.access == AccessModifier::Public)
+    {
+        return true;
+    }
+    if (!returnMatches || fn.modifiers.isFinal || fn.modifiers.isDeclarationFinal || isDirectOwner)
+    {
+        canOverride = false;
+    }
+    return false;
+}
+
 static bool HasInterfaceImplementation(std::span<const std::string> owners, const Symbol& method,
                                        const SymbolTable& table, bool& canOverride)
 {
     for (const auto& owner : owners)
     {
-        const auto candidates = table.FindMemberSymbolPtr(owner, method.name);
-        if (!candidates)
+        const bool isDirectOwner = (owner == owners.front());
+        if (const auto candidates = table.FindMemberSymbolPtr(owner, method.name))
         {
-            continue;
+            for (const auto& candidate : *candidates)
+            {
+                if (EvaluateCandidateImplementation(candidate, method, isDirectOwner, table, canOverride))
+                {
+                    return true;
+                }
+            }
         }
-        for (const auto& candidate : *candidates)
+        if (method.name.size() > 4 && (method.name.starts_with("get_") || method.name.starts_with("set_")))
         {
-            if (!IsInterfaceMethodCandidate(candidate) || !MatchesInterfaceParameters(candidate, method, table))
+            if (const auto props = table.FindMemberSymbolPtr(owner, std::string_view(method.name).substr(4)))
             {
-                continue;
-            }
-            const auto& fn = candidate.GetFunction();
-            const bool returnMatches = MatchesInterfaceReturn(candidate, method, table);
-            if (returnMatches && !fn.modifiers.isAbstract && !fn.modifiers.isDeclarationAbstract &&
-                fn.modifiers.access == AccessModifier::Public)
-            {
-                return true;
-            }
-            if (!returnMatches || fn.modifiers.isFinal || fn.modifiers.isDeclarationFinal || owner == owners.front())
-            {
-                canOverride = false;
+                std::vector<Symbol> expanded;
+                for (const auto& prop : *props)
+                {
+                    ExpandVirtualPropertyAccessors(prop, expanded);
+                }
+                for (const auto& accessor : expanded)
+                {
+                    if (EvaluateCandidateImplementation(accessor, method, isDirectOwner, table, canOverride))
+                    {
+                        return true;
+                    }
+                }
             }
         }
     }
     return false;
+}
+
+static void RecordMissingInterfaceMethod(const Symbol& method, std::string_view interfaceName,
+                                         std::span<const std::string> owners, const SymbolTable& table,
+                                         std::vector<MissingInterfaceMethod>& missing)
+{
+    bool canOverride = true;
+    if (HasInterfaceImplementation(owners, method, table, canOverride))
+    {
+        return;
+    }
+    const auto duplicate = std::find_if(missing.begin(), missing.end(), [&](const auto& entry)
+                                        { return MatchesInterfaceParameters(entry.method, method, table); });
+    if (duplicate != missing.end())
+    {
+        duplicate->canOverride &= canOverride && MatchesInterfaceReturn(duplicate->method, method, table);
+    }
+    else
+    {
+        missing.push_back({method, std::string(interfaceName), canOverride});
+    }
 }
 
 static void AppendMissingMethods(std::string_view interfaceName, std::span<const std::string> owners,
@@ -118,26 +222,22 @@ static void AppendMissingMethods(std::string_view interfaceName, std::span<const
             }
             for (const auto& method : *methods)
             {
-                if (method.containerName != interfaceOwner || method.isSynthesized ||
-                    !IsInterfaceMethodCandidate(method))
+                if (method.containerName != interfaceOwner || method.isSynthesized)
                 {
                     continue;
                 }
-                bool canOverride = true;
-                if (HasInterfaceImplementation(owners, method, table, canOverride))
+                if (IsInterfaceMethodCandidate(method))
                 {
-                    continue;
+                    RecordMissingInterfaceMethod(method, interfaceName, owners, table, missing);
                 }
-                const auto duplicate =
-                    std::find_if(missing.begin(), missing.end(), [&](const auto& entry)
-                                 { return MatchesInterfaceParameters(entry.method, method, table); });
-                if (duplicate != missing.end())
+                else if (method.type == SymbolType::Property)
                 {
-                    duplicate->canOverride &= canOverride && MatchesInterfaceReturn(duplicate->method, method, table);
-                }
-                else
-                {
-                    missing.push_back({method, std::string(interfaceName), canOverride});
+                    std::vector<Symbol> expanded;
+                    ExpandVirtualPropertyAccessors(method, expanded);
+                    for (const auto& accessor : expanded)
+                    {
+                        RecordMissingInterfaceMethod(accessor, interfaceName, owners, table, missing);
+                    }
                 }
             }
         }

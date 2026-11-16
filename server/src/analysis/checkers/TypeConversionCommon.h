@@ -336,6 +336,16 @@ void CheckFuncdefAssignment(SourceRange target, const FuncdefSignature& funcdefS
                             DiagnosticContext& ctx);
 
 /**
+ * @brief Validates a delegate construction call `Funcdef(obj.method)` against the target funcdef signature.
+ * @param[in] site Call/construction site fact.
+ * @param[in] funcdefSig Expected funcdef signature.
+ * @param[in] request Analysis request carrying expression facts and scope root.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckDelegateConstruction(const CallConstructSiteFact& site, const FuncdefSignature& funcdefSig,
+                               const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+
+/**
  * @brief Resolves the lexical scope enclosing an indexed source position.
  * @param[in] at Span whose start selects the scope.
  * @param[in] request Analysis request carrying scope root.

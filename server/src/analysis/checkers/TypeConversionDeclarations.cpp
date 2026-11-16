@@ -116,6 +116,33 @@ static void CheckUnknownInitializerSource(const VariableDeclaratorFact& declarat
     }
 }
 
+static bool IsVisibleScriptClassOrInterface(std::string_view typeName, const DiagnosticContext& ctx)
+{
+    const SymbolTable& table = ctx.request.symbolTable;
+    if (typeName.empty() || !HierarchyIsFullyVisible(typeName, table))
+    {
+        return false;
+    }
+    bool found = false;
+    bool isPredefinedOrTemplate = false;
+    ForEachSymbolNamed(typeName, table,
+                       [&](const Symbol& s)
+                       {
+                           if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
+                           {
+                               found = true;
+                               if ((!ctx.request.predefinedFileExtension.empty() &&
+                                    s.fileUri.ends_with(ctx.request.predefinedFileExtension)) ||
+                                   (s.type == SymbolType::Class && s.GetClass().isTemplate))
+                               {
+                                   isPredefinedOrTemplate = true;
+                               }
+                           }
+                           return false;
+                       });
+    return found && !isPredefinedOrTemplate;
+}
+
 /**
  * @brief Reports diagnostics when initializing a handle variable from an incompatible source.
  * @param[in] declarator Declarator fact holding the initializer operand.
@@ -147,16 +174,28 @@ static void CheckHandleInitializer(const VariableDeclaratorFact& declarator, con
         return;
     }
 
-    if (ctx.request.symbolTable.HasSymbolAnywhere(source.baseName) &&
-        ctx.request.symbolTable.HasSymbolAnywhere(declared.baseName))
+    const SymbolTable& table = ctx.request.symbolTable;
+    const std::string srcUnwrapped = UnwrapTypedef(source.baseName, table);
+    const std::string dstUnwrapped = UnwrapTypedef(declared.baseName, table);
+    if (IsSameType(srcUnwrapped, dstUnwrapped) || !IsVisibleScriptClassOrInterface(srcUnwrapped, ctx) ||
+        !IsVisibleScriptClassOrInterface(dstUnwrapped, ctx))
     {
-        const auto hierarchy = GetInheritedTypeHierarchy(declared.baseName, ctx.request.symbolTable);
-        if (std::find(hierarchy.begin(), hierarchy.end(), source.baseName) != hierarchy.end())
-        {
-            ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion",
-                            {source.baseName + "@", declared.baseName + "@"});
-        }
+        return;
     }
+
+    if (IsDerivedFrom(srcUnwrapped, dstUnwrapped, table) ||
+        DeclaresConversionTo(srcUnwrapped, dstUnwrapped, table, true))
+    {
+        return;
+    }
+
+    if (!TrimString(declarator.valueOperand.text).starts_with('@') && IsConvertible(srcUnwrapped, dstUnwrapped, ctx))
+    {
+        return;
+    }
+
+    ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion",
+                    {source.baseName + "@", declared.baseName + "@"});
 }
 
 /**
@@ -228,12 +267,27 @@ static void ProcessDeclaredVariableDeclarators(const VariableDeclarationSiteFact
     const uint32_t end = site.declaratorBegin + site.declaratorCount;
     const uint32_t sliceEnd = std::min<uint32_t>(end, static_cast<uint32_t>(declarators.size()));
 
+    const Scope* scope = ResolveNodeScope(site.range, request);
     if (funcdef)
     {
         for (uint32_t i = begin; i < sliceEnd; ++i)
         {
             const auto& declarator = declarators[i];
             CheckFuncdefAssignment(declarator.range, funcdef->GetFuncdef(), declarator.funcdefValue, ctx);
+            if (declarator.hasValue && !declarator.valueIsInitializerList)
+            {
+                const ExpressionType source = ResolveValueType(declarator.value, scope, ctx);
+                if (source.known && !source.baseName.empty() && source.baseName != "null" &&
+                    source.baseName != "auto" && source.baseName != "?" && source.baseName != "any" &&
+                    !ctx.request.IsRegisteredSymbol(source.baseName) &&
+                    !IsSameType(UnwrapTypedef(source.baseName, ctx.request.symbolTable),
+                                UnwrapTypedef(funcdef->name, ctx.request.symbolTable)) &&
+                    !IsSameType(source.baseName, CleanBaseType(site.typeText)))
+                {
+                    ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion",
+                                    {source.baseName + "@", funcdef->name + "@"});
+                }
+            }
         }
     }
 
@@ -243,7 +297,6 @@ static void ProcessDeclaredVariableDeclarators(const VariableDeclarationSiteFact
         return;
     }
 
-    const Scope* scope = ResolveNodeScope(site.range, request);
     for (uint32_t i = begin; i < sliceEnd; ++i)
     {
         const auto& declarator = declarators[i];

@@ -6,9 +6,11 @@
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/Primitives.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -21,6 +23,12 @@ void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig,
     {
         ctx.LogRule("CheckConstructorDestructor", diagnostics::codes::MixinConstructor, sym);
         ctx.Emit(sym, diagnostics::codes::MixinConstructor, sym.containerName);
+    }
+
+    if (fctx.isConstructor && !fctx.isInterface && !sym.isSynthesized && !sig.returnType.empty() && sig.hasBody)
+    {
+        ctx.LogRule("CheckConstructorDestructor", diagnostics::codes::MethodNamedWithClassName, sym);
+        ctx.Emit(sym, diagnostics::codes::MethodNamedWithClassName, sym.name);
     }
 
     if (!fctx.isDestructor)
@@ -88,6 +96,118 @@ static const Symbol& ResolveOverrideDiagnosticTarget(const Symbol& methodSym, co
     return methodSym;
 }
 
+static ParameterModifier EffectiveOverrideModifier(const ParameterInformation& param) noexcept
+{
+    return (param.isReference && param.modifier == ParameterModifier::None) ? ParameterModifier::InOut : param.modifier;
+}
+
+static std::string CanonicalOverrideType(std::string_view rawType, const SymbolTable& table)
+{
+    const std::string_view cleaned = CleanBaseTypeView(rawType);
+    if (cleaned.empty() || cleaned == "?" || cleaned == "auto")
+    {
+        return {};
+    }
+    const std::string unwrapped = UnwrapTypedef(cleaned, table);
+    return std::string(CanonicalizeType(utils::LastScopeSegment(unwrapped)));
+}
+
+static bool MatchesOverrideFunctionSignature(const FunctionSignature& derived, const Symbol& baseSym,
+                                             const FunctionSignature& base, const SymbolTable& table)
+{
+    if (derived.modifiers.isConst != base.modifiers.isConst || derived.parameters.size() != base.parameters.size())
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < derived.parameters.size(); ++i)
+    {
+        const auto& dp = derived.parameters[i];
+        const auto& bp = base.parameters[i];
+        if (EffectiveOverrideModifier(dp) != EffectiveOverrideModifier(bp) || dp.isReference != bp.isReference ||
+            dp.isHandle != bp.isHandle || dp.isConst != bp.isConst)
+        {
+            return false;
+        }
+
+        const std::string_view bRaw = bp.baseTypeName.empty() ? std::string_view(bp.typeName) : bp.baseTypeName;
+        if (IsTemplateParameterOfContainer(CleanBaseTypeView(bRaw), baseSym, table))
+        {
+            continue;
+        }
+
+        const std::string dType = CanonicalOverrideType(dp.baseTypeName.empty() ? dp.typeName : dp.baseTypeName, table);
+        const std::string bType = CanonicalOverrideType(bRaw, table);
+        if (!dType.empty() && !bType.empty() && dType != bType)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool HasMatchingBaseOverride(std::string_view ancestor, const Symbol& sym, const FunctionSignature& sig,
+                                    const SymbolTable& table)
+{
+    if (const auto candidates = table.FindMemberSymbolPtr(ancestor, sym.name))
+    {
+        for (const auto& cand : *candidates)
+        {
+            if (cand.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(cand.signature) &&
+                MatchesOverrideFunctionSignature(sig, cand, cand.GetFunction(), table))
+            {
+                return true;
+            }
+        }
+    }
+
+    if (sym.name.size() <= 4)
+    {
+        return false;
+    }
+    const bool isGet = sym.name.starts_with("get_");
+    const bool isSet = sym.name.starts_with("set_");
+    if (!isGet && !isSet)
+    {
+        return false;
+    }
+
+    const auto props = table.FindMemberSymbolPtr(ancestor, std::string_view(sym.name).substr(4));
+    if (!props)
+    {
+        return false;
+    }
+    for (const auto& prop : *props)
+    {
+        if (prop.type != SymbolType::Property || !std::holds_alternative<VariableSignature>(prop.signature))
+        {
+            continue;
+        }
+        const auto& var = prop.GetVariable();
+        if (!var.isVirtualProperty)
+        {
+            continue;
+        }
+        if (isGet && var.hasGet && var.isGetConst == sig.modifiers.isConst && sig.parameters.size() <= 1)
+        {
+            return true;
+        }
+        if (isSet && var.hasSet && !sig.modifiers.isConst && !sig.parameters.empty() && sig.parameters.size() <= 2)
+        {
+            const auto& valParam = sig.parameters.back();
+            const std::string dType =
+                CanonicalOverrideType(valParam.baseTypeName.empty() ? valParam.typeName : valParam.baseTypeName, table);
+            const std::string bType =
+                CanonicalOverrideType(var.baseTypeName.empty() ? var.typeName : var.baseTypeName, table);
+            if (dType.empty() || bType.empty() || dType == bType)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
                    const DiagnosticContext& ctx)
 {
@@ -129,7 +249,7 @@ void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const Functi
                 // Handled by CheckFinalOverrides in ClassRules
                 return;
             }
-            if (index.Members(ancestor).methodNames.contains(sym.name))
+            if (HasMatchingBaseOverride(ancestor, sym, sig, table))
             {
                 found = true;
                 break;

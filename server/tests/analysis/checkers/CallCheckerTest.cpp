@@ -2309,3 +2309,64 @@ TEST_CASE("CallChecker - Nested namespace wrong intermediate qualifier emits Err
     CHECK_FALSE(HasCode(goodRelativeDiags, "as-err-undefined-namespace"));
     CHECK_FALSE(HasCode(goodRelativeDiags, "as-err-undefined-identifier"));
 }
+
+TEST_CASE("CallChecker - Base constructor super call argument checking")
+{
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("Base");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("Derived");
+
+    const std::string goodCode = "class " + baseName + " { " + baseName + "(int v) {} }\nclass " + derivedName + " : " +
+                                 baseName + " { " + derivedName + "() { super(42); } }\n";
+    CHECK(AnalyzeCallSnippet(goodCode).empty());
+
+    const std::string normalCode = "class " + baseName + " { " + baseName + "() {} " + baseName +
+                                   "(int v) {} }\nclass " + derivedName + " : " + baseName + " { " + derivedName +
+                                   "() { super(); } }\n";
+    CHECK(AnalyzeCallSnippet(normalCode).empty());
+
+    const std::string badCode = "class " + baseName + " { " + baseName + "(int v) {} }\nclass " + derivedName + " : " +
+                                baseName + " { " + derivedName + "() { super(\"invalid\"); } }\n";
+    const auto badDiags = AnalyzeCallSnippet(badCode);
+    const bool hasSuperError =
+        HasCode(badDiags, "as-err-no-implicit-conversion") || HasCode(badDiags, "as-err-call-no-matching-signature");
+    CHECK(hasSuperError);
+}
+
+TEST_CASE("CallChecker - Base class qualified method lookup checking")
+{
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("Base");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const std::string validFn = angel_lsp::test::GenerateRandomSymbolName("validCall");
+    const std::string missingFn = angel_lsp::test::GenerateRandomSymbolName("noSuchCall");
+
+    const std::string goodCode = "class " + baseName + " { void " + validFn + "() {} }\nclass " + derivedName + " : " +
+                                 baseName + " { void " + validFn + "() { " + baseName + "::" + validFn + "(); } }\n";
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(goodCode), "as-err-undefined-identifier"));
+
+    const std::string normalCode = "class " + baseName + " { void " + validFn + "(int x) {} }\nclass " + derivedName +
+                                   " : " + baseName + " { void run() { " + baseName + "::" + validFn + "(1); } }\n";
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(normalCode), "as-err-undefined-identifier"));
+
+    const std::string badCode = "class " + baseName + " {}\nclass " + derivedName + " : " + baseName +
+                                " { void run() { " + baseName + "::" + missingFn + "(); } }\n";
+    CHECK(HasCode(AnalyzeCallSnippet(badCode), "as-err-undefined-identifier"));
+}
+
+TEST_CASE("CallChecker - Funcdef handle invocation ignores default arguments on funcdef parameters")
+{
+    const std::string fdName = angel_lsp::test::GenerateRandomSymbolName("Cb");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("target");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cb");
+
+    const std::string goodCode = "funcdef void " + fdName + "(int a);\nvoid " + fnName + "(int x) {}\nvoid main() { " +
+                                 fdName + "@ " + varName + " = @" + fnName + "; " + varName + "(42); }\n";
+    CHECK(AnalyzeCallSnippet(goodCode).empty());
+
+    const std::string normalCode = "void " + fnName + "(int x = 1) {}\nvoid main() { " + fnName + "(); }\n";
+    CHECK(AnalyzeCallSnippet(normalCode).empty());
+
+    const std::string badCode = "funcdef void " + fdName + "(int a = 1);\nvoid " + fnName +
+                                "(int x) {}\nvoid main() { " + fdName + "@ " + varName + " = @" + fnName + "; " +
+                                varName + "(); }\n";
+    CHECK(HasCode(AnalyzeCallSnippet(badCode), "as-err-call-argument-count"));
+}

@@ -425,13 +425,49 @@ TEST_CASE("TypeConversion - A null initializer stays with the null-handle rule")
     CHECK(ConversionDiagnostics(code).empty());
 }
 
-TEST_CASE("TypeConversion - A non-literal assigned to a handle is not judged")
+TEST_CASE("TypeConversion - Two unrelated script classes do not convert to each other's handle")
 {
-    // Which objects a handle can bind to depends on the whole interface graph, much of which can
-    // be engine-side. Only a literal is wrong without needing any of that graph.
+    // Both classes are declared in the script, so their whole hierarchy is visible and the compiler's
+    // answer ("Can't implicitly convert from 'A&' to 'B@&'") is decidable here.
     const std::string code = "class A {}\n"
                              "class B {}\n"
                              "void main() { A a; B@ b = a; }\n";
+
+    CHECK_FALSE(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - A call whose overloads return different types is not judged without choosing one")
+{
+    // Which overload runs depends on the argument, so the result type is not the first overload's.
+    const std::string overloaded = "class A {}\n"
+                                   "class B {}\n"
+                                   "A@ Pick(float v) { return null; }\n"
+                                   "B@ Pick(int64 v) { return null; }\n"
+                                   "void main() { int n = 1; B@ chosen = Pick(n); }\n";
+    CHECK(ConversionDiagnostics(overloaded).empty());
+
+    // Every overload returns A, so the mismatch with B is certain.
+    const std::string agreeing = "class A {}\n"
+                                 "class B {}\n"
+                                 "A@ Pick(float v) { return null; }\n"
+                                 "A@ Pick(int64 v) { return null; }\n"
+                                 "void main() { int n = 1; B@ chosen = Pick(n); }\n";
+    CHECK_FALSE(ConversionDiagnostics(agreeing).empty());
+}
+
+TEST_CASE("TypeConversion - A derived object assigned to its base handle is accepted")
+{
+    const std::string code = "class A {}\n"
+                             "class B : A {}\n"
+                             "void main() { B b; A@ a = b; }\n";
+
+    CHECK(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - A type the script does not declare is not judged when assigned to a handle")
+{
+    // A host type may implement interfaces the script never sees.
+    const std::string code = "void main(HostThing@ h) { HostOther@ o = h; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }

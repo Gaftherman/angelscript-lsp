@@ -140,6 +140,7 @@ static void ValidateCandidateReturnTypes(const SourceRange& range, const std::ve
 
     bool allVoid = true;
     bool anyReference = false;
+    bool anyMutableReference = false;
 
     for (const auto& sym : candidates)
     {
@@ -158,6 +159,10 @@ static void ValidateCandidateReturnTypes(const SourceRange& range, const std::ve
         if (fn.modifiers.isReturnReference || IsReferenceTypeView(fn.returnType))
         {
             anyReference = true;
+            if (!fn.returnIsConst && !IsConstTypeView(fn.returnType))
+            {
+                anyMutableReference = true;
+            }
         }
     }
 
@@ -168,6 +173,10 @@ static void ValidateCandidateReturnTypes(const SourceRange& range, const std::ve
     else if (!anyReference)
     {
         ctx.EmitAtRange(range, "as-err-assign-non-ref-call");
+    }
+    else if (!anyMutableReference)
+    {
+        ctx.EmitAtRange(range, "as-err-readonly-reference", candidates.front().name);
     }
 }
 

@@ -12,6 +12,11 @@ else()
 endif()
 
 # ── Tree-Sitter AngelScript Grammar ───────────────────────────────────────
+# d783f40 closes every class, function and namespace body still open at the end of the file with a
+# zero-width `implicit_close_brace` (a scanner-counted brace token). Before it, `class C { void f() { x.`
+# collapsed the whole file into one ERROR node and the symbols, scopes and call context inside left the
+# index; now the ERROR covers only the half-typed statement. dc4ffaa and the commit before it add
+# `default_clause` and `direction` fields and the syntax-node corpus.
 # e743821 adds typed_initializer_list support (`Type = { ... }`) to assignment_expression RHS,
 # variable_declarator value, and return_statement.
 # 23cb160 adds single quote digit separator support (e.g. 1'000'000).
@@ -44,7 +49,7 @@ if(ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE)
     set(tree_sitter_angelscript_SOURCE_DIR "${ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE}")
     message(STATUS "tree-sitter-angelscript: local checkout at ${tree_sitter_angelscript_SOURCE_DIR}")
 else()
-    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG dd03aeb69fe10e403cdbcf75e2c5037c23b2e031)
+    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG d783f4008a1c4c2894e957660420eaacd83d6a98)
     FetchContent_MakeAvailable(tree_sitter_angelscript)
 endif()
 

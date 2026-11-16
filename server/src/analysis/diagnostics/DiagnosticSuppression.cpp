@@ -110,7 +110,6 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"E160", diagnostics::codes::CircularInherit},
     {"E161", diagnostics::codes::ClassMemberConst},
     {"E162", diagnostics::codes::CompoundAssignOnIndexedProp},
-    {"E163", diagnostics::codes::CompoundAssignOnValueProp},
     {"E164", diagnostics::codes::ConstOutParam},
     {"E165", diagnostics::codes::ConstVoidReturn},
     {"E166", diagnostics::codes::ConstructorDelegationDisallowed},

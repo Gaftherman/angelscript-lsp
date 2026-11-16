@@ -240,4 +240,33 @@ TEST_SUITE("analysis/checkers/TernaryConversion")
         CHECK(MatchesVerdict(diagnostics, expectedVerdict));
         CHECK(HasConversionDiagnostic(diagnostics));
     }
+
+    TEST_CASE("TernaryConversion - Foreach container missing opForEnd emits error")
+    {
+        const std::string goodCls = angel_lsp::test::GenerateRandomSymbolName("CompleteContainer");
+        const std::string multiCls = angel_lsp::test::GenerateRandomSymbolName("MultiContainer");
+        const std::string badCls = angel_lsp::test::GenerateRandomSymbolName("IncompleteContainer");
+
+        const std::string goodCode =
+            "class " + goodCls +
+            " { int opForBegin() { return 0; } bool opForEnd(int it) { return it >= 3; } int opForNext(int it) { "
+            "return it + 1; } int opForValue(int it) { return it; } }\nvoid main() { " +
+            goodCls + " c; foreach (auto v : c) {} }\n";
+        CHECK(MatchesVerdict(AnalyzeCode(goodCode), "none"));
+        CHECK_FALSE(MatchesVerdict(AnalyzeCode(goodCode), "as-err-invalid-foreach-container"));
+
+        const std::string normalCode =
+            "class " + multiCls +
+            " { int opForBegin() { return 0; } bool opForEnd(int it) { return it >= 3; } int opForNext(int it) { "
+            "return it + 1; } int opForValue0(int it) { return it; } int opForValue1(int it) { return it; } }\nvoid "
+            "main() { " +
+            multiCls + " c; foreach (auto a, auto b : c) {} }\n";
+        CHECK_FALSE(MatchesVerdict(AnalyzeCode(normalCode), "as-err-invalid-foreach-container"));
+
+        const std::string badCode = "class " + badCls +
+                                    " { int opForBegin() { return 0; } int opForNext(int it) { return it + 1; } int "
+                                    "opForValue(int it) { return it; } }\nvoid main() { " +
+                                    badCls + " c; foreach (auto v : c) {} }\n";
+        CHECK(MatchesVerdict(AnalyzeCode(badCode), "as-err-invalid-foreach-container"));
+    }
 }

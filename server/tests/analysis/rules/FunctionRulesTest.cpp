@@ -551,6 +551,42 @@ TEST_SUITE("analysis/rules/FunctionRules")
         CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-override-no-base"));
     }
 
+    TEST_CASE("FunctionRules - Override signature parameter and const matching")
+    {
+        const std::string baseCls = angel_lsp::test::GenerateRandomSymbolName("Base");
+        const std::string derivedGood = angel_lsp::test::GenerateRandomSymbolName("DerivedGood");
+        const std::string derivedNormal = angel_lsp::test::GenerateRandomSymbolName("DerivedNormal");
+        const std::string derivedBad = angel_lsp::test::GenerateRandomSymbolName("DerivedBad");
+        const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("run");
+
+        const std::string goodCode = "class " + baseCls + " { void " + methodName +
+                                     "(int x) {} }\n"
+                                     "class " +
+                                     derivedGood + " : " + baseCls + " { void " + methodName +
+                                     "(int x) override {} }\n";
+        CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(goodCode), "as-err-override-no-base"));
+
+        const std::string normalCode = "interface I" + baseCls + " { int " + methodName +
+                                       " { get const; set; } }\n"
+                                       "class " +
+                                       derivedNormal + " : I" + baseCls +
+                                       " {\n"
+                                       "    int get_" +
+                                       methodName +
+                                       "() const override { return 0; }\n"
+                                       "    void set_" +
+                                       methodName +
+                                       "(int v) override {}\n"
+                                       "}\n";
+        CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(normalCode), "as-err-override-no-base"));
+
+        const std::string badCode = "class " + baseCls + " { void " + methodName +
+                                    "() {} }\n"
+                                    "class " +
+                                    derivedBad + " : " + baseCls + " { void " + methodName + "(int x) override {} }\n";
+        CHECK(HasCode(AnalyzeFunctionSnippet(badCode), "as-err-override-no-base"));
+    }
+
     // =====================================================================================
     // Parameters
     // =====================================================================================
@@ -1309,5 +1345,108 @@ TEST_SUITE("analysis/rules/FunctionRules")
                                   "class " +
                                   derived + " : " + base + " {\n    int " + method + "() override { return 2; }\n}\n";
         CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(legal), "as-err-override-no-base"));
+    }
+
+    TEST_CASE("FunctionRules - Method named with enclosing class name and return type is rejected")
+    {
+        const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Simple");
+        const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("init");
+
+        const std::string goodCode = "class " + clsName + " { " + clsName + "() {} }\n";
+        CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(goodCode), "as-err-method-named-with-class-name"));
+
+        const std::string normalCode = "class " + clsName + " { void " + methodName + "() {} }\n";
+        CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(normalCode), "as-err-method-named-with-class-name"));
+
+        const std::string badCode = "class " + clsName + " { void " + clsName + "() {} }\n";
+        CHECK(HasCode(AnalyzeFunctionSnippet(badCode), "as-err-method-named-with-class-name"));
+    }
+
+    TEST_CASE("FunctionRules - Default argument expression type mismatch is reported at call omitting argument")
+    {
+        const auto analyzeWithCalls = [](const std::string& code)
+        {
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            LocalScopeCollector scopes(nullptr);
+            SymbolTable table;
+            static angel_lsp::i18n::I18n i18n;
+            const std::string fileUri = "file:///defarg_calls.as";
+            collector.CollectSymbols(fileUri, code, parser, table);
+            TSTree* tree = parser.Parse(code);
+            NodeIndex nodeIndex(ts_tree_root_node(tree), code);
+            SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+            request.scopeRoot = scopes.CollectScopes(code, parser);
+            request.sourceCode = code;
+            request.nodeIndex = &nodeIndex;
+            SemanticAnalyzer analyzer(nullptr);
+            auto diags = analyzer.Analyze(request);
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+            return diags;
+        };
+
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fnDefArg");
+        const std::string paramA = angel_lsp::test::GenerateRandomSymbolName("a");
+
+        const std::string goodCode =
+            "void " + fnName + "(int " + paramA + " = 42) {}\nvoid main() { " + fnName + "(); }\n";
+        CHECK_FALSE(HasCode(analyzeWithCalls(goodCode), "as-err-default-arg-type-mismatch"));
+
+        const std::string normalCode =
+            "void " + fnName + "(int " + paramA + " = \"incompatible\") {}\nvoid main() { " + fnName + "(1); }\n";
+        CHECK_FALSE(HasCode(analyzeWithCalls(normalCode), "as-err-default-arg-type-mismatch"));
+        CHECK_FALSE(HasCode(analyzeWithCalls("void " + fnName + "(int " + paramA + " = \"incompatible\") {}\n"),
+                            "as-err-default-arg-type-mismatch"));
+
+        const std::string badCode =
+            "void " + fnName + "(int " + paramA + " = \"incompatible\") {}\nvoid main() { " + fnName + "(); }\n";
+        CHECK(HasCode(analyzeWithCalls(badCode), "as-err-default-arg-type-mismatch"));
+    }
+
+    TEST_CASE("FunctionRules - Void default argument on non-out parameter is reported at call omitting argument")
+    {
+        const auto analyzeWithCalls = [](const std::string& code)
+        {
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            LocalScopeCollector scopes(nullptr);
+            SymbolTable table;
+            static angel_lsp::i18n::I18n i18n;
+            const std::string fileUri = "file:///defarg_void_calls.as";
+            collector.CollectSymbols(fileUri, code, parser, table);
+            TSTree* tree = parser.Parse(code);
+            NodeIndex nodeIndex(ts_tree_root_node(tree), code);
+            SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+            request.scopeRoot = scopes.CollectScopes(code, parser);
+            request.sourceCode = code;
+            request.nodeIndex = &nodeIndex;
+            SemanticAnalyzer analyzer(nullptr);
+            auto diags = analyzer.Analyze(request);
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+            return diags;
+        };
+
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fnVoidDef");
+        const std::string paramX = angel_lsp::test::GenerateRandomSymbolName("x");
+
+        const std::string goodCode =
+            "void " + fnName + "(int &out " + paramX + " = void) {}\nvoid main() { " + fnName + "(); }\n";
+        CHECK_FALSE(HasCode(analyzeWithCalls(goodCode), "as-err-default-arg-type-mismatch"));
+
+        const std::string normalCode =
+            "void " + fnName + "(int " + paramX + " = void) {}\nvoid main() { " + fnName + "(1); }\n";
+        CHECK_FALSE(HasCode(analyzeWithCalls(normalCode), "as-err-default-arg-type-mismatch"));
+        CHECK_FALSE(HasCode(analyzeWithCalls("void " + fnName + "(int " + paramX + " = void) {}\n"),
+                            "as-err-default-arg-type-mismatch"));
+
+        const std::string badCode =
+            "void " + fnName + "(int " + paramX + " = void) {}\nvoid main() { " + fnName + "(); }\n";
+        CHECK(HasCode(analyzeWithCalls(badCode), "as-err-default-arg-type-mismatch"));
     }
 }

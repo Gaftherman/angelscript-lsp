@@ -250,10 +250,6 @@ void CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* 
     {
         ctx.EmitAtRange(site.left.range, "as-err-read-only-property", pInfo.propName);
     }
-    else if (!site.opIsAssign && !IsHandleTypeView(pInfo.receiverType))
-    {
-        ctx.EmitAtRange(site.range, "as-err-compound-assign-on-value-prop", pInfo.propName);
-    }
 }
 
 } // namespace angel_lsp::analysis

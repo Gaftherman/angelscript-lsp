@@ -601,14 +601,25 @@ TEST_SUITE("analysis/checkers/ControlFlowChecker")
         CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-foreach-container"));
     }
 
-    TEST_CASE("ControlFlow - A container whose opFor methods are not declared stays silent")
+    TEST_CASE("ControlFlow - A script class without the opFor methods is not a foreach container")
     {
-        // A class may have them registered in C++ with no stub recording it, so an absent declaration
-        // proves nothing - unlike a primitive, which can never have them.
+        // A class declared in the script cannot have them registered from C++, so the missing methods are
+        // decidable here. The compiler rejects it: "Type 'Bag@' is not valid type for foreach loops".
         const std::string code = "class Bag {}\n"
                                  "void Loop()\n"
                                  "{\n"
                                  "    Bag b;\n"
+                                 "    foreach (auto n : b) { }\n"
+                                 "}\n";
+
+        CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-foreach-container"));
+    }
+
+    TEST_CASE("ControlFlow - A type the script does not declare stays silent as a foreach container")
+    {
+        // Such a type may be registered by the host with no stub recording its opFor methods.
+        const std::string code = "void Loop(HostBag@ b)\n"
+                                 "{\n"
                                  "    foreach (auto n : b) { }\n"
                                  "}\n";
 

@@ -4,6 +4,7 @@
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
@@ -132,6 +133,61 @@ static void HandleNamedCallOverloads(const CallOverloadCheckRequest& req, Diagno
     }
 }
 
+static bool IsDefaultArgumentTypeMismatch(const ParameterInformation& param, const SymbolTable& table)
+{
+    if (param.defaultValue.empty())
+    {
+        return false;
+    }
+    std::string_view dv = param.defaultValue;
+    TrimTypeWhitespace(dv);
+    if (dv.empty())
+    {
+        return false;
+    }
+    if (dv == "void")
+    {
+        return param.modifier != ParameterModifier::Out;
+    }
+
+    const std::string_view rawBase =
+        CleanBaseTypeView(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
+    const std::string paramBase = UnwrapTypedef(rawBase, table);
+    if (paramBase.empty() || paramBase == "auto" || paramBase == "?" || paramBase == "any" || param.isArray ||
+        !param.templateName.empty())
+    {
+        return false;
+    }
+
+    const bool isStringLit = dv.size() >= 2 && dv.front() == '"' && dv.back() == '"';
+    const bool isBoolLit = (dv == "true" || dv == "false");
+    const bool isNullLit = (dv == "null");
+    const bool isEnum = ResolvesToEnum(paramBase, table);
+
+    return (isStringLit && (IsNumericPrimitive(paramBase) || paramBase == "bool" || isEnum)) ||
+           (isBoolLit && (IsNumericPrimitive(paramBase) || isEnum || param.isHandle)) ||
+           (isNullLit && !param.isHandle && (IsCorePrimitive(paramBase) || isEnum));
+}
+
+static void CheckOmittedDefaultArguments(const Symbol& candidate, size_t providedPositionalCount,
+                                         const CallSiteFact& site, DiagnosticContext& ctx)
+{
+    if (candidate.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(candidate.signature) ||
+        IsFromPredefinedStub(candidate, ctx))
+    {
+        return;
+    }
+    const auto& sig = candidate.GetFunction();
+    for (size_t p = providedPositionalCount; p < sig.parameters.size(); ++p)
+    {
+        if (IsDefaultArgumentTypeMismatch(sig.parameters[p], ctx.request.symbolTable))
+        {
+            ctx.EmitAtRange(site.range, diagnostics::codes::DefaultArgTypeMismatch);
+            return;
+        }
+    }
+}
+
 static void ValidateResolvedCall(const OverloadMatchResult& match, const CallOverloadCheckRequest& req,
                                  DiagnosticContext& ctx)
 {
@@ -140,6 +196,7 @@ static void ValidateResolvedCall(const OverloadMatchResult& match, const CallOve
     {
         RecordBoundCall(selected, req.site, ctx);
     }
+    CheckOmittedDefaultArguments(selected, req.args.argTypes.size(), req.site, ctx);
     ValidateOutArguments(selected, req.arguments, req.scope, ctx);
     if (req.matchingArity.size() > 1 && req.initFacts)
     {
@@ -155,9 +212,10 @@ void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticConte
     }
     if (request.args.argTypes.empty() && !request.calleeRes.candidatesAreFreeFunctions)
     {
-        if (request.matchingArity.size() == 1)
+        if (request.matchingArity.size() == 1 && request.matchingArity.front())
         {
             RecordBoundCall(*request.matchingArity.front(), request.site, ctx);
+            CheckOmittedDefaultArguments(*request.matchingArity.front(), 0, request.site, ctx);
         }
         return;
     }

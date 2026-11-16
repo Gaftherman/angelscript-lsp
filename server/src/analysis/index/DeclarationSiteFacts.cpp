@@ -198,11 +198,12 @@ static CallConstructSiteFact ReadCallConstruct(TSNode node, const NodeIndex& ind
     }
 
     const TSNode argsNode = syntax.Field(gs.fieldArguments);
-    if (!ts_node_is_null(argsNode))
+    const TSNode soleArgument =
+        !ts_node_is_null(argsNode) ? SyntaxOperands(argsNode, &index).OnlyNamed() : syntax.Field(gs.fieldValue);
+    if (!ts_node_is_null(soleArgument))
     {
-        const TSNode soleArgument = SyntaxOperands(argsNode, &index).OnlyNamed();
         fact.argument = ReadConstructionArgument(soleArgument, index, source);
-        if (!ts_node_is_null(soleArgument) && ts_node_symbol(soleArgument) == gs.symLambdaExpression)
+        if (ts_node_symbol(soleArgument) == gs.symLambdaExpression)
         {
             fact.soleArgumentIsLambda = true;
             fact.soleArgumentFuncdef = ReadFuncdefValue(soleArgument, index, source);
@@ -212,7 +213,7 @@ static CallConstructSiteFact ReadCallConstruct(TSNode node, const NodeIndex& ind
 }
 
 /**
- * @brief Collects all call and construct call expressions from the syntax index.
+ * @brief Collects all call, construct call, and functional cast expressions from the syntax index.
  * @param[in] index Precomputed node index of the document.
  * @param[in] source Document text.
  * @param[in,out] facts Declaration site facts sink.
@@ -225,6 +226,10 @@ static void CollectCallConstructs(const NodeIndex& index, std::string_view sourc
         facts.callConstructs.push_back(ReadCallConstruct(node, index, source));
     }
     for (const TSNode node : index.Nodes(gs.symConstructCallExpression))
+    {
+        facts.callConstructs.push_back(ReadCallConstruct(node, index, source));
+    }
+    for (const TSNode node : index.Nodes(gs.symFunctionalCastExpression))
     {
         facts.callConstructs.push_back(ReadCallConstruct(node, index, source));
     }

@@ -1,5 +1,6 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/Primitives.h"
@@ -207,13 +208,92 @@ static void InferForeachVariables(const ForeachSiteFact& site, std::string_view 
     }
 }
 
+static bool HierarchyHasFunction(const std::vector<std::string>& hierarchy, std::string_view methodName,
+                                 const SymbolTable& table)
+{
+    for (const auto& ancestor : hierarchy)
+    {
+        if (const auto syms = table.FindMemberSymbolPtr(ancestor, methodName))
+        {
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+static bool IsInvalidScriptForeachContainer(std::string_view containerBase, std::string_view rawContainerType,
+                                            uint32_t variableCount, const DiagnosticContext& ctx)
+{
+    const SymbolTable& table = ctx.request.symbolTable;
+    if (containerBase.empty() || containerBase == "auto" || containerBase == "?" || containerBase == "any" ||
+        containerBase.find('<') != std::string_view::npos || rawContainerType.find('[') != std::string_view::npos ||
+        ctx.request.IsRegisteredSymbol(containerBase) || !HierarchyIsFullyVisible(containerBase, table))
+    {
+        return false;
+    }
+
+    const auto hierarchy = GetInheritedTypeHierarchy(containerBase, table);
+    bool foundClass = false;
+    for (const auto& ancestor : hierarchy)
+    {
+        if (const auto syms = table.FindSymbolsPtr(ancestor))
+        {
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
+                {
+                    foundClass = true;
+                    if ((!ctx.request.predefinedFileExtension.empty() &&
+                         s.fileUri.ends_with(ctx.request.predefinedFileExtension)) ||
+                        (s.type == SymbolType::Class && s.GetClass().isTemplate))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    if (!foundClass)
+    {
+        return false;
+    }
+
+    if (!HierarchyHasFunction(hierarchy, "opForBegin", table) || !HierarchyHasFunction(hierarchy, "opForEnd", table) ||
+        !HierarchyHasFunction(hierarchy, "opForNext", table))
+    {
+        return true;
+    }
+
+    if (variableCount <= 1)
+    {
+        return !HierarchyHasFunction(hierarchy, "opForValue", table) &&
+               !HierarchyHasFunction(hierarchy, "opForValue0", table);
+    }
+
+    for (uint32_t i = 0; i < variableCount; ++i)
+    {
+        if (!HierarchyHasFunction(hierarchy, "opForValue" + std::to_string(i), table))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void ProcessForeachSite(const ForeachSiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     const Scope* scope = ResolveNodeScope(site.statementRange, request);
     const auto containerType = ResolveExpressionType(site.collection.bytes, ExpressionTypeContext(scope, ctx));
 
     const auto containerBase = CleanExpressionType(containerType);
-    if (IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void")
+    if ((IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void") ||
+        IsInvalidScriptForeachContainer(containerBase, containerType, site.variableCount, ctx))
     {
         ctx.EmitAtRange(site.collection.range, "as-err-invalid-foreach-container", containerBase);
     }

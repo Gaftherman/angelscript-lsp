@@ -1,6 +1,7 @@
 #include "analysis/checkers/CallCheckerCommon.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "utils/ScopedNameUtils.h"
@@ -110,6 +111,42 @@ static bool ResolveScopedCallee(const CallSiteFact& site, const Scope* scope, Di
     return true;
 }
 
+static bool ResolveSuperCallee(const CallSiteFact& site, std::string_view enclosingClass, DiagnosticContext& ctx,
+                               CalleeResolution& res)
+{
+    if (site.calleeName != "super" || site.enclosingFunctionName != LastScopeSegment(enclosingClass))
+    {
+        return false;
+    }
+
+    const SymbolTable& table = ctx.request.symbolTable;
+    if (!HierarchyIsFullyVisible(enclosingClass, table))
+    {
+        res.shouldCheck = false;
+        return true;
+    }
+
+    const auto hierarchy = GetInheritedTypeHierarchy(enclosingClass, table, ctx.request.exprCache);
+    for (size_t i = 1; i < hierarchy.size(); ++i)
+    {
+        const std::string& ancestor = hierarchy[i];
+        if (IsMixinClass(ancestor, table) || ClassifyNonInstantiable(ancestor, table) == NonInstantiableKind::Interface)
+        {
+            continue;
+        }
+        if (!IsClassDeclarationVisible(ancestor, table, ctx.request.predefinedFileExtension))
+        {
+            res.shouldCheck = false;
+            return true;
+        }
+        res.candidates = LookupRawConstructors(ancestor, table);
+        res.candidatesAreFreeFunctions = true;
+        res.shouldCheck = !res.candidates.empty();
+        return true;
+    }
+    return false;
+}
+
 static bool ResolveEnclosingClassCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx,
                                         CalleeResolution& res)
 {
@@ -152,7 +189,11 @@ static bool ResolveEnclosingClassCallee(const CallSiteFact& site, const Scope* s
         res.shouldCheck = true;
         return true;
     }
-    return CheckMemberNonCallableVariable(site, enclosingClass, ctx, res);
+    if (CheckMemberNonCallableVariable(site, enclosingClass, ctx, res))
+    {
+        return true;
+    }
+    return ResolveSuperCallee(site, enclosingClass, ctx, res);
 }
 
 static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx)

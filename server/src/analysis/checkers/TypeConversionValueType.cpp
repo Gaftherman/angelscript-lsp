@@ -103,7 +103,7 @@ static ExpressionType ResolveIdentifierValueType(const ValueExpressionFact& valu
  * @brief Resolves the result type of a call or construct call from its callee spelling.
  * @param[in] value Call fact whose text is the callee.
  * @param[in] ctx Diagnostic context.
- * @return The constructed type or the return type of the first matching function.
+ * @return The constructed type, the return type shared by every function with that name, or unknown.
  */
 static ExpressionType ResolveCallValueType(const ValueExpressionFact& value, const DiagnosticContext& ctx)
 {
@@ -116,19 +116,30 @@ static ExpressionType ResolveCallValueType(const ValueExpressionFact& value, con
     {
         return ExpressionType{calleeName, true, false, false};
     }
+    // Overloads may return different types and the choice depends on the arguments, which this fact does not
+    // carry, so a callee whose overloads disagree has no single result type here.
     ExpressionType result;
+    bool overloadsDisagree = false;
     ForEachSymbolNamed(LastScopeSegment(calleeName), ctx.request.symbolTable,
-                       [&result](const Symbol& sym)
+                       [&](const Symbol& sym)
                        {
-                           if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
+                           if (sym.type != SymbolType::Function || sym.GetFunction().returnType.empty())
                            {
-                               const auto& fn = sym.GetFunction();
-                               result = ExpressionType{CleanBaseType(fn.returnType), true, false, fn.returnIsConst};
-                               return true;
+                               return false;
+                           }
+                           const auto& fn = sym.GetFunction();
+                           const ExpressionType candidate{CleanBaseType(fn.returnType), true, false, fn.returnIsConst};
+                           if (!result.known)
+                           {
+                               result = candidate;
+                           }
+                           else if (result.baseName != candidate.baseName)
+                           {
+                               overloadsDisagree = true;
                            }
                            return false;
                        });
-    return result;
+    return overloadsDisagree ? ExpressionType{} : result;
 }
 
 /**
