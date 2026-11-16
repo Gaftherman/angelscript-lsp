@@ -278,7 +278,7 @@ static void ProcessDeclaredVariableDeclarators(const VariableDeclarationSiteFact
             {
                 const ExpressionType source = ResolveValueType(declarator.value, scope, ctx);
                 if (source.known && !source.baseName.empty() && source.baseName != "null" &&
-                    source.baseName != "auto" && source.baseName != "?" && source.baseName != "any" &&
+                    source.baseName != "auto" && !IsVariableTypeToken(source.baseName) &&
                     !ctx.request.IsRegisteredSymbol(source.baseName) &&
                     !IsSameType(UnwrapTypedef(source.baseName, ctx.request.symbolTable),
                                 UnwrapTypedef(funcdef->name, ctx.request.symbolTable)) &&

@@ -231,7 +231,7 @@ static bool IsInvalidScriptForeachContainer(std::string_view containerBase, std:
                                             uint32_t variableCount, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
-    if (containerBase.empty() || containerBase == "auto" || containerBase == "?" || containerBase == "any" ||
+    if (containerBase.empty() || containerBase == "auto" || IsVariableTypeToken(containerBase) ||
         containerBase.find('<') != std::string_view::npos || rawContainerType.find('[') != std::string_view::npos ||
         ctx.request.IsRegisteredSymbol(containerBase) || !HierarchyIsFullyVisible(containerBase, table))
     {
@@ -249,9 +249,7 @@ static bool IsInvalidScriptForeachContainer(std::string_view containerBase, std:
                 if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
                 {
                     foundClass = true;
-                    if ((!ctx.request.predefinedFileExtension.empty() &&
-                         s.fileUri.ends_with(ctx.request.predefinedFileExtension)) ||
-                        (s.type == SymbolType::Class && s.GetClass().isTemplate))
+                    if (s.type == SymbolType::Class && s.GetClass().isTemplate)
                     {
                         return false;
                     }

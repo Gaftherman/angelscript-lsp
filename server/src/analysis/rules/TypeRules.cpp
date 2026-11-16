@@ -5,6 +5,7 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/IllegalHandleCheck.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 #include "parser/Keywords.h"
 #include "utils/Utils.h"
 
@@ -119,7 +120,7 @@ static void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature&
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
     const std::string_view enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable);
     if (!retBase.empty() && retBase != "void" && retBase != "auto" &&
-        !(isPredefined && (retBase == "?" || retBase == "T")) &&
+        !(isPredefined && (sig.returnTypeKind == TypeKind::VarType || IsVariableTypeToken(retBase))) &&
         !IsTemplateParameterOfContainer(retBase, sym, ctx.request.symbolTable) &&
         !IsKnownType(retBase, ctx, enclosingNs))
     {
@@ -154,7 +155,8 @@ static void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformati
     }
 
     const std::string_view enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable);
-    if (!paramBase.empty() && paramBase != "void" && !(isPredefined && (paramBase == "?" || paramBase == "T")) &&
+    if (!paramBase.empty() && paramBase != "void" &&
+        !(isPredefined && (param.typeKind == TypeKind::VarType || IsVariableTypeToken(paramBase))) &&
         !IsTemplateParameterOfContainer(paramBase, sym, ctx.request.symbolTable) &&
         !IsKnownType(paramBase, ctx, enclosingNs))
     {

@@ -3,6 +3,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <doctest/doctest.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace angel_lsp::analysis;
@@ -872,5 +874,98 @@ TEST_SUITE("analysis/rules/VariableRules")
                             "as-err-template-arg-count"));
         CHECK_FALSE(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl2 + "<int, float> " + v + "; }\n"),
                             "as-err-template-arg-count"));
+    }
+
+    TEST_CASE("VariableRules - Predefined template accepts any declared template subtype name (U and random)")
+    {
+        const std::string boxU = angel_lsp::test::GenerateRandomSymbolName("BoxU");
+        const std::string boxRand = angel_lsp::test::GenerateRandomSymbolName("BoxRand");
+        const std::string randSub = angel_lsp::test::GenerateRandomSymbolName("Sub");
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("useBoxes");
+
+        const std::string stub = "class " + boxU +
+                                 "<U> {\n"
+                                 "    U get() const;\n"
+                                 "    void set(const U&in v);\n"
+                                 "    U item;\n"
+                                 "    funcdef bool cmp(const U&in, const U&in);\n"
+                                 "}\n"
+                                 "class " +
+                                 boxRand + "<" + randSub +
+                                 "> {\n"
+                                 "    " +
+                                 randSub +
+                                 " get() const;\n"
+                                 "    void set(const " +
+                                 randSub +
+                                 "&in v);\n"
+                                 "    " +
+                                 randSub +
+                                 " item;\n"
+                                 "    funcdef bool cmp(const " +
+                                 randSub + "&in, const " + randSub +
+                                 "&in);\n"
+                                 "}\n";
+
+        auto analyzePredefined = [](const std::string& stubCode, const std::string& scriptCode)
+        {
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            LocalScopeCollector scopes(nullptr);
+            SymbolTable table;
+            static angel_lsp::i18n::I18n i18n;
+            angel_lsp::config::DiagnosticsConfig diagCfg;
+            diagCfg.reportUnknownTypes = true;
+
+            auto stubDiags = collector.CollectSymbols("file:///stub.as.predefined", stubCode, parser, table);
+            SemanticAnalysisRequest stubReq{table, "file:///stub.as.predefined", ".as.predefined", &i18n};
+            stubReq.diagnostics = &diagCfg;
+            stubReq.scopeRoot = scopes.CollectScopes(stubCode, parser);
+            stubReq.sourceCode = stubCode;
+            SemanticAnalyzer analyzer(nullptr);
+            auto stubSem = analyzer.Analyze(stubReq);
+            stubDiags.insert(stubDiags.end(), std::make_move_iterator(stubSem.begin()),
+                             std::make_move_iterator(stubSem.end()));
+
+            std::vector<Diagnostic> scriptDiags;
+            if (!scriptCode.empty())
+            {
+                scriptDiags = collector.CollectSymbols("file:///use.as", scriptCode, parser, table);
+                SemanticAnalysisRequest scriptReq{table, "file:///use.as", ".as.predefined", &i18n};
+                scriptReq.diagnostics = &diagCfg;
+                scriptReq.scopeRoot = scopes.CollectScopes(scriptCode, parser);
+                scriptReq.sourceCode = scriptCode;
+                TSTree* scriptTree = parser.Parse(scriptCode);
+                NodeIndex scriptIndex(ts_tree_root_node(scriptTree));
+                scriptReq.nodeIndex = &scriptIndex;
+                auto scriptSem = analyzer.Analyze(scriptReq);
+                if (scriptTree)
+                {
+                    ts_tree_delete(scriptTree);
+                }
+                scriptDiags.insert(scriptDiags.end(), std::make_move_iterator(scriptSem.begin()),
+                                   std::make_move_iterator(scriptSem.end()));
+            }
+            return std::pair{stubDiags, scriptDiags};
+        };
+
+        const std::string script = "void " + fn +
+                                   "() {\n"
+                                   "    " +
+                                   boxU +
+                                   "<int> a;\n"
+                                   "    int x = a.get();\n"
+                                   "    a.set(x);\n"
+                                   "    " +
+                                   boxRand +
+                                   "<int> b;\n"
+                                   "    int y = b.get();\n"
+                                   "    b.set(y);\n"
+                                   "}\n";
+        const auto [stubDiags, scriptDiags] = analyzePredefined(stub, script);
+        CHECK_FALSE(HasCode(stubDiags, "as-err-unresolved-type"));
+        CHECK_FALSE(HasCode(stubDiags, "as-err-template-arg-count"));
+        CHECK_FALSE(HasCode(scriptDiags, "as-err-unresolved-type"));
+        CHECK_FALSE(HasCode(scriptDiags, "as-err-template-arg-count"));
     }
 }

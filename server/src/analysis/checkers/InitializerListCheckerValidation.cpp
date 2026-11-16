@@ -1,6 +1,7 @@
 #include "analysis/checkers/InitializerListCheckerCommon.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 
 #include <string>
 #include <string_view>
@@ -29,7 +30,8 @@ static bool IsUniversalProxyClass(std::string_view type, const ListValidationCon
             continue;
         }
         const auto& fn = sym.GetFunction();
-        if (!fn.parameters.empty() && fn.parameters[0].baseTypeName == "?")
+        if (!fn.parameters.empty() &&
+            (fn.parameters[0].typeKind == TypeKind::VarType || IsVariableTypeToken(fn.parameters[0].baseTypeName)))
         {
             const AggregateStructInfo structInfo =
                 InspectAggregateStruct(ReadTemplateSpelling(type), valCtx.ctx, valCtx.cache);
@@ -81,7 +83,7 @@ static bool IsAssociativeSubscriptTarget(const InitializerListFact& list, std::s
 static bool IsUnsupportedTargetType(const InitializerListFact& list, std::string_view type,
                                     const ListValidationContext& valCtx)
 {
-    return IsCorePrimitive(type) || type == "?" || IsUniversalProxyClass(type, valCtx) ||
+    return IsCorePrimitive(type) || IsVariableTypeToken(type) || IsUniversalProxyClass(type, valCtx) ||
            IsAssociativeSubscriptTarget(list, type, valCtx);
 }
 

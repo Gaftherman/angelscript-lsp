@@ -114,7 +114,7 @@ std::vector<std::string_view> CandidateContainerKeys(const Symbol& sym, std::str
 void CheckElementValue(const InitializerListElementFact& element, std::string_view wanted, DiagnosticContext& ctx,
                        const ElementContext& elements)
 {
-    if (wanted.empty() || wanted == "?")
+    if (wanted.empty() || IsVariableTypeToken(wanted))
     {
         return;
     }

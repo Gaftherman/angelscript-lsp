@@ -1,14 +1,62 @@
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
 #include "utils/PositionEncoding.h"
+#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
+#include <functional>
+#include <memory>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
 namespace angel_lsp
 {
+/**
+ * @brief Encodes a batch of ranges against the documents they belong to, indexing each document once.
+ * @details A workspace result can hold thousands of ranges across a few documents, and utils::GetLine() rescans
+ *          its document from byte 0 for each one. A document's LineIndex costs one pass over the whole text, so
+ *          it is only built once a document has more than k_indexAfter ranges; small results keep the cheap path.
+ * @param[in] enc Negotiated position encoding.
+ * @param[in] findText Returns the text of the document stored under a document key, or null when unknown.
+ * @param[in,out] targets Document key and the range to rewrite in place.
+ */
+static void EncodeRangesByDocument(utils::PositionEncoding enc,
+                                   const std::function<std::shared_ptr<const std::string>(std::string_view)>& findText,
+                                   const std::vector<std::pair<std::string, lsp::Range*>>& targets)
+{
+    constexpr size_t k_indexAfter = 4;
+    ankerl::unordered_dense::map<std::string, std::pair<std::shared_ptr<const std::string>, utils::LineIndex>,
+                                 TransparentStringHash, std::equal_to<>>
+        documents;
+    ankerl::unordered_dense::map<std::string, size_t, TransparentStringHash, std::equal_to<>> uses;
+    for (const auto& [key, range] : targets)
+    {
+        auto it = documents.find(key);
+        if (it == documents.end())
+        {
+            it = documents.emplace(key, std::pair{findText(key), utils::LineIndex{}}).first;
+        }
+        const auto& text = it->second.first;
+        if (!text)
+        {
+            continue;
+        }
+        if (++uses[key] <= k_indexAfter)
+        {
+            codec::Encode(*text, enc, *range);
+            continue;
+        }
+        if (it->second.second.LineCount() == 0)
+        {
+            it->second.second = utils::LineIndex::Build(*text);
+        }
+        codec::Encode(it->second.second, *text, enc, *range);
+    }
+}
+
 static void EncodeSymbolsRecursive(const utils::LineIndex& lineIndex, std::string_view text,
                                    utils::PositionEncoding enc, std::vector<lsp::DocumentSymbol>& symbols)
 {
@@ -178,13 +226,14 @@ void Server::EncodeAcrossDocuments(std::vector<lsp::Location>& locations) const
         return;
     }
 
+    std::vector<std::pair<std::string, lsp::Range*>> targets;
+    targets.reserve(locations.size());
     for (auto& location : locations)
     {
-        if (auto text = FindDocumentText(DocumentKey(location.uri.toString())))
-        {
-            codec::Encode(*text, GetPositionEncoding(), location.range);
-        }
+        targets.emplace_back(DocumentKey(location.uri.toString()), &location.range);
     }
+    EncodeRangesByDocument(
+        GetPositionEncoding(), [this](std::string_view key) { return FindDocumentText(key); }, targets);
 }
 
 void Server::EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols) const
@@ -194,13 +243,14 @@ void Server::EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols)
         return;
     }
 
+    std::vector<std::pair<std::string, lsp::Range*>> targets;
+    targets.reserve(symbols.size());
     for (auto& symbol : symbols)
     {
-        if (auto text = FindDocumentText(DocumentKey(symbol.location.uri.toString())))
-        {
-            codec::Encode(*text, GetPositionEncoding(), symbol.location.range);
-        }
+        targets.emplace_back(DocumentKey(symbol.location.uri.toString()), &symbol.location.range);
     }
+    EncodeRangesByDocument(
+        GetPositionEncoding(), [this](std::string_view key) { return FindDocumentText(key); }, targets);
 }
 
 void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const

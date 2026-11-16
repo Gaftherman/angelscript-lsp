@@ -4,6 +4,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/VariableRules.h"
+#include "analysis/types/TypeSanitization.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -189,7 +190,7 @@ static void CheckUnresolvedVariableType(const Symbol& sym, const VariableSignatu
     }
     const bool isPredefined =
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
-    if (isPredefined && (baseType == "?" || baseType == "T"))
+    if (isPredefined && (sig.typeKind == TypeKind::VarType || IsVariableTypeToken(baseType)))
     {
         return;
     }
@@ -245,8 +246,7 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
     }
 
     if ((sig.templateName.empty() || sig.isArray) &&
-        !(angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension) &&
-          sig.baseTypeName == "T"))
+        !IsTemplateParameterOfContainer(baseType, sym, ctx.request.symbolTable))
     {
         const TemplateTypeInfo tmplInfo = ParseTemplateType(sig.typeName);
         if (tmplInfo.templateArgs.empty())

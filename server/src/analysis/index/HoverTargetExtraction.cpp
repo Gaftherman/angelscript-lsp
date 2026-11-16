@@ -206,7 +206,7 @@ static void ClassifyHoverTargetKind(TSNode targetNode, TSNode parent, std::strin
     {
         site.kind = HoverNodeKind::Lambda;
     }
-    else if (analysis::IsPrimitiveTypeName(nodeText) || nodeText == "?")
+    else if (analysis::IsPrimitiveTypeName(nodeText) || sym == gs.tokQmark)
     {
         site.kind = HoverNodeKind::PrimitiveOrType;
     }

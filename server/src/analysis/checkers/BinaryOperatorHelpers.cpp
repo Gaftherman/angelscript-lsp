@@ -27,8 +27,12 @@ namespace angel_lsp::analysis
  */
 bool IsParameterCompatible(const ParameterInformation& param, std::string_view argType, const SymbolTable& table)
 {
+    if (param.typeKind == TypeKind::VarType || IsVariableTypeToken(param.typeName))
+    {
+        return true;
+    }
     const auto cleanParam = CleanBaseType(param.typeName);
-    if (cleanParam == "?" || cleanParam == "?&" || param.typeName.find('?') != std::string_view::npos)
+    if (IsVariableTypeToken(cleanParam))
     {
         return true;
     }

@@ -41,7 +41,8 @@ static void CheckSwitchConditionType(const ControlFlowRecord& record, Diagnostic
 
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string unwrapped = UnwrapTypedef(CleanBaseType(rawType), table);
-    if (unwrapped.empty() || unwrapped == "auto" || unwrapped == "?" || ctx.request.IsRegisteredSymbol(unwrapped))
+    if (unwrapped.empty() || unwrapped == "auto" || IsVariableTypeToken(unwrapped) ||
+        ctx.request.IsRegisteredSymbol(unwrapped))
     {
         return;
     }

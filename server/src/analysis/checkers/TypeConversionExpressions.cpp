@@ -115,7 +115,7 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Exp
     const std::string rawType = ResolveExpressionType(site.operandBytes, ExpressionTypeContext(scope, ctx));
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string cleanType = UnwrapTypedef(CleanBaseType(rawType), table);
-    if (cleanType.empty() || cleanType == "auto" || cleanType == "?" || cleanType == "any" ||
+    if (cleanType.empty() || cleanType == "auto" || IsVariableTypeToken(cleanType) ||
         IsBuiltInValueType(cleanType, ctx) || ResolvesToEnum(cleanType, table) ||
         cleanType.find('<') != std::string::npos || rawType.find('[') != std::string::npos ||
         ctx.request.IsRegisteredSymbol(cleanType) || !HierarchyIsFullyVisible(cleanType, table))
@@ -359,7 +359,7 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string_view arrayTypeName = ctx.request.GetEffectiveArrayTypeName();
     const std::string normalizedObj = UnwrapTypedef(NormalizeType(rawObjType, arrayTypeName), table);
-    if (normalizedObj.empty() || normalizedObj == "auto" || normalizedObj == "?" || normalizedObj == "any" ||
+    if (normalizedObj.empty() || normalizedObj == "auto" || IsVariableTypeToken(normalizedObj) ||
         ctx.request.IsRegisteredSymbol(normalizedObj))
         return;
 
@@ -392,7 +392,8 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
     {
         std::string argType = ResolveExpressionType(argBytes, exprCtx);
         const std::string_view cleanArg = CleanBaseTypeView(argType);
-        if (argType.empty() || cleanArg == "auto" || cleanArg == "?" || ctx.request.IsRegisteredSymbol(cleanArg))
+        if (argType.empty() || cleanArg == "auto" || IsVariableTypeToken(cleanArg) ||
+            ctx.request.IsRegisteredSymbol(cleanArg))
             allResolved = false;
         argTypes.push_back(std::move(argType));
     }

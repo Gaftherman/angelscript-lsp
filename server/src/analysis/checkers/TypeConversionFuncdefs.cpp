@@ -148,7 +148,7 @@ void CheckDelegateConstruction(const CallConstructSiteFact& site, const FuncdefS
     const std::string rawObj = ResolveExpressionType(propAccess.receiver, ExpressionTypeContext(scope, ctx));
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string cleanObj = UnwrapTypedef(CleanBaseType(rawObj), table);
-    if (cleanObj.empty() || cleanObj == "auto" || cleanObj == "?" || cleanObj == "any" ||
+    if (cleanObj.empty() || cleanObj == "auto" || IsVariableTypeToken(cleanObj) ||
         cleanObj.find('<') != std::string::npos || ctx.request.IsRegisteredSymbol(cleanObj) ||
         !HierarchyIsFullyVisible(cleanObj, table))
     {

@@ -554,7 +554,8 @@ SyntaxNodeId NodeIndex::FlowFactCollector::AddSyntaxFact(Frame& frame, TSNode no
 /// Keeps modifier and separator tokens used by type and lambda parameter readers.
 static bool CapturesAnonymousOperands(TSSymbol symbol, const parser::GrammarSymbols& gs) noexcept
 {
-    return symbol == gs.symType || symbol == gs.symPrimitiveType || symbol == gs.symLambdaParameterList;
+    return symbol == gs.symType || symbol == gs.symDatatype || symbol == gs.symPrimitiveType ||
+           symbol == gs.symLambdaParameterList;
 }
 
 void NodeIndex::FlowFactCollector::CaptureSyntaxNode(Frame& frame, TSNode node, size_t syntaxSlot)

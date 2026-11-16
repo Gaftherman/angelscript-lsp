@@ -253,9 +253,9 @@ class const_weakref<T>{
 
 class any{
 	any();
-	any(?&in);
-	any(const int64&in);
-	any(const double&in);
+	any(?&in) explicit;
+	any(const int64&in) explicit;
+	any(const double&in) explicit;
 	any& opAssign(any&in);
 	void store(?&in);
 	void store(const int64&in);

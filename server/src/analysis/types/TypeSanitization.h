@@ -239,6 +239,15 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
 }
 
 /**
+ * @brief Checks whether a type string denotes AngelScript's variable parameter type (`?`).
+ * @details Accepts a leading `...` and trailing `&`, `&in`, `&out` or `&inout`, ignoring whitespace.
+ *          String-level fallback for when `TypeKind::VarType` is unavailable on a symbol.
+ * @param[in] typeName Type spelling or cleaned base type view to inspect.
+ * @return True when `typeName` represents `?` with optional reference decoration; false otherwise.
+ */
+[[nodiscard]] bool IsVariableTypeToken(std::string_view typeName) noexcept;
+
+/**
  * @brief Extracts all type qualifiers (const, handle, reference, etc.) from a type string without heap allocation.
  * @param[in] type Type string view.
  * @return TypeQualifiers bitfield struct.

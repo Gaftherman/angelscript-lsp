@@ -14,7 +14,7 @@ namespace angel_lsp::analysis
 bool IsHoverableIdentifier(std::string_view txt, TSSymbol sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    if (txt == "?" || sym == gs.symDatatype || sym == gs.symIdentifier || sym == gs.symScopedIdentifier ||
+    if (sym == gs.tokQmark || sym == gs.symDatatype || sym == gs.symIdentifier || sym == gs.symScopedIdentifier ||
         sym == gs.symPrimitiveType || sym == gs.symStringLiteral || analysis::IsPrimitiveTypeName(txt) ||
         analysis::IsReservedKeyword(std::string(txt)))
     {

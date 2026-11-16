@@ -33,8 +33,8 @@ static bool IsDefaultArgumentTypeMismatch(const ParameterInformation& param, con
     const std::string_view rawBase =
         CleanBaseTypeView(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
     const std::string paramBase = UnwrapTypedef(rawBase, table);
-    if (paramBase.empty() || paramBase == "auto" || paramBase == "?" || paramBase == "any" || param.isArray ||
-        !param.templateName.empty())
+    if (paramBase.empty() || paramBase == "auto" || param.typeKind == TypeKind::VarType ||
+        IsVariableTypeToken(paramBase) || param.isArray || !param.templateName.empty())
     {
         return false;
     }

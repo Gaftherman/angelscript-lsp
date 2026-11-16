@@ -65,6 +65,7 @@ enum class TypeKind : uint8_t
     Object,
     Array,
     Handle,
+    VarType,
     // Aliases placed last so they don't reset the implicit counter for the entries above.
     Int = Int32,
     UInt = UInt32

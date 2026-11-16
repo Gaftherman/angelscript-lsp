@@ -451,28 +451,10 @@ bool IsVariableType(std::string_view typeName)
 {
     // Strip whatever decoration the declaration carried: const, &, @, in/out/inout, spaces.
     // What has to remain is a bare '?' and nothing else.
-    std::string cleaned;
-    cleaned.reserve(typeName.size());
-    for (const char c : typeName)
-    {
-        if (c == '?')
-            cleaned.push_back(c);
-        else if (c != ' ' && c != '\t' && c != '&' && c != '@')
-        {
-            // Any other identifier character means this is a real type, not the wildcard.
-            // "const" / "in" / "out" / "inout" are the only words legally adjacent to it.
-            cleaned.push_back(c);
-        }
-    }
-
-    static constexpr std::string_view k_decorations[] = {"const", "inout", "out", "in"};
-    for (const auto decoration : k_decorations)
-    {
-        for (size_t at = cleaned.find(decoration); at != std::string::npos; at = cleaned.find(decoration, at))
-            cleaned.erase(at, decoration.size());
-    }
-
-    return cleaned == "?";
+    std::string_view stripped = StripLeadingConst(typeName);
+    stripped = StripTrailingDecorationsView(stripped, false);
+    TrimTypeWhitespace(stripped);
+    return IsVariableTypeToken(stripped);
 }
 
 std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable,

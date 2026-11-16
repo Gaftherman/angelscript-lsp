@@ -93,7 +93,7 @@ static void CheckRelationalComparison(SourceRange opRange, const RelationalCheck
     }
     // Identity compares references, so every object type qualifies; only primitives and enums are values.
     const std::string_view clean = CleanBaseTypeView(typeName);
-    if (clean.empty() || clean == "auto" || clean == "?" || clean == "any" || ctx.request.IsRegisteredSymbol(clean))
+    if (clean.empty() || clean == "auto" || IsVariableTypeToken(clean) || ctx.request.IsRegisteredSymbol(clean))
     {
         return true;
     }

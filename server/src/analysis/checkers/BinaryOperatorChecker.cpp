@@ -194,9 +194,8 @@ static bool AreBinaryOperandsCompatible(std::string_view op, const OperandTypePa
     {
         return true;
     }
-    if (types.left == "auto" || types.right == "auto" ||
-        std::string_view(types.left).find('?') != std::string_view::npos ||
-        std::string_view(types.right).find('?') != std::string_view::npos)
+    if (types.left == "auto" || types.right == "auto" || IsVariableTypeToken(types.left) ||
+        IsVariableTypeToken(types.right))
     {
         return true;
     }
@@ -227,7 +226,7 @@ static void CheckLogicalOperand(const BinaryOperandFact& operand, const Expressi
     }
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string clean = UnwrapTypedef(CleanBaseType(rawType), table);
-    if (clean.empty() || clean == "auto" || clean == "?" || ctx.request.IsRegisteredSymbol(clean) ||
+    if (clean.empty() || clean == "auto" || IsVariableTypeToken(clean) || ctx.request.IsRegisteredSymbol(clean) ||
         !IsKnownType(clean, table, ctx.request.GetEffectiveStringTypeName()))
     {
         return;

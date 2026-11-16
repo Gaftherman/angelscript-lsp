@@ -1,6 +1,7 @@
 #include "analysis/types/TypeSanitization.h"
 
 #include "analysis/resolution/SemanticHelpers.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -12,6 +13,28 @@ void StripTrailingDecorations(std::string& result)
 {
     std::string_view view = StripTrailingDecorationsView(result, true);
     result.resize(view.size());
+}
+
+bool IsVariableTypeToken(std::string_view typeName) noexcept
+{
+    TrimTypeWhitespace(typeName);
+    constexpr std::string_view variadicMarker = "...";
+    if (typeName.starts_with(variadicMarker))
+    {
+        typeName.remove_prefix(variadicMarker.size());
+        TrimTypeWhitespace(typeName);
+    }
+    if (!typeName.starts_with(parser::keywords::operators::Question))
+    {
+        return false;
+    }
+    typeName.remove_prefix(parser::keywords::operators::Question.size());
+    TrimTypeWhitespace(typeName);
+    if (typeName.empty())
+    {
+        return true;
+    }
+    return TrailingReferenceModifierLength(typeName) == typeName.size();
 }
 
 std::string_view CleanBaseTypeView(std::string_view typeName, std::string_view arrayTypeName) noexcept

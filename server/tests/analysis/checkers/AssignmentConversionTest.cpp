@@ -377,6 +377,62 @@ TEST_SUITE("analysis/checkers/AssignmentConversion")
             HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// OK_HOST_HIERARCHY")));
         CHECK(HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// BAD_HOST_VOID")));
     }
+
+    TEST_CASE("AssignmentConversion - any-like class with explicit constructor blocks implicit int conversion while "
+              "allowing explicit construction")
+    {
+        const std::string boxCls = GenerateRandomSymbolName("AnyLike");
+        const std::string takeFn = GenerateRandomSymbolName("TakeAnyLike");
+
+        const std::string code = "class " + boxCls +
+                                 " {\n"
+                                 "    " +
+                                 boxCls +
+                                 "() {}\n"
+                                 "    " +
+                                 boxCls +
+                                 "(int v) explicit {}\n"
+                                 "    " +
+                                 boxCls + "& opAssign(const " + boxCls +
+                                 "&in other) { return this; }\n"
+                                 "}\n"
+                                 "void " +
+                                 takeFn + "(" + boxCls +
+                                 " v) {}\n"
+                                 "void Test() {\n"
+                                 "    " +
+                                 boxCls +
+                                 " badInit = 5; // BAD_INIT\n"
+                                 "    " +
+                                 boxCls +
+                                 " b;\n"
+                                 "    b = 5; // BAD_ASSIGN\n"
+                                 "    " +
+                                 takeFn +
+                                 "(5); // BAD_CALL\n"
+                                 "    " +
+                                 boxCls +
+                                 " okDirect(5); // OK_DIRECT\n"
+                                 "    " +
+                                 boxCls + "@ okConstruct = " + boxCls +
+                                 "(5); // OK_CONSTRUCT\n"
+                                 "    " +
+                                 takeFn + "(" + boxCls +
+                                 "(5)); // OK_CALL\n"
+                                 "    b = okDirect; // OK_ASSIGN_SAME\n"
+                                 "}\n";
+
+        const auto diags = AnalyzeScriptWithStandardProfile(code);
+        CHECK(HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// BAD_INIT")));
+        CHECK(HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// BAD_ASSIGN")));
+        CHECK(HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// BAD_CALL")));
+        CHECK_FALSE(HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// OK_DIRECT")));
+        CHECK_FALSE(HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// OK_CONSTRUCT")));
+        CHECK_FALSE(HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// OK_CALL")));
+        CHECK_FALSE(HasCodeOnLine(diags, diagnostics::codes::NoImplicitConversion, LineOf(code, "// OK_ASSIGN_SAME")));
+        CHECK_FALSE(HasCode(diags, "as-err-no-explicit-conversion"));
+        CHECK_FALSE(HasCode(diags, "as-err-no-matching-constructor"));
+    }
 }
 
 } // namespace angel_lsp::test

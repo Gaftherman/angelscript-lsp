@@ -3687,6 +3687,24 @@
         "CallSiteFacts tests in server/tests/analysis/index/CallSiteFactsTest.cpp",
         "CallChecker, ControlFlowChecker, and NamespaceChecker suites"
       ]
+    },
+    {
+      "id": "REF-P18-VARTYPE-TOKEN",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/types/TypeSanitization.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "about 30 inline comparisons of a type string to \"?\", \"?&\" or find('?'), plus the hand-written \"any\" and \"T\" type-name exemptions in checkers and rules",
+      "whatItDidAndWhyInThatFile": "Each checker and rule decided on its own whether a type was the variable type by comparing text, and skipped checks for the add-on class any by name.",
+      "whyChangedOrDeleted": "The engine identifies the variable type by the ttQuestion token and treats any as an ordinary registered class. The first pass now sets TypeKind::VarType from the grammar token, IsVariableTypeToken is the single string fallback, and template subtype names come from the container's declared parameters.",
+      "replacedByCanonicalFile": "server/src/analysis/types/TypeSanitization.h",
+      "replacedByCanonicalSymbol": "IsVariableTypeToken",
+      "ramOrCpuImpact": "No measured change. Removes per-site string comparisons; any now follows the general overload and explicit-constructor path.",
+      "verifiedByTests": [
+        "server/tests/analysis/types/VarTypeTokenTest.cpp",
+        "server/tests/parity/differential/man_types/man_var_type.as (9 cases against the oracle)",
+        "VariableRulesTest predefined template subtype case"
+      ]
     }
   ]
 }

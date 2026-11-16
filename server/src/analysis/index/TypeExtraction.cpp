@@ -71,6 +71,12 @@ static bool ReadTypeLeaf(TSNode node, std::string_view sourceCode, const NodeInd
         result.baseTypeName = std::string(parser::NodeText(node, sourceCode));
         return true;
     }
+    if (symbol == gs.tokQmark)
+    {
+        result.baseTypeName = std::string(parser::NodeText(node, sourceCode));
+        result.kind = TypeKind::VarType;
+        return true;
+    }
     return false;
 }
 
@@ -188,7 +194,19 @@ class TypeReadWorklist
             const TSNode inner = SyntaxOperands(child, m_index).FirstNamed();
             if (ts_node_is_null(inner))
             {
-                FinishDatatype(frame, std::string(parser::NodeText(child, m_sourceCode)), frame.result.kind);
+                TypeKind datatypeKind = frame.result.kind;
+                SyntaxOperands(child, m_index)
+                    .ForEachChild(
+                        [&](TSNode token)
+                        {
+                            if (ts_node_symbol(token) == gs.tokQmark)
+                            {
+                                datatypeKind = TypeKind::VarType;
+                                return false;
+                            }
+                            return true;
+                        });
+                FinishDatatype(frame, std::string(parser::NodeText(child, m_sourceCode)), datatypeKind);
             }
             else
             {

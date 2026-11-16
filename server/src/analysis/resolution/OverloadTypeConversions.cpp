@@ -414,7 +414,8 @@ bool HasConstModifier(std::string_view typeName)
 
 bool IsWildcardParameter(const ParameterInformation& param)
 {
-    return param.typeName == "?" || param.typeName.find('?') != std::string::npos;
+    return param.typeKind == TypeKind::VarType || IsVariableTypeToken(param.typeName) ||
+           IsVariableTypeToken(CleanBaseTypeView(param.typeName));
 }
 
 /**

@@ -150,7 +150,7 @@ void CheckParamTypeResolution(const Symbol& sym, const ParameterInformation& par
     const bool judgeParameterType = (sym.type == SymbolType::Function && sym.GetFunction().isImported) ||
                                     ctx.request.ReportsUnknownTypes() || existsInOtherScope;
     if (judgeParameterType && !param.baseTypeName.empty() &&
-        !(isPredefined && (param.baseTypeName == "?" || param.baseTypeName == "T")) &&
+        !(isPredefined && (param.typeKind == TypeKind::VarType || IsVariableTypeToken(param.baseTypeName))) &&
         !IsTemplateParameterOfContainer(param.baseTypeName, sym, ctx.request.symbolTable) &&
         !IsKnownType(param.baseTypeName, ctx, enclosingNs))
     {

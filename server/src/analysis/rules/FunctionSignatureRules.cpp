@@ -231,7 +231,7 @@ static void CheckReturnTypeResolution(const Symbol& sym, const FunctionSignature
         ruleIndex && (ruleIndex->allNames.contains(sig.returnBaseTypeName) || ruleIndex->allNames.contains(shortType));
     if ((sig.isImported || ctx.request.ReportsUnknownTypes() || existsInOtherScope) &&
         !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
-        !(isPredefined && (sig.returnBaseTypeName == "?" || sig.returnBaseTypeName == "T")) &&
+        !(isPredefined && (sig.returnTypeKind == TypeKind::VarType || IsVariableTypeToken(sig.returnBaseTypeName))) &&
         !IsTemplateParameterOfContainer(sig.returnBaseTypeName, sym, ctx.request.symbolTable) &&
         !IsKnownType(sig.returnBaseTypeName, ctx, enclosingNs))
     {

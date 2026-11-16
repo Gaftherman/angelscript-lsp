@@ -1,5 +1,6 @@
 #include "analysis/checkers/InitializerListCheckerCommon.h"
 #include "analysis/index/RuleIndex.h"
+#include "analysis/types/TypeSanitization.h"
 
 #include <cstdint>
 #include <string>
@@ -19,7 +20,8 @@ static void UpdateDictValType(const ParameterInformation& param, DictTypeState& 
 {
     const std::string_view paramVal =
         param.baseTypeName.empty() ? std::string_view(param.typeName) : std::string_view(param.baseTypeName);
-    if (paramVal == "?" || std::string_view(param.typeName).find('?') != std::string_view::npos)
+    if (param.typeKind == TypeKind::VarType || IsVariableTypeToken(paramVal) ||
+        IsVariableTypeToken(CleanBaseTypeView(param.typeName)))
     {
         state.valType = "?";
     }

@@ -4,6 +4,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "features/hover/HoverInternal.h"
 #include "i18n/i18n.h"
+#include "parser/Keywords.h"
 #include "utils/Timer.h"
 
 #include <lsp/types.h>
@@ -37,7 +38,7 @@ std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const
 std::optional<lsp::Hover> TryHoverWildcardType(std::string_view nodeText, const lsp::Range& range,
                                                const angel_lsp::i18n::I18n* i18n, HoverProfiler& profiler)
 {
-    if (nodeText != "?")
+    if (nodeText != parser::keywords::operators::Question)
     {
         return std::nullopt;
     }

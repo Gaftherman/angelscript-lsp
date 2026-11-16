@@ -526,6 +526,54 @@ TEST_CASE("Server - Publishes diagnostics for an opened document")
     CHECK(stream.OutputContains("as-warn-unused-variable"));
 }
 
+TEST_CASE("Server - workspace/symbol reports UTF-16 columns for symbols in several documents")
+{
+    WorkspaceFixture fixture;
+    const std::string stem = test::GenerateRandomSymbolName("WideSym");
+    // U+1F600 is 4 UTF-8 bytes but 2 UTF-16 code units, so every symbol after it on the line
+    // sits 2 columns further left in UTF-16 than in bytes. Six functions per document push the
+    // batch past the point where the encoder switches from per-range scans to a line index.
+    constexpr int k_functions = 6;
+    const std::string emojiA = "\xF0\x9F\x98\x80";
+    const std::string emojiB = emojiA + emojiA + emojiA;
+    std::string sourceA;
+    std::string sourceB;
+    for (int i = 0; i < k_functions; ++i)
+    {
+        sourceA += "/*" + emojiA + "*/ void " + stem + "A" + std::to_string(i) + "() {}\n";
+        sourceB += "/*" + emojiB + "*/ void " + stem + "B" + std::to_string(i) + "() {}\n";
+    }
+    fixture.Write("a.as", sourceA);
+    fixture.Write("b.as", sourceB);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("a.as"), sourceA));
+    stream.Push(DidOpenMessage(fixture.Uri("b.as"), sourceB));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":")" + stem + R"("}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    for (int i = 0; i < k_functions; ++i)
+    {
+        REQUIRE(reply.find("\"name\":\"" + stem + "A" + std::to_string(i) + "\"") != std::string::npos);
+        REQUIRE(reply.find("\"name\":\"" + stem + "B" + std::to_string(i) + "\"") != std::string::npos);
+
+        // The range starts at "void", after "/*", the emoji and "*/ ": 2 + 2 + 3 = 7 UTF-16 units in a.as
+        // (9 bytes) and 2 + 6 + 3 = 11 units in b.as (17 bytes), on every line of the batch.
+        const std::string line = "\"start\":{\"line\":" + std::to_string(i) + ",\"character\":";
+        CHECK(reply.find(line + "7}") != std::string::npos);
+        CHECK(reply.find(line + "11}") != std::string::npos);
+        CHECK(reply.find(line + "9}") == std::string::npos);
+        CHECK(reply.find(line + "17}") == std::string::npos);
+    }
+}
+
 TEST_CASE("Server - A watched file deleted on disk stops contributing symbols")
 {
     WorkspaceFixture fixture;

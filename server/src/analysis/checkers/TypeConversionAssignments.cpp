@@ -129,7 +129,7 @@ static bool CheckNullAssignmentToNonHandle(const AssignmentSiteFact& site, std::
         return false;
     }
 
-    if (rawLeftType == "auto" || rawLeftType == "?" || rawLeftType == "any")
+    if (rawLeftType == "auto" || IsVariableTypeToken(rawLeftType))
     {
         return true;
     }
