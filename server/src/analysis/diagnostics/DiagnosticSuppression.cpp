@@ -206,6 +206,10 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"E257", diagnostics::codes::AutoNotAllowedHere},
     {"E258", diagnostics::codes::HandleToHandle},
     {"E259", diagnostics::codes::CannotInferLambda},
+    {"E260", diagnostics::codes::TemplateArgumentCountMismatch},
+    {"E261", diagnostics::codes::HandleOnNoHandleType},
+    {"E262", diagnostics::codes::DefaultArgUnresolved},
+    {"E263", diagnostics::codes::IncludeUnterminated},
 };
 
 static bool EqualsCaseInsensitive(std::string_view a, std::string_view b) noexcept

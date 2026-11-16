@@ -313,6 +313,16 @@ struct TypeExtractionResult
 };
 
 /**
+ * @brief Identifier or scoped symbol reference appearing inside a parameter's default value expression.
+ */
+struct DefaultArgSymbolRef
+{
+    uint32_t paramIndex = 0; ///< Zero-based parameter index owning the default expression.
+    std::string name;        ///< Unqualified or scoped identifier spelling.
+    bool isScoped = false;   ///< True when the reference uses scope resolution (`::`).
+};
+
+/**
  * @brief Signature metadata and parameter list for callable symbols.
  */
 struct FunctionSignature
@@ -321,9 +331,9 @@ struct FunctionSignature
     std::string returnBaseTypeName;
     std::string returnTemplateName;
     std::string originModule;
-    std::string defaultValue;
     std::string displaySignature; ///< Canonical pre-formatted declaration for zero-copy std::string_view diagnostics.
     std::vector<ParameterInformation> parameters;
+    std::vector<DefaultArgSymbolRef> defaultArgRefs; ///< Identifier references inside parameter default expressions.
 
     uint32_t returnArrayDepth = 0;
     SymbolModifiers modifiers;

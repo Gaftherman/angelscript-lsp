@@ -358,7 +358,9 @@ class SymbolCollector
     void ExtractParamModifierTokens(TSNode paramNode, std::string_view sourceCode, ParameterInformation& paramInfo,
                                     uint32_t& refCount) const;
 
-    std::vector<ParameterInformation> ExtractParameters(TSNode paramsNode, const SymbolCollectContext& ctx) const;
+    std::vector<ParameterInformation>
+    ExtractParameters(TSNode paramsNode, const SymbolCollectContext& ctx,
+                      std::vector<DefaultArgSymbolRef>* outDefaultRefs = nullptr) const;
 
     Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const SymbolLocationContext& loc) const;
     Symbol CreateNamedContainerSymbol(SymbolType type, TSNode node, SymbolCollectContext& sCtx,

@@ -301,7 +301,8 @@ static void SkipDirectiveRemainder(std::string_view sourceCode, IncludeScanState
     }
 }
 
-static std::optional<IncludeDirective> TryExtractDirective(std::string_view sourceCode, IncludeScanState& state)
+static std::optional<IncludeDirective> TryExtractDirective(std::string_view sourceCode, IncludeScanState& state,
+                                                           std::vector<UnterminatedIncludeDirective>* outUnterminated)
 {
     const size_t directiveLine = state.currentLine;
     const size_t n = sourceCode.size();
@@ -339,6 +340,7 @@ static std::optional<IncludeDirective> TryExtractDirective(std::string_view sour
 
     const char closingChar = (quoteChar == '<') ? '>' : quoteChar;
     const bool isAngled = (quoteChar == '<');
+    const size_t openQuoteIdx = state.index;
     ++state.index;
 
     const size_t pathStart = state.index;
@@ -358,6 +360,19 @@ static std::optional<IncludeDirective> TryExtractDirective(std::string_view sour
             .isAngled = isAngled,
         };
         ++state.index;
+    }
+    else if (outUnterminated && !isAngled)
+    {
+        size_t lineStart = openQuoteIdx;
+        while (lineStart > 0 && sourceCode[lineStart - 1] != '\n' && sourceCode[lineStart - 1] != '\r')
+        {
+            --lineStart;
+        }
+        outUnterminated->push_back(UnterminatedIncludeDirective{
+            .line = static_cast<uint32_t>(directiveLine),
+            .openQuote = static_cast<uint32_t>(openQuoteIdx - lineStart),
+            .lineEnd = static_cast<uint32_t>(state.index - lineStart),
+        });
     }
 
     SkipDirectiveRemainder(sourceCode, state);
@@ -562,9 +577,9 @@ std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view 
     return kept;
 }
 
-std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view sourceCode)
+static void ScanIncludeDirectives(std::string_view sourceCode, std::vector<IncludeDirective>* outIncludes,
+                                  std::vector<UnterminatedIncludeDirective>* outUnterminated)
 {
-    std::vector<IncludeDirective> directives;
     const size_t n = sourceCode.size();
     IncludeScanState state;
 
@@ -590,17 +605,36 @@ std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view 
         }
         if (c == '#' && state.atLineStart)
         {
-            if (auto dir = TryExtractDirective(sourceCode, state))
+            if (auto dir = TryExtractDirective(sourceCode, state, outUnterminated); dir && outIncludes)
             {
-                directives.push_back(std::move(*dir));
+                outIncludes->push_back(std::move(*dir));
             }
             continue;
         }
         state.atLineStart = false;
         ++state.index;
     }
+}
 
+std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view sourceCode)
+{
+    std::vector<IncludeDirective> directives;
+    ScanIncludeDirectives(sourceCode, &directives, nullptr);
     return directives;
+}
+
+std::vector<UnterminatedIncludeDirective>
+IncludeResolver::ExtractUnterminatedIncludes(std::string_view sourceCode,
+                                             const std::vector<ExcludedLineRange>& excludedLines)
+{
+    std::vector<UnterminatedIncludeDirective> unterminated;
+    ScanIncludeDirectives(sourceCode, nullptr, &unterminated);
+    if (!excludedLines.empty())
+    {
+        std::erase_if(unterminated, [&excludedLines](const UnterminatedIncludeDirective& u)
+                      { return IsLineExcluded(excludedLines, u.line); });
+    }
+    return unterminated;
 }
 
 /**

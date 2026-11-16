@@ -1,0 +1,9 @@
+{
+  "$schema": "../../schemas/angelscript.rules.schema.json",
+  "name": "AngelScript SDK Add-ons",
+  "noHandleTypes": [
+    "string",
+    "datetime",
+    "complex"
+  ]
+}

@@ -2,6 +2,7 @@
 
 #include "analysis/index/SymbolTable.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -23,6 +24,14 @@ struct TemplateBinding
 };
 
 TemplateTypeInfo ParseTemplateType(std::string_view typeName);
+
+/**
+ * @brief Returns the declared template parameter count when `typeName` resolves to a template class.
+ * @param[in] typeName Unqualified or scoped base type name (without `<...>`).
+ * @param[in] table Symbol table to query.
+ * @return Number of template parameters, or `std::nullopt` if `typeName` is not a template class.
+ */
+std::optional<size_t> GetTemplateParameterCount(std::string_view typeName, const SymbolTable& table);
 bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to);
 std::string SubstituteTypeParam(std::string_view typeStr, std::string_view paramName, std::string_view concreteType);
 TemplateBinding BindTemplateArguments(std::string_view writtenType, const SymbolTable& table);

@@ -3,6 +3,7 @@
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/EnumDeclarationFacts.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/IllegalHandleCheck.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/Keywords.h"
 #include "utils/Utils.h"
@@ -98,10 +99,18 @@ static void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature&
         ctx.Emit(sym, "as-err-handle-to-handle");
     }
 
-    if (sig.returnHasPrimitiveHandle)
+    const IllegalHandleCheckResult handleResult = CheckIllegalHandleType(
+        IllegalHandleCheckRequest{
+            .writtenType = sig.returnType,
+            .baseTypeName = sig.returnBaseTypeName,
+            .enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable),
+            .hasPrimitiveHandle = sig.returnHasPrimitiveHandle,
+        },
+        ctx);
+    if (handleResult.HasError())
     {
-        ctx.LogRule("ValidateFuncdef", "as-err-handle-on-primitive", sym);
-        ctx.Emit(sym, "as-err-handle-on-primitive", sig.returnBaseTypeName);
+        ctx.LogRule("ValidateFuncdef", handleResult.diagnosticCode, sym);
+        ctx.Emit(sym, handleResult.diagnosticCode, handleResult.offendingTypeName);
     }
 
     const std::string_view retBase =
@@ -131,18 +140,8 @@ static void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature&
 
 static void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
 {
-    if (param.hasDoubleHandle)
-    {
-        ctx.LogRule("ValidateFuncdef", "as-err-handle-to-handle", sym);
-        ctx.Emit(sym, "as-err-handle-to-handle");
-    }
-
-    if (param.hasPrimitiveHandle)
-    {
-        ctx.LogRule("ValidateFuncdef", "as-err-handle-on-primitive", sym);
-        ctx.Emit(sym, "as-err-handle-on-primitive", param.baseTypeName);
-    }
-
+    // Handle legality (double handle, primitive, no-handle types) is reported by ValidateParameters with the
+    // parameter's own range, so it is not repeated here.
     const bool isPredefined =
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
     const std::string_view paramBase =

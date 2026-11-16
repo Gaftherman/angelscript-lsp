@@ -893,7 +893,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     funcSig.returnHasDoubleHandle = retInfo.hasDoubleHandle;
     funcSig.returnArrayDepth = retInfo.arrayDepth;
     funcSig.modifiers = modifiers;
-    funcSig.parameters = ExtractParameters(paramsNode, sCtx);
+    funcSig.parameters = ExtractParameters(paramsNode, sCtx, &funcSig.defaultArgRefs);
 
     funcSig.hasBody = !ts_node_is_null(bodyNode);
     funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_gs.symInterfaceMethod);
@@ -2752,8 +2752,84 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, con
     return paramInfo;
 }
 
-std::vector<ParameterInformation> SymbolCollector::ExtractParameters(TSNode paramsNode,
-                                                                     const SymbolCollectContext& ctx) const
+/**
+ * @brief Iteratively collects identifier and scoped references inside a parameter default expression.
+ * @param[in] defaultNode Default value expression AST node.
+ * @param[in] paramIndex Zero-based index of the owning parameter.
+ * @param[in] sourceCode Source text the AST was parsed from.
+ * @param[out] out Destination vector receiving extracted symbol references.
+ */
+static void CollectDefaultArgSymbolRefs(TSNode defaultNode, uint32_t paramIndex, std::string_view sourceCode,
+                                        std::vector<DefaultArgSymbolRef>& out)
+{
+    if (ts_node_is_null(defaultNode) || ts_node_has_error(defaultNode))
+    {
+        return;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    std::vector<TSNode> worklist{defaultNode};
+
+    while (!worklist.empty())
+    {
+        const TSNode cur = worklist.back();
+        worklist.pop_back();
+        if (ts_node_is_null(cur))
+        {
+            continue;
+        }
+        const TSSymbol sym = ts_node_symbol(cur);
+        if (sym == gs.symScopedIdentifier)
+        {
+            out.push_back(DefaultArgSymbolRef{paramIndex, std::string(parser::NodeText(cur, sourceCode)), true});
+            continue;
+        }
+        if (sym == gs.symIdentifier)
+        {
+            out.push_back(DefaultArgSymbolRef{paramIndex, std::string(parser::NodeText(cur, sourceCode)), false});
+            continue;
+        }
+        if (sym == gs.symThisExpression)
+        {
+            out.push_back(DefaultArgSymbolRef{paramIndex, "this", false});
+            continue;
+        }
+        if (sym == gs.symMemberExpression)
+        {
+            TSNode obj = parser::GetChildByField(cur, gs.fieldObject);
+            if (!ts_node_is_null(obj))
+            {
+                worklist.push_back(obj);
+            }
+            continue;
+        }
+        if (sym == gs.symType || sym == gs.symDatatype || sym == gs.symLambdaExpression)
+        {
+            continue;
+        }
+
+        TSTreeCursor cursor = ts_tree_cursor_new(cur);
+        if (ts_tree_cursor_goto_first_child(&cursor))
+        {
+            do
+            {
+                if (ts_tree_cursor_current_field_id(&cursor) == gs.fieldArgName)
+                {
+                    continue;
+                }
+                TSNode child = ts_tree_cursor_current_node(&cursor);
+                if (ts_node_is_named(child))
+                {
+                    worklist.push_back(child);
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
+        }
+        ts_tree_cursor_delete(&cursor);
+    }
+}
+
+std::vector<ParameterInformation>
+SymbolCollector::ExtractParameters(TSNode paramsNode, const SymbolCollectContext& ctx,
+                                   std::vector<DefaultArgSymbolRef>* outDefaultRefs) const
 {
     std::vector<ParameterInformation> parameters;
     SyntaxOperands(paramsNode, &ctx.index)
@@ -2762,13 +2838,27 @@ std::vector<ParameterInformation> SymbolCollector::ExtractParameters(TSNode para
             {
                 if (ts_node_symbol(parameter) == m_gs.symParameter)
                 {
+                    const uint32_t paramIndex = static_cast<uint32_t>(parameters.size());
                     parameters.push_back(ExtractParameterInfo(parameter, ctx));
+                    if (outDefaultRefs)
+                    {
+                        TSNode pDefaultNode = GetChildByFieldId(parameter, m_gs.fieldDefaultValue);
+                        if (!ts_node_is_null(pDefaultNode))
+                        {
+                            CollectDefaultArgSymbolRefs(pDefaultNode, paramIndex, ctx.request.sourceCode,
+                                                        *outDefaultRefs);
+                        }
+                    }
                 }
                 return true;
             });
     if (parameters.size() == 1 && parameters[0].typeName == "void" && parameters[0].name.empty())
     {
         parameters.clear();
+        if (outDefaultRefs)
+        {
+            outDefaultRefs->clear();
+        }
     }
     return parameters;
 }

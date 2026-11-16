@@ -332,6 +332,70 @@ TEST_SUITE("analysis/checkers/ComparisonOperatorChecker")
         }
         CHECK(count == 2);
     }
+
+    TEST_CASE("ComparisonOperatorChecker - Invalid opEquals/opCmp return type emits use-site NoMatchingOperator")
+    {
+        const std::string badEqCls = GenerateRandomSymbolName("BadEq");
+        const std::string badCmpCls = GenerateRandomSymbolName("BadCmp");
+        const std::string fallbackCls = GenerateRandomSymbolName("FallbackEq");
+        const std::string mixedCls = GenerateRandomSymbolName("MixedEq");
+        const std::string fnName = GenerateRandomSymbolName("CheckBadOps");
+
+        const std::string eqScript = "class " + badEqCls + " { void opEquals(const " + badEqCls +
+                                     " &in o) const {} }\n"
+                                     "void " +
+                                     fnName + "() { " + badEqCls + " a, b; bool eq = (a == b); }\n";
+        const auto eqDiags = AnalyzeScriptWithStandardProfile(eqScript);
+        CHECK(HasDiagnostic(eqDiags, diagnostics::codes::OpequalsReturnBool));
+        auto eqUseIt = std::find_if(eqDiags.begin(), eqDiags.end(), [](const analysis::Diagnostic& d)
+                                    { return d.code == diagnostics::codes::NoMatchingOperator; });
+        REQUIRE(eqUseIt != eqDiags.end());
+        CHECK(eqUseIt->severity == analysis::DiagnosticSeverity::Error);
+        CHECK(eqUseIt->range.start.line == 1);
+        CHECK(eqUseIt->range.start.character == eqScript.find("==") - eqScript.find('\n') - 1);
+
+        const std::string cmpScript = "class " + badCmpCls + " { bool opCmp(const " + badCmpCls +
+                                      " &in o) const { return true; } }\n"
+                                      "void " +
+                                      fnName + "() { " + badCmpCls +
+                                      " a, b; bool lt = (a < b); bool eq = (a == b); }\n";
+        const auto cmpDiags = AnalyzeScriptWithStandardProfile(cmpScript);
+        CHECK(HasDiagnostic(cmpDiags, diagnostics::codes::OpcmpReturnInt));
+        const size_t cmpNoMatchCount = std::count_if(cmpDiags.begin(), cmpDiags.end(), [](const analysis::Diagnostic& d)
+                                                     { return d.code == diagnostics::codes::NoMatchingOperator; });
+        CHECK(cmpNoMatchCount == 2);
+
+        // Negative control 1: valid opCmp rescues `==` even when an invalid opEquals exists.
+        const std::string fallbackScript = "class " + fallbackCls +
+                                           " {\n"
+                                           "    void opEquals(const " +
+                                           fallbackCls +
+                                           " &in o) const {}\n"
+                                           "    int opCmp(const " +
+                                           fallbackCls +
+                                           " &in o) const { return 0; }\n"
+                                           "}\n"
+                                           "void " +
+                                           fnName + "() { " + fallbackCls + " a, b; bool eq = (a == b); }\n";
+        const auto fallbackDiags = AnalyzeScriptWithStandardProfile(fallbackScript);
+        CHECK_FALSE(HasDiagnostic(fallbackDiags, diagnostics::codes::NoMatchingOperator));
+
+        // Negative control 2: valid overload for a different operand type succeeds while invalid one fails.
+        const std::string mixedScript = "class " + mixedCls +
+                                        " {\n"
+                                        "    void opEquals(const " +
+                                        mixedCls +
+                                        " &in o) const {}\n"
+                                        "    bool opEquals(int x) const { return x == 0; }\n"
+                                        "}\n"
+                                        "void " +
+                                        fnName + "() { " + mixedCls +
+                                        " a, b; bool ok = (a == 1); bool bad = (a == b); }\n";
+        const auto mixedDiags = AnalyzeScriptWithStandardProfile(mixedScript);
+        const size_t mixedCount = std::count_if(mixedDiags.begin(), mixedDiags.end(), [](const analysis::Diagnostic& d)
+                                                { return d.code == diagnostics::codes::NoMatchingOperator; });
+        CHECK(mixedCount == 1);
+    }
 }
 
 } // namespace angel_lsp::test

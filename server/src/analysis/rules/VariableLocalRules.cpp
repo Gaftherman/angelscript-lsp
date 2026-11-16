@@ -1,4 +1,6 @@
+#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/IllegalHandleCheck.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/VariableRules.h"
@@ -33,6 +35,12 @@ static void ValidateTemplateArguments(const LocalDefinition& def, const Template
     if (!IsKnownType(tmplInfo.containerName, ctx, enclosingNs))
     {
         ctx.EmitAtRange(range, "as-err-unresolved-type", tmplInfo.containerName, DiagnosticSeverity::Error);
+    }
+    else if (const auto expectedCount = GetTemplateParameterCount(tmplInfo.containerName, ctx.request.symbolTable);
+             expectedCount && tmplInfo.templateArgs.size() != *expectedCount)
+    {
+        ctx.EmitAtRange(range, diagnostics::codes::TemplateArgumentCountMismatch, tmplInfo.containerName,
+                        std::to_string(*expectedCount));
     }
     for (size_t i = 0; i < tmplInfo.templateArgs.size(); ++i)
     {
@@ -79,12 +87,25 @@ static bool CheckIllegalDoubleHandle(const LocalDefinition& def, const SourceRan
     return false;
 }
 
+static std::string_view ResolveEnclosingNamespaceForDefinition(const LocalDefinition& def,
+                                                               const DiagnosticContext& ctx);
+
 static bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, std::string_view base, const SourceRange& range,
                                           DiagnosticContext& ctx)
 {
-    if (def.isHandleType && def.typeKind != TypeKind::Array && base != "auto" && IsPrimitiveTypeName(base))
+    const std::string_view enclosingNs = ResolveEnclosingNamespaceForDefinition(def, ctx);
+    const IllegalHandleCheckResult result = CheckIllegalHandleType(
+        IllegalHandleCheckRequest{
+            .writtenType = def.typeName,
+            .baseTypeName = base,
+            .enclosingNs = enclosingNs,
+            .hasPrimitiveHandle = (def.isHandleType && def.typeKind != TypeKind::Array && IsPrimitiveTypeName(base)),
+            .checkPrimitiveFlag = (base != "auto"),
+        },
+        ctx);
+    if (result.HasError())
     {
-        ctx.EmitAtRange(range, "as-err-handle-on-primitive", base, DiagnosticSeverity::Error);
+        ctx.EmitAtRange(range, result.diagnosticCode, result.offendingTypeName, DiagnosticSeverity::Error);
         return true;
     }
     return false;
@@ -184,6 +205,11 @@ static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& 
         if (!IsKnownType(base, ctx, enclosingNs))
         {
             ctx.EmitAtRange(range, "as-err-unresolved-type", base, DiagnosticSeverity::Error);
+        }
+        else if (const auto expectedCount = GetTemplateParameterCount(base, ctx.request.symbolTable))
+        {
+            ctx.EmitAtRange(range, diagnostics::codes::TemplateArgumentCountMismatch, base,
+                            std::to_string(*expectedCount));
         }
         else if (!def.isHandleType && def.typeKind != TypeKind::Array && !IsHandleTypeView(def.typeName) &&
                  !std::string_view(def.typeName).ends_with("[]") &&

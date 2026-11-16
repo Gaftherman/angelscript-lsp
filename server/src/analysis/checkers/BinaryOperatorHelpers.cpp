@@ -13,6 +13,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 namespace angel_lsp::analysis
 {
@@ -49,6 +50,27 @@ bool IsParameterCompatible(const ParameterInformation& param, std::string_view a
 }
 
 /**
+ * @brief Validates the return type shape required for comparison operator overloads.
+ * @param[in] opName Operator method name being checked.
+ * @param[in] sig Candidate operator overload signature.
+ * @return True when opName is not a comparison operator, or when its return type matches AngelScript's requirement.
+ */
+static bool IsValidComparisonOperatorReturn(std::string_view opName, const FunctionSignature& sig) noexcept
+{
+    if (opName == "opEquals")
+    {
+        return sig.returnTypeKind == TypeKind::Bool && !sig.returnIsArray && !sig.modifiers.isHandle &&
+               !sig.returnIsConst && !sig.modifiers.isReturnReference;
+    }
+    if (opName == "opCmp")
+    {
+        return sig.returnTypeKind == TypeKind::Int32 && !sig.returnIsArray && !sig.modifiers.isHandle &&
+               !sig.returnIsConst && !sig.modifiers.isReturnReference;
+    }
+    return true;
+}
+
+/**
  * @brief Tests whether a type declares or inherits an operator accepting the argument type.
  * @param[in] typeName Type that owns the operator.
  * @param[in] opName Operator method name such as opAdd.
@@ -72,8 +94,16 @@ bool TypeHasOperator(std::string_view typeName, std::string_view opName, std::st
         }
         for (const auto& sym : *symbols)
         {
-            if (sym.type == SymbolType::Function && !sym.GetFunction().parameters.empty() &&
-                IsParameterCompatible(sym.GetFunction().parameters.front(), argType, table))
+            if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+            {
+                continue;
+            }
+            const auto& sig = sym.GetFunction();
+            if (sig.parameters.size() != 1 || !IsValidComparisonOperatorReturn(opName, sig))
+            {
+                continue;
+            }
+            if (IsParameterCompatible(sig.parameters.front(), argType, table))
             {
                 return true;
             }

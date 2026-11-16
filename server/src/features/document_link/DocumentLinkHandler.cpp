@@ -95,6 +95,10 @@ std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& re
         links.reserve(directives.size());
         for (const auto& directive : directives)
         {
+            if (directive.isUnterminated)
+            {
+                continue;
+            }
             const auto target =
                 utils::IncludeResolver::ResolveIncludePath(MakeResolveRequest(request, currentPath, directive.rawPath));
             if (target.empty())
@@ -178,6 +182,26 @@ static analysis::Diagnostic MakeIncludeNotFoundDiagnostic(const DocumentLinkRequ
 }
 
 /**
+ * @brief Builds the localized error diagnostic for an `#include` missing its closing quote on the line.
+ * @param[in] request Document link request providing the URI and localization provider.
+ * @param[in] range Span from the opening quote to the end of the directive line.
+ * @return Error diagnostic owned by the caller.
+ */
+static analysis::Diagnostic MakeUnterminatedIncludeDiagnostic(const DocumentLinkRequest& request,
+                                                              const analysis::DiagnosticRange& range)
+{
+    analysis::Diagnostic diagnostic{
+        .range = range,
+        .severity = analysis::DiagnosticSeverity::Error,
+        .message = i18n::FormatMessage(request.i18n, diagnostics::codes::IncludeUnterminated,
+                                       "Unterminated #include filename: missing closing quote on the same line."),
+    };
+    diagnostic.code = diagnostics::codes::IncludeUnterminated;
+    diagnostic.fileUri = request.uri;
+    return diagnostic;
+}
+
+/**
  * @brief Collects unresolved include diagnostics by parsing raw source text fallback.
  * @param[in] request Document link request bundle.
  * @param[in] currentPath Canonical file path of active document.
@@ -186,6 +210,17 @@ static analysis::Diagnostic MakeIncludeNotFoundDiagnostic(const DocumentLinkRequ
 static void CollectFallbackUnresolvedDiagnostics(const DocumentLinkRequest& request, std::string_view currentPath,
                                                  std::vector<analysis::Diagnostic>& out)
 {
+    const auto unterminated =
+        utils::IncludeResolver::ExtractUnterminatedIncludes(request.sourceCode, request.excludedLineRanges);
+    for (const auto& bad : unterminated)
+    {
+        out.push_back(
+            MakeUnterminatedIncludeDiagnostic(request, {
+                                                           .start = {.line = bad.line, .character = bad.openQuote},
+                                                           .end = {.line = bad.line, .character = bad.lineEnd},
+                                                       }));
+    }
+
     const auto directives = utils::IncludeResolver::ExtractIncludes(request.sourceCode, request.excludedLineRanges);
     for (const auto& directive : directives)
     {
@@ -213,9 +248,9 @@ static void CollectFallbackUnresolvedDiagnostics(const DocumentLinkRequest& requ
 }
 
 /**
- * @brief Reports `#include` directives that resolve to no file on disk.
+ * @brief Reports `#include` directives that resolve to no file on disk or lack a closing quote.
  * @param[in] request Document link request bundle containing URI, source text, and search paths.
- * @return Vector of diagnostics for include directives that could not be resolved to files.
+ * @return Vector of diagnostics for malformed or unresolved include directives.
  */
 std::vector<analysis::Diagnostic> GetUnresolvedIncludeDiagnostics(const DocumentLinkRequest& request)
 {
@@ -230,19 +265,22 @@ std::vector<analysis::Diagnostic> GetUnresolvedIncludeDiagnostics(const Document
             {
                 continue;
             }
+            const analysis::DiagnosticRange range{
+                .start = {.line = directive.line, .character = directive.spanStart},
+                .end = {.line = directive.line, .character = directive.spanEnd},
+            };
+            if (directive.isUnterminated)
+            {
+                diagnostics.push_back(MakeUnterminatedIncludeDiagnostic(request, range));
+                continue;
+            }
             if (!utils::IncludeResolver::ResolveIncludePath(MakeResolveRequest(request, currentPath, directive.rawPath))
                      .empty())
             {
                 continue;
             }
 
-            diagnostics.push_back(
-                MakeIncludeNotFoundDiagnostic(request,
-                                              {
-                                                  .start = {.line = directive.line, .character = directive.spanStart},
-                                                  .end = {.line = directive.line, .character = directive.spanEnd},
-                                              },
-                                              directive.rawPath));
+            diagnostics.push_back(MakeIncludeNotFoundDiagnostic(request, range, directive.rawPath));
         }
         return diagnostics;
     }

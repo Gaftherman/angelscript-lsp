@@ -30,6 +30,8 @@ TEST_SUITE("oracle/DifferentialCorpus")
         std::vector<std::string> forbidden;
         /// Exact diagnostic ranges from `// @error: L:C-L:C` as {startLine, startChar, endLine, endChar}.
         std::vector<std::array<int, 4>> ranges;
+        /// Fixture served to the server as workspace stub, from `// @predefined: <fixture>`; empty when none.
+        std::string stub;
     };
 
     static std::string ReadFile(const std::filesystem::path& path)
@@ -48,7 +50,7 @@ TEST_SUITE("oracle/DifferentialCorpus")
         return text;
     }
 
-    /** @brief Reads the `// @expect`, `@complete` and `@error` tags of a case's main text. */
+    /** @brief Reads the `// @expect`, `@predefined`, `@complete` and `@error` tags of a case's main text. */
     static void ParseTags(CorpusCase & result)
     {
         std::istringstream lines(result.mainText);
@@ -61,6 +63,10 @@ TEST_SUITE("oracle/DifferentialCorpus")
             if (const std::string value = take("// @expect:"); !value.empty())
             {
                 result.expect = value;
+            }
+            else if (const std::string stub = take("// @predefined:"); !stub.empty())
+            {
+                result.stub = stub;
             }
             else if (const std::string plus = take("// @complete+"); !plus.empty())
             {
@@ -209,11 +215,30 @@ TEST_SUITE("oracle/DifferentialCorpus")
             {
                 std::ofstream(session.root / name, std::ios::binary) << text;
             }
+            if (!item.stub.empty())
+            {
+                // The stub and its sibling rules file land in the workspace root, where the server discovers them.
+                const std::filesystem::path fixtures(ANGELSCRIPT_FIXTURE_DIR);
+                std::filesystem::copy_file(fixtures / (item.stub + ".as.predefined"), session.root / "as.predefined",
+                                           std::filesystem::copy_options::overwrite_existing);
+                const std::filesystem::path rules = fixtures / (item.stub + ".angelscript.rules.json");
+                if (std::filesystem::exists(rules))
+                {
+                    std::filesystem::copy_file(rules, session.root / (item.stub + ".angelscript.rules.json"),
+                                               std::filesystem::copy_options::overwrite_existing);
+                }
+            }
             for (const auto& [name, text] : files)
             {
                 session.Call("open_document", angel_lsp::test::McpArgs(name, text));
             }
-            const int diagnostics = session.Call("diagnostics", angel_lsp::test::McpPathArgs("main.as"));
+            // A real client shows every open file's diagnostics, so an error the compiler reports inside an
+            // included file counts when the server reports it in that file.
+            std::vector<int> diagnosticCalls;
+            for (const auto& file : files)
+            {
+                diagnosticCalls.push_back(session.Call("diagnostics", angel_lsp::test::McpPathArgs(file.first)));
+            }
             lsp::json::Value completionArgs = angel_lsp::test::McpPositionArgs("main.as", line, character);
             completionArgs.object()["limit"] = 500;
             const int completion = session.Call("completion", std::move(completionArgs));
@@ -222,11 +247,15 @@ TEST_SUITE("oracle/DifferentialCorpus")
             if (markerAt == std::string::npos)
             {
                 int errors = 0;
-                const lsp::json::Value report = angel_lsp::test::McpPayload(replies.at(diagnostics));
-                for (const auto& diag : report.array())
+                const lsp::json::Value report = angel_lsp::test::McpPayload(replies.at(diagnosticCalls.back()));
+                for (const int call : diagnosticCalls)
                 {
-                    const lsp::json::Value* severity = diag.object().find("severity");
-                    errors += (severity != nullptr && severity->isInteger() && severity->integer() == 1) ? 1 : 0;
+                    const lsp::json::Value fileReport = angel_lsp::test::McpPayload(replies.at(call));
+                    for (const auto& diag : fileReport.array())
+                    {
+                        const lsp::json::Value* severity = diag.object().find("severity");
+                        errors += (severity != nullptr && severity->isInteger() && severity->integer() == 1) ? 1 : 0;
+                    }
                 }
                 CHECK((errors == 0) == (item.expect == "accept"));
                 for (const std::array<int, 4>& want : item.ranges)

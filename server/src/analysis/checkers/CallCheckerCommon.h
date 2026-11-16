@@ -315,6 +315,27 @@ void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentF
                           DiagnosticContext& ctx);
 
 /**
+ * @brief Validates positional omitted default arguments on a selected call candidate.
+ * @param[in] candidate Selected function or method symbol.
+ * @param[in] providedPositionalCount Number of positional arguments explicitly passed at the call site.
+ * @param[in] site Call site fact providing the diagnostic range.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckOmittedDefaultArguments(const Symbol& candidate, size_t providedPositionalCount, const CallSiteFact& site,
+                                  DiagnosticContext& ctx);
+
+/**
+ * @brief Validates omitted default arguments on a selected candidate invoked with named arguments.
+ * @param[in] candidate Selected function or method symbol.
+ * @param[in] matchedParams Set of zero-based parameter indices supplied by the call.
+ * @param[in] site Call site fact providing the diagnostic range.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckOmittedNamedDefaultArguments(const Symbol& candidate,
+                                       const ankerl::unordered_dense::set<size_t>& matchedParams,
+                                       const CallSiteFact& site, DiagnosticContext& ctx);
+
+/**
  * @brief Input parameters for evaluating candidate function overloads against arguments.
  */
 struct CallOverloadCheckRequest

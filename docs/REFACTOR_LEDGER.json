@@ -3620,6 +3620,39 @@
       "verifiedByTests": [
         "InlayHintHandler - Parameter hint label part location navigates to callee parameter declaration"
       ]
+    },
+    {
+      "id": "REF-P15-ILLEGALHANDLE",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/VariableLocalRules.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "Separate handle-on-primitive checks in local, member, parameter, return, funcdef and handle-of paths",
+      "whatItDidAndWhyInThatFile": "Each path tested its own primitive-handle flag, so a type without handle support (configured per engine) could not be reported.",
+      "whyChangedOrDeleted": "One shared check now covers primitives and the engine-configured noHandleTypes list, resolved through the symbol table.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/IllegalHandleCheck.cpp",
+      "replacedByCanonicalSymbol": "CheckIllegalHandleType",
+      "ramOrCpuImpact": "No extra allocation without the key; one set lookup per handle-typed declaration when noHandleTypes is present.",
+      "verifiedByTests": [
+        "NoHandleTypes - Flags direct handles in local, global, member, param, return, and funcdef",
+        "DifferentialCorpus - server agrees with the verdicts the compiler confirmed"
+      ]
+    },
+    {
+      "id": "REF-P15-FUNCDEFHANDLEDUP",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/TypeRules.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "ValidateFuncdefParameter repeated the double-handle and primitive-handle checks of ValidateParameters",
+      "whatItDidAndWhyInThatFile": "A funcdef parameter was reported twice for the same handle fault, the second time without the parameter range.",
+      "whyChangedOrDeleted": "ValidateParameters already runs for funcdef parameters with the precise range, so the copy was removed.",
+      "replacedByCanonicalFile": "server/src/analysis/rules/FunctionParameterRules.cpp",
+      "replacedByCanonicalSymbol": "ValidateParameters",
+      "ramOrCpuImpact": "One diagnostic instead of two per bad funcdef parameter.",
+      "verifiedByTests": [
+        "NoHandleTypes - Flags direct handles in local, global, member, param, return, and funcdef"
+      ]
     }
   ]
 }

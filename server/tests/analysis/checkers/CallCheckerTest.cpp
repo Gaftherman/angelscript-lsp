@@ -2370,3 +2370,52 @@ TEST_CASE("CallChecker - Funcdef handle invocation ignores default arguments on 
                                 varName + "(); }\n";
     CHECK(HasCode(AnalyzeCallSnippet(badCode), "as-err-call-argument-count"));
 }
+
+TEST_CASE("CallChecker - Reports unresolved default argument at call site when omitted")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+    const std::string missingId = angel_lsp::test::GenerateRandomSymbolName("unknownDefault");
+    const std::string constName = angel_lsp::test::GenerateRandomSymbolName("ValidConst");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("E");
+    const std::string enumVal = angel_lsp::test::GenerateRandomSymbolName("Val");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Cls");
+    const std::string fieldName = angel_lsp::test::GenerateRandomSymbolName("member");
+
+    // Simple unresolved default identifier when omitted.
+    const std::string badOmitted =
+        "void " + fnName + "(int x = " + missingId + ") {}\nvoid main() { " + fnName + "(); }\n";
+    const auto badDiags = AnalyzeCallSnippet(badOmitted);
+    auto callIt = std::find_if(badDiags.begin(), badDiags.end(),
+                               [](const Diagnostic& d) { return d.code == "as-err-default-arg-unresolved"; });
+    REQUIRE(callIt != badDiags.end());
+    CHECK(callIt->severity == DiagnosticSeverity::Error);
+    CHECK(callIt->range.start.line == 1);
+    CHECK(callIt->range.start.character == 14);
+
+    // Compound default expression with unresolved identifier when omitted.
+    const std::string badCompound =
+        "void " + fnName + "(int x = 1 + " + missingId + ") {}\nvoid main() { " + fnName + "(); }\n";
+    CHECK(HasCode(AnalyzeCallSnippet(badCompound), "as-err-default-arg-unresolved"));
+
+    // Named argument call omitting earlier parameter with unresolved default.
+    const std::string badNamed =
+        "void " + fnName + "(int a = " + missingId + ", int b = 2) {}\nvoid main() { " + fnName + "(b: 3); }\n";
+    CHECK(HasCode(AnalyzeCallSnippet(badNamed), "as-err-default-arg-unresolved"));
+
+    // Instance member referenced in method default argument does not resolve.
+    const std::string badMemberDefault = "class " + clsName + " { int " + fieldName + " = 1; void " + fnName +
+                                         "(int x = " + fieldName + ") {} }\nvoid main() { " + clsName + " c; c." +
+                                         fnName + "(); }\n";
+    CHECK(HasCode(AnalyzeCallSnippet(badMemberDefault), "as-err-default-arg-unresolved"));
+
+    // Negative control 1: explicit argument provided does not trigger call-site default error.
+    const std::string explicitPassed =
+        "void " + fnName + "(int x = " + missingId + ") {}\nvoid main() { " + fnName + "(42); }\n";
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(explicitPassed), "as-err-default-arg-unresolved"));
+
+    // Negative control 2: declared global constant and scoped enum value resolve cleanly.
+    const std::string validConst = "const int " + constName + " = 7;\nenum " + enumName + " { " + enumVal +
+                                   " = 1 }\nvoid " + fnName + "(int a = " + constName + ", int b = " + enumName +
+                                   "::" + enumVal + ") {}\nvoid main() { " + fnName + "(); }\n";
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(validConst), "as-err-default-arg-unresolved"));
+}

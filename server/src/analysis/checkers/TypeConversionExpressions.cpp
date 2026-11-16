@@ -6,9 +6,11 @@
 #include "analysis/index/ExpressionSiteFacts.h"
 #include "analysis/resolution/AmbiguityDetector.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/IllegalHandleCheck.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
@@ -143,6 +145,44 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Sco
     }
 }
 
+/**
+ * @brief Reports `as-err-handle-on-primitive` or `as-err-handle-on-no-handle-type` when unary handle-of `@x`
+ *        is applied to a primitive or configured no-handle operand.
+ * @param[in] site Unary or postfix expression site fact.
+ * @param[in] scope Innermost lexical scope at `site.range`.
+ * @param[in,out] ctx Diagnostic sink.
+ */
+static void CheckAddressOfHandleOnPrimitive(const UnaryPostfixSiteFact& site, const Scope* scope,
+                                            DiagnosticContext& ctx)
+{
+    if (site.isPostfix || !site.isAddressOfHandle || !site.hasOperand)
+    {
+        return;
+    }
+    const std::string rawType = ResolveExpressionType(site.operandBytes, ExpressionTypeContext(scope, ctx));
+    if (rawType.empty())
+    {
+        return;
+    }
+    std::string_view stripped = StripLeadingConst(rawType);
+    TrimTypeWhitespace(stripped);
+    stripped = StripTrailingDecorationsView(stripped, false);
+    TrimTypeWhitespace(stripped);
+    const std::string unwrapped = UnwrapTypedef(stripped, ctx.request.symbolTable);
+    const std::string_view enclosingNs = scope ? scope->GetEnclosingNamespace() : std::string_view{};
+    const IllegalHandleCheckResult handleResult = CheckIllegalHandleType(
+        IllegalHandleCheckRequest{
+            .baseTypeName = unwrapped,
+            .enclosingNs = enclosingNs,
+            .isAddressOfOperand = true,
+        },
+        ctx);
+    if (handleResult.HasError())
+    {
+        ctx.EmitAtRange(site.range, handleResult.diagnosticCode, handleResult.offendingTypeName);
+    }
+}
+
 void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConversionCheckRequest& request,
                                DiagnosticContext& ctx)
 {
@@ -152,6 +192,7 @@ void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConve
         return;
     }
 
+    CheckAddressOfHandleOnPrimitive(site, scope, ctx);
     CheckPrefixUnaryOperator(site, scope, ctx);
 
     if (!site.isIncrementOrDecrement || !site.hasOperand)

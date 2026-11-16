@@ -180,6 +180,7 @@ struct IndexedIncludeDirective
     uint32_t spanStart = 0;
     uint32_t spanEnd = 0;
     bool isAngled = false;
+    bool isUnterminated = false; ///< True when a quoted #include has no closing quote on the same line.
 };
 
 /**

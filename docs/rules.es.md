@@ -287,6 +287,22 @@ Valida argumentos pasados a invocaciones de métodos o funciones (incluyendo reg
 
 ---
 
+### 10. `noHandleTypes` — Prohibición de Handles en Tipos de Valor del Motor
+
+Lista los tipos de valor registrados por el motor anfitrión que no admiten handles de objeto (`@`), reflejando el comportamiento del compilador de AngelScript para tipos registrados sin soporte de handles (por ejemplo, tipos `asOBJ_VALUE` sin conteo de referencias).
+
+#### Ejemplo
+```json
+{
+  "noHandleTypes": ["string", "datetime", "complex"]
+}
+```
+
+* **Para qué se usa**: Emite un error (`as-err-handle-on-no-handle-type`, `E261`) siempre que se use un handle `@` sobre alguno de los tipos listados (incluso mediante alias `typedef`), cubriendo variables locales, globales, miembros de clase, parámetros y tipos de retorno de funciones o `funcdef`, elementos de arreglo (`T@[]`), argumentos de plantilla (`array<T@>`) y expresiones unarias `@x`.
+* **Resultado**: Escribir `string@ s;` o `array<string@> items;` se marca de inmediato, mientras que los handles a arreglos de esos tipos (`string[]@` o `array<string>@`) siguen siendo válidos.
+
+---
+
 ## Validación por Esquema y Autocompletado
 
 Todos los archivos `*.angelscript.rules.json` cuentan con validación completa y autocompletado de esquema JSON en VS Code. Añade el encabezado `$schema` al inicio de tu archivo:

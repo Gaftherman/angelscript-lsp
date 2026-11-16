@@ -1,4 +1,6 @@
+#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/IllegalHandleCheck.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/VariableRules.h"
@@ -99,6 +101,17 @@ void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, con
         return;
     }
 
+    if (!sig.isArray)
+    {
+        if (const auto expectedCount = GetTemplateParameterCount(sig.templateName, ctx.request.symbolTable);
+            expectedCount && sig.templateArgumentTypes.size() != *expectedCount)
+        {
+            ctx.LogRule("CheckTemplateArguments", diagnostics::codes::TemplateArgumentCountMismatch, sym);
+            ctx.Emit(sym, diagnostics::codes::TemplateArgumentCountMismatch, sig.templateName,
+                     std::to_string(*expectedCount));
+        }
+    }
+
     for (const auto& argument : sig.templateArgumentTypes)
     {
         if (CleanBaseTypeView(argument) != "void")
@@ -125,10 +138,18 @@ static void CheckPrimitiveOrVoidType(const Symbol& sym, const VariableSignature&
         ctx.Emit(sym, "as-err-handle-to-handle");
     }
 
-    if (sig.hasPrimitiveHandle)
+    const IllegalHandleCheckResult handleResult = CheckIllegalHandleType(
+        IllegalHandleCheckRequest{
+            .writtenType = sig.typeName,
+            .baseTypeName = sig.baseTypeName,
+            .enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable),
+            .hasPrimitiveHandle = sig.hasPrimitiveHandle,
+        },
+        ctx);
+    if (handleResult.HasError())
     {
-        ctx.LogRule("CheckDeclaredType", "as-err-handle-on-primitive", sym);
-        ctx.Emit(sym, "as-err-handle-on-primitive", sig.baseTypeName);
+        ctx.LogRule("CheckDeclaredType", handleResult.diagnosticCode, sym);
+        ctx.Emit(sym, handleResult.diagnosticCode, handleResult.offendingTypeName);
     }
 }
 
@@ -221,6 +242,22 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
     {
         ctx.LogRule("CheckDeclaredType", "as-err-funcdef-not-handle", sym);
         ctx.Emit(sym, "as-err-funcdef-not-handle", baseType, baseType);
+    }
+
+    if ((sig.templateName.empty() || sig.isArray) &&
+        !(angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension) &&
+          sig.baseTypeName == "T"))
+    {
+        const TemplateTypeInfo tmplInfo = ParseTemplateType(sig.typeName);
+        if (tmplInfo.templateArgs.empty())
+        {
+            if (const auto expectedCount = GetTemplateParameterCount(tmplInfo.containerName, ctx.request.symbolTable))
+            {
+                ctx.LogRule("CheckDeclaredType", diagnostics::codes::TemplateArgumentCountMismatch, sym);
+                ctx.Emit(sym, diagnostics::codes::TemplateArgumentCountMismatch, tmplInfo.containerName,
+                         std::to_string(*expectedCount));
+            }
+        }
     }
 
     if (declaration->type == SymbolType::Class && declaration->GetClass().modifiers.isMixin)

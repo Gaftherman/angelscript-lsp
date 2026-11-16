@@ -344,6 +344,31 @@ TemplateTypeInfo ParseTemplateType(std::string_view typeName)
     return info;
 }
 
+std::optional<size_t> GetTemplateParameterCount(std::string_view typeName, const SymbolTable& table)
+{
+    if (typeName.empty())
+    {
+        return std::nullopt;
+    }
+    const auto declarations = table.FindSymbolsPtr(LastScopeSegment(typeName));
+    if (!declarations)
+    {
+        return std::nullopt;
+    }
+    for (const auto& declaration : *declarations)
+    {
+        if (declaration.type != SymbolType::Class || !std::holds_alternative<ClassSignature>(declaration.signature))
+        {
+            continue;
+        }
+        const auto& cls = std::get<ClassSignature>(declaration.signature);
+        if (cls.isTemplate && !cls.templateParams.empty())
+        {
+            return cls.templateParams.size();
+        }
+    }
+    return std::nullopt;
+}
 /**
  * @brief Checks if a type name should be ignored when comparing template compatibility.
  * @param[in] s Type name to check.

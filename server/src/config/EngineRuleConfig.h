@@ -185,6 +185,7 @@ struct EngineRuleConfig
 {
     std::string name;                                ///< Friendly name of the ruleset.
     NativeEngineProperties engineProperties;         ///< Native engine properties.
+    TransparentStringSet noHandleTypes;              ///< Value types that do not support object handles ('@').
     std::vector<StorageRule> storageRules;           ///< Storage safety rules.
     std::vector<TypeSuggestionRule> typeSuggestions; ///< Type suggestion rules.
     std::vector<SchedulerRule> schedulerRules;       ///< Scheduler / callback safety rules.
@@ -196,7 +197,7 @@ struct EngineRuleConfig
      */
     [[nodiscard]] bool HasRules() const noexcept
     {
-        return !storageRules.empty() || !typeSuggestions.empty() || !schedulerRules.empty() ||
+        return !noHandleTypes.empty() || !storageRules.empty() || !typeSuggestions.empty() || !schedulerRules.empty() ||
                unusedRules.HasActiveRules() || engineProperties.HasActiveProperties();
     }
 };

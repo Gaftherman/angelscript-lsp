@@ -385,6 +385,39 @@ static void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& r
     ParseEngineCallbackSignatures(u, rules.engineCallbackSignatures);
 }
 
+/**
+ * @brief Parses and validates the top-level noHandleTypes array from JSON.
+ * @param[in] j Root JSON object.
+ * @param[out] noHandleTypes Destination set receiving configured no-handle type names.
+ * @return True if absent or a valid array of non-empty strings; false if malformed.
+ */
+static bool ParseNoHandleTypes(const nlohmann::json& j, TransparentStringSet& noHandleTypes)
+{
+    if (!j.contains("noHandleTypes"))
+    {
+        return true;
+    }
+    const auto& value = j["noHandleTypes"];
+    if (!value.is_array())
+    {
+        return false;
+    }
+    for (const auto& entry : value)
+    {
+        if (!entry.is_string())
+        {
+            return false;
+        }
+        const std::string typeName = entry.get<std::string>();
+        if (typeName.empty())
+        {
+            return false;
+        }
+        noHandleTypes.insert(typeName);
+    }
+    return true;
+}
+
 std::optional<EngineRuleConfig> ParseEngineRuleConfigJson(std::string_view jsonText)
 {
     try
@@ -397,6 +430,11 @@ std::optional<EngineRuleConfig> ParseEngineRuleConfigJson(std::string_view jsonT
 
         EngineRuleConfig config;
         config.name = parsed.value("name", "");
+
+        if (!ParseNoHandleTypes(parsed, config.noHandleTypes))
+        {
+            return std::nullopt;
+        }
 
         ParseNativeProperties(parsed, config.engineProperties);
         ParseStorageRules(parsed, config.storageRules);

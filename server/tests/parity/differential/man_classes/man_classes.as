@@ -1703,3 +1703,76 @@ void main() {
 }
 
 
+
+
+// ==== case: base_prop_spaced_call ====
+// @expect: accept
+class BaseEntity { void ItemPreFrame() {} void Spawn(int n) {} }
+class ScriptBaseItemEntity {
+    private BaseEntity@ m_pBaseClass;
+    BaseEntity@ BaseClass { get const { return m_pBaseClass; } }
+}
+class W : ScriptBaseItemEntity {
+    void ItemPreFrame() { BaseClass . ItemPreFrame (); }
+}
+
+
+// ==== case: base_prop_dot_space_call ====
+// @expect: accept
+class BaseEntity { void ItemPreFrame() {} void Spawn(int n) {} }
+class ScriptBaseItemEntity {
+    private BaseEntity@ m_pBaseClass;
+    BaseEntity@ BaseClass { get const { return m_pBaseClass; } }
+}
+class W : ScriptBaseItemEntity {
+    void ItemPreFrame() { BaseClass .ItemPreFrame(); }
+}
+
+
+// ==== case: base_prop_newline_call ====
+// @expect: accept
+class BaseEntity { void ItemPreFrame() {} void Spawn(int n) {} }
+class ScriptBaseItemEntity {
+    private BaseEntity@ m_pBaseClass;
+    BaseEntity@ BaseClass { get const { return m_pBaseClass; } }
+}
+class W : ScriptBaseItemEntity {
+    void ItemPreFrame() { BaseClass
+        .ItemPreFrame(); }
+}
+
+
+// ==== case: base_prop_missing_method_bad ====
+// @expect: reject
+class BaseEntity { void ItemPreFrame() {} void Spawn(int n) {} }
+class ScriptBaseItemEntity {
+    private BaseEntity@ m_pBaseClass;
+    BaseEntity@ BaseClass { get const { return m_pBaseClass; } }
+}
+class W : ScriptBaseItemEntity {
+    void ItemPreFrame() { BaseClass . NoExiste (); }
+}
+
+
+// ==== case: base_prop_arity_bad ====
+// @expect: reject
+class BaseEntity { void ItemPreFrame() {} void Spawn(int n) {} }
+class ScriptBaseItemEntity {
+    private BaseEntity@ m_pBaseClass;
+    BaseEntity@ BaseClass { get const { return m_pBaseClass; } }
+}
+class W : ScriptBaseItemEntity {
+    void ItemPreFrame() { BaseClass . Spawn (); }
+}
+
+
+// ==== case: base_prop_outside_class_bad ====
+// @expect: reject
+class BaseEntity { void ItemPreFrame() {} void Spawn(int n) {} }
+class ScriptBaseItemEntity {
+    private BaseEntity@ m_pBaseClass;
+    BaseEntity@ BaseClass { get const { return m_pBaseClass; } }
+}
+void main() {
+    BaseClass . ItemPreFrame ();
+}

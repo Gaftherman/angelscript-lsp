@@ -71,6 +71,9 @@ class Case:
         self.text = self.main.read_text(encoding="utf-8") if text is None else text
         self.expect = None
         self.plus, self.minus, self.scan_all, self.ranges = [], [], False, []
+        # `// @predefined: <fixture>` serves tests/fixtures/<fixture>.as.predefined to the server as the
+        # workspace stub; the oracle registers the same add-ons natively, so it needs nothing.
+        self.stub = None
         self.loose = bool(re.search(r"^\s*//\s*@range:\s*loose", self.text, re.M))
         self.strict = bool(re.search(r"^\s*//\s*@range:\s*strict", self.text, re.M))
         for line in self.text.splitlines():
@@ -80,6 +83,9 @@ class Case:
                     self.expect = m.group(2)
                 else:
                     self.scan_all = m.group(2) == "all"
+            m = re.match(r"\s*//\s*@predefined:\s*([\w.-]+)", line)
+            if m:
+                self.stub = m.group(1)
             m = re.match(r"\s*//\s*@complete([+-])\s*(\S+)", line)
             if m:
                 (self.plus if m.group(1) == "+" else self.minus).append(m.group(2))
@@ -258,11 +264,20 @@ def evaluate(case: Case, oracle: Path, lsp_exe: Path):
     root = Path(tempfile.mkdtemp(prefix="diff_lsp_"))
     for name, text in files.items():  # a real client has the files on disk, which #include relies on
         (root / name).write_text(text, encoding="utf-8")
+    if case.stub:
+        fixtures = SERVER_DIR / "tests" / "fixtures"
+        shutil.copyfile(fixtures / f"{case.stub}.as.predefined", root / "as.predefined")
+        rules = fixtures / f"{case.stub}.angelscript.rules.json"
+        if rules.exists():
+            shutil.copyfile(rules, root / rules.name)
     client = McpClient(lsp_exe, root)
     try:
         for name, text in files.items():
             client.tool("open_document", path=name, text=text)
-        diags = [] if marker else [d for d in client.tool("diagnostics", path="main.as") if d.get("severity") == 1]
+        # A real client shows each file's diagnostics, so an error the compiler reports inside an included
+        # file counts when the server reports it in that file; the line match below is over every file.
+        diags = [] if marker else [d for name in files for d in client.tool("diagnostics", path=name)
+                                   if d.get("severity") == 1]
         if marker:
             pass
         elif accepted and diags:
@@ -282,10 +297,12 @@ def evaluate(case: Case, oracle: Path, lsp_exe: Path):
                                        quiet_gap(d["range"], located[0], files["main.as"]) for d in diags):
                     add("SPAN_MISMATCH", f"loose: oracle line {located[0][0]}, server {[d['range']['start']['line'] for d in diags]}")
             elif not case.strict:
-                oracle_line = min((r for r, _ in located), default=None)
-                lsp_line = min(d["range"]["start"]["line"] for d in diags)
-                if oracle_line is not None and oracle_line != lsp_line:
-                    add("SPAN_MISMATCH", f"oracle line {oracle_line}, server line {lsp_line}: {diags[0]['message'][:80]}")
+                # The compiler may stop at several places for one fault (a call and the constructor around it);
+                # the server must land on at least one of them.
+                oracle_lines = {r for r, _ in located}
+                lsp_lines = {d["range"]["start"]["line"] for d in diags}
+                if oracle_lines and not oracle_lines & lsp_lines:
+                    add("SPAN_MISMATCH", f"oracle lines {sorted(oracle_lines)}, server lines {sorted(lsp_lines)}: {diags[0]['message'][:80]}")
             elif located and not any(anchored(d["range"], located[0], files["main.as"]) for d in diags):
                 got = [(d["range"]["start"]["line"], d["range"]["start"]["character"],
                         d["range"]["end"]["line"], d["range"]["end"]["character"]) for d in diags]

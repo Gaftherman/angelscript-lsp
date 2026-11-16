@@ -494,4 +494,45 @@ void PluginInit()
         }
         CHECK(diags.empty());
     }
+
+    TEST_CASE("SvenCoopScriptReproduction - BaseClass delegate call tolerates whitespace around the dot")
+    {
+        SvenTestContext ctx;
+        const std::string script = R"AS(
+class custom_item : ScriptBasePlayerItemEntity
+{
+    void ItemPreFrame()
+    {
+        BaseClass . ItemPreFrame ();
+        BaseClass .ItemPreFrame();
+        BaseClass
+            .ItemPreFrame();
+        BaseClass.ItemPreFrame();
+    }
+}
+)AS";
+        const auto diags = ctx.Analyze(script, "file:///custom_item.as");
+        for (const auto& d : diags)
+        {
+            MESSAGE("diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+        }
+        CHECK(diags.empty());
+    }
+
+    TEST_CASE("SvenCoopScriptReproduction - BaseClass delegate call to a missing method is reported")
+    {
+        SvenTestContext ctx;
+        const std::string script = R"AS(
+class custom_item : ScriptBasePlayerItemEntity
+{
+    void ItemPreFrame()
+    {
+        BaseClass . NoSuchMethod ();
+    }
+}
+)AS";
+        const auto diags = ctx.Analyze(script, "file:///custom_item.as");
+        REQUIRE_FALSE(diags.empty());
+        CHECK(diags.front().range.start.line == 5);
+    }
 }

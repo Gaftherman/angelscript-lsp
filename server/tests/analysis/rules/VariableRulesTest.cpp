@@ -813,4 +813,64 @@ TEST_SUITE("analysis/rules/VariableRules")
         const std::string withHandle = header + "void " + fn + "() { " + fd + "@ " + var + " = " + target + "; }\n";
         CHECK_FALSE(HasCode(AnalyzeVariableSnippet(withHandle), "as-err-funcdef-not-handle"));
     }
+
+    TEST_CASE("VariableRules - Template type without or with mismatched type arguments emits as-err-template-arg-count")
+    {
+        const std::string tmpl1 = angel_lsp::test::GenerateRandomSymbolName("Box");
+        const std::string tmpl2 = angel_lsp::test::GenerateRandomSymbolName("Pair");
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("main");
+        const std::string v = angel_lsp::test::GenerateRandomSymbolName("item");
+
+        const std::string stub = "class " + tmpl1 + "<T> {}\nclass " + tmpl2 + "<K, V> {}\n";
+        auto analyzeWithStub = [&stub](const std::string& code)
+        {
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            LocalScopeCollector scopes(nullptr);
+            SymbolTable table;
+            static angel_lsp::i18n::I18n i18n;
+
+            (void)collector.CollectSymbols("file:///stub.as.predefined", stub, parser, table);
+            auto diags = collector.CollectSymbols("file:///test_tmpl.as", code, parser, table);
+
+            SemanticAnalysisRequest request{table, "file:///test_tmpl.as", ".as.predefined", &i18n};
+            request.scopeRoot = scopes.CollectScopes(code, parser);
+            request.sourceCode = code;
+
+            SemanticAnalyzer analyzer(nullptr);
+            auto semDiags = analyzer.Analyze(request);
+            diags.insert(diags.end(), std::make_move_iterator(semDiags.begin()),
+                         std::make_move_iterator(semDiags.end()));
+            return diags;
+        };
+
+        const auto missingArg = analyzeWithStub("void " + fn + "()\n{\n    " + tmpl1 + " " + v + ";\n}\n");
+        REQUIRE(HasCode(missingArg, "as-err-template-arg-count"));
+        for (const auto& d : missingArg)
+        {
+            if (d.code == "as-err-template-arg-count")
+            {
+                CHECK(d.range.start.line == 2);
+                CHECK(d.range.start.character == 4);
+            }
+        }
+
+        CHECK(
+            HasCode(analyzeWithStub("void " + fn + "() { " + tmpl1 + "@ " + v + "; }\n"), "as-err-template-arg-count"));
+        CHECK(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl1 + "[] " + v + "; }\n"),
+                      "as-err-template-arg-count"));
+        CHECK(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl1 + "<int, int> " + v + "; }\n"),
+                      "as-err-template-arg-count"));
+        CHECK(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl2 + "<int> " + v + "; }\n"),
+                      "as-err-template-arg-count"));
+        CHECK(HasCode(analyzeWithStub(tmpl1 + " " + v + ";\n"), "as-err-template-arg-count"));
+        CHECK(HasCode(analyzeWithStub("void " + fn + "(" + tmpl1 + " " + v + ") {}\n"), "as-err-template-arg-count"));
+        CHECK(HasCode(analyzeWithStub(tmpl1 + " " + fn + "() { return " + tmpl1 + "<int>(); }\n"),
+                      "as-err-template-arg-count"));
+
+        CHECK_FALSE(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl1 + "<int> " + v + "; }\n"),
+                            "as-err-template-arg-count"));
+        CHECK_FALSE(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl2 + "<int, float> " + v + "; }\n"),
+                            "as-err-template-arg-count"));
+    }
 }

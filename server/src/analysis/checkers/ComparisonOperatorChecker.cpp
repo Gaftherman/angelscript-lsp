@@ -20,7 +20,9 @@ static bool ShouldSkipAddressComparison(const BinaryExpressionFact& fact, bool i
 static bool AreCustomTypesCompatible(std::string_view op, std::string_view left, std::string_view right,
                                      const SymbolTable& table)
 {
-    if (TypeHasOpImplConvTo(left, right, table) || TypeHasOpImplConvTo(right, left, table))
+    // A type converting to itself says nothing about its comparison operators, so identical operands go
+    // straight to the opEquals/opCmp lookup.
+    if (left != right && (TypeHasOpImplConvTo(left, right, table) || TypeHasOpImplConvTo(right, left, table)))
     {
         return true;
     }

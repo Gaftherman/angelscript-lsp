@@ -76,5 +76,14 @@ Each category is a directory of `.as` files checked against the real compiler by
   the first line after the marker. `// @range: strict` requires a server range to cover the position the
   compiler reports (or sit where a missing token belongs); `// @range: loose` allows one line of
   distance or only blanks and comments in between.
-- **Known gaps.** `_known_gaps/` holds cases the compiler rejects and the server does not (or reports at
-  another place). The test skips every directory starting with `_`; the validator still lists them.
+- **Host stub.** `// @predefined: <fixture>` serves `tests/fixtures/<fixture>.as.predefined` (and the sibling
+  `<fixture>.angelscript.rules.json`, when present) to the server as the workspace stub. The oracle
+  registers the SDK add-ons natively and needs nothing. Use it for cases about `string`, `array` and the
+  other add-on types.
+- **Which diagnostics count.** The server's errors are collected from every file of a case (a compiler
+  error inside an included file is matched by the server's error in that file). A case passes the line
+  check when at least one server error lands on a line the compiler reports.
+- **Known gaps.** `_known_gaps/` holds cases the compiler rejects and the server does not, or reports at
+  another place, each with the reason in its header. The test skips every directory starting with `_`;
+  the validator still lists them. Today it holds one: a missing `#include` file, which the server reports
+  as a warning because the host decides the include search paths.

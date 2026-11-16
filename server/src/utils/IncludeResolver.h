@@ -39,6 +39,16 @@ struct IncludeDirective
 };
 
 /**
+ * @brief Source span of an `#include` directive whose opening quote is not closed on the same line.
+ */
+struct UnterminatedIncludeDirective
+{
+    uint32_t line = 0;      ///< 0-indexed line number where the directive occurs.
+    uint32_t openQuote = 0; ///< 0-indexed byte column of the opening quote.
+    uint32_t lineEnd = 0;   ///< 0-indexed byte column at the end of the line (excluding CR/LF).
+};
+
+/**
  * @brief Immutable inputs for evaluating conditional includes.
  */
 struct IncludePreprocessor
@@ -117,6 +127,15 @@ class IncludeResolver
      */
     static std::vector<IncludeDirective> ExtractIncludes(std::string_view sourceCode,
                                                          const std::vector<ExcludedLineRange>& excludedLines);
+
+    /**
+     * @brief Extracts `#include` directives whose opening quote is not closed on the same line.
+     * @param[in] sourceCode The AngelScript source code to scan.
+     * @param[in] excludedLines Ranges from utils::FindExcludedLineRanges to skip.
+     * @return Vector of UnterminatedIncludeDirective spans.
+     */
+    static std::vector<UnterminatedIncludeDirective>
+    ExtractUnterminatedIncludes(std::string_view sourceCode, const std::vector<ExcludedLineRange>& excludedLines = {});
 
     /**
      * @brief Canonicalizes a path to the single spelling the rest of the server compares against.

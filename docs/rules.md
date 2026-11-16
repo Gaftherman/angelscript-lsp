@@ -287,6 +287,22 @@ Validates function and method call arguments (including scheduler registrations)
 
 ---
 
+### 10. `noHandleTypes` — Disallowing Handles on Engine Value Types
+
+Lists registered host value types that do not support object handles (`@`), matching how AngelScript treats types registered without handle support (such as `asOBJ_VALUE` types without reference counting).
+
+#### Example
+```json
+{
+  "noHandleTypes": ["string", "datetime", "complex"]
+}
+```
+
+* **What it does**: Reports an error (`as-err-handle-on-no-handle-type`, `E261`) wherever a handle `@` is applied to one of the listed types (including through `typedef` aliases), across local variables, globals, class members, function/funcdef parameters and return types, array elements (`T@[]`), template arguments (`array<T@>`), and unary handle-of expressions (`@x`).
+* **Resulting Behavior**: Writing `string@ s;` or `array<string@> items;` is flagged immediately, while handles to arrays of those types (`string[]@` or `array<string>@`) remain allowed.
+
+---
+
 ## Schema Validation & IntelliSense
 
 All `*.angelscript.rules.json` files support full JSON Schema validation and autocompletion in VS Code. Add the `$schema` header at the top of your file:

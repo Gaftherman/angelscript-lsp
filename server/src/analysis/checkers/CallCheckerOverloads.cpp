@@ -1,10 +1,8 @@
 #include "analysis/checkers/CallCheckerCommon.h"
-#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/resolution/AmbiguityDetector.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/types/TypeSanitization.h"
 
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
@@ -54,8 +52,9 @@ static bool CheckUnmatchedDefaultParameters(const FunctionSignature& sig,
     return true;
 }
 
-static bool CheckCandidateNamedArgs(const FunctionSignature& sig, std::span<const std::string> argNames,
-                                    std::span<const std::string> argTypes, const SymbolTable& symbolTable)
+static std::optional<ankerl::unordered_dense::set<size_t>>
+CheckCandidateNamedArgs(const FunctionSignature& sig, std::span<const std::string> argNames,
+                        std::span<const std::string> argTypes, const SymbolTable& symbolTable)
 {
     ankerl::unordered_dense::set<size_t> matchedParams;
     for (size_t i = 0; i < argNames.size(); ++i)
@@ -63,7 +62,7 @@ static bool CheckCandidateNamedArgs(const FunctionSignature& sig, std::span<cons
         size_t paramIdx = ResolveParameterIndexForArgument(sig, i, argNames[i], matchedParams);
         if (paramIdx == size_t(-1))
         {
-            return false;
+            return std::nullopt;
         }
         if (paramIdx < sig.parameters.size())
         {
@@ -73,13 +72,17 @@ static bool CheckCandidateNamedArgs(const FunctionSignature& sig, std::span<cons
                 const auto conv = EvaluateArgumentConversion(argTypes[i], sig.parameters[paramIdx], symbolTable, true);
                 if (!conv.IsViable())
                 {
-                    return false;
+                    return std::nullopt;
                 }
             }
         }
     }
 
-    return CheckUnmatchedDefaultParameters(sig, matchedParams);
+    if (!CheckUnmatchedDefaultParameters(sig, matchedParams))
+    {
+        return std::nullopt;
+    }
+    return matchedParams;
 }
 
 static void RecordBoundCall(const Symbol& declaration, const CallSiteFact& site, DiagnosticContext& ctx)
@@ -107,16 +110,22 @@ static void RecordBoundCall(const Symbol& declaration, const CallSiteFact& site,
 static void HandleNamedCallOverloads(const CallOverloadCheckRequest& req, DiagnosticContext& ctx)
 {
     const Symbol* matched = nullptr;
+    ankerl::unordered_dense::set<size_t> matchedParams;
     for (const Symbol* cand : req.matchingArity)
     {
-        if (cand && std::holds_alternative<FunctionSignature>(cand->signature) &&
-            CheckCandidateNamedArgs(cand->GetFunction(), req.args.argNames, req.args.argTypes, ctx.request.symbolTable))
+        if (!cand || !std::holds_alternative<FunctionSignature>(cand->signature))
+        {
+            continue;
+        }
+        if (auto candParams = CheckCandidateNamedArgs(cand->GetFunction(), req.args.argNames, req.args.argTypes,
+                                                      ctx.request.symbolTable))
         {
             if (matched)
             {
                 return;
             }
             matched = cand;
+            matchedParams = std::move(*candParams);
         }
     }
     if (!req.args.allArgsResolved)
@@ -126,65 +135,11 @@ static void HandleNamedCallOverloads(const CallOverloadCheckRequest& req, Diagno
     if (matched)
     {
         RecordBoundCall(*matched, req.site, ctx);
+        CheckOmittedNamedDefaultArguments(*matched, matchedParams, req.site, ctx);
     }
     else
     {
         ctx.EmitAtRange(req.site.calleeRange, "as-err-call-no-matching-signature", req.calleeRes.reportedName);
-    }
-}
-
-static bool IsDefaultArgumentTypeMismatch(const ParameterInformation& param, const SymbolTable& table)
-{
-    if (param.defaultValue.empty())
-    {
-        return false;
-    }
-    std::string_view dv = param.defaultValue;
-    TrimTypeWhitespace(dv);
-    if (dv.empty())
-    {
-        return false;
-    }
-    if (dv == "void")
-    {
-        return param.modifier != ParameterModifier::Out;
-    }
-
-    const std::string_view rawBase =
-        CleanBaseTypeView(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
-    const std::string paramBase = UnwrapTypedef(rawBase, table);
-    if (paramBase.empty() || paramBase == "auto" || paramBase == "?" || paramBase == "any" || param.isArray ||
-        !param.templateName.empty())
-    {
-        return false;
-    }
-
-    const bool isStringLit = dv.size() >= 2 && dv.front() == '"' && dv.back() == '"';
-    const bool isBoolLit = (dv == "true" || dv == "false");
-    const bool isNullLit = (dv == "null");
-    const bool isEnum = ResolvesToEnum(paramBase, table);
-
-    return (isStringLit && (IsNumericPrimitive(paramBase) || paramBase == "bool" || isEnum)) ||
-           (isBoolLit && (IsNumericPrimitive(paramBase) || isEnum || param.isHandle)) ||
-           (isNullLit && !param.isHandle && (IsCorePrimitive(paramBase) || isEnum));
-}
-
-static void CheckOmittedDefaultArguments(const Symbol& candidate, size_t providedPositionalCount,
-                                         const CallSiteFact& site, DiagnosticContext& ctx)
-{
-    if (candidate.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(candidate.signature) ||
-        IsFromPredefinedStub(candidate, ctx))
-    {
-        return;
-    }
-    const auto& sig = candidate.GetFunction();
-    for (size_t p = providedPositionalCount; p < sig.parameters.size(); ++p)
-    {
-        if (IsDefaultArgumentTypeMismatch(sig.parameters[p], ctx.request.symbolTable))
-        {
-            ctx.EmitAtRange(site.range, diagnostics::codes::DefaultArgTypeMismatch);
-            return;
-        }
     }
 }
 

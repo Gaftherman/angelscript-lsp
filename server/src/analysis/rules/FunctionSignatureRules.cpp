@@ -1,6 +1,7 @@
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/RuleSyntaxFacts.h"
+#include "analysis/resolution/IllegalHandleCheck.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -178,10 +179,19 @@ static void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& 
         ctx.Emit(sym, "as-err-handle-to-handle");
     }
 
-    if (sig.returnHasPrimitiveHandle && !sig.returnIsArray)
+    const IllegalHandleCheckResult handleResult = CheckIllegalHandleType(
+        IllegalHandleCheckRequest{
+            .writtenType = sig.returnType,
+            .baseTypeName = sig.returnBaseTypeName,
+            .enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable),
+            .hasPrimitiveHandle = sig.returnHasPrimitiveHandle,
+            .checkPrimitiveFlag = !sig.returnIsArray,
+        },
+        ctx);
+    if (handleResult.HasError())
     {
-        ctx.LogRule("CheckReturnType", "as-err-handle-on-primitive", sym);
-        ctx.Emit(sym, "as-err-handle-on-primitive", sig.returnBaseTypeName);
+        ctx.LogRule("CheckReturnType", handleResult.diagnosticCode, sym);
+        ctx.Emit(sym, handleResult.diagnosticCode, handleResult.offendingTypeName);
     }
 
     if (IsMixinClass(sig.returnBaseTypeName, ctx.request.symbolTable))
@@ -197,6 +207,16 @@ static void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& 
     {
         ctx.LogRule("CheckReturnType", "as-err-return-not-instantiable", sym);
         ctx.Emit(sym, "as-err-return-not-instantiable", sig.returnBaseTypeName);
+    }
+
+    if ((sig.returnTemplateName.empty() || sig.returnIsArray) && !sig.returnBaseTypeName.empty())
+    {
+        if (const auto expectedCount = GetTemplateParameterCount(sig.returnBaseTypeName, ctx.request.symbolTable))
+        {
+            ctx.LogRule("CheckReturnType", diagnostics::codes::TemplateArgumentCountMismatch, sym);
+            ctx.Emit(sym, diagnostics::codes::TemplateArgumentCountMismatch, sig.returnBaseTypeName,
+                     std::to_string(*expectedCount));
+        }
     }
 }
 

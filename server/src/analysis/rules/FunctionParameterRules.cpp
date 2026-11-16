@@ -1,6 +1,7 @@
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/RuleSyntaxFacts.h"
+#include "analysis/resolution/IllegalHandleCheck.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/FunctionRules.h"
@@ -73,10 +74,18 @@ void CheckParamModifiers(const Symbol& sym, const ParameterInformation& param, c
         ctx.Emit(param, sym, "as-err-handle-to-handle");
     }
 
-    if (param.hasPrimitiveHandle)
+    const IllegalHandleCheckResult handleResult = CheckIllegalHandleType(
+        IllegalHandleCheckRequest{
+            .writtenType = param.typeName,
+            .baseTypeName = param.baseTypeName,
+            .enclosingNs = EnclosingNamespaceView(sym, ctx.request.symbolTable),
+            .hasPrimitiveHandle = param.hasPrimitiveHandle,
+        },
+        ctx);
+    if (handleResult.HasError())
     {
-        ctx.LogParam("ValidateParameters", "as-err-handle-on-primitive", param, sym);
-        ctx.Emit(param, sym, "as-err-handle-on-primitive", param.baseTypeName);
+        ctx.LogParam("ValidateParameters", handleResult.diagnosticCode, param, sym);
+        ctx.Emit(param, sym, handleResult.diagnosticCode, handleResult.offendingTypeName);
     }
 }
 
@@ -115,6 +124,16 @@ void CheckParamTypeLegality(const Symbol& sym, const ParameterInformation& param
         {
             ctx.LogParam("ValidateParameters", "as-err-funcdef-not-handle", param, sym);
             ctx.Emit(param, sym, "as-err-funcdef-not-handle", {param.baseTypeName, param.baseTypeName});
+        }
+    }
+
+    if ((param.templateName.empty() || param.isArray) && !param.baseTypeName.empty())
+    {
+        if (const auto expectedCount = GetTemplateParameterCount(param.baseTypeName, ctx.request.symbolTable))
+        {
+            ctx.LogParam("ValidateParameters", diagnostics::codes::TemplateArgumentCountMismatch, param, sym);
+            ctx.Emit(param, sym, diagnostics::codes::TemplateArgumentCountMismatch,
+                     {param.baseTypeName, std::to_string(*expectedCount)});
         }
     }
 }

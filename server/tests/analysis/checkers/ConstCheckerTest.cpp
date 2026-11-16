@@ -603,3 +603,27 @@ TEST_CASE("ConstChecker - Const Corpus Audit" * doctest::skip(true))
 
     CHECK(result.filesAnalysed > 0);
 }
+
+TEST_CASE("ObjectHandles - Unary handle-of on primitive operands emits as-err-handle-on-primitive")
+{
+    const std::string v1 = angel_lsp::test::GenerateRandomSymbolName("lhs");
+    const std::string v2 = angel_lsp::test::GenerateRandomSymbolName("rhs");
+    const std::string fn = angel_lsp::test::GenerateRandomSymbolName("main");
+    const std::string cls = angel_lsp::test::GenerateRandomSymbolName("Box");
+
+    const std::string script =
+        "void " + fn + "()\n{\n    int " + v1 + " = 1; int " + v2 + " = 2;\n    @" + v1 + " = @" + v2 + ";\n}\n";
+    auto rawDiagnostics = AnalyzeConstSnippet(script, "file:///test_unary_handle_primitive.as");
+    auto errors = FilterErrors(rawDiagnostics);
+    REQUIRE(errors.size() == 2);
+    CHECK(errors[0].code == "as-err-handle-on-primitive");
+    CHECK(errors[0].range.start.line == 3);
+    CHECK(errors[0].range.start.character == 4);
+    CHECK(errors[1].code == "as-err-handle-on-primitive");
+    CHECK(errors[1].range.start.line == 3);
+    CHECK(errors[1].range.start.character == 4 + 1 + v1.size() + 3);
+
+    const std::string okScript = "class " + cls + " {}\nvoid " + fn + "()\n{\n    " + cls + " " + v1 + "; " + cls +
+                                 " " + v2 + ";\n    " + cls + "@ h = @" + v1 + ";\n    @h = @" + v2 + ";\n}\n";
+    CHECK(FilterErrors(AnalyzeConstSnippet(okScript, "file:///test_unary_handle_class.as")).empty());
+}

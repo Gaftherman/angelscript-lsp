@@ -746,4 +746,42 @@ TEST_SUITE("analysis/index/NodeIndex")
         CHECK(ts_node_is_null(index.FindEnclosingClassOrMixin(0)));
         CHECK(ts_node_is_null(index.FindEnclosingCallable(0)));
     }
+
+    TEST_CASE("NodeIndex - Unterminated quoted #include records line span while valid and angled forms do not")
+    {
+        const std::string stem = angel_lsp::test::GenerateRandomSymbolName("mod");
+        const std::string code = "#include \"" + stem +
+                                 ".as\n"
+                                 "#include \"" +
+                                 stem +
+                                 "_ok.as\"\n"
+                                 "#include <" +
+                                 stem +
+                                 "_ang.as>\n"
+                                 "#include <" +
+                                 stem +
+                                 "_open_ang.as\n"
+                                 "void main() {}\n";
+
+        auto doc = angel_lsp::test::CreateTestDocument("file:///unterminated_inc.as", code);
+        REQUIRE(doc->GetTree() != nullptr);
+
+        NodeIndex index(ts_tree_root_node(doc->GetTree()), NodeIndexOptions{.source = code});
+        const auto includes = index.IncludeDirectives();
+        REQUIRE(includes.size() == 3);
+
+        CHECK(includes[0].isUnterminated);
+        CHECK_FALSE(includes[0].isAngled);
+        CHECK(includes[0].line == 0);
+        CHECK(includes[0].spanStart == 9);
+        CHECK(includes[0].spanEnd == 9 + 1 + stem.size() + 3);
+
+        CHECK_FALSE(includes[1].isUnterminated);
+        CHECK_FALSE(includes[1].isAngled);
+        CHECK(includes[1].rawPath == stem + "_ok.as");
+
+        CHECK_FALSE(includes[2].isUnterminated);
+        CHECK(includes[2].isAngled);
+        CHECK(includes[2].rawPath == stem + "_ang.as");
+    }
 }

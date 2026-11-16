@@ -1,4 +1,5 @@
 #include "features/document_link/DocumentLinkHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/IncludeResolver.h"
 
@@ -337,6 +338,73 @@ TEST_SUITE("features/DocumentLink")
         REQUIRE(diags.size() == 1);
         CHECK(diags[0].range.start.line == 3);
         CHECK(diags[0].code == "as-warn-include-not-found");
+
+        ts_tree_delete(tree);
+    }
+
+    TEST_CASE(
+        "GetUnresolvedIncludeDiagnostics - reports unterminated include quotes without flagging valid or angled forms")
+    {
+        LinkFixture fixture;
+        const std::string okName = angel_lsp::test::GenerateRandomSymbolName("ok") + ".as";
+        const std::string badName = angel_lsp::test::GenerateRandomSymbolName("bad") + ".as";
+        fixture.Write(okName, "void Ok() {}\n");
+
+        const std::string source = "#include \"" + badName +
+                                   "\n"
+                                   "#include \"" +
+                                   okName +
+                                   "\"\n"
+                                   "#include <" +
+                                   okName +
+                                   ">\n"
+                                   "#include <" +
+                                   badName +
+                                   "\n"
+                                   "#if 0\n"
+                                   "#include \"" +
+                                   badName +
+                                   "\n"
+                                   "#endif\n"
+                                   "void main() {}\n";
+        const std::string uri = fixture.Uri("main.as");
+
+        // Indexed path (NodeIndex)
+        parser::AngelScriptParser parser;
+        auto* tree = parser.Parse(source);
+        REQUIRE(tree != nullptr);
+        analysis::NodeIndex index(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = source});
+
+        features::DocumentLinkRequest indexedReq{
+            uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
+        indexedReq.nodeIndex = &index;
+        indexedReq.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(source);
+        const auto indexedDiags = features::GetUnresolvedIncludeDiagnostics(indexedReq);
+
+        // Expect 1 error on line 0 (`as-err-include-unterminated`) and zero warnings for valid or angled forms.
+        const auto unterminatedCount =
+            std::count_if(indexedDiags.begin(), indexedDiags.end(),
+                          [](const analysis::Diagnostic& d) { return d.code == "as-err-include-unterminated"; });
+        CHECK(unterminatedCount == 1);
+        auto errIt = std::find_if(indexedDiags.begin(), indexedDiags.end(), [](const analysis::Diagnostic& d)
+                                  { return d.code == "as-err-include-unterminated"; });
+        REQUIRE(errIt != indexedDiags.end());
+        CHECK(errIt->severity == analysis::DiagnosticSeverity::Error);
+        CHECK(errIt->range.start.line == 0);
+        CHECK(errIt->range.start.character == 9);
+        CHECK(errIt->range.end.line == 0);
+        CHECK(errIt->range.end.character == 10 + badName.size());
+        CHECK_FALSE(features::GetDocumentLinks(indexedReq).value_or(features::DocumentLinkResult{}).empty());
+
+        // Fallback path (no NodeIndex)
+        features::DocumentLinkRequest fallbackReq{
+            uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
+        fallbackReq.excludedLineRanges = indexedReq.excludedLineRanges;
+        const auto fallbackDiags = features::GetUnresolvedIncludeDiagnostics(fallbackReq);
+        const auto fallbackUnterm =
+            std::count_if(fallbackDiags.begin(), fallbackDiags.end(),
+                          [](const analysis::Diagnostic& d) { return d.code == "as-err-include-unterminated"; });
+        CHECK(fallbackUnterm == 1);
 
         ts_tree_delete(tree);
     }

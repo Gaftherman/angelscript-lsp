@@ -13,6 +13,15 @@
       "type": "string",
       "description": "Friendly human-readable display name for this engine ruleset."
     },
+    "noHandleTypes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "description": "Value types that do not support object handles ('@') on this host engine (e.g. ['string', 'datetime', 'complex'])."
+    },
     "engineProperties": {
       "type": "object",
       "description": "Native AngelScript engine properties (asEP_*) that configure compiler and parser behavior.",

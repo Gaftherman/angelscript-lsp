@@ -897,44 +897,14 @@ static bool IsIncludeDirectivePrefix(std::string_view text, size_t& outAfterInc)
         return false;
     }
     const size_t after = i + 7;
-    const bool validBoundary =
-        after >= text.size() || text[after] == ' ' || text[after] == '\t' || text[after] == '<' || text[after] == '"';
+    const bool validBoundary = after >= text.size() || text[after] == ' ' || text[after] == '\t' ||
+                               text[after] == '<' || text[after] == '"' || text[after] == '\'';
     if (!validBoundary)
     {
         return false;
     }
     outAfterInc = after;
     return true;
-}
-
-static std::optional<std::pair<size_t, size_t>> FindIncludeDelimiters(std::string_view text, size_t afterInc) noexcept
-{
-    const size_t openAngle = text.find('<', afterInc);
-    const size_t openQuote = text.find('"', afterInc);
-
-    size_t openPos = std::string_view::npos;
-    char closeChar = '"';
-    if (openAngle != std::string_view::npos && (openQuote == std::string_view::npos || openAngle < openQuote))
-    {
-        openPos = openAngle;
-        closeChar = '>';
-    }
-    else if (openQuote != std::string_view::npos)
-    {
-        openPos = openQuote;
-        closeChar = '"';
-    }
-
-    if (openPos == std::string_view::npos)
-    {
-        return std::nullopt;
-    }
-    const size_t closePos = text.find(closeChar, openPos + 1);
-    if (closePos == std::string_view::npos)
-    {
-        return std::nullopt;
-    }
-    return std::make_pair(openPos, closePos);
 }
 
 void NodeIndex::ExtractIncludeDirective(TSNode node, std::string_view source)
@@ -953,22 +923,50 @@ void NodeIndex::ExtractIncludeDirective(TSNode node, std::string_view source)
         return;
     }
 
-    const auto delims = FindIncludeDelimiters(text, afterInc);
-    if (!delims)
+    size_t openPos = afterInc;
+    while (openPos < text.size() && (text[openPos] == ' ' || text[openPos] == '\t'))
+    {
+        ++openPos;
+    }
+    if (openPos >= text.size())
     {
         return;
     }
 
-    const size_t openPos = delims->first;
-    const size_t closePos = delims->second;
-    const std::string_view rawPath = text.substr(openPos + 1, closePos - openPos - 1);
+    const char openChar = text[openPos];
+    if (openChar != '<' && openChar != '"' && openChar != '\'')
+    {
+        return;
+    }
+
+    const char closeChar = (openChar == '<') ? '>' : openChar;
+    const size_t closePos = text.find(closeChar, openPos + 1);
     const TSPoint sp = ts_node_start_point(node);
+    if (closePos == std::string_view::npos)
+    {
+        if (openChar == '<')
+        {
+            return;
+        }
+        MutableFlowFacts().includeDirectives.push_back(IndexedIncludeDirective{
+            .rawPath = std::string(text.substr(openPos + 1)),
+            .line = sp.row,
+            .spanStart = static_cast<uint32_t>(sp.column + openPos),
+            .spanEnd = static_cast<uint32_t>(sp.column + text.size()),
+            .isAngled = false,
+            .isUnterminated = true,
+        });
+        return;
+    }
+
+    const std::string_view rawPath = text.substr(openPos + 1, closePos - openPos - 1);
     MutableFlowFacts().includeDirectives.push_back(IndexedIncludeDirective{
         .rawPath = std::string(rawPath),
         .line = sp.row,
         .spanStart = static_cast<uint32_t>(sp.column + openPos + 1),
         .spanEnd = static_cast<uint32_t>(sp.column + closePos),
-        .isAngled = (text[openPos] == '<'),
+        .isAngled = (openChar == '<'),
+        .isUnterminated = false,
     });
 }
 
