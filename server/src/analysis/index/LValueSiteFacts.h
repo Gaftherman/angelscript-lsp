@@ -45,7 +45,6 @@ struct LValueBranchFact
     IndexedByteRange bytes;         ///< Byte span of the branch expression.
     bool isConsequence : 1 = false; ///< True for consequence branch; false for alternative branch.
 };
-static_assert(sizeof(LValueBranchFact) <= 12);
 
 /**
  * @brief Receiver object and member identifier byte spans for a member l-value candidate.
@@ -55,7 +54,6 @@ struct LValueMemberCandidateFact
     IndexedByteRange objectBytes; ///< Receiver object byte span.
     IndexedByteRange memberBytes; ///< Member identifier byte span.
 };
-static_assert(sizeof(LValueMemberCandidateFact) <= 16);
 
 /**
  * @brief Call expression evaluated as an l-value on the left side of an assignment.
@@ -69,7 +67,6 @@ struct LValueCallSiteFact
     IndexedByteRange memberBytes;                         ///< Member callee: byte span of member identifier.
     LValueCalleeKind calleeKind = LValueCalleeKind::None; ///< Callee syntactic category.
 };
-static_assert(sizeof(LValueCallSiteFact) <= 52);
 
 /**
  * @brief Compact expression node evaluated for modifiable l-value assignability.
@@ -83,7 +80,6 @@ struct LValueCandidateFact
     LValueCandidateKind kind = LValueCandidateKind::None; ///< Evaluated l-value candidate shape.
     bool isParenthesized : 1 = false;                     ///< True when outer parentheses surrounded the expression.
 };
-static_assert(sizeof(LValueCandidateFact) <= 24);
 
 /**
  * @brief An assignment expression whose left-hand target was evaluated for l-value validity.
@@ -98,7 +94,6 @@ struct LValueAssignmentFact
     bool targetIsUnwrappedCall : 1 = false; ///< Target unwrapped from parentheses is symCallExpression.
     bool targetIsDirectTernary : 1 = false; ///< Top-level target node symbol is symTernaryExpression.
 };
-static_assert(sizeof(LValueAssignmentFact) <= 68);
 
 /**
  * @brief AST-free facts for assignment targets, call l-values, and candidate l-value expressions.

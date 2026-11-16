@@ -134,14 +134,18 @@ void CheckDelegateConstruction(const CallConstructSiteFact& site, const FuncdefS
     }
 
     const auto* memFact = request.expressionSites->FindMember(site.argument.value.bytes);
-    if (!memFact || memFact->propertyAccess.kind != PropertyAccessKind::Member)
+    if (!memFact)
+    {
+        return;
+    }
+    const PropertyAccessFact propAccess = request.expressionSites->PropertyAccessOf(*memFact);
+    if (propAccess.kind != PropertyAccessKind::Member)
     {
         return;
     }
 
     const Scope* scope = ResolveNodeScope(site.range, request);
-    const std::string rawObj =
-        ResolveExpressionType(memFact->propertyAccess.receiver, ExpressionTypeContext(scope, ctx));
+    const std::string rawObj = ResolveExpressionType(propAccess.receiver, ExpressionTypeContext(scope, ctx));
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string cleanObj = UnwrapTypedef(CleanBaseType(rawObj), table);
     if (cleanObj.empty() || cleanObj == "auto" || cleanObj == "?" || cleanObj == "any" ||
@@ -166,7 +170,7 @@ void CheckDelegateConstruction(const CallConstructSiteFact& site, const FuncdefS
                 }
             }
         }
-        if (const auto members = table.FindMemberSymbolPtr(ancestor, memFact->propertyAccess.text))
+        if (const auto members = table.FindMemberSymbolPtr(ancestor, propAccess.text))
         {
             for (const auto& m : *members)
             {

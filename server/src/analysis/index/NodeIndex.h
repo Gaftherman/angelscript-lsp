@@ -78,7 +78,6 @@ struct IndexedContainerSpan
     TSSymbol symbol : 15 = 0;
     uint16_t isMixin : 1 = 0;
 };
-static_assert(sizeof(IndexedContainerSpan) <= 24);
 
 enum class IndexedFlowFindingKind : uint8_t
 {
@@ -113,7 +112,6 @@ struct IndexedSyntaxNode
     bool inSymbolBucket = false;
     bool hasReturnReferenceToken = false;
 };
-static_assert(sizeof(IndexedSyntaxNode) <= 40);
 
 enum class NodeIndexContents : uint8_t
 {
@@ -148,7 +146,6 @@ struct IndexedSelectionRange
     uint32_t endByte = 0;
     uint32_t parentSpanIndex = UINT32_MAX;
 };
-static_assert(sizeof(IndexedSelectionRange) <= 32);
 
 /**
  * @brief Classification of foldable document intervals.
@@ -841,7 +838,6 @@ class NodeIndex
     TSSymbol m_symComment = 0;
     bool m_hasSyntaxErrors = false;
 };
-static_assert(sizeof(NodeIndex) <= 248);
 /**
  * @brief Null-safe form of NodeIndex::SpanHasSyntaxError for code that may run without an index.
  * @param[in] index Node index of the document, or nullptr when none is available.

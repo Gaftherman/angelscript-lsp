@@ -283,6 +283,94 @@ TEST_SUITE("CodeLens - Reference Kinds")
         CHECK(LensTitleAt(*lenses, LineOf(mainCode, "opSub()")).value_or("<none>") == "0 references");
     }
 
+    TEST_CASE("CodeLens - Chained compound expressions count each operator once")
+    {
+        const std::string cls = angel_lsp::test::GenerateRandomSymbolName("Num");
+        const std::string v = angel_lsp::test::GenerateRandomSymbolName("v");
+        const std::string w = angel_lsp::test::GenerateRandomSymbolName("w");
+        const std::string C = cls;
+
+        const std::string mainCode = "class " + C +
+                                     " {\n"
+                                     "    " +
+                                     C + " opAdd(const " + C + "&in) const { return " + C +
+                                     "(); }\n"
+                                     "    " +
+                                     C + " opMul(const " + C + "&in) const { return " + C +
+                                     "(); }\n"
+                                     "    " +
+                                     C + " opMul_r(int) const { return " + C +
+                                     "(); }\n"
+                                     "    " +
+                                     C + "& opAddAssign(const " + C +
+                                     "&in) { return this; }\n"
+                                     "    " +
+                                     C +
+                                     "& opPreInc() { return this; }\n"
+                                     "    " +
+                                     C + " opPostInc() { return " + C +
+                                     "(); }\n"
+                                     "}\n"
+                                     "void Drive() {\n"
+                                     "    " +
+                                     C + " " + v +
+                                     ";\n"
+                                     "    " +
+                                     v + " += " + v + " + " + v + " * " + v + " * " + v +
+                                     ";\n"
+                                     "    " +
+                                     v +
+                                     "++;\n"
+                                     "    ++" +
+                                     v +
+                                     ";\n"
+                                     "    " +
+                                     v + " = 2 * " + v +
+                                     ";\n"
+                                     "    " +
+                                     v + " += (" + v + " * " + v +
+                                     ") *\n"
+                                     "        " +
+                                     v +
+                                     ";\n"
+                                     "    int " +
+                                     w +
+                                     " = 1;\n"
+                                     "    " +
+                                     w + " += " + w + " + " + w + " * " + w + " * " + w +
+                                     ";\n"
+                                     "    " +
+                                     w +
+                                     "++;\n"
+                                     "    ++" +
+                                     w +
+                                     ";\n"
+                                     "}\n";
+        const std::string otherCode = "void Remote() {\n"
+                                      "    " +
+                                      C + " " + v +
+                                      ";\n"
+                                      "    " +
+                                      v + " += " + v + " * " + v +
+                                      ";\n"
+                                      "}\n";
+
+        KindLensFixture fixture(mainCode);
+        fixture.AddDocument("file:///other.as", otherCode);
+        config::ServerConfig cfg;
+        cfg.features.codeLensShowZeroReferences = true;
+        const auto lenses = fixture.GetLenses(&cfg);
+        REQUIRE(lenses.has_value());
+
+        // opMul: 2 in the chain + 2 in the parenthesized/split line + 1 remote.
+        CHECK(LensTitleAt(*lenses, LineOf(mainCode, "opMul(")).value_or("<none>") == "5 references");
+        CHECK(LensTitleAt(*lenses, LineOf(mainCode, "opMul_r(")).value_or("<none>") == "1 reference");
+        CHECK(LensTitleAt(*lenses, LineOf(mainCode, "opAdd(")).value_or("<none>") == "1 reference");
+        CHECK(LensTitleAt(*lenses, LineOf(mainCode, "opAddAssign(")).value_or("<none>") == "3 references");
+        CHECK(LensTitleAt(*lenses, LineOf(mainCode, "opPostInc(")).value_or("<none>") == "1 reference");
+        CHECK(LensTitleAt(*lenses, LineOf(mainCode, "opPreInc(")).value_or("<none>") == "1 reference");
+    }
+
     TEST_CASE("CodeLens - Destructors never emit CodeLens even inside namespaces")
     {
         const std::string clsTop = angel_lsp::test::GenerateRandomSymbolName("ResTop");

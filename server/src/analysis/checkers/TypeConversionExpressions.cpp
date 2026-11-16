@@ -25,12 +25,16 @@ namespace angel_lsp::analysis
 
 void ProcessBinarySite(const BinarySiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
+    if (!request.expressionSites || !request.binaryFacts)
+    {
+        return;
+    }
     const BinaryExpressionFact* fact = request.binaryFacts->Find(site.bytes);
     if (!fact)
     {
         return;
     }
-    const Scope* scope = ResolveNodeScope(site.range, request);
+    const Scope* scope = ResolveNodeScope(request.expressionSites->RangeOf(site.bytes), request);
 
     if (fact->opClass == BinaryOperatorClass::Identity)
     {
@@ -49,7 +53,8 @@ void ProcessBinarySite(const BinarySiteFact& site, const TypeConversionCheckRequ
     CheckBinaryOperatorCompatibility(*fact, scope, ctx);
 }
 
-static bool CheckUnaryInvalidOperand(const UnaryPostfixSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
+static bool CheckUnaryInvalidOperand(const UnaryPostfixSiteFact& site, const ExpressionSiteFacts& facts,
+                                     const Scope* scope, DiagnosticContext& ctx)
 {
     if (!site.hasOperand)
     {
@@ -58,8 +63,9 @@ static bool CheckUnaryInvalidOperand(const UnaryPostfixSiteFact& site, const Sco
     const ExpressionTypeContext exprCtx(scope, ctx);
     if (const auto dt = IsBareDataType(site.operandBytes, exprCtx))
     {
-        EmitExpressionIsDataType(ConversionExpressionFact{site.operandBytes, site.operandRange, site.operandText}, ctx,
-                                 *dt);
+        EmitExpressionIsDataType(ConversionExpressionFact{site.operandBytes, facts.RangeOf(site.operandBytes),
+                                                          facts.TextOf(site.operandBytes)},
+                                 ctx, *dt);
         return true;
     }
     if (site.isAddressOfHandle)
@@ -68,16 +74,41 @@ static bool CheckUnaryInvalidOperand(const UnaryPostfixSiteFact& site, const Sco
     }
     if (IsFunctionReference(site.operandBytes, exprCtx))
     {
-        ctx.EmitAtRange(site.range, diagnostics::codes::IllegalOperation);
+        ctx.EmitAtRange(facts.RangeOf(site.bytes), diagnostics::codes::IllegalOperation);
         return true;
     }
     return false;
 }
 
-static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Maps a unary or postfix operator spelling to the class method that implements it.
+ * @param[in] site Unary or postfix expression site fact.
+ * @return Method name such as `opNeg` or `opPostInc`, or empty when the operator is not overloadable.
+ */
+static std::string_view UnaryOperatorMethod(const UnaryPostfixSiteFact& site) noexcept
 {
-    if (site.isPostfix || !site.hasOperand || (site.op != "-" && site.op != "~") ||
-        site.operandValue.kind == ValueExpressionKind::Number)
+    if (site.isIncrementOrDecrement)
+    {
+        const bool inc = site.op == UnaryPostfixOp::PlusPlus;
+        if (site.isPostfix)
+        {
+            return inc ? "opPostInc" : "opPostDec";
+        }
+        return inc ? "opPreInc" : "opPreDec";
+    }
+    if (site.isPostfix)
+    {
+        return {};
+    }
+    return site.op == UnaryPostfixOp::Minus ? "opNeg"
+                                            : (site.op == UnaryPostfixOp::Tilde ? "opCom" : std::string_view{});
+}
+
+static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const ExpressionSiteFacts& facts,
+                                     const Scope* scope, DiagnosticContext& ctx)
+{
+    const std::string_view opMethod = UnaryOperatorMethod(site);
+    if (opMethod.empty() || !site.hasOperand || site.operandIsNumber)
     {
         return;
     }
@@ -92,7 +123,7 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Sco
         return;
     }
 
-    const std::string_view opMethod = (site.op == "-") ? "opNeg" : "opCom";
+    const bool allowsImplConv = !site.isIncrementOrDecrement;
     bool foundClass = false;
     for (const auto& ancestor : GetInheritedTypeHierarchy(cleanType, table))
     {
@@ -123,7 +154,7 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Sco
                 }
             }
         }
-        if (const auto convs = table.FindMemberSymbolPtr(ancestor, "opImplConv"))
+        if (const auto convs = allowsImplConv ? table.FindMemberSymbolPtr(ancestor, "opImplConv") : nullptr)
         {
             for (const auto& sym : *convs)
             {
@@ -141,7 +172,7 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Sco
     }
     if (foundClass)
     {
-        ctx.EmitAtRange(site.range, diagnostics::codes::UnaryOperatorNotFound, opMethod);
+        ctx.EmitAtRange(facts.RangeOf(site.bytes), diagnostics::codes::UnaryOperatorNotFound, opMethod);
     }
 }
 
@@ -149,11 +180,12 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Sco
  * @brief Reports `as-err-handle-on-primitive` or `as-err-handle-on-no-handle-type` when unary handle-of `@x`
  *        is applied to a primitive or configured no-handle operand.
  * @param[in] site Unary or postfix expression site fact.
- * @param[in] scope Innermost lexical scope at `site.range`.
+ * @param[in] facts Document expression facts owning range and property pools.
+ * @param[in] scope Innermost lexical scope at `site.bytes`.
  * @param[in,out] ctx Diagnostic sink.
  */
-static void CheckAddressOfHandleOnPrimitive(const UnaryPostfixSiteFact& site, const Scope* scope,
-                                            DiagnosticContext& ctx)
+static void CheckAddressOfHandleOnPrimitive(const UnaryPostfixSiteFact& site, const ExpressionSiteFacts& facts,
+                                            const Scope* scope, DiagnosticContext& ctx)
 {
     if (site.isPostfix || !site.isAddressOfHandle || !site.hasOperand)
     {
@@ -179,38 +211,44 @@ static void CheckAddressOfHandleOnPrimitive(const UnaryPostfixSiteFact& site, co
         ctx);
     if (handleResult.HasError())
     {
-        ctx.EmitAtRange(site.range, handleResult.diagnosticCode, handleResult.offendingTypeName);
+        ctx.EmitAtRange(facts.RangeOf(site.bytes), handleResult.diagnosticCode, handleResult.offendingTypeName);
     }
 }
 
 void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConversionCheckRequest& request,
                                DiagnosticContext& ctx)
 {
-    const Scope* scope = ResolveNodeScope(site.range, request);
-    if (CheckUnaryInvalidOperand(site, scope, ctx))
+    if (!request.expressionSites)
+    {
+        return;
+    }
+    const auto& facts = *request.expressionSites;
+    const SourceRange siteRange = facts.RangeOf(site.bytes);
+    const Scope* scope = ResolveNodeScope(siteRange, request);
+    if (CheckUnaryInvalidOperand(site, facts, scope, ctx))
     {
         return;
     }
 
-    CheckAddressOfHandleOnPrimitive(site, scope, ctx);
-    CheckPrefixUnaryOperator(site, scope, ctx);
+    CheckAddressOfHandleOnPrimitive(site, facts, scope, ctx);
+    CheckPrefixUnaryOperator(site, facts, scope, ctx);
 
     if (!site.isIncrementOrDecrement || !site.hasOperand)
     {
         return;
     }
 
-    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.operandProperty, scope, ctx);
+    const PropertyAccessInfo pInfo = InspectPropertyAccess(facts.OperandPropertyOf(site), scope, ctx);
     if (site.operandIsIndexed)
     {
         if (pInfo.isProperty && pInfo.isIndexed)
         {
-            ctx.EmitAtRange(site.range, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+            ctx.EmitAtRange(siteRange, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
         }
     }
     else if (pInfo.isProperty)
     {
-        ctx.EmitAtRange(site.range, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+        ctx.EmitAtRange(siteRange, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
     }
 }
 
@@ -223,16 +261,17 @@ void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConve
 void ProcessMemberExpressionSite(const MemberExpressionSiteFact& site, const TypeConversionCheckRequest& request,
                                  DiagnosticContext& ctx)
 {
-    if (site.isCallCallee || site.isWriteOrMutation)
+    if (site.isCallCallee || site.isWriteOrMutation || !request.expressionSites)
     {
         return;
     }
 
-    const Scope* scope = ResolveNodeScope(site.range, request);
-    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.propertyAccess, scope, ctx);
+    const SourceRange siteRange = request.expressionSites->RangeOf(site.bytes);
+    const Scope* scope = ResolveNodeScope(siteRange, request);
+    const PropertyAccessInfo pInfo = InspectPropertyAccess(request.expressionSites->PropertyAccessOf(site), scope, ctx);
     if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
     {
-        ctx.EmitAtRange(site.range, "as-err-write-only-property", pInfo.propName);
+        ctx.EmitAtRange(siteRange, "as-err-write-only-property", pInfo.propName);
     }
 }
 
@@ -303,8 +342,10 @@ static size_t CollectMatchingOpIndexOverloads(std::string_view owner, std::strin
 static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const TypeConversionCheckRequest& request,
                                       const Scope* scope, DiagnosticContext& ctx)
 {
-    if (site.hasSyntaxError || site.objectBytes.endByte == 0 || site.argCount == 0 || !request.expressionSites ||
-        site.argBegin + site.argCount > request.expressionSites->indexArgs.size())
+    if (!request.expressionSites)
+        return;
+    const auto args = request.expressionSites->IndexArgsOf(site);
+    if (site.hasSyntaxError || site.objectBytes.endByte == 0 || args.empty())
         return;
 
     const ExpressionTypeContext exprCtx(scope, ctx);
@@ -322,10 +363,11 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
         ctx.request.IsRegisteredSymbol(normalizedObj))
         return;
 
+    const SourceRange siteRange = request.expressionSites->RangeOf(site.bytes);
     if (IsPrimitiveTypeName(normalizedObj) || ResolvesToEnum(normalizedObj, table) ||
         FindFuncdef(normalizedObj, table).has_value())
     {
-        ctx.EmitAtRange(site.range, diagnostics::codes::TypeNotIndexable, normalizedObj);
+        ctx.EmitAtRange(siteRange, diagnostics::codes::TypeNotIndexable, normalizedObj);
         return;
     }
 
@@ -336,19 +378,19 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
         return;
 
     std::vector<Symbol> overloads;
-    if (CollectMatchingOpIndexOverloads(owner, normalizedObj, site.argCount, table, overloads) == 0)
+    if (CollectMatchingOpIndexOverloads(owner, normalizedObj, static_cast<uint32_t>(args.size()), table, overloads) ==
+        0)
     {
-        ctx.EmitAtRange(site.range, diagnostics::codes::TypeNotIndexable, owner);
+        ctx.EmitAtRange(siteRange, diagnostics::codes::TypeNotIndexable, owner);
         return;
     }
 
     std::vector<std::string> argTypes;
-    argTypes.reserve(site.argCount);
+    argTypes.reserve(args.size());
     bool allResolved = true;
-    for (uint32_t i = 0; i < site.argCount; ++i)
+    for (const IndexedByteRange argBytes : args)
     {
-        std::string argType =
-            ResolveExpressionType(request.expressionSites->indexArgs[site.argBegin + i].bytes, exprCtx);
+        std::string argType = ResolveExpressionType(argBytes, exprCtx);
         const std::string_view cleanArg = CleanBaseTypeView(argType);
         if (argType.empty() || cleanArg == "auto" || cleanArg == "?" || ctx.request.IsRegisteredSymbol(cleanArg))
             allResolved = false;
@@ -357,7 +399,7 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
 
     if (overloads.empty())
     {
-        ctx.EmitAtRange(site.range, diagnostics::codes::CallNoMatchingSignature, FormatOpIndexCall(owner, argTypes));
+        ctx.EmitAtRange(siteRange, diagnostics::codes::CallNoMatchingSignature, FormatOpIndexCall(owner, argTypes));
         return;
     }
     if (!allResolved)
@@ -372,7 +414,7 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
     // Const and non-const opIndex pairs share their parameters, so several viable candidates without a
     // single best one is a valid container, not a mismatch.
     if (match.viableCandidates.empty())
-        ctx.EmitAtRange(site.range, diagnostics::codes::CallNoMatchingSignature, FormatOpIndexCall(owner, argTypes));
+        ctx.EmitAtRange(siteRange, diagnostics::codes::CallNoMatchingSignature, FormatOpIndexCall(owner, argTypes));
 }
 
 /**
@@ -384,13 +426,18 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
 void ProcessIndexExpressionSite(const IndexExpressionSiteFact& site, const TypeConversionCheckRequest& request,
                                 DiagnosticContext& ctx)
 {
-    const Scope* scope = ResolveNodeScope(site.range, request);
-    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.objectProperty, scope, ctx);
+    if (!request.expressionSites)
+    {
+        return;
+    }
+    const SourceRange siteRange = request.expressionSites->RangeOf(site.bytes);
+    const Scope* scope = ResolveNodeScope(siteRange, request);
+    const PropertyAccessInfo pInfo = InspectPropertyAccess(request.expressionSites->ObjectPropertyOf(site), scope, ctx);
     if (pInfo.isProperty && pInfo.isIndexed)
     {
         if (!site.isWriteOrMutation && !pInfo.hasGet && pInfo.hasSet)
         {
-            ctx.EmitAtRange(site.range, "as-err-write-only-property", pInfo.propName);
+            ctx.EmitAtRange(siteRange, "as-err-write-only-property", pInfo.propName);
         }
         return;
     }
@@ -420,17 +467,23 @@ static bool CheckCastVisibilityGuards(const ConversionTypePair& types, bool sour
 void ProcessCastSite(const CastExpressionSiteFact& site, const TypeConversionCheckRequest& request,
                      DiagnosticContext& ctx)
 {
-    const auto targetName = CleanBaseType(site.targetType);
-    if (!site.hasValue || targetName.empty())
+    if (!request.expressionSites || !site.hasValue)
+    {
+        return;
+    }
+    const auto& facts = *request.expressionSites;
+    const auto targetName = CleanBaseType(facts.TextOf(site.targetTypeBytes));
+    if (targetName.empty())
     {
         return;
     }
 
-    const Scope* scope = ResolveNodeScope(site.range, request);
+    const SourceRange siteRange = facts.RangeOf(site.bytes);
+    const Scope* scope = ResolveNodeScope(siteRange, request);
     const SymbolTable& table = ctx.request.symbolTable;
     const bool targetIsScalar = IsScalarCastTarget(targetName, table);
 
-    const ExpressionType source = ResolveValueType(site.value, scope, ctx);
+    const ExpressionType source = ResolveValueType(facts.ValueOf(site), scope, ctx);
     if (!source.known || source.baseName.empty())
     {
         return;
@@ -440,7 +493,7 @@ void ProcessCastSite(const CastExpressionSiteFact& site, const TypeConversionChe
     {
         if (!ctx.request.IsRegisteredSymbol(source.baseName) && !ctx.request.IsRegisteredSymbol(targetName))
         {
-            ctx.EmitAtRange(site.range, "as-err-invalid-cast", {source.baseName, targetName});
+            ctx.EmitAtRange(siteRange, "as-err-invalid-cast", {source.baseName, targetName});
         }
         return;
     }
@@ -471,7 +524,7 @@ void ProcessCastSite(const CastExpressionSiteFact& site, const TypeConversionChe
         return;
     }
 
-    ctx.EmitAtRange(site.range, "as-err-invalid-cast", {source.baseName, targetName});
+    ctx.EmitAtRange(siteRange, "as-err-invalid-cast", {source.baseName, targetName});
 }
 
 } // namespace angel_lsp::analysis

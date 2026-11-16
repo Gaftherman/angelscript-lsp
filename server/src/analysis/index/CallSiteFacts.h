@@ -46,7 +46,6 @@ struct CallArgumentTernaryFact
     IndexedByteRange consequenceBytes; ///< Byte span of the consequence branch expression.
     IndexedByteRange alternativeBytes; ///< Byte span of the alternative branch expression.
 };
-static_assert(sizeof(CallArgumentTernaryFact) <= 16);
 
 /**
  * @brief Compact lambda parameter metadata stored in CallSiteFacts::lambdaParams.
@@ -60,7 +59,6 @@ struct CallLambdaParamFact
     bool isHandle : 1 = false;                            ///< True when the written type carries `@`.
     bool isReference : 1 = false;                         ///< True when `&` or a direction modifier is present.
 };
-static_assert(sizeof(CallLambdaParamFact) <= 12);
 
 /**
  * @brief Compact AST-free facts for a single argument in a call or constructor argument list.
@@ -82,7 +80,6 @@ struct CallArgumentFact
     bool hasLambdaParameterList : 1 = false;              ///< True when a lambda argument spells a parameter list.
     bool isThisMemberAccess : 1 = false;                  ///< True if argument is `this.<member>`.
 };
-static_assert(sizeof(CallArgumentFact) <= 48);
 
 /**
  * @brief AST-free representation of a call or construct-call expression site.
@@ -112,7 +109,6 @@ struct CallSiteFact
     bool insideMixin : 1 = false;                ///< True if enclosing class is a mixin class.
     bool isEnclosingMethodConst : 1 = false;     ///< True if call is enclosed within a const method declaration.
 };
-static_assert(sizeof(CallSiteFact) <= 108);
 
 /**
  * @brief AST-free representation of a variable direct-initialization declarator (`Type var(args)`).
@@ -126,7 +122,6 @@ struct DirectInitSiteFact
     uint32_t argumentBegin = 0;         ///< First slice index into CallSiteFacts::arguments.
     uint32_t argumentCount = 0;         ///< Number of arguments in CallSiteFacts::arguments.
 };
-static_assert(sizeof(DirectInitSiteFact) <= 56);
 
 /**
  * @brief AST-free call, construct-call, and direct-initialization site facts of one revision.

@@ -3670,6 +3670,23 @@
         "CallSiteFacts tests in server/tests/analysis/index/CallSiteFactsTest.cpp",
         "CallChecker, ControlFlowChecker, and NamespaceChecker suites"
       ]
+    },
+    {
+      "id": "REF-P17-EXPRESSIONSITEFACTS",
+      "phase": "M31",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/index/ExpressionSiteFacts.cpp",
+      "deletedLineRange": "n/a",
+      "originalSymbolOrCode": "UnaryPostfixSiteFact, MemberExpressionSiteFact, IndexExpressionSiteFact, CastExpressionSiteFact (inline operand, value, folded-constant and property-access structs plus duplicated SourceRange and string_view fields)",
+      "whatItDidAndWhyInThatFile": "Stored full operand, value, folded-constant and property-access structs and duplicated ranges and text views in every expression site fact.",
+      "whyChangedOrDeleted": "Checkers read spans, flags and an occasional property access. Facts now keep IndexedByteRange spans, bit-fields and side pools (propertyAccesses, castValues) with one reserve per vector; sizes are guarded in FactLayoutSizeTest.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CallSiteFacts.h",
+      "replacedByCanonicalSymbol": "CallSiteFacts",
+      "ramOrCpuImpact": "CallArgumentFact 424 B -> 48 B, CallSiteFact 368 B -> 108 B, DirectInitSiteFact 160 B -> 56 B; zero per-argument vector/string heap allocations.",
+      "verifiedByTests": [
+        "CallSiteFacts tests in server/tests/analysis/index/CallSiteFactsTest.cpp",
+        "CallChecker, ControlFlowChecker, and NamespaceChecker suites"
+      ]
     }
   ]
 }

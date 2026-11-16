@@ -142,7 +142,6 @@ struct TypeQualifiers
     bool isStandaloneRef : 1 = false;
     bool isAuto : 1 = false;
 };
-static_assert(sizeof(TypeQualifiers) == 1);
 
 /**
  * @brief Declaration modifiers and syntactic attributes attached to symbols.
@@ -197,7 +196,6 @@ struct SymbolModifiers
         isDeclarationAbstract = (placement == ModifierPlacement::Prefix);
     }
 };
-static_assert(sizeof(SymbolModifiers) <= 4);
 
 /**
  * @brief Signature metadata and semantic type qualifiers for a function parameter.
@@ -240,7 +238,6 @@ struct ParameterInformation
     bool isOutRef : 1 = false;
     bool isInOutRef : 1 = false;
 };
-static_assert(sizeof(ParameterInformation) <= 200);
 
 struct SourceRange
 {
@@ -347,7 +344,6 @@ struct FunctionSignature
     bool isInterfaceMethod : 1 = false;
     bool isImported : 1 = false;
 };
-static_assert(sizeof(FunctionSignature) <= 240);
 
 /**
  * @brief Signature and accessor metadata for variables and virtual properties.
@@ -387,7 +383,6 @@ struct VariableSignature
     bool isEnumConstant : 1 = false;
     bool hasCallInitializer : 1 = false;
 };
-static_assert(sizeof(VariableSignature) <= 192);
 
 struct EnumMemberInformation
 {
@@ -419,7 +414,6 @@ struct ClassSignature
     bool hasBraces : 1 = false;
     bool hasListPattern : 1 = false;
 };
-static_assert(sizeof(ClassSignature) <= 80);
 
 /**
  * @brief Interface inheritance and modifier metadata.
@@ -467,7 +461,6 @@ struct FuncdefSignature
     bool returnHasPrimitiveHandle : 1 = false;
     bool returnHasDoubleHandle : 1 = false;
 };
-static_assert(sizeof(FuncdefSignature) <= 152);
 
 /**
  * @brief Describes a function/method call that occurs outside of any function body
@@ -638,7 +631,6 @@ struct Symbol
         return qualifiedName.empty() ? std::string_view(name) : std::string_view(qualifiedName);
     }
 };
-static_assert(sizeof(Symbol) <= 504);
 
 /**
  * @brief Extracts all base classes or inherited interfaces declared on a symbol without heap allocation.

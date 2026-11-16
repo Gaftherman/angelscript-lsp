@@ -34,7 +34,7 @@ TEST_SUITE("analysis/index/ExpressionSiteFacts")
         const auto& bin0 = facts.binaryExpressions[0];
         const auto* foundBin0 = facts.FindBinary(bin0.bytes);
         REQUIRE(foundBin0 != nullptr);
-        CHECK(foundBin0->range.startLine == 2);
+        CHECK(facts.RangeOf(foundBin0->bytes).startLine == 2);
 
         bool foundLiteralChain = false;
         bool foundIdentifierChain = false;
@@ -46,13 +46,14 @@ TEST_SUITE("analysis/index/ExpressionSiteFacts")
                 const auto* lookup = facts.FindFoldedConstant(fc.bytes);
                 REQUIRE(lookup != nullptr);
                 CHECK(lookup->isNumericLiteral);
+                CHECK(facts.UnwrappedSpansOf(*lookup).size() >= 3);
             }
-            if (fc.foldedName == varConst && fc.chainCount >= 2)
+            if (facts.TextOf(fc.foldedNameBytes) == varConst && fc.chainCount >= 2)
             {
                 foundIdentifierChain = true;
                 const auto* lookup = facts.FindFoldedConstant(fc.bytes);
                 REQUIRE(lookup != nullptr);
-                CHECK(lookup->foldedName == varConst);
+                CHECK(facts.TextOf(lookup->foldedNameBytes) == varConst);
             }
         }
         CHECK(foundLiteralChain);
@@ -90,19 +91,19 @@ TEST_SUITE("analysis/index/ExpressionSiteFacts")
 
         for (const auto& expr : facts.unaryPostfixExpressions)
         {
-            if (expr.op == "++" && !expr.isPostfix)
+            if (expr.op == angel_lsp::analysis::UnaryPostfixOp::PlusPlus && !expr.isPostfix)
             {
                 preInc = &expr;
             }
-            else if (expr.op == "--" && expr.isPostfix)
+            else if (expr.op == angel_lsp::analysis::UnaryPostfixOp::MinusMinus && expr.isPostfix)
             {
                 postDec = &expr;
             }
-            else if (expr.op == "@")
+            else if (expr.op == angel_lsp::analysis::UnaryPostfixOp::At)
             {
                 handleAt = &expr;
             }
-            else if (expr.op == "++" && expr.isPostfix)
+            else if (expr.op == angel_lsp::analysis::UnaryPostfixOp::PlusPlus && expr.isPostfix)
             {
                 indexedInc = &expr;
             }
@@ -113,27 +114,27 @@ TEST_SUITE("analysis/index/ExpressionSiteFacts")
         CHECK(preInc->isIncrementOrDecrement);
         CHECK(!preInc->isAddressOfHandle);
         CHECK(preInc->hasOperand);
-        CHECK(preInc->operandText == varX);
+        CHECK(facts.TextOf(preInc->operandBytes) == varX);
         CHECK(!preInc->operandIsIndexed);
 
         REQUIRE(postDec != nullptr);
         CHECK(postDec->isPostfix);
         CHECK(postDec->isIncrementOrDecrement);
         CHECK(postDec->hasOperand);
-        CHECK(postDec->operandText == varY);
+        CHECK(facts.TextOf(postDec->operandBytes) == varY);
 
         REQUIRE(handleAt != nullptr);
         CHECK(!handleAt->isPostfix);
         CHECK(!handleAt->isIncrementOrDecrement);
         CHECK(handleAt->isAddressOfHandle);
         CHECK(handleAt->hasOperand);
-        CHECK(handleAt->operandText == handleVar);
+        CHECK(facts.TextOf(handleAt->operandBytes) == handleVar);
 
         REQUIRE(indexedInc != nullptr);
         CHECK(indexedInc->isPostfix);
         CHECK(indexedInc->isIncrementOrDecrement);
         CHECK(indexedInc->operandIsIndexed);
-        CHECK(indexedInc->operandProperty.kind == angel_lsp::analysis::PropertyAccessKind::Name);
+        CHECK(facts.OperandPropertyOf(*indexedInc).kind == angel_lsp::analysis::PropertyAccessKind::Name);
 
         ts_tree_delete(tree);
     }
@@ -165,8 +166,8 @@ TEST_SUITE("analysis/index/ExpressionSiteFacts")
 
         CHECK(!readMember->isCallCallee);
         CHECK(!readMember->isWriteOrMutation);
-        CHECK(readMember->propertyAccess.kind == angel_lsp::analysis::PropertyAccessKind::Member);
-        CHECK(readMember->propertyAccess.text == memProp);
+        CHECK(facts.PropertyAccessOf(*readMember).kind == angel_lsp::analysis::PropertyAccessKind::Member);
+        CHECK(facts.PropertyAccessOf(*readMember).text == memProp);
 
         CHECK(callMember->isCallCallee);
         CHECK(!callMember->isWriteOrMutation);
@@ -176,21 +177,23 @@ TEST_SUITE("analysis/index/ExpressionSiteFacts")
 
         const auto* foundMember = facts.FindMember(readMember->bytes);
         REQUIRE(foundMember != nullptr);
-        CHECK(foundMember->propertyAccess.text == memProp);
+        CHECK(facts.PropertyAccessOf(*foundMember).text == memProp);
 
         REQUIRE(facts.indexExpressions.size() == 2);
         const auto* readIndex = &facts.indexExpressions[0];
         const auto* writeIndex = &facts.indexExpressions[1];
 
         CHECK(!readIndex->isWriteOrMutation);
-        CHECK(readIndex->objectProperty.kind == angel_lsp::analysis::PropertyAccessKind::Name);
-        CHECK(readIndex->objectProperty.text == arrVar);
+        CHECK(facts.ObjectPropertyOf(*readIndex).kind == angel_lsp::analysis::PropertyAccessKind::Name);
+        CHECK(facts.ObjectPropertyOf(*readIndex).text == arrVar);
+        CHECK(facts.IndexArgsOf(*readIndex).size() == 1);
+        CHECK(facts.TextOf(facts.IndexArgsOf(*readIndex)[0]) == "0");
 
         CHECK(writeIndex->isWriteOrMutation);
 
         const auto* foundIndex = facts.FindIndex(readIndex->bytes);
         REQUIRE(foundIndex != nullptr);
-        CHECK(foundIndex->objectProperty.text == arrVar);
+        CHECK(facts.ObjectPropertyOf(*foundIndex).text == arrVar);
 
         ts_tree_delete(tree);
     }
@@ -214,18 +217,18 @@ TEST_SUITE("analysis/index/ExpressionSiteFacts")
 
         REQUIRE(facts.castExpressions.size() == 2);
         const auto& cast0 = facts.castExpressions[0];
-        CHECK(cast0.targetType == targetType);
+        CHECK(facts.TextOf(cast0.targetTypeBytes) == targetType);
         CHECK(cast0.hasValue);
-        CHECK(cast0.value.text == srcVar);
+        CHECK(facts.ValueOf(cast0).text == srcVar);
 
         const auto* foundCast = facts.FindCast(cast0.bytes);
         REQUIRE(foundCast != nullptr);
-        CHECK(foundCast->targetType == targetType);
+        CHECK(facts.TextOf(foundCast->targetTypeBytes) == targetType);
 
         const auto& cast1 = facts.castExpressions[1];
-        CHECK(cast1.targetType == "int");
+        CHECK(facts.TextOf(cast1.targetTypeBytes) == "int");
         CHECK(cast1.hasValue);
-        CHECK(cast1.foldedValue.isNumericLiteral);
+        CHECK(facts.ValueOf(cast1).kind == angel_lsp::analysis::ValueExpressionKind::Number);
 
         ts_tree_delete(tree);
     }

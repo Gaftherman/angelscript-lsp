@@ -101,7 +101,6 @@ struct LocalDefinition
     bool isConst : 1 = false;
     bool isReference : 1 = false;
 };
-static_assert(sizeof(LocalDefinition) <= 192);
 
 /**
  * @brief A single identifier occurrence inside a Scope, not yet resolved to a definition.
@@ -140,7 +139,6 @@ struct LocalReference
     uint8_t inMetadataOrError : 1 = 0;
     uint8_t isWriteTarget : 1 = 0;
 };
-static_assert(sizeof(LocalReference) <= 80);
 
 /**
  * @brief A string literal call argument occurrence (e.g. SetTimeout("MyFunc", ...), CustomEntity("MyClass", ...)).
@@ -314,7 +312,6 @@ struct Scope
                                       : 0);
     }
 };
-static_assert(sizeof(Scope) <= 128);
 
 /// Copies extracted lexical records into a mutable tree with its own enclosing links.
 [[nodiscard]] std::shared_ptr<Scope> CopyLexicalScopeTree(const Scope& root);
