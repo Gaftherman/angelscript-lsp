@@ -566,11 +566,18 @@ TEST_CASE("Server - workspace/symbol reports UTF-16 columns for symbols in sever
 
         // The range starts at "void", after "/*", the emoji and "*/ ": 2 + 2 + 3 = 7 UTF-16 units in a.as
         // (9 bytes) and 2 + 6 + 3 = 11 units in b.as (17 bytes), on every line of the batch.
-        const std::string line = "\"start\":{\"line\":" + std::to_string(i) + ",\"character\":";
-        CHECK(reply.find(line + "7}") != std::string::npos);
-        CHECK(reply.find(line + "11}") != std::string::npos);
-        CHECK(reply.find(line + "9}") == std::string::npos);
-        CHECK(reply.find(line + "17}") == std::string::npos);
+        // The JSON writer's key order differs between platforms, so accept either order of the two keys.
+        const auto hasStart = [&](int character)
+        {
+            const std::string lineKey = "\"line\":" + std::to_string(i);
+            const std::string charKey = "\"character\":" + std::to_string(character);
+            return reply.find("\"start\":{" + lineKey + "," + charKey + "}") != std::string::npos ||
+                   reply.find("\"start\":{" + charKey + "," + lineKey + "}") != std::string::npos;
+        };
+        CHECK(hasStart(7));
+        CHECK(hasStart(11));
+        CHECK_FALSE(hasStart(9));
+        CHECK_FALSE(hasStart(17));
     }
 }
 

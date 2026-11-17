@@ -48,6 +48,9 @@ def main():
     # 7. Refactor Ledger Integrity Gate
     run_step("Refactor Ledger Integrity", "python server/scripts/check-refactor-ledger.py")
 
+    # 7b. Raw literal comparison ratchet (AGENTS.md PROHIBITION 16)
+    run_step("Raw Literal Comparisons", "python server/scripts/check-raw-literal-compare.py")
+
     # 6. Code Duplication Gate (jscpd threshold <= 3%)
     if shutil.which("npx"):
         run_step(

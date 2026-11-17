@@ -238,14 +238,23 @@ std::vector<std::filesystem::path> LspSemanticHarnessFixture::OracleCandidatePat
 {
     const std::filesystem::path repo(ANGELSCRIPT_REPO_ROOT);
     std::vector<std::filesystem::path> candidates;
+    std::string envPath;
+    POP_ENV("ANGELSCRIPT_ORACLE_EXE", envPath);
+    if (!envPath.empty())
+    {
+        candidates.emplace_back(envPath);
+    }
+#if defined(_WIN32)
+    constexpr const char* k_oracleName = "angelscript_oracle.exe";
+#else
+    // A Windows build tree mounted into a Linux run holds an .exe that exists but cannot execute.
+    constexpr const char* k_oracleName = "angelscript_oracle";
+#endif
     for (const char* base : {"server/build", "build"})
     {
         for (const char* sub : {"bin", "Release", "Debug", ""})
         {
-            for (const char* name : {"angelscript_oracle.exe", "angelscript_oracle"})
-            {
-                candidates.push_back(repo / base / sub / name);
-            }
+            candidates.push_back(repo / base / sub / k_oracleName);
         }
     }
     return candidates;
