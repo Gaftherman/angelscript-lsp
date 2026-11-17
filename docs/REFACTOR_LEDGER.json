@@ -3705,6 +3705,22 @@
         "server/tests/parity/differential/man_types/man_var_type.as (9 cases against the oracle)",
         "VariableRulesTest predefined template subtype case"
       ]
+    },
+    {
+      "id": "REF-P20-ISOLATION-IDENT-PASS",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/index/IsolationSiteFacts.cpp",
+      "deletedLineRange": "161-212",
+      "originalSymbolOrCode": "InspectIdentifier",
+      "whatItDidAndWhyInThatFile": "Climbed AST ancestors with parser::ForEachAncestor (ts_node_parent) for every symIdentifier in CollectExpressions, causing O(identifiers * depth * fanout) cost during didOpen.",
+      "whyChangedOrDeleted": "Replaced the per-identifier parent climb with a single iterative TSTreeCursor pass from index.Root() using a reserved ancestor context stack in IsolationIdentifierFacts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/IsolationIdentifierFacts.cpp",
+      "replacedByCanonicalSymbol": "CollectIsolationIdentifierFacts",
+      "ramOrCpuImpact": "Eliminates O(identifiers * depth * fanout) ts_node_parent climbs in favor of one O(N) cursor walk with O(depth) stack storage.",
+      "verifiedByTests": [
+        "IsolationChecker variable and shared-context tests"
+      ]
     }
   ]
 }

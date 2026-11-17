@@ -1,5 +1,6 @@
 #include "analysis/index/IsolationSiteFacts.h"
 
+#include "analysis/index/IsolationIdentifierFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SpanFactSearch.h"
 #include "analysis/index/SyntaxOperands.h"
@@ -18,30 +19,6 @@
 
 namespace angel_lsp::analysis
 {
-
-/**
- * @brief Converts a node's start and end points to a diagnostic range.
- * @param[in] node Syntax node.
- * @return Line and column span of the node, or a zero range if null.
- */
-static SourceRange RangeOf(TSNode node) noexcept
-{
-    if (ts_node_is_null(node))
-        return {};
-    const TSPoint s = ts_node_start_point(node), e = ts_node_end_point(node);
-    return {s.row, s.column, e.row, e.column};
-}
-
-/**
- * @brief Converts a node to its byte span.
- * @param[in] node Syntax node.
- * @return Start and end byte of the node, or a zero range if null.
- */
-static IndexedByteRange BytesOf(TSNode node) noexcept
-{
-    return ts_node_is_null(node) ? IndexedByteRange{}
-                                 : IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)};
-}
 
 static std::string_view CleanTypeName(std::string_view raw) noexcept
 {
@@ -158,59 +135,6 @@ static bool IsValidSharedNode(TSNode sharedNode, const parser::GrammarSymbols& g
     return isAllowed || (sym == gs.symEnumDeclaration && IsValidEnumSharedModifier(parent, gs));
 }
 
-static void InspectIdentifier(TSNode node, const parser::GrammarSymbols& gs, IsolationIdentifierSiteFact& fact) noexcept
-{
-    parser::ForEachAncestor(
-        parser::GetParent(node),
-        [&](TSNode cur) noexcept -> bool
-        {
-            const TSSymbol sym = ts_node_symbol(cur);
-            if (sym == gs.symCallExpression)
-            {
-                const TSNode fn = parser::GetCallCallee(cur);
-                if (!ts_node_is_null(fn) && (fn.id == node.id || parser::GetParent(node).id == fn.id))
-                {
-                    fact.isSpecialContext = fact.isCallee = true;
-                    return false;
-                }
-            }
-            if (sym == gs.symDatatype || sym == gs.symType || sym == gs.symBaseClassList)
-            {
-                fact.isSpecialContext = true;
-                return false;
-            }
-            if (sym == gs.symVariableDeclarator)
-            {
-                const TSNode val = parser::GetChildByField(cur, gs.fieldValue);
-                if (ts_node_is_null(val) || ts_node_start_byte(node) < ts_node_start_byte(val))
-                {
-                    fact.isSpecialContext = fact.isDeclarationName = true;
-                    return false;
-                }
-            }
-            if (sym == gs.symFuncDeclaration || sym == gs.symClassDeclaration || sym == gs.symParameter ||
-                sym == gs.symEnumMember)
-            {
-                const TSNode n = parser::GetChildByField(cur, gs.fieldName);
-                if (!ts_node_is_null(n) && (n.id == node.id || ts_node_start_byte(node) == ts_node_start_byte(n)))
-                {
-                    fact.isSpecialContext = fact.isDeclarationName = true;
-                    return false;
-                }
-            }
-            if (sym == gs.symMemberExpression)
-            {
-                const TSNode prop = parser::GetChildByField(cur, gs.fieldMember);
-                if (!ts_node_is_null(prop) && prop.id == node.id)
-                {
-                    fact.isSpecialContext = fact.isMember = true;
-                    return false;
-                }
-            }
-            return sym != gs.symStatementBlock && sym != gs.symFuncDeclaration && sym != gs.symClassDeclaration;
-        });
-}
-
 template <typename Fact>
 static std::pair<uint32_t, uint32_t> SliceWithin(const std::vector<Fact>& facts, IndexedByteRange span) noexcept
 {
@@ -221,8 +145,8 @@ static std::pair<uint32_t, uint32_t> SliceWithin(const std::vector<Fact>& facts,
     return {static_cast<uint32_t>(first - facts.begin()), static_cast<uint32_t>(last - first)};
 }
 
-static std::pair<std::string_view, bool> EnclosingContext(const NodeIndex& index, uint32_t offset,
-                                                          std::string_view source) noexcept
+std::pair<std::string_view, bool> EnclosingContext(const NodeIndex& index, uint32_t offset,
+                                                   std::string_view source) noexcept
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSNode cls = index.FindEnclosingClassOrMixin(offset);
@@ -299,18 +223,7 @@ static void CollectExpressions(const NodeIndex& index, std::string_view source, 
         addCall(node);
     for (const TSNode node : index.Nodes(gs.symConstructCallExpression))
         addCall(node);
-    for (const TSNode node : index.Nodes(gs.symIdentifier))
-    {
-        const uint32_t start = ts_node_start_byte(node);
-        if (index.IsInsideComment(start))
-            continue;
-        const auto [cls, sh] = EnclosingContext(index, start, source);
-        IsolationIdentifierSiteFact fact{BytesOf(node), RangeOf(node), utils::TrimView(parser::NodeText(node, source)),
-                                         cls,           false,         false,
-                                         false,         false,         sh};
-        InspectIdentifier(node, gs, fact);
-        facts.identifiers.push_back(fact);
-    }
+    CollectIsolationIdentifierFacts(index, source, facts.identifiers);
 }
 
 IsolationSiteFacts BuildIsolationSiteFacts(const NodeIndex& index, std::string_view source)

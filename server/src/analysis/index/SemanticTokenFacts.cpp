@@ -359,7 +359,9 @@ static SemanticTokenFacts CollectSemanticTokenFactsImpl(const NodeIndex& index, 
         cap.tokenType = tokenType;
         cap.tokenModifiers = tokenMod;
         cap.priority = priority;
-        cap.isTemplatePunctuationNode = IsTemplatePunctuationNode(node, syms);
+        // Only operator tokens are ever retyped as template punctuation, so the two parent hops
+        // are skipped for every other capture.
+        cap.isTemplatePunctuationNode = tokenType == Type_Operator && IsTemplatePunctuationNode(node, syms);
         MarkBaseListScopedLeaf(node, syms, cap);
         facts.captures.push_back(cap);
     }

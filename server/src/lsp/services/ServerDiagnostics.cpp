@@ -37,6 +37,12 @@ std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(std::string_view text
     std::vector<lsp::Diagnostic> converted;
     converted.reserve(diagnostics.size());
 
+    const utils::PositionEncoding encoding = m_sessionCoordinator->GetPositionEncoding();
+    // One line table for the whole batch: utils::GetLine() rescans from byte 0 for every endpoint.
+    const utils::LineIndex lineIndex = (encoding == utils::PositionEncoding::Utf8 || text.empty())
+                                           ? utils::LineIndex{}
+                                           : utils::LineIndex::Build(text);
+
     for (const auto& diag : diagnostics)
     {
         if (!excluded.empty() && angel_lsp::utils::IsLineExcluded(excluded, diag.range.start.line))
@@ -81,7 +87,7 @@ std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(std::string_view text
 
         if (!text.empty())
         {
-            codec::Encode(text, m_sessionCoordinator->GetPositionEncoding(), lspDiag.range);
+            codec::Encode(lineIndex, text, encoding, lspDiag.range);
         }
 
         converted.push_back(std::move(lspDiag));
