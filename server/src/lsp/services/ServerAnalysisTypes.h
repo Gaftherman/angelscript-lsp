@@ -51,6 +51,8 @@ struct SemanticTokensSnapshot
     std::vector<lsp::uint> data;
     bool hasError = false;
     int version = -1;
+    uint64_t tableVersion = 0;           ///< SymbolTable::Version() the tokens were classified against.
+    const void* scopeIdentity = nullptr; ///< Scope tree the tokens were classified with; compared, never read.
 };
 
 /**

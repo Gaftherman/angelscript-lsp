@@ -1595,9 +1595,9 @@ static bool IsBoundCallOccurrence(const Scope& root, const LocalReference& ref, 
 
 static bool IsUnboundSearchCandidate(const Scope& root, const LocalReference& ref, const OccurrenceScanContext& ctx)
 {
-    return ref.name == ctx.request.target.name &&
-           !ctx.declRanges.contains({std::string(ctx.fileUri), ref.startLine, ref.startCharacter}) &&
-           !IsBoundCallOccurrence(root, ref, ctx.request.target) && MatchesCallArguments(ref, ctx.request.target);
+    return ref.name == ctx.request.target.name && !IsBoundCallOccurrence(root, ref, ctx.request.target) &&
+           MatchesCallArguments(ref, ctx.request.target) &&
+           !ctx.declRanges.contains({std::string(ctx.fileUri), ref.startLine, ref.startCharacter});
 }
 
 /**

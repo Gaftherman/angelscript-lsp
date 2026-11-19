@@ -3785,6 +3785,40 @@
       "verifiedByTests": [
         "Full suite 2976/2976 and differential corpus"
       ]
+    },
+    {
+      "id": "REF-P21-ENCLOSING-CLASS-INDEX",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/index/SymbolTable.cpp",
+      "deletedLineRange": "1879-1905",
+      "originalSymbolOrCode": "SymbolTable::FindEnclosingClassName linear scan over every symbol bucket of the file on each call",
+      "whatItDidAndWhyInThatFile": "Each call locked the table, copied the file's bucket snapshot and visited every symbol; references, highlight and rename called it once per candidate reference.",
+      "whyChangedOrDeleted": "Per-file class-span index built on first use and keyed by the table version, so one lookup scans only the class spans of that file; the narrowest-span rule and the exclusion filter are unchanged.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SymbolTable.cpp",
+      "replacedByCanonicalSymbol": "SymbolTable::NarrowestEnclosingClass",
+      "ramOrCpuImpact": "references/documentHighlight/rename at 20k lines: p50 -59% to -66% (1.7 ms to 0.6-0.7 ms) and -40% to -43% at 5k; no other row changed beyond noise; RSS unchanged.",
+      "verifiedByTests": [
+        "EnclosingClassIndexTest compares the index with a copy of the old scan on generated nested classes (seed 20261118)",
+        "Full suite and differential corpus"
+      ]
+    },
+    {
+      "id": "REF-P21-SEMTOK-CACHE-HIT",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/ServerDocuments.cpp",
+      "deletedLineRange": "1",
+      "originalSymbolOrCode": "Server::ComputeAndCacheSemanticTokens reclassified the whole document on every semanticTokens/full request",
+      "whatItDidAndWhyInThatFile": "The token cache only served deltas; a repeated full request on an unchanged document rebuilt facts, scope tree and tokens each time.",
+      "whyChangedOrDeleted": "The cached snapshot is returned when document version, SymbolTable::Version() and the scope tree identity match; the cache map takes string_view lookups through TransparentStringHash.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysisTypes.h",
+      "replacedByCanonicalSymbol": "SemanticTokensSnapshot",
+      "ramOrCpuImpact": "semanticTokens/full repeat request: p50 -77% at 5k (17.7 to 4.1 ms), -78% at 20k (71.7 to 15.9 ms), -83% on the predefined file (3.6 to 0.6 ms); RSS unchanged.",
+      "verifiedByTests": [
+        "Server harness test: repeated full request returns the same stream, an edit recomputes it",
+        "Full suite and differential corpus"
+      ]
     }
   ]
 }

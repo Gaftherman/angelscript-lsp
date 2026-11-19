@@ -287,7 +287,8 @@ class Server
     std::unique_ptr<analysis::LocalScopeCollector> m_localScopeCollector;
     std::unique_ptr<analysis::SemanticAnalyzer> m_semanticAnalyzer;
     PredefinedStubManager m_predefinedManager;
-    ankerl::unordered_dense::map<std::string, SemanticTokensSnapshot> m_semanticTokensCache;
+    ankerl::unordered_dense::map<std::string, SemanticTokensSnapshot, TransparentStringHash, std::equal_to<>>
+        m_semanticTokensCache;
     mutable std::mutex m_semanticTokensMutex;
     uint64_t m_semanticTokensRevision = 0;
     mutable std::mutex m_closureMutex;

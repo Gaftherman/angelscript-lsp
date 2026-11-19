@@ -18,15 +18,34 @@ namespace angel_lsp
 lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(std::string_view uriStr, std::string_view text)
 {
     const auto docHandle = GetDocumentStore().GetDocument(uriStr);
+    const int currentVersion = docHandle ? docHandle->version : GetDocumentStore().GetVersion(uriStr);
+    const uint64_t tableVersion = m_symbolTable.Version();
+    const auto cachedScopeRoot = m_scopeIndex.GetRoot(uriStr);
+
+    // The tokens are a pure function of the text, the symbol table and the scope tree, so a request that
+    // sees the same three as the cached entry gets the cached answer without a second classification pass.
+    if (currentVersion >= 0)
+    {
+        std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
+        if (const auto cached = m_semanticTokensCache.find(uriStr);
+            cached != m_semanticTokensCache.end() && cached->second.version == currentVersion &&
+            cached->second.tableVersion == tableVersion && cached->second.scopeIdentity == cachedScopeRoot.get())
+        {
+            lsp::SemanticTokens hit;
+            hit.resultId = cached->second.resultId;
+            hit.data = cached->second.data;
+            return hit;
+        }
+    }
+
     const auto syntax = docHandle && docHandle->tree
                             ? ResolveProtocolSyntax(uriStr, docHandle->ParsedSource(), docHandle.get()).syntax
                             : nullptr;
     const analysis::SemanticTokenFacts facts =
         syntax ? analysis::CollectSemanticTokenFacts(syntax->index, text) : analysis::SemanticTokenFacts{};
-    const int currentVersion = docHandle ? docHandle->version : GetDocumentStore().GetVersion(uriStr);
 
     features::SemanticTokensRequest request{uriStr, text, facts, m_symbolTable};
-    request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
+    request.scopeRoot = cachedScopeRoot;
     if (syntax && m_localScopeCollector && !request.scopeRoot)
     {
         request.scopeRoot = m_localScopeCollector->CollectScopesFromIndex(syntax->index, text);
@@ -43,7 +62,8 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(std::string_view uriSt
     {
         std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
         m_semanticTokensCache.insert_or_assign(std::string(uriStr),
-                                               SemanticTokensSnapshot{resultId, tokens.data, hasError, currentVersion});
+                                               SemanticTokensSnapshot{resultId, tokens.data, hasError, currentVersion,
+                                                                      tableVersion, cachedScopeRoot.get()});
     }
 
     return tokens;

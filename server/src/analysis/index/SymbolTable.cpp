@@ -628,6 +628,10 @@ void SymbolTable::ClonePredefinedBaseFrom(const SymbolTable& source, std::string
 {
     std::shared_lock<std::shared_mutex> lock(source.m_mutex);
     m_version = source.m_version;
+    {
+        std::lock_guard<std::mutex> enclosingLock(m_enclosingMutex);
+        m_enclosingClassIndex.clear();
+    }
     m_defaultArrayType = source.m_defaultArrayType;
     m_stringType = source.m_stringType;
     m_predefinedFileExtension = source.m_predefinedFileExtension;
@@ -1876,32 +1880,71 @@ uint64_t SymbolTable::ComputeDocumentInterfaceHashLocked(const std::string& file
     return h;
 }
 
+std::string SymbolTable::NarrowestEnclosingClass(const std::vector<EnclosingClassSpan>& spans, uint32_t line,
+                                                 std::string_view excludeName)
+{
+    const EnclosingClassSpan* best = nullptr;
+    uint32_t bestSpan = UINT32_MAX;
+    for (const auto& span : spans)
+    {
+        if (span.startLine > line)
+        {
+            break;
+        }
+        if (line > span.endLine || (!excludeName.empty() && span.name == excludeName))
+        {
+            continue;
+        }
+        const uint32_t width = span.endLine - span.startLine;
+        if (width <= bestSpan)
+        {
+            bestSpan = width;
+            best = &span;
+        }
+    }
+    return best ? best->qualifiedName : std::string();
+}
+
 std::string SymbolTable::FindEnclosingClassName(std::string_view uri, uint32_t line, std::string_view excludeName) const
 {
-    std::string enclosingClass;
-    std::string uriStr(uri);
-    uint32_t bestSpan = UINT32_MAX;
-    ForEachSymbolInFile(uriStr,
-                        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
-                        {
-                            for (const auto& sym : symbols)
-                            {
-                                if ((sym.type == SymbolType::Class || sym.type == SymbolType::Interface) &&
-                                    sym.fileUri == uri && (excludeName.empty() || sym.name != excludeName))
-                                {
-                                    if (line >= sym.startLine && line <= sym.endLine)
-                                    {
-                                        uint32_t span = sym.endLine - sym.startLine;
-                                        if (span <= bestSpan)
-                                        {
-                                            bestSpan = span;
-                                            enclosingClass = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                                        }
-                                    }
-                                }
-                            }
-                        });
-    return enclosingClass;
+    uint64_t version = 0;
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        version = m_version;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_enclosingMutex);
+        const auto cached = m_enclosingClassIndex.find(uri);
+        if (cached != m_enclosingClassIndex.end() && cached->second.version == version)
+        {
+            return NarrowestEnclosingClass(cached->second.spans, line, excludeName);
+        }
+    }
+
+    EnclosingClassIndex built;
+    built.version = version;
+    ForEachSymbolInFile(
+        uri,
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        {
+            for (const auto& sym : symbols)
+            {
+                if ((sym.type == SymbolType::Class || sym.type == SymbolType::Interface) && sym.fileUri == uri)
+                {
+                    built.spans.push_back(EnclosingClassSpan{sym.startLine, sym.endLine, sym.name,
+                                                             sym.qualifiedName.empty() ? sym.name : sym.qualifiedName});
+                }
+            }
+        });
+    std::stable_sort(built.spans.begin(), built.spans.end(),
+                     [](const EnclosingClassSpan& a, const EnclosingClassSpan& b)
+                     { return a.startLine < b.startLine; });
+
+    std::lock_guard<std::mutex> lock(m_enclosingMutex);
+    EnclosingClassIndex& slot = m_enclosingClassIndex[std::string(uri)];
+    slot = std::move(built);
+    return NarrowestEnclosingClass(slot.spans, line, excludeName);
 }
 
 std::string SymbolTable::QualifyShortTypeName(std::string_view typeName) const

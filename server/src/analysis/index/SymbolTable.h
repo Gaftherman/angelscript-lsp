@@ -544,6 +544,44 @@ class SymbolTable
     void EnsureGlobalTypesLocked() const;
 
     /**
+     * @brief One class or interface body of a document, kept for position-to-class lookups.
+     */
+    struct EnclosingClassSpan
+    {
+        uint32_t startLine = 0;
+        uint32_t endLine = 0;
+        std::string name;          ///< Unqualified name, matched against the exclusion filter.
+        std::string qualifiedName; ///< Name reported to callers; equals name when the class is global.
+    };
+
+    /**
+     * @brief Class spans of one document, ordered by start line, valid for one table version.
+     */
+    struct EnclosingClassIndex
+    {
+        uint64_t version = 0;
+        std::vector<EnclosingClassSpan> spans;
+    };
+
+    /**
+     * @brief Per-document class spans built on first use and rebuilt after the table changes.
+     * @note Guarded by m_enclosingMutex; never held while taking m_mutex.
+     */
+    mutable std::mutex m_enclosingMutex;
+    mutable ankerl::unordered_dense::map<std::string, EnclosingClassIndex, TransparentStringHash, std::equal_to<>>
+        m_enclosingClassIndex;
+
+    /**
+     * @brief Picks the narrowest class span containing a line, honoring an excluded class name.
+     * @param[in] spans Spans ordered by start line.
+     * @param[in] line 0-based line number.
+     * @param[in] excludeName Class name to skip; empty keeps every class.
+     * @return Qualified name of the innermost enclosing class, or an empty string.
+     */
+    static std::string NarrowestEnclosingClass(const std::vector<EnclosingClassSpan>& spans, uint32_t line,
+                                               std::string_view excludeName);
+
+    /**
      * @brief Number of mixin classes currently stored in the table. Guarded by m_mutex.
      */
     uint32_t m_mixinClassCount = 0;

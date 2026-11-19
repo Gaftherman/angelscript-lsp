@@ -759,6 +759,39 @@ TEST_CASE("Server - Falls back to a full stream when the delta base is unknown")
     CHECK(r2.find("\"edits\"") == std::string::npos);
 }
 
+TEST_CASE("Server - Repeats the cached token stream for an unchanged document and recomputes after an edit")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() { int a = 1; }\n");
+    const std::string full = R"("method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":")" +
+                             fixture.Uri("main.as") + R"("}}})";
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), "void main() { int a = 1; }\n"));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,)" + full);
+    stream.Push(R"({"jsonrpc":"2.0","id":3,)" + full);
+    stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, "void main() { int a = 1; int bb = 2; }\n"));
+    stream.Push(R"({"jsonrpc":"2.0","id":4,)" + full);
+    stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const auto dataOf = [](const std::string& response)
+    {
+        const size_t begin = response.find("\"data\":[");
+        const size_t end = response.find(']', begin);
+        return begin == std::string::npos || end == std::string::npos ? std::string()
+                                                                      : response.substr(begin, end - begin);
+    };
+    const std::string first = dataOf(stream.ResponseFor(2));
+    CHECK(!first.empty());
+    CHECK(dataOf(stream.ResponseFor(3)) == first);
+    CHECK(dataOf(stream.ResponseFor(4)) != first);
+}
+
 TEST_CASE("Server - Invalidates delta cache on syntax error transition")
 {
     WorkspaceFixture fixture;
