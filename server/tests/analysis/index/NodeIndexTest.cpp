@@ -494,11 +494,11 @@ TEST_SUITE("analysis/index/NodeIndex")
         CHECK(detached.DeclaratorValueOperands(source).IsNull());
 
         // Out-of-bounds SyntaxHandle safety invariant
-        IndexedSyntaxNode outOfBoundsBucket{SIZE_MAX, NoSyntaxNode, NoSyntaxNode, gs.symIdentifier, 0, 0, true, false,
+        IndexedSyntaxNode outOfBoundsBucket{UINT32_MAX, NoSyntaxNode, NoSyntaxNode, gs.symIdentifier, 0, 0, true, false,
                                             false,    false,        true};
         CHECK(ts_node_is_null(index.SyntaxHandle(outOfBoundsBucket)));
         IndexedSyntaxNode outOfBoundsUnbucketed{
-            SIZE_MAX, NoSyntaxNode, NoSyntaxNode, gs.symIdentifier, 0, 0, true, false, false, false, false};
+            UINT32_MAX, NoSyntaxNode, NoSyntaxNode, gs.symIdentifier, 0, 0, true, false, false, false, false};
         CHECK(ts_node_is_null(index.SyntaxHandle(outOfBoundsUnbucketed)));
     }
 

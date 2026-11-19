@@ -520,8 +520,8 @@ SyntaxNodeId NodeIndex::FlowFactCollector::AddSyntaxFact(Frame& frame, TSNode no
 {
     const bool inBucket = syntaxSlot != SIZE_MAX;
     auto& facts = m_index.MutableFlowFacts();
-    const SyntaxNodeId id = facts.syntaxNodes.size();
-    facts.syntaxNodes.push_back({inBucket ? syntaxSlot : StoreUnbucketedSyntax(node), NoSyntaxNode, NoSyntaxNode,
+    const auto id = static_cast<SyntaxNodeId>(facts.syntaxNodes.size());
+    facts.syntaxNodes.push_back({static_cast<uint32_t>(inBucket ? syntaxSlot : StoreUnbucketedSyntax(node)), NoSyntaxNode, NoSyntaxNode,
                                  frame.symbol, frame.field, frame.parentSymbol, frame.isNamed, afterAssign,
                                  frame.inCallable && frame.isNamed && IsAssignmentStatement(frame.symbol), false,
                                  inBucket});
@@ -1051,6 +1051,12 @@ void NodeIndex::TraverseTree(TSNode root, parser::TraversalBudget* budget, bool 
     if (m_flowFacts)
     {
         std::erase(m_flowFacts->returningBodies, UINT32_MAX);
+        m_flowFacts->syntaxNodes.shrink_to_fit();
+        m_flowFacts->unbucketedSyntax.shrink_to_fit();
+    }
+    for (SymbolBucket& bucket : m_nodesBySymbol)
+    {
+        bucket.nodes.shrink_to_fit();
     }
 }
 

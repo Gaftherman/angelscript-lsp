@@ -34,7 +34,7 @@ TEST_SUITE("Fact layout")
         CHECK(sizeof(LValueAssignmentFact) <= 68);
         // NodeIndex.h
         CHECK(sizeof(IndexedContainerSpan) <= 24);
-        CHECK(sizeof(IndexedSyntaxNode) <= 40);
+        CHECK(sizeof(IndexedSyntaxNode) <= 24);
         CHECK(sizeof(IndexedSelectionRange) <= 32);
         CHECK(sizeof(NodeIndex) <= 248);
         // ScopeTree.h

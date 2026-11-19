@@ -93,13 +93,13 @@ struct IndexedFlowFinding
 };
 
 /// A document-local key into the extracted syntax links for this revision.
-using SyntaxNodeId = size_t;
-inline constexpr SyntaxNodeId NoSyntaxNode = SIZE_MAX;
+using SyntaxNodeId = uint32_t;
+inline constexpr SyntaxNodeId NoSyntaxNode = UINT32_MAX;
 
 /// A syntax fact whose child and sibling links are local to this extraction.
 struct IndexedSyntaxNode
 {
-    size_t syntaxSlot = SIZE_MAX; ///< Index into the symbol bucket or the transient syntax side table.
+    uint32_t syntaxSlot = UINT32_MAX; ///< Index into the symbol bucket or the transient syntax side table.
     SyntaxNodeId first = NoSyntaxNode;
     SyntaxNodeId next = NoSyntaxNode;
     TSSymbol symbol = 0;
