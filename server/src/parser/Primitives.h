@@ -179,16 +179,6 @@ inline constexpr std::string_view Double = "double";
 }
 
 /**
- * @brief True for the `true` and `false` literal spellings of a boolean value.
- * @param[in] text Source text of an expression.
- * @return True when text is exactly `true` or `false`.
- */
-[[nodiscard]] constexpr bool IsBooleanLiteralText(std::string_view text) noexcept
-{
-    return text == keywords::True || text == keywords::False;
-}
-
-/**
  * @brief True for the `auto` placeholder, which stands in for the type its initializer produces.
  * @param[in] name Type text with qualifiers already removed.
  * @return True when name is exactly `auto`; `auto` is not a primitive and is not matched by IsPrimitive.

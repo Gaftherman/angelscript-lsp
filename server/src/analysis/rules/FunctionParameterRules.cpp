@@ -6,7 +6,6 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/Keywords.h"
 #include "parser/Primitives.h"
 #include "utils/Utils.h"
 
