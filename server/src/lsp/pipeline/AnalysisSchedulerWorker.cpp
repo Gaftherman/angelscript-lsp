@@ -1,5 +1,6 @@
 #include "lsp/pipeline/AnalysisScheduler.h"
 #include "parser/SyntaxTree.h"
+#include "utils/HeapTrim.h"
 #include "utils/MultiFileLogger.h"
 
 #include <chrono>
@@ -159,6 +160,7 @@ void AnalysisScheduler::RunLoop()
             lock.unlock();
 
             DrainInFlightWork();
+            utils::ReleaseFreeHeapMemory();
         }
         catch (const std::exception& e)
         {

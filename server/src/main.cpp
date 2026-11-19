@@ -7,6 +7,7 @@
 #include "analysis/types/EngineConfigConverter.h"
 #include "lsp/Server.h"
 #include "lsp/mcp/McpBridge.h"
+#include "utils/HeapTrim.h"
 
 #include <fstream>
 #include <iostream>
@@ -48,6 +49,7 @@ static int RunConvertConfig(const char* inputPath, const char* outputPath)
 
 int main(int argc, char** argv)
 {
+    angel_lsp::utils::ConfigureServerHeap();
 #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);

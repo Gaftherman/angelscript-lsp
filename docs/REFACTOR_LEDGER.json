@@ -3819,6 +3819,23 @@
         "Server harness test: repeated full request returns the same stream, an edit recomputes it",
         "Full suite and differential corpus"
       ]
+    },
+    {
+      "id": "REF-P21-HEAP-TRIM",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/pipeline/AnalysisSchedulerWorker.cpp",
+      "deletedLineRange": "1",
+      "originalSymbolOrCode": "AnalysisScheduler::RunLoop kept freed revision memory in several glibc arenas after each edit burst",
+      "whatItDidAndWhyInThatFile": "Analysis ran on a worker thread while the main thread allocated, so glibc spread freed analysis revisions across arenas and resident memory stayed at the burst peak.",
+      "whyChangedOrDeleted": "The process limits glibc to one arena at start and the scheduler returns free heap pages after each drained burst.",
+      "replacedByCanonicalFile": "server/src/utils/HeapTrim.h",
+      "replacedByCanonicalSymbol": "ReleaseFreeHeapMemory",
+      "ramOrCpuImpact": "max RSS at 20k lines: 223 to 161 MB (-28%), at 5k: 62 to 47 MB (-23%); latency rows within +-3% noise",
+      "verifiedByTests": [
+        "Server harness test: repeated full request returns the same stream, an edit recomputes it",
+        "Full suite and differential corpus"
+      ]
     }
   ]
 }
