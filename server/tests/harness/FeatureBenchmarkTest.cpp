@@ -10,12 +10,16 @@
  * in-flight background analysis).
  */
 
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include "helpers/LiveLspStream.h"
 #include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/ProcessMemory.h"
 #include "helpers/TestUtils.h"
 #include "lsp/Server.h"
+#include "lsp/state/SyntaxRevisionCache.h"
 #include "utils/IncludeResolver.h"
 #include "utils/Timer.h"
 #include "utils/TransparentHash.h"
@@ -31,6 +35,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <lsp/io/stream.h>
 #include <lsp/json/json.h>
 #include <lsp/types.h>
@@ -1438,6 +1443,48 @@ TEST_SUITE("harness/FeatureBenchmark")
         feature_bench::RunGeneratedScriptFeatureBenchmarks(1000, "1000 lines");
         feature_bench::RunGeneratedScriptFeatureBenchmarks(5000, "5000 lines");
         feature_bench::RunGeneratedScriptFeatureBenchmarks(20000, "20000 lines");
+    }
+
+    TEST_CASE("MemoryFootprintBenchmark - Retained containers at 20k lines" * doctest::skip(true))
+    {
+        MESSAGE("Seed: " << feature_bench::kBenchmarkSeed);
+        std::mt19937_64 rng(feature_bench::kBenchmarkSeed);
+        const feature_bench::GeneratedFeatureScript script = feature_bench::GenerateFeatureBenchmarkScript(20000, rng);
+
+        angel_lsp::parser::AngelScriptParser parser;
+        auto syntax = std::make_shared<angel_lsp::ParsedDocumentSyntax>(
+            angel_lsp::parser::MakeTreePtr(parser.Parse(script.source)), script.source);
+        REQUIRE(syntax->tree);
+
+        angel_lsp::analysis::SymbolTable table;
+        angel_lsp::analysis::SymbolCollector collector(nullptr);
+        collector.CollectSymbolsWithIndex({"file:///footprint.as", script.source, nullptr}, syntax->index, table);
+
+        angel_lsp::analysis::LocalScopeCollector scopes;
+        const auto root = scopes.CollectScopesFromIndex(syntax->index, script.source);
+        REQUIRE(root);
+        size_t scopeBytes = 0;
+        size_t scopeCount = 0;
+        std::vector<const angel_lsp::analysis::Scope*> pending{root.get()};
+        while (!pending.empty())
+        {
+            const auto* scope = pending.back();
+            pending.pop_back();
+            scopeBytes += scope->EstimateMemoryBytes();
+            ++scopeCount;
+            for (const auto& child : scope->children)
+            {
+                pending.push_back(child.get());
+            }
+        }
+
+        constexpr double kMiB = 1024.0 * 1024.0;
+        std::cout << std::fixed << std::setprecision(2) << "source        " << script.source.size() / kMiB << " MiB\n"
+                  << "NodeIndex     " << syntax->index.EstimateMemoryBytes() / kMiB << " MiB ("
+                  << syntax->index.NodeCount() << " nodes)\n"
+                  << "tree (bound)  " << syntax->index.EstimateTreeBytes() / kMiB << " MiB\n"
+                  << "ScopeTree     " << scopeBytes / kMiB << " MiB (" << scopeCount << " scopes)\n"
+                  << "SymbolTable   " << table.EstimateMemoryBytes() / kMiB << " MiB\n";
     }
 
     TEST_CASE("FeatureBenchmark - Individual LSP Features (sdk-addons.as.predefined)" * doctest::skip(true))
