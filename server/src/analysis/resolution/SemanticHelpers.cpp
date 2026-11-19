@@ -11,6 +11,7 @@
 #include "config/EngineRuleConfig.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "parser/QueryRegistry.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
@@ -74,12 +75,12 @@ InitializerItemKind ClassifyInitializerItem(std::string_view item)
         return InitializerItemKind::StringLiteral;
     }
 
-    if (item == "true" || item == "false")
+    if (item == parser::keywords::True || item == parser::keywords::False)
     {
         return InitializerItemKind::BooleanLiteral;
     }
 
-    if (item == "null")
+    if (parser::primitives::IsNullType(item))
     {
         return InitializerItemKind::NullLiteral;
     }
@@ -125,7 +126,7 @@ std::string_view FirstAttributeName(const SymbolModifiers& modifiers)
 
 std::string_view LastScopeSegment(std::string_view name) noexcept
 {
-    const size_t bracketPos = name.find('<');
+    const size_t bracketPos = TemplateArgumentsStart(name);
     const std::string_view prefix = (bracketPos != std::string_view::npos) ? name.substr(0, bracketPos) : name;
     return utils::LastScopeSegment(prefix);
 }
@@ -173,7 +174,7 @@ bool IsSimpleLiteralExpression(std::string_view expr)
     {
         return false;
     }
-    if (expr == "true" || expr == "false" || expr == "null")
+    if (expr == parser::keywords::True || expr == parser::keywords::False || parser::primitives::IsNullType(expr))
     {
         return true;
     }

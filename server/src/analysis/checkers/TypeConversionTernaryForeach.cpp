@@ -20,7 +20,8 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 
 static bool AreTernaryBranchesIncompatible(std::string_view clean1, std::string_view clean2, DiagnosticContext& ctx)
 {
-    if ((clean1 == "null" && IsHandleTypeView(clean2)) || (clean2 == "null" && IsHandleTypeView(clean1)))
+    if ((parser::primitives::IsNullType(clean1) && IsHandleTypeView(clean2)) ||
+        (parser::primitives::IsNullType(clean2) && IsHandleTypeView(clean1)))
     {
         return false;
     }
@@ -137,7 +138,7 @@ static auto ForeachValueType(std::string_view containerType, uint32_t variableIn
     }
 
     const std::string_view cleanedView{cleaned};
-    const auto bare = LastScopeSegment(cleanedView.substr(0, cleanedView.find('<')));
+    const auto bare = LastScopeSegment(cleanedView.substr(0, TemplateArgumentsStart(cleanedView)));
 
     const TemplateBinding binding = BindTemplateArguments(cleaned, ctx.request.symbolTable);
     const auto method = "opForValue" + std::to_string(variableIndex);
@@ -232,7 +233,7 @@ static bool IsInvalidScriptForeachContainer(std::string_view containerBase, std:
 {
     const SymbolTable& table = ctx.request.symbolTable;
     if (containerBase.empty() || parser::primitives::IsAutoType(containerBase) || IsVariableTypeToken(containerBase) ||
-        containerBase.find('<') != std::string_view::npos || rawContainerType.find('[') != std::string_view::npos ||
+        HasTemplateArgumentsView(containerBase) || rawContainerType.find('[') != std::string_view::npos ||
         ctx.request.IsRegisteredSymbol(containerBase) || !HierarchyIsFullyVisible(containerBase, table))
     {
         return false;

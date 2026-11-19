@@ -8,6 +8,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <optional>
@@ -36,11 +37,11 @@ static std::string ResolveLiteralExpr(TSSymbol nodeSym, TSNode exprNode, std::st
     }
     if (nodeSym == gs.symBooleanLiteral)
     {
-        return "bool";
+        return std::string(parser::primitives::Bool);
     }
     if (nodeSym == gs.symNullLiteral)
     {
-        return "null";
+        return std::string(parser::keywords::Null);
     }
     if (nodeSym == gs.symNumberLiteral)
     {
@@ -178,7 +179,7 @@ static std::string ResolveIdentifierDelegateProperty(std::string_view name, TSNo
 static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     std::string name(parser::NodeText(exprNode, ctx.sourceCode));
-    if (name == "this")
+    if (name == parser::keywords::This)
     {
         return ResolveThisExpr(exprNode, ctx);
     }

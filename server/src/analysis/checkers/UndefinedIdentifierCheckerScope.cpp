@@ -1,6 +1,7 @@
 #include "analysis/checkers/UndefinedIdentifierCheckerCommon.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string_view>
@@ -22,22 +23,22 @@ static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticCon
         return true;
     }
 
-    if (ref.name == "this")
+    if (ref.name == parser::keywords::This)
     {
         return true;
     }
 
-    if (ref.name == "super")
+    if (ref.name == parser::keywords::Super)
     {
         return ref.isSuperBaseCall || !ctx.request.nodeIndex;
     }
 
-    if (ref.name == "function" && ref.isLambdaFunctionKeyword)
+    if (ref.name == parser::keywords::Function && ref.isLambdaFunctionKeyword)
     {
         return true;
     }
 
-    if (ref.isCall && ref.name != "super" && ctx.request.nodeIndex != nullptr)
+    if (ref.isCall && ref.name != parser::keywords::Super && ctx.request.nodeIndex != nullptr)
     {
         return true;
     }

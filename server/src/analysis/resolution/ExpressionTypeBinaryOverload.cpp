@@ -98,7 +98,7 @@ static std::string FindSingleOpImplConvPrimitive(std::string_view typeName, cons
                 if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
                 {
                     std::string ret = CleanBaseType(sym.GetFunction().returnType);
-                    if (parser::primitives::IsNumeric(ret) || ret == "bool")
+                    if (parser::primitives::IsNumeric(ret) || parser::primitives::IsBoolType(ret))
                     {
                         if (!matchedPrim.empty() && matchedPrim != ret)
                         {
@@ -208,7 +208,7 @@ std::string EvaluateBinaryResultType(std::string_view op, std::string_view leftT
 {
     if (IsBooleanBinaryOp(op))
     {
-        return "bool";
+        return std::string(parser::primitives::Bool);
     }
     if (std::string strType = ResolveStringConcatenation(op, leftType, rightType, ctx); !strType.empty())
     {

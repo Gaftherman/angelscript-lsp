@@ -282,7 +282,7 @@ static bool ParseCandidateHeader(std::string_view line, std::string_view& outKw,
 
     if (TryParseFunctionHeader(line, pos, outName))
     {
-        outKw = "function";
+        outKw = parser::keywords::Function;
         return true;
     }
 
@@ -329,7 +329,7 @@ size_t FindBalancedDeclarationEnd(std::string_view sourceCode, size_t declStartB
 
         if (sourceCode[pos] == ';')
         {
-            if (keyword == "function")
+            if (keyword == parser::keywords::Function)
             {
                 return std::string_view::npos;
             }

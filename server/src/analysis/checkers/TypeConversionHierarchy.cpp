@@ -54,7 +54,7 @@ void ForEachMethod(std::string_view typeName, std::string_view memberName, const
 void ForEachConstructor(std::string_view typeName, const SymbolTable& table,
                         const std::function<bool(const Symbol&)>& visitor)
 {
-    const size_t open = typeName.find('<');
+    const size_t open = TemplateArgumentsStart(typeName);
     const auto unparameterized = (open == std::string_view::npos) ? typeName : typeName.substr(0, open);
 
     const auto bare = LastScopeSegment(unparameterized);
@@ -194,7 +194,7 @@ bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, co
 {
     bool found = false;
     TemplateBinding binding;
-    if (fromType.find('<') != std::string_view::npos)
+    if (HasTemplateArgumentsView(fromType))
     {
         binding = BindTemplateArguments(fromType, table);
     }

@@ -90,11 +90,11 @@ static bool AreBitwiseOperandsCompatible(std::string_view op, const OperandTypeP
     {
         return true;
     }
-    if (TypeHasOpImplConvTo(types.left, "int", table) && IsIntegerOrEnum(types.right, table))
+    if (TypeHasOpImplConvTo(types.left, parser::primitives::Int, table) && IsIntegerOrEnum(types.right, table))
     {
         return true;
     }
-    if (IsIntegerOrEnum(types.left, table) && TypeHasOpImplConvTo(types.right, "int", table))
+    if (IsIntegerOrEnum(types.left, table) && TypeHasOpImplConvTo(types.right, parser::primitives::Int, table))
     {
         return true;
     }
@@ -138,8 +138,9 @@ static bool HasClassNumericOpImplConv(std::string_view classType, std::string_vi
     {
         return false;
     }
-    return TypeHasOpImplConvTo(classType, "int", table) || TypeHasOpImplConvTo(classType, "double", table) ||
-           TypeHasOpImplConvTo(classType, "float", table);
+    return TypeHasOpImplConvTo(classType, parser::primitives::Int, table) ||
+           TypeHasOpImplConvTo(classType, parser::primitives::Double, table) ||
+           TypeHasOpImplConvTo(classType, parser::primitives::Float, table);
 }
 
 static bool HasOverloadedArithmeticOperator(std::string_view op, const OperandTypePair& types, const SymbolTable& table)
@@ -234,7 +235,7 @@ static void CheckLogicalOperand(const BinaryOperandFact& operand, const Expressi
     }
     if (parser::primitives::IsVoidType(clean) || (!IsHandleTypeView(rawType) && !IsTruthyCondition(clean, table)))
     {
-        ctx.EmitAtRange(operand.range, diagnostics::codes::NoImplicitConversion, {clean, "bool"});
+        ctx.EmitAtRange(operand.range, diagnostics::codes::NoImplicitConversion, {clean, parser::primitives::Bool});
     }
 }
 
@@ -267,7 +268,8 @@ void CheckBinaryOperatorCompatibility(const BinaryExpressionFact& fact, const Sc
     }
     if (IsFunctionReference(fact.left.bytes, exprCtx) || IsFunctionReference(fact.right.bytes, exprCtx))
     {
-        ctx.EmitAtRange(fact.operatorRange, diagnostics::codes::NoMatchingOperator, {fact.op, "function", "value"});
+        ctx.EmitAtRange(fact.operatorRange, diagnostics::codes::NoMatchingOperator,
+                        {fact.op, std::string(parser::keywords::Function), "value"});
         return;
     }
 

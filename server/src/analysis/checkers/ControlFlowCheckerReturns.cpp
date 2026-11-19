@@ -146,7 +146,7 @@ void ControlFlowVisitor::CheckFunctionDeclaration(const ControlFlowRecord& recor
                     const std::string_view retType = CleanBaseTypeView(target->GetFuncdef().returnType);
                     if (parser::primitives::IsVoidType(retType))
                     {
-                        requiredReturn = "void";
+                        requiredReturn = parser::keywords::Void;
                     }
                     else
                     {
@@ -172,7 +172,7 @@ void ControlFlowVisitor::CheckFunctionDeclaration(const ControlFlowRecord& recor
                         const std::string_view retType = CleanBaseTypeView(target->GetFuncdef().returnType);
                         if (parser::primitives::IsVoidType(retType))
                         {
-                            requiredReturn = "void";
+                            requiredReturn = parser::keywords::Void;
                         }
                         else
                         {

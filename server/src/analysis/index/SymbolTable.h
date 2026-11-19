@@ -2,6 +2,7 @@
 
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/Symbol.h"
+#include "parser/Keywords.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
 #include "utils/TransparentHash.h"
@@ -610,7 +611,7 @@ class SymbolTable
     case SymbolType::Variable:
         return "variable";
     case SymbolType::Function:
-        return "function";
+        return parser::keywords::Function;
     case SymbolType::Class:
         return "class";
     case SymbolType::Interface:

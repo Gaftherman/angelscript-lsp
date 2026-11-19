@@ -77,7 +77,7 @@ void LocalScopeCollector::InitializeCaptureKinds(std::vector<CaptureKind>& kinds
                 defKinds[i] = LocalDefinitionKind::Variable;
             else if (sub == "field")
                 defKinds[i] = LocalDefinitionKind::Field;
-            else if (sub == "function")
+            else if (sub == parser::keywords::Function)
                 defKinds[i] = LocalDefinitionKind::Function;
             else if (sub == "method")
                 defKinds[i] = LocalDefinitionKind::Method;
@@ -919,11 +919,11 @@ static bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
 void LocalScopeCollector::EnrichReferenceContext(TSNode captureNode, TSNode parent, std::string_view sourceCode,
                                                  LocalReference& ref, const DocumentContext& docCtx) const
 {
-    if (ref.name == "super")
+    if (ref.name == parser::keywords::Super)
     {
         ref.isSuperBaseCall = IsBaseConstructorCall(captureNode, sourceCode);
     }
-    else if (ref.name == "function" && ts_node_symbol(parent) == m_gs.symLambdaExpression)
+    else if (ref.name == parser::keywords::Function && ts_node_symbol(parent) == m_gs.symLambdaExpression)
     {
         ref.isLambdaFunctionKeyword = 1;
     }

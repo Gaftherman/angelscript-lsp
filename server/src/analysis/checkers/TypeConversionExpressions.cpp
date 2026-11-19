@@ -117,9 +117,9 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Exp
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string cleanType = UnwrapTypedef(CleanBaseType(rawType), table);
     if (cleanType.empty() || parser::primitives::IsAutoType(cleanType) || IsVariableTypeToken(cleanType) ||
-        IsBuiltInValueType(cleanType, ctx) || ResolvesToEnum(cleanType, table) ||
-        cleanType.find('<') != std::string::npos || rawType.find('[') != std::string::npos ||
-        ctx.request.IsRegisteredSymbol(cleanType) || !HierarchyIsFullyVisible(cleanType, table))
+        IsBuiltInValueType(cleanType, ctx) || ResolvesToEnum(cleanType, table) || HasTemplateArgumentsView(cleanType) ||
+        rawType.find('[') != std::string::npos || ctx.request.IsRegisteredSymbol(cleanType) ||
+        !HierarchyIsFullyVisible(cleanType, table))
     {
         return;
     }
@@ -306,7 +306,7 @@ static size_t CollectMatchingOpIndexOverloads(std::string_view owner, std::strin
     static constexpr std::string_view k_indexMembers[] = {"opIndex", "get_opIndex", "set_opIndex"};
 
     TemplateBinding binding;
-    if (normalizedObj.find('<') != std::string::npos)
+    if (HasTemplateArgumentsView(normalizedObj))
         binding = BindTemplateArguments(normalizedObj, table);
 
     size_t totalOpIndex = 0;

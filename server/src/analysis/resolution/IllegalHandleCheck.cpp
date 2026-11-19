@@ -193,15 +193,15 @@ static std::string_view ReadQualifiedTypeIdent(std::string_view sv, std::string&
 
 static bool StartsWithConstToken(std::string_view sv) noexcept
 {
-    if (!sv.starts_with("const"))
+    if (!sv.starts_with(parser::keywords::Const))
     {
         return false;
     }
-    if (sv.size() == 5)
+    if (sv.size() == parser::keywords::Const.size())
     {
         return true;
     }
-    const unsigned char next = static_cast<unsigned char>(sv[5]);
+    const unsigned char next = static_cast<unsigned char>(sv[parser::keywords::Const.size()]);
     return !std::isalnum(next) && next != '_';
 }
 

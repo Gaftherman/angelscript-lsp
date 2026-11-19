@@ -461,7 +461,8 @@ static bool HasListConstructorParam(const ParameterInformation& p)
 {
     const std::string_view norm = StripTrailingDecorationsView(
         p.baseTypeName.empty() ? std::string_view(p.typeName) : std::string_view(p.baseTypeName));
-    const bool isInt = (norm == "int" || norm == "uint" || norm == "int64" || norm == "uint64");
+    const bool isInt =
+        (norm == parser::primitives::Int || norm == parser::primitives::UInt || norm == "int64" || norm == "uint64");
     return isInt && (p.isReference || p.modifier == ParameterModifier::In || p.modifier == ParameterModifier::InOut ||
                      p.isInOutRef || IsReferenceTypeView(p.typeName));
 }

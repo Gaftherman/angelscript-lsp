@@ -111,7 +111,7 @@ static bool HasMatchingAssignmentOperator(std::string_view targetType, std::stri
         owner = std::string(targetType);
     }
     const TemplateBinding binding =
-        (targetType.find('<') != std::string_view::npos) ? BindTemplateArguments(targetType, table) : TemplateBinding{};
+        (HasTemplateArgumentsView(targetType)) ? BindTemplateArguments(targetType, table) : TemplateBinding{};
 
     for (const auto& cls : GetInheritedTypeHierarchy(owner, table))
     {
@@ -181,7 +181,7 @@ void CheckAssignmentOperatorConversion(const AssignmentConversionInput& input, c
     const std::string_view overload =
         input.site.op.empty() ? std::string_view() : AssignmentOverloadName(input.site.op);
     const bool isCompound = !input.site.opIsAssign && input.site.op != "=" && !overload.empty();
-    if (isCompound && types.to == "bool")
+    if (isCompound && parser::primitives::IsBoolType(types.to))
     {
         ctx.EmitAtRange(input.site.range, diagnostics::codes::NoMathConversion, types.to);
         return;
@@ -201,7 +201,8 @@ void CheckAssignmentOperatorConversion(const AssignmentConversionInput& input, c
     {
         if (ResolvesToEnum(types.to, table))
         {
-            ctx.EmitAtRange(input.site.right.range, "as-err-no-implicit-conversion", {"int", types.to});
+            ctx.EmitAtRange(input.site.right.range, "as-err-no-implicit-conversion",
+                            {parser::primitives::Int, types.to});
             return;
         }
         if (IsPrimitiveTypeName(types.to))
@@ -222,8 +223,8 @@ void CheckAssignmentOperatorConversion(const AssignmentConversionInput& input, c
         }
         if (IsStringType(types.to, ctx) && overload == "opAddAssign")
         {
-            if (!IsNumericPrimitive(types.from) && types.from != "bool" && types.from != types.to &&
-                !IsConvertible(types.from, types.to, ctx))
+            if (!IsNumericPrimitive(types.from) && !parser::primitives::IsBoolType(types.from) &&
+                types.from != types.to && !IsConvertible(types.from, types.to, ctx))
             {
                 ctx.EmitAtRange(input.site.right.range, "as-err-no-implicit-conversion", {types.from, types.to});
             }

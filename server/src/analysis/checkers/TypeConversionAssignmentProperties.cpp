@@ -79,7 +79,7 @@ static std::vector<ParameterInformation> CollectPropertySetterParams(const Assig
         {
             cleanObj = CleanBaseType(pInfo.receiverType);
         }
-        const TemplateBinding binding = (pInfo.receiverType.find('<') != std::string_view::npos)
+        const TemplateBinding binding = (HasTemplateArgumentsView(pInfo.receiverType))
                                             ? BindTemplateArguments(pInfo.receiverType, table)
                                             : TemplateBinding{};
         char accBuf[128];
@@ -150,7 +150,8 @@ static void CheckPropertyCompoundAssignment(const AssignmentConversionInput& inp
     const std::string_view displayTarget = input.leftType.empty() ? std::string_view("value") : input.leftType;
     if (parser::primitives::IsVoidType(input.rightType))
     {
-        ctx.EmitAtRange(input.site.right.range, "as-err-no-implicit-conversion", {"void", displayTarget});
+        ctx.EmitAtRange(input.site.right.range, "as-err-no-implicit-conversion",
+                        {parser::keywords::Void, displayTarget});
         return;
     }
     if (input.rightType.empty())
@@ -171,7 +172,7 @@ static void CheckPropertyCompoundAssignment(const AssignmentConversionInput& inp
     const std::string_view arrayType = ctx.request.GetEffectiveArrayTypeName();
     const std::string normLeft = UnwrapTypedef(NormalizeType(input.leftType, arrayType), table);
     const std::string normRight = UnwrapTypedef(NormalizeType(input.rightType, arrayType), table);
-    if (normLeft == "bool")
+    if (parser::primitives::IsBoolType(normLeft))
     {
         ctx.EmitAtRange(input.site.range, diagnostics::codes::NoMathConversion, normLeft);
         return;
@@ -180,7 +181,7 @@ static void CheckPropertyCompoundAssignment(const AssignmentConversionInput& inp
     const std::string_view binOp = CompoundAssignmentBinaryOpName(input.site.op);
     if (ResolvesToEnum(normLeft, table))
     {
-        ctx.EmitAtRange(input.site.right.range, "as-err-no-implicit-conversion", {"int", normLeft});
+        ctx.EmitAtRange(input.site.right.range, "as-err-no-implicit-conversion", {parser::primitives::Int, normLeft});
         return;
     }
     if (IsNumericPrimitive(normLeft))
@@ -236,7 +237,7 @@ void CheckPropertySetterAssignment(const AssignmentConversionInput& input, Diagn
 
     if (parser::primitives::IsVoidType(input.rightType))
     {
-        ctx.EmitAtRange(input.site.range, "as-err-no-implicit-conversion", {"void", displayTo});
+        ctx.EmitAtRange(input.site.range, "as-err-no-implicit-conversion", {parser::keywords::Void, displayTo});
         return;
     }
 
@@ -269,7 +270,7 @@ void CheckPropertySetterAssignment(const AssignmentConversionInput& input, Diagn
     {
         const bool paramIsHandle = param.isHandle || IsHandleTypeView(param.typeName);
         const bool paramIsConst = param.isConst || IsConstTypeView(param.typeName);
-        if (paramIsHandle && !paramIsConst && rightVal.isConst && input.rightType != "null")
+        if (paramIsHandle && !paramIsConst && rightVal.isConst && !parser::primitives::IsNullType(input.rightType))
         {
             continue;
         }

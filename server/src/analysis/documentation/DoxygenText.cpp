@@ -1,5 +1,6 @@
 #include "analysis/documentation/DoxygenMarkdown.h"
 #include "analysis/documentation/DoxygenMarkdownInternal.h"
+#include "analysis/types/TypeSanitization.h"
 #include "parser/DoxygenSyntax.h"
 #include "utils/Utils.h"
 
@@ -276,7 +277,7 @@ std::string CleanDescriptionLines(std::string_view raw)
  */
 static std::string RewriteInlineHtml(std::string_view text)
 {
-    if (text.find('<') == std::string_view::npos)
+    if (!HasTemplateArgumentsView(text))
     {
         return std::string(text);
     }

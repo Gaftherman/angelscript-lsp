@@ -52,7 +52,7 @@ TemplateSpelling ReadTemplateSpelling(std::string_view type)
 {
     TemplateSpelling spelling;
 
-    const size_t open = type.find('<');
+    const size_t open = TemplateArgumentsStart(type);
     if (open == std::string_view::npos || !type.ends_with('>'))
     {
         spelling.name = type;

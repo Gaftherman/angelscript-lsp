@@ -4,6 +4,7 @@
  */
 
 #include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
+#include "parser/Keywords.h"
 #include "utils/Utils.h"
 
 namespace angel_lsp::analysis::code_action
@@ -53,7 +54,7 @@ static void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const 
                                     const CodeActionQuery& query, ExtractedMethodPlan& plan)
 {
     const std::string methodName = "NewMethod";
-    plan.returnType = "void";
+    plan.returnType = parser::keywords::Void;
 
     if (vars.outputVars.size() == 1)
     {

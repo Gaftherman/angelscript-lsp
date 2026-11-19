@@ -62,9 +62,9 @@ static ObjectTypeInfo ResolveMemberObjectType(const CallSiteFact& site, const Sc
                                                                    ctx.request.symbolTable);
     info.qualifiers.isConst = IsConstTypeView(rawObjType) || isObjConst;
 
-    if (rawObjType.find('<') != std::string_view::npos && rawObjType.ends_with('>'))
+    if (HasTemplateArgumentsView(rawObjType) && rawObjType.ends_with('>'))
     {
-        const size_t openBracket = rawObjType.find('<');
+        const size_t openBracket = TemplateArgumentsStart(rawObjType);
         std::string_view tmplView(rawObjType.data(), openBracket);
         TrimTypeWhitespace(tmplView);
         if (ctx.request.symbolTable.FindSymbolsPtr(tmplView))

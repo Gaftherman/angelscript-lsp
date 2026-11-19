@@ -1,6 +1,7 @@
 #include "analysis/checkers/InitializerListCheckerCommon.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "parser/Keywords.h"
 
 #include <cstdint>
 #include <optional>
@@ -74,7 +75,7 @@ static std::optional<ListContainerInfo> InspectClassContainer(const Symbol& sym,
     auto resolveElem = [&](std::string_view fallback) -> std::string_view
     {
         std::string_view elem = !spelling.arguments.empty() ? spelling.arguments[0] : StripDecorations(fallback);
-        return elem.empty() ? "auto" : elem;
+        return elem.empty() ? parser::keywords::Auto : elem;
     };
 
     if (inspection.maxIndexParams >= 2)
@@ -98,7 +99,7 @@ ListContainerInfo InspectContainer(std::string_view type, const TemplateSpelling
 
     if (ctx.request.IsArrayLikeTemplate(spelling.name))
     {
-        std::string_view elem = spelling.arguments.empty() ? "auto" : spelling.arguments[0];
+        std::string_view elem = spelling.arguments.empty() ? parser::keywords::Auto : spelling.arguments[0];
         return {true, 1, elem};
     }
 

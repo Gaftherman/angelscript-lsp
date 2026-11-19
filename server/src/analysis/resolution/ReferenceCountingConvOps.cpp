@@ -36,7 +36,7 @@ std::optional<Symbol> FindConversionOperator(const ConversionLookupQuery& query,
         return std::nullopt;
     }
     const TemplateBinding binding =
-        (normSrc.find('<') != std::string::npos) ? BindTemplateArguments(normSrc, symbolTable) : TemplateBinding{};
+        (HasTemplateArgumentsView(normSrc)) ? BindTemplateArguments(normSrc, symbolTable) : TemplateBinding{};
 
     std::optional<Symbol> wideningCandidate;
     for (const auto& cls : GetInheritedTypeHierarchy(owner, symbolTable))
@@ -213,7 +213,7 @@ static void EvaluateImplicitConversionSite(const IndexedOperatorSite& site, Oper
         return;
     }
     const std::string srcType = ResolveIndexedExprType(site.exprId, ctx);
-    if (srcType.empty() || srcType == "null")
+    if (srcType.empty() || parser::primitives::IsNullType(srcType))
     {
         return;
     }

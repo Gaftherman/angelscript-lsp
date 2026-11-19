@@ -3,6 +3,7 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/InlayTypeDeduction.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Keywords.h"
 
 #include <string>
 
@@ -23,7 +24,7 @@ std::string DeduceLambdaReturnTypeAt(const IndexedLambdaSite& site, const Expres
 
     if (site.hasReturnStatement && site.returnExprStartByte == 0)
     {
-        return "void";
+        return std::string(parser::keywords::Void);
     }
 
     if (ctx.nodeIndex)
@@ -44,7 +45,7 @@ std::string DeduceLambdaReturnTypeAt(const IndexedLambdaSite& site, const Expres
 
     if (site.hasReturnStatement)
     {
-        return "void";
+        return std::string(parser::keywords::Void);
     }
 
     return {};

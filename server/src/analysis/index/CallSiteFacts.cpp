@@ -5,6 +5,7 @@
 #include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -123,7 +124,7 @@ static void ReadCallee(TSNode calleeNode, std::string_view source, CallSiteFact&
         if (!ts_node_is_null(obj))
         {
             fact.objectBytes = BytesOf(obj);
-            fact.isThisCall = (parser::NodeText(obj, source) == "this");
+            fact.isThisCall = (parser::NodeText(obj, source) == parser::keywords::This);
         }
         if (!ts_node_is_null(mem))
         {

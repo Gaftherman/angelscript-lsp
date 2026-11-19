@@ -145,7 +145,7 @@ std::string FormatPrimitiveDoc(std::string_view typeName, const angel_lsp::i18n:
     {
         return desc;
     }
-    if (typeName == "bool")
+    if (parser::primitives::IsBoolType(typeName))
     {
         return desc + "\n\n" +
                angel_lsp::i18n::FormatMessage(i18n, "hover-primitive-values", "Values: `{}`", info->range);

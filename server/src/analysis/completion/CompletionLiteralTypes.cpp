@@ -9,6 +9,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
 #include "utils/ScopedNameUtils.h"
@@ -53,17 +54,17 @@ static std::string_view DeduceNumericLiteralType(std::string_view expr)
 {
     if (expr.ends_with('f') || expr.ends_with('F'))
     {
-        return "float";
+        return parser::primitives::Float;
     }
     if (expr.find_first_of(".eE") != std::string_view::npos)
     {
-        return "double";
+        return parser::primitives::Double;
     }
     if (expr.ends_with('u') || expr.ends_with('U'))
     {
-        return "uint";
+        return parser::primitives::UInt;
     }
-    return "int";
+    return parser::primitives::Int;
 }
 
 std::string DeduceLiteralOrNamedType(std::string_view expr, const CompletionQuery& request,
@@ -79,7 +80,7 @@ std::string DeduceLiteralOrNamedType(std::string_view expr, const CompletionQuer
     }
     if (expr == parser::keywords::True || expr == parser::keywords::False)
     {
-        return "bool";
+        return std::string(parser::primitives::Bool);
     }
     if (IsNumericStart(expr))
     {

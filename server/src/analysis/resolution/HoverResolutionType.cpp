@@ -141,7 +141,7 @@ std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, const Exp
                 if (d.hasValue)
                 {
                     std::string res = ResolveExpressionTypeAt(d.valueOperand.bytes, ctx);
-                    if (!res.empty() && !parser::primitives::IsVoidType(res) && res != "null" &&
+                    if (!res.empty() && !parser::primitives::IsVoidType(res) && !parser::primitives::IsNullType(res) &&
                         res != constants::k_initializerListTypeSentinel)
                     {
                         return res;
@@ -150,7 +150,7 @@ std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, const Exp
                 if (d.hasArguments && d.argument.present)
                 {
                     std::string res = ResolveExpressionTypeAt(d.argument.operand.bytes, ctx);
-                    if (!res.empty() && !parser::primitives::IsVoidType(res) && res != "null")
+                    if (!res.empty() && !parser::primitives::IsVoidType(res) && !parser::primitives::IsNullType(res))
                     {
                         return res;
                     }

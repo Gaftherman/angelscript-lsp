@@ -3,6 +3,7 @@
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <optional>
@@ -23,7 +24,7 @@ static bool IsTernaryBranchCompatible(std::string_view branchType, std::string_v
     {
         return true;
     }
-    if (branchType == "null" && IsHandleTypeView(expected))
+    if (parser::primitives::IsNullType(branchType) && IsHandleTypeView(expected))
     {
         return true;
     }
@@ -135,7 +136,7 @@ static std::string FormatCallDescriptionWithNull(std::string_view calleeName, st
         {
             callDesc += ", ";
         }
-        callDesc += (argTypes[i] == "null" ? "<null handle>" : argTypes[i]);
+        callDesc += (parser::primitives::IsNullType(argTypes[i]) ? "<null handle>" : argTypes[i]);
     }
     callDesc += ")";
     return callDesc;
@@ -147,7 +148,7 @@ void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, Di
     const auto blamedArg = FindAgreedBlamedArgument(req.candidates, req.args.argTypes, ctx.request.symbolTable);
     if (blamedArg && *blamedArg < req.arguments.size())
     {
-        if (req.args.argTypes[*blamedArg] == "null")
+        if (parser::primitives::IsNullType(req.args.argTypes[*blamedArg]))
         {
             const SourceRange emitRange =
                 req.site.calleeNameRange != SourceRange{} ? req.site.calleeNameRange : req.site.calleeRange;
@@ -168,7 +169,7 @@ void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, Di
     if (req.args.allArgsResolved)
     {
         const bool hasNull = std::any_of(req.args.argTypes.begin(), req.args.argTypes.end(),
-                                         [](std::string_view t) { return t == "null"; });
+                                         [](std::string_view t) { return parser::primitives::IsNullType(t); });
         const SourceRange emitRange =
             req.site.calleeNameRange != SourceRange{} ? req.site.calleeNameRange : req.site.calleeRange;
         ctx.EmitAtRange(emitRange, "as-err-call-no-matching-signature",

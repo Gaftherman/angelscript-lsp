@@ -86,7 +86,7 @@ std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, bool isAuto
         std::string result;
         result.reserve(32 + deduced.size());
         result.append("```angelscript\n");
-        result.append(isAutoHandle ? "auto@" : "auto");
+        result.append(isAutoHandle ? parser::keywords::AutoHandle : parser::keywords::Auto);
         result.append(": ");
         result.append(deduced);
         result.append("\n```");

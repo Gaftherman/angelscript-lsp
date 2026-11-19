@@ -19,7 +19,8 @@ bool IsBooleanBinaryOp(std::string_view op) noexcept
 
 static bool IsFloatOrIntPrimitive(std::string_view type)
 {
-    return type == "float" || type == "double" || type == "int" || type == "uint";
+    return type == parser::primitives::Float || type == parser::primitives::Double || type == parser::primitives::Int ||
+           type == parser::primitives::UInt;
 }
 
 static std::string ResolveBinaryShift(std::string_view cleanLeft)
@@ -28,7 +29,7 @@ static std::string ResolveBinaryShift(std::string_view cleanLeft)
     {
         return std::string(cleanLeft);
     }
-    return IsUnsignedInteger(cleanLeft) ? "uint" : "int";
+    return IsUnsignedInteger(cleanLeft) ? std::string(parser::primitives::UInt) : std::string(parser::primitives::Int);
 }
 
 static std::string ResolveBinaryBitwiseLogic(std::string_view cleanLeft, std::string_view cleanRight,
@@ -36,7 +37,7 @@ static std::string ResolveBinaryBitwiseLogic(std::string_view cleanLeft, std::st
 {
     if (symbolTable && (ResolvesToEnum(cleanLeft, *symbolTable) || ResolvesToEnum(cleanRight, *symbolTable)))
     {
-        return "int";
+        return std::string(parser::primitives::Int);
     }
     if (cleanLeft == "int64" || cleanRight == "int64")
     {
@@ -48,11 +49,11 @@ static std::string ResolveBinaryBitwiseLogic(std::string_view cleanLeft, std::st
     }
     if (cleanLeft == "uint8" || cleanLeft == "uint16")
     {
-        return "uint";
+        return std::string(parser::primitives::UInt);
     }
     if (cleanLeft == "int8" || cleanLeft == "int16")
     {
-        return "int";
+        return std::string(parser::primitives::Int);
     }
     if (cleanLeft == cleanRight)
     {
@@ -60,9 +61,9 @@ static std::string ResolveBinaryBitwiseLogic(std::string_view cleanLeft, std::st
     }
     if (IsUnsignedInteger(cleanLeft) || IsUnsignedInteger(cleanRight))
     {
-        return "uint";
+        return std::string(parser::primitives::UInt);
     }
-    return "int";
+    return std::string(parser::primitives::Int);
 }
 
 static std::string ResolveBinaryShiftBitwise(std::string_view op, std::string_view cleanLeft,
@@ -81,13 +82,13 @@ static std::string ResolveBinaryShiftBitwise(std::string_view op, std::string_vi
 
 static std::string ResolveBinary64OrFloat(std::string_view cleanLeft, std::string_view cleanRight)
 {
-    if (cleanLeft == "double" || cleanRight == "double")
+    if (cleanLeft == parser::primitives::Double || cleanRight == parser::primitives::Double)
     {
-        return "double";
+        return std::string(parser::primitives::Double);
     }
-    if (cleanLeft == "float" || cleanRight == "float")
+    if (cleanLeft == parser::primitives::Float || cleanRight == parser::primitives::Float)
     {
-        return "float";
+        return std::string(parser::primitives::Float);
     }
     if (cleanLeft == "uint64" || cleanRight == "uint64")
     {
@@ -106,13 +107,14 @@ static std::string ResolveBinary32OrLess(std::string_view cleanLeft, std::string
     {
         return "";
     }
-    if (cleanLeft == "uint" || cleanRight == "uint" || cleanLeft == "uint32" || cleanRight == "uint32")
+    if (cleanLeft == parser::primitives::UInt || cleanRight == parser::primitives::UInt || cleanLeft == "uint32" ||
+        cleanRight == "uint32")
     {
-        return "uint";
+        return std::string(parser::primitives::UInt);
     }
     if (IsPrimitiveTypeName(cleanLeft) && IsPrimitiveTypeName(cleanRight))
     {
-        return "int";
+        return std::string(parser::primitives::Int);
     }
     return "";
 }
@@ -120,19 +122,19 @@ static std::string ResolveBinary32OrLess(std::string_view cleanLeft, std::string
 static std::string ResolveBinaryDivisionPromotion(std::string_view cleanLeft, std::string_view cleanRight,
                                                   bool disableIntegerDivision)
 {
-    if (cleanLeft == "double" || cleanRight == "double")
+    if (cleanLeft == parser::primitives::Double || cleanRight == parser::primitives::Double)
     {
-        return "double";
+        return std::string(parser::primitives::Double);
     }
     if (IsFloatingPointPrimitive(cleanLeft) || IsFloatingPointPrimitive(cleanRight))
     {
-        return "float";
+        return std::string(parser::primitives::Float);
     }
     if (!disableIntegerDivision && IsIntegerPrimitive(cleanLeft) && IsIntegerPrimitive(cleanRight))
     {
         return ResolveBinary32OrLess(cleanLeft, cleanRight);
     }
-    return "float";
+    return std::string(parser::primitives::Float);
 }
 
 std::string ResolveBinaryPrimitivePromotion(std::string_view op, std::string_view cleanLeft,

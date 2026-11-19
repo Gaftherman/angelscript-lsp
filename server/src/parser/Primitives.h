@@ -1,5 +1,7 @@
 #pragma once
 
+#include "parser/Keywords.h"
+
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -118,7 +120,72 @@ inline constexpr std::array<PrimitiveDocInfo, 14> k_primitiveDocTable = {{
  */
 [[nodiscard]] constexpr bool IsVoidType(std::string_view name) noexcept
 {
-    return name == "void";
+    return name == keywords::Void;
+}
+
+/**
+ * @brief The spelling of the `bool` primitive, for code that builds a type name instead of reading one.
+ */
+inline constexpr std::string_view Bool = "bool";
+
+/**
+ * @brief The spelling of the `int` primitive.
+ */
+inline constexpr std::string_view Int = "int";
+
+/**
+ * @brief The spelling of the `uint` primitive.
+ */
+inline constexpr std::string_view UInt = "uint";
+
+/**
+ * @brief The spelling of the `float` primitive.
+ */
+inline constexpr std::string_view Float = "float";
+
+/**
+ * @brief The spelling of the `double` primitive.
+ */
+inline constexpr std::string_view Double = "double";
+
+/**
+ * @brief True for the type text the expression pass gives to the `null` literal.
+ * @param[in] name Type text with qualifiers already removed.
+ * @return True when name is exactly `null`; `null` is not a primitive and is not matched by IsPrimitive.
+ */
+[[nodiscard]] constexpr bool IsNullType(std::string_view name) noexcept
+{
+    return name == keywords::Null;
+}
+
+/**
+ * @brief True for the `bool` primitive.
+ * @param[in] name Type text with qualifiers already removed.
+ * @return True when name is exactly `bool`.
+ */
+[[nodiscard]] constexpr bool IsBoolType(std::string_view name) noexcept
+{
+    return name == Bool;
+}
+
+/**
+ * @brief True for the `auto@` placeholder, which stands in for a handle to the initializer's type.
+ * @param[in] name Type text with qualifiers already removed.
+ * @return True when name is exactly `auto@`.
+ */
+[[nodiscard]] constexpr bool IsAutoHandleType(std::string_view name) noexcept
+{
+    return name == keywords::AutoHandle;
+}
+
+/**
+ * @brief True for the `true` and `false` literal spellings of a boolean value.
+ * @param[in] text Source text of an expression.
+ * @return True when text is exactly `true` or `false`.
+ */
+[[nodiscard]] constexpr bool IsBooleanLiteralText(std::string_view text) noexcept
+{
+    return text == keywords::True || text == keywords::False;
 }
 
 /**
@@ -128,7 +195,7 @@ inline constexpr std::array<PrimitiveDocInfo, 14> k_primitiveDocTable = {{
  */
 [[nodiscard]] constexpr bool IsAutoType(std::string_view name) noexcept
 {
-    return name == "auto";
+    return name == keywords::Auto;
 }
 
 /**

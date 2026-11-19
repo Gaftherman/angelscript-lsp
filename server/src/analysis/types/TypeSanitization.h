@@ -34,12 +34,38 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
 [[nodiscard]] constexpr std::string_view StripLeadingConst(std::string_view typeName) noexcept
 {
     TrimTypeWhitespace(typeName);
-    if (typeName.starts_with("const "))
+    if (typeName.starts_with(parser::keywords::Const) && typeName.size() > parser::keywords::Const.size() &&
+        typeName[parser::keywords::Const.size()] == ' ')
     {
-        typeName.remove_prefix(6);
+        typeName.remove_prefix(parser::keywords::Const.size() + 1);
     }
     TrimTypeWhitespace(typeName);
     return typeName;
+}
+
+/**
+ * @brief The character that opens the template argument list in a type spelling, as in `array<int>`.
+ */
+inline constexpr char k_templateArgumentsOpen = '<';
+
+/**
+ * @brief Finds where the template argument list of a type spelling starts.
+ * @param[in] typeName Type spelling, with or without qualifiers.
+ * @return Byte offset of the opening bracket, or std::string_view::npos for a non-template type.
+ */
+[[nodiscard]] constexpr size_t TemplateArgumentsStart(std::string_view typeName) noexcept
+{
+    return typeName.find(k_templateArgumentsOpen);
+}
+
+/**
+ * @brief Tells whether a type spelling carries template arguments.
+ * @param[in] typeName Type spelling, with or without qualifiers.
+ * @return True when the spelling contains a template argument list.
+ */
+[[nodiscard]] constexpr bool HasTemplateArgumentsView(std::string_view typeName) noexcept
+{
+    return TemplateArgumentsStart(typeName) != std::string_view::npos;
 }
 
 /**
@@ -140,7 +166,35 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
 [[nodiscard]] constexpr bool HasLeadingConst(std::string_view type) noexcept
 {
     TrimTypeWhitespace(type);
-    return type == "const" || type.starts_with("const ") || type.starts_with("const\t");
+    if (type == parser::keywords::Const)
+    {
+        return true;
+    }
+    return type.size() > parser::keywords::Const.size() && type.starts_with(parser::keywords::Const) &&
+           (type[parser::keywords::Const.size()] == ' ' || type[parser::keywords::Const.size()] == '\t');
+}
+
+/**
+ * @brief Puts the const qualifier in front of a type spelling.
+ * @param[in,out] typeName Type text that gains the `const ` prefix; not checked for an existing qualifier.
+ */
+inline void PrependConst(std::string& typeName)
+{
+    typeName.insert(0, 1, ' ');
+    typeName.insert(0, parser::keywords::Const);
+}
+
+/**
+ * @brief Spells a const handle to a type the way conversion diagnostics show it, e.g. `const Foo@`.
+ * @param[in] baseName Type name without qualifiers or decorations.
+ * @return The name with a leading const qualifier and a trailing handle marker.
+ */
+[[nodiscard]] inline std::string ConstHandleSpelling(std::string_view baseName)
+{
+    std::string spelling(baseName);
+    PrependConst(spelling);
+    spelling += '@';
+    return spelling;
 }
 
 /**
@@ -156,7 +210,7 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
         type.remove_suffix(refLen);
     }
     TrimTypeWhitespace(type);
-    return type == "const" || type.ends_with(" const") || type.ends_with("\tconst");
+    return type == parser::keywords::Const || type.ends_with(" const") || type.ends_with("\tconst");
 }
 
 /**
@@ -195,7 +249,7 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
         type.remove_suffix(6);
         TrimTypeWhitespace(type);
     }
-    else if (type == "const")
+    else if (type == parser::keywords::Const)
     {
         return false;
     }
@@ -342,7 +396,7 @@ struct TemplateDecomposition
 {
     if (typeName.ends_with('>'))
     {
-        const size_t open = typeName.find('<');
+        const size_t open = TemplateArgumentsStart(typeName);
         if (open != std::string_view::npos && open > 0)
         {
             return {

@@ -96,7 +96,7 @@ static bool IsVisibleScriptClassForPrimitiveCast(std::string_view typeName, cons
 {
     const SymbolTable& table = ctx.request.symbolTable;
     if (typeName.empty() || parser::primitives::IsAutoType(typeName) || IsVariableTypeToken(typeName) ||
-        typeName.find('<') != std::string_view::npos || ctx.request.IsRegisteredSymbol(typeName) ||
+        HasTemplateArgumentsView(typeName) || ctx.request.IsRegisteredSymbol(typeName) ||
         !HierarchyIsFullyVisible(typeName, table))
     {
         return false;

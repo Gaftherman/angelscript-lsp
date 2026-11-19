@@ -95,7 +95,7 @@ static bool CheckLambdaFuncdefAssignment(SourceRange target, const FuncdefSignat
 static void CheckNamedFunctionFuncdefAssignment(SourceRange target, const FuncdefSignature& funcdefSig,
                                                 const FuncdefValueFact& value, DiagnosticContext& ctx)
 {
-    if (value.text.empty() || value.text == "null")
+    if (value.text.empty() || parser::primitives::IsNullType(value.text))
     {
         return;
     }
@@ -150,7 +150,7 @@ void CheckDelegateConstruction(const CallConstructSiteFact& site, const FuncdefS
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string cleanObj = UnwrapTypedef(CleanBaseType(rawObj), table);
     if (cleanObj.empty() || parser::primitives::IsAutoType(cleanObj) || IsVariableTypeToken(cleanObj) ||
-        cleanObj.find('<') != std::string::npos || ctx.request.IsRegisteredSymbol(cleanObj) ||
+        HasTemplateArgumentsView(cleanObj) || ctx.request.IsRegisteredSymbol(cleanObj) ||
         !HierarchyIsFullyVisible(cleanObj, table))
     {
         return;

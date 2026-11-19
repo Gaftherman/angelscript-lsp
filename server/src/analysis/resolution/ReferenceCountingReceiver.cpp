@@ -6,6 +6,7 @@
 #include "analysis/resolution/ReferenceReceiver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Keywords.h"
 
 #include <string>
 #include <string_view>
@@ -16,7 +17,7 @@ namespace angel_lsp::analysis
 static std::string ResolveObjectTextType(std::string_view oText, const Scope* scope, const SymbolTable& symbolTable,
                                          std::string_view enclosingClass)
 {
-    if (oText == "this")
+    if (oText == parser::keywords::This)
     {
         return std::string(enclosingClass);
     }
@@ -46,7 +47,7 @@ static std::string TryResolveReceiverFastPath(const LocalReference& ref, const R
     {
         std::string_view oText =
             criteria.request.sourceCode.substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte);
-        std::string_view enc = (oText == "this") ? encClass : std::string_view{};
+        std::string_view enc = (oText == parser::keywords::This) ? encClass : std::string_view{};
         return ResolveObjectTextType(oText, scope, criteria.symbolTable, enc);
     }
     return "";
@@ -63,7 +64,7 @@ static std::string ResolveReceiverFromScope(std::string_view fileUri, const Loca
             if (currentReceiverType.empty())
             {
                 std::string_view enc =
-                    (candRef.name == "this")
+                    (candRef.name == parser::keywords::This)
                         ? GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache)
                         : std::string_view{};
                 currentReceiverType = ResolveObjectTextType(candRef.name, scope, criteria.symbolTable, enc);
@@ -79,7 +80,7 @@ static std::string ResolveReceiverFromScope(std::string_view fileUri, const Loca
                 else
                 {
                     std::string_view enc =
-                        (candRef.name == "this")
+                        (candRef.name == parser::keywords::This)
                             ? GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache)
                             : std::string_view{};
                     std::string t = ResolveObjectTextType(candRef.name, scope, criteria.symbolTable, enc);

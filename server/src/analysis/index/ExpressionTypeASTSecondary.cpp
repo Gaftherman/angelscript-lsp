@@ -8,6 +8,7 @@
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <optional>
@@ -197,7 +198,7 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
     const TSSymbol opSym = !ts_node_is_null(operatorNode) ? ts_node_symbol(operatorNode) : 0;
     if (opSym == gs.tokBang || opSym == gs.tokNot)
     {
-        return "bool";
+        return std::string(parser::primitives::Bool);
     }
     if (opSym == gs.tokAt)
     {

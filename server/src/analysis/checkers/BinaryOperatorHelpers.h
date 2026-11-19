@@ -103,7 +103,7 @@ bool IsNullOperand(const BinaryOperandFact& operand, std::string_view type);
  */
 struct ResolvedBinaryOperands
 {
-    OperandTypePair clean;      ///< Stripped base operand type spellings (`"null"` for null literals).
+    OperandTypePair clean;      ///< Stripped base operand type spellings (`null` for null literals).
     bool leftIsHandle = false;  ///< True when the left operand is a handle, funcdef, `this`, or unary `@`.
     bool rightIsHandle = false; ///< True when the right operand is a handle, funcdef, `this`, or unary `@`.
     bool leftIsNull = false;    ///< True when the left operand is the `null` literal or typed as `null`.

@@ -8,6 +8,7 @@
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/OperandTypePair.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <optional>
@@ -36,7 +37,7 @@ bool IsParameterCompatible(const ParameterInformation& param, std::string_view a
     {
         return true;
     }
-    if (argType == "null")
+    if (parser::primitives::IsNullType(argType))
     {
         return param.modifier != ParameterModifier::Out && param.modifier != ParameterModifier::InOut &&
                IsHandleType(param.typeName, table);
@@ -156,7 +157,8 @@ bool TypeHasOpImplConvTo(std::string_view typeName, std::string_view targetType,
  */
 bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_view stringTypeName)
 {
-    if (type == "null" || IsPrimitiveTypeName(type) || type == stringTypeName || ResolvesToEnum(type, table))
+    if (parser::primitives::IsNullType(type) || IsPrimitiveTypeName(type) || type == stringTypeName ||
+        ResolvesToEnum(type, table))
     {
         return true;
     }
@@ -164,7 +166,7 @@ bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_vi
     {
         return true;
     }
-    const auto templatePos = type.find('<');
+    const auto templatePos = TemplateArgumentsStart(type);
     if (templatePos != std::string_view::npos)
     {
         const std::string_view baseTemplate = type.substr(0, templatePos);
@@ -186,7 +188,7 @@ bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_vi
  */
 bool IsNullOperand(const BinaryOperandFact& operand, std::string_view type)
 {
-    return type == "null" || operand.isNullLiteral;
+    return parser::primitives::IsNullType(type) || operand.isNullLiteral;
 }
 
 /**
@@ -221,8 +223,8 @@ std::optional<ResolvedBinaryOperands> ResolveBinaryOperands(const BinaryExpressi
     }
     const bool leftIsNull = IsNullOperand(fact.left, rawLeft);
     const bool rightIsNull = IsNullOperand(fact.right, rawRight);
-    const auto cleanLeft = leftIsNull ? std::string_view("null") : StripModifiers(rawLeft);
-    const auto cleanRight = rightIsNull ? std::string_view("null") : StripModifiers(rawRight);
+    const auto cleanLeft = leftIsNull ? std::string_view(parser::keywords::Null) : StripModifiers(rawLeft);
+    const auto cleanRight = rightIsNull ? std::string_view(parser::keywords::Null) : StripModifiers(rawRight);
     if (cleanLeft.empty() || cleanRight.empty())
     {
         return std::nullopt;

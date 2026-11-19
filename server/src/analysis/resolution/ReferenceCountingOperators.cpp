@@ -4,6 +4,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/OperatorRules.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <array>
 #include <string>
@@ -116,7 +117,8 @@ static void EvaluateAssignmentSite(const IndexedOperatorSite& site, OperatorEval
     {
         return;
     }
-    if (site.op == "=" && (site.leftIsHandle || (rightType == "null" && IsHandleTypeView(leftType))))
+    if (site.op == "=" &&
+        (site.leftIsHandle || (parser::primitives::IsNullType(rightType) && IsHandleTypeView(leftType))))
     {
         return;
     }

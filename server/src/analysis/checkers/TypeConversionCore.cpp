@@ -18,7 +18,8 @@ bool CanTriviallyConvert(std::string_view from, std::string_view to, const Diagn
         return true;
     }
 
-    if ((from == "null" || CanonicalizeType(from) == "null") && IsHandleTypeView(to))
+    if ((parser::primitives::IsNullType(from) || parser::primitives::IsNullType(CanonicalizeType(from))) &&
+        IsHandleTypeView(to))
     {
         return true;
     }
@@ -54,14 +55,14 @@ bool CanConvertBuiltins(std::string_view from, std::string_view to, const Diagno
     {
         return true;
     }
-    if ((from == "bool" && toNum) || (fromNum && to == "bool"))
+    if ((parser::primitives::IsBoolType(from) && toNum) || (fromNum && parser::primitives::IsBoolType(to)))
     {
         return false;
     }
 
     if (allowUnstubbedString && IsStringType(to, ctx) && !FindTypeDeclaration(to, ctx.request.symbolTable).found)
     {
-        return IsNumericPrimitive(from) || from == "bool";
+        return IsNumericPrimitive(from) || parser::primitives::IsBoolType(from);
     }
 
     return false;
@@ -69,7 +70,8 @@ bool CanConvertBuiltins(std::string_view from, std::string_view to, const Diagno
 
 bool IsUnresolvedOrExternalType(std::string_view typeName, bool isBuiltIn, const SymbolTable& table)
 {
-    if (isBuiltIn || typeName == "null" || ResolvesToEnum(typeName, table) || FindFuncdef(typeName, table).has_value())
+    if (isBuiltIn || parser::primitives::IsNullType(typeName) || ResolvesToEnum(typeName, table) ||
+        FindFuncdef(typeName, table).has_value())
     {
         return false;
     }
@@ -115,13 +117,13 @@ bool CanConvertClasses(std::string_view from, std::string_view to, const Diagnos
     const TypeDeclarationInfo toDecl = FindTypeDeclaration(to, table);
     // A bare template name has no arguments to bind, so nothing can be judged; an instantiation is
     // checked through its bound constructors and opAssign overloads.
-    if (toDecl.isTemplate && to.find('<') == std::string_view::npos)
+    if (toDecl.isTemplate && !HasTemplateArgumentsView(to))
     {
         return true;
     }
 
     TemplateBinding binding;
-    if (to.find('<') != std::string_view::npos)
+    if (HasTemplateArgumentsView(to))
     {
         binding = BindTemplateArguments(to, table);
     }
@@ -167,8 +169,8 @@ bool CanConvertUserTypes(std::string_view from, std::string_view to, const Diagn
     const bool toBuiltIn = IsBuiltInValueType(to, ctx);
     const SymbolTable& table = ctx.request.symbolTable;
 
-    const bool fromTemplate = from.find('<') != std::string_view::npos;
-    const bool toTemplate = to.find('<') != std::string_view::npos;
+    const bool fromTemplate = HasTemplateArgumentsView(from);
+    const bool toTemplate = HasTemplateArgumentsView(to);
     if (!fromBuiltIn && !toBuiltIn && !fromTemplate && !toTemplate && IsDerivedFrom(from, to, table))
     {
         return true;
@@ -217,7 +219,7 @@ bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_v
         return true;
     }
 
-    if (uFrom == "null" || CanonicalizeType(uFrom) == "null")
+    if (parser::primitives::IsNullType(uFrom) || parser::primitives::IsNullType(CanonicalizeType(uFrom)))
     {
         return !IsPrimitiveTypeName(uTo) && !ResolvesToEnum(uTo, table);
     }
@@ -260,8 +262,7 @@ bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_v
         return true;
     }
 
-    if (uFrom.find('<') != std::string_view::npos && uTo.find('<') != std::string_view::npos &&
-        AreIncompatibleTemplateTypes(uFrom, uTo))
+    if (HasTemplateArgumentsView(uFrom) && HasTemplateArgumentsView(uTo) && AreIncompatibleTemplateTypes(uFrom, uTo))
     {
         return false;
     }

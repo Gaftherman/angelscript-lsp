@@ -68,7 +68,7 @@ static bool CheckArgIsLValue(const CallArgumentFact& arg, const Scope* scope, co
                              std::string_view sourceCode)
 {
     std::string_view text = CallSiteFacts::SliceText(sourceCode, arg.bytes);
-    if (arg.isThis || text == "this")
+    if (arg.isThis || text == parser::keywords::This)
     {
         return true;
     }
@@ -77,7 +77,7 @@ static bool CheckArgIsLValue(const CallArgumentFact& arg, const Scope* scope, co
     {
         text.remove_prefix(1);
         TrimTypeWhitespace(text);
-        if (text == "this")
+        if (text == parser::keywords::This)
         {
             return true;
         }
@@ -131,7 +131,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
         TrimTypeWhitespace(trimmedArg);
         if (parser::primitives::IsVoidType(trimmedArg))
         {
-            result.argTypes.push_back("void");
+            result.argTypes.push_back(std::string(parser::keywords::Void));
             continue;
         }
 
@@ -150,7 +150,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
         {
             if (parser::primitives::IsVoidType(dataTypeName))
             {
-                result.argTypes.push_back("void");
+                result.argTypes.push_back(std::string(parser::keywords::Void));
                 continue;
             }
             ctx.EmitAtRange(arg.range, diagnostics::codes::ExpressionIsDataType, dataTypeName);
@@ -164,7 +164,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
         {
             if (arg.isNullLiteral)
             {
-                argType = "null";
+                argType = parser::keywords::Null;
             }
             else if (arg.kind == CallArgumentKind::InitializerList)
             {
@@ -178,7 +178,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
         else if (!HasConstModifier(argType) &&
                  IsObjectOperandConst(arg.bytes, ctx.request.sourceCode, scope, ctx.request.symbolTable))
         {
-            argType.insert(0, "const ");
+            PrependConst(argType);
         }
         result.argTypes.push_back(std::move(argType));
     }

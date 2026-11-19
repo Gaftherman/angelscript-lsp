@@ -4,6 +4,7 @@
 #include "analysis/index/NodeRecoveryInternal.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
+#include "parser/Keywords.h"
 
 #include <cstdint>
 #include <string>
@@ -60,7 +61,7 @@ std::string ResolveASTExpressionType(TSNode exprNode, const ExpressionTypeContex
     const TSSymbol sym = ts_node_symbol(exprNode);
     if (sym == parser::GetGrammarSymbols().symVoidArgument)
     {
-        return "void";
+        return std::string(parser::keywords::Void);
     }
     if (ctx.cache)
     {

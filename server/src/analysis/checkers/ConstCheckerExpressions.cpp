@@ -1,6 +1,7 @@
 #include "analysis/checkers/ConstCheckerCommon.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <optional>
@@ -88,7 +89,7 @@ static Constness ResolveNameConstness(std::string_view name, uint32_t byteOffset
 static Constness ResolveLeafConstness(const ConstChainLeafFact& leaf, const ConstSiteFacts& facts,
                                       const ExpressionTypeContext& ctx)
 {
-    if (leaf.leafIsThis || leaf.leafText == "this")
+    if (leaf.leafIsThis || leaf.leafText == parser::keywords::This)
     {
         const auto* encInfo = facts.FindEnclosingMethodAt(leaf.leafBytes.startByte);
         return (encInfo && encInfo->inClass && encInfo->isConstMethod) ? Constness::Const : Constness::Mutable;

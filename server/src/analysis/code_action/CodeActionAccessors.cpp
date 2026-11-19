@@ -2,6 +2,7 @@
 #include "analysis/index/AccessorFacts.h"
 #include "analysis/types/TypeSanitization.h"
 #include "i18n/i18n.h"
+#include "parser/Primitives.h"
 #include "utils/AccessorNames.h"
 #include "utils/Utils.h"
 
@@ -103,9 +104,14 @@ static void EmitGetterSetterEntriesForField(const CodeActionQuery& query, const 
         return;
     }
 
-    std::string cleanType = fType.empty() ? "int" : fType;
+    std::string cleanType = fType.empty() ? std::string(parser::primitives::Int) : fType;
     bool isPassByValue = analysis::IsPrimitiveTypeName(cleanType) || analysis::IsHandleTypeView(cleanType);
-    std::string setterParamType = isPassByValue ? cleanType : ("const " + cleanType + " &in");
+    std::string setterParamType = cleanType;
+    if (!isPassByValue)
+    {
+        PrependConst(setterParamType);
+        setterParamType += " &in";
+    }
 
     std::string getterCode = "    " + cleanType + " " + std::string(utils::k_getterPrefix) + propName +
                              "() const\n    {\n        return " + fName + ";\n    }\n";
@@ -154,7 +160,7 @@ void TryAddGetterSetterActions(const CodeActionQuery& query, std::vector<CodeAct
     std::string fieldType(utils::SliceSource(query.sourceCode, site->fieldType.startByte, site->fieldType.endByte));
     if (fieldType.empty())
     {
-        fieldType = "int";
+        fieldType = parser::primitives::Int;
     }
 
     for (const auto& r : site->fieldNames)

@@ -59,7 +59,7 @@ std::optional<lsp::Hover> TryHoverWildcardType(std::string_view nodeText, const 
 
 std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
 {
-    if (ctx.nodeText != "this")
+    if (ctx.nodeText != parser::keywords::This)
     {
         return std::nullopt;
     }
@@ -85,11 +85,11 @@ std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
         return std::nullopt;
     }
 
-    ctx.profiler.nodeType = "this";
+    ctx.profiler.nodeType = parser::keywords::This;
     if (ctx.profiler.IsActive())
     {
-        ctx.profiler.pathText = "this";
-        ctx.profiler.symbolName = "this";
+        ctx.profiler.pathText = parser::keywords::This;
+        ctx.profiler.symbolName = parser::keywords::This;
     }
 
     utils::HighResTimer fmtTimer;
@@ -102,7 +102,7 @@ std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
 
 std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
 {
-    if (ctx.nodeText != "function" || ctx.site.enclosingLambdaRange.Empty())
+    if (ctx.nodeText != parser::keywords::Function || ctx.site.enclosingLambdaRange.Empty())
     {
         return std::nullopt;
     }
@@ -120,7 +120,7 @@ std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
 
 std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
 {
-    if (!parser::primitives::IsAutoType(ctx.nodeText) && ctx.nodeText != "auto@")
+    if (!parser::primitives::IsAutoType(ctx.nodeText) && !parser::primitives::IsAutoHandleType(ctx.nodeText))
     {
         return std::nullopt;
     }

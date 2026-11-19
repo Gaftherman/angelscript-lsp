@@ -4,6 +4,7 @@
  */
 
 #include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
+#include "parser/Keywords.h"
 #include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
@@ -128,7 +129,7 @@ static void CollectMutatedOutputs(const MethodOutputContext& ctx, const Transpar
         if (IsValidMutatedOutput(ctx, def) && !seenOutputs.contains(def->name))
         {
             seenOutputs.insert(def->name);
-            std::string tName = def->typeName.empty() ? "auto" : def->typeName;
+            std::string tName = def->typeName.empty() ? std::string(parser::keywords::Auto) : def->typeName;
             outputVars.emplace_back(def->name, std::move(tName), false);
         }
     }
@@ -160,7 +161,7 @@ static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& s
                     !seenOutputs.contains(def.name))
                 {
                     seenOutputs.insert(def.name);
-                    std::string tName = def.typeName.empty() ? "auto" : def.typeName;
+                    std::string tName = def.typeName.empty() ? std::string(parser::keywords::Auto) : def.typeName;
                     outputVars.emplace_back(def.name, std::move(tName), true);
                 }
             }

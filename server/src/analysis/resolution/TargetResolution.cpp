@@ -3,6 +3,7 @@
 #include "analysis/index/CallArgumentFacts.h"
 #include "analysis/resolution/ReferenceReceiver.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "parser/Keywords.h"
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/TransparentHash.h"
@@ -1340,7 +1341,7 @@ static std::string ResolveNamedIdentifierType(std::string_view name, const analy
                                               const CollectOccurrencesRequest& request, uint32_t line,
                                               std::string_view fileUri = {})
 {
-    if (name == "this")
+    if (name == parser::keywords::This)
     {
         return GetEnclosingClassName(request.symbolTable, fileUri.empty() ? request.currentUri : fileUri, line);
     }

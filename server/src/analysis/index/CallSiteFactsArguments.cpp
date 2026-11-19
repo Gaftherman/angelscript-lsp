@@ -6,6 +6,7 @@
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Keywords.h"
 
 #include <cstdint>
 #include <string_view>
@@ -171,7 +172,8 @@ CallArgumentFact ReadCallArgument(TSNode exprNode, TSNode nameNode, const NodeIn
         const SyntaxOperands memSyntax(unwrapped, &index);
         const TSNode obj = memSyntax.Field(gs.fieldObject);
         const TSNode mem = memSyntax.Field(gs.fieldMember);
-        if (!ts_node_is_null(obj) && !ts_node_is_null(mem) && parser::NodeText(obj, facts.source) == "this")
+        if (!ts_node_is_null(obj) && !ts_node_is_null(mem) &&
+            parser::NodeText(obj, facts.source) == parser::keywords::This)
         {
             fact.isThisMemberAccess = true;
             fact.detailIndex = static_cast<uint32_t>(facts.thisMemberNames.size());

@@ -5,6 +5,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -82,7 +83,7 @@ static std::string ResolveMember(const IndexedReceiverExpression& step, std::str
 
 static std::string ResolveName(const IndexedReceiverExpression& step, const Scope& scope, const SymbolTable& symbols)
 {
-    if (step.name == "this")
+    if (step.name == parser::keywords::This)
     {
         return std::string(scope.GetEnclosingClass());
     }

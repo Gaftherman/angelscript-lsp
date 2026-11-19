@@ -1,5 +1,6 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <cctype>
@@ -180,7 +181,7 @@ static bool ClassDeclaresMethodReturningBool(std::string_view cls, std::string_v
         {
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
             {
-                if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                if (parser::primitives::IsBoolType(CleanBaseType(sym.GetFunction().returnType)))
                 {
                     return true;
                 }
@@ -252,7 +253,7 @@ bool IsTruthyCondition(std::string_view typeName, const SymbolTable& table)
     }
 
     const auto clean = CleanBaseType(typeName);
-    if (clean == "bool")
+    if (parser::primitives::IsBoolType(clean))
     {
         return true;
     }

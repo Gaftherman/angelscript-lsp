@@ -160,12 +160,14 @@ static void TryAddConstHandleDiagnosticFix(const CodeActionQuery& query, uint32_
 
     std::string title = i18n::FormatMessage(query.i18n, "action-add-const-variable-qualifier", "Add 'const' qualifier");
 
+    std::string constPrefix;
+    analysis::PrependConst(constPrefix);
     entries.push_back(MakeQuickFixEntry(
         QuickFixEntryOptions{std::move(title),
                              diagIndex,
                              {CodeActionTextEdit{analysis::SourceRange{site->typeStart.line, site->typeStart.character,
                                                                        site->typeStart.line, site->typeStart.character},
-                                                 "const "}},
+                                                 std::move(constPrefix)}},
                              true}));
 }
 

@@ -4,6 +4,7 @@
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string_view>
@@ -25,11 +26,11 @@ static std::string_view ClassifyNumberLiteral(std::string_view text)
         {
             if (c == '.' || c == 'e' || c == 'E' || c == 'f' || c == 'F')
             {
-                return "float";
+                return parser::primitives::Float;
             }
         }
     }
-    return "int";
+    return parser::primitives::Int;
 }
 
 /**
@@ -66,7 +67,7 @@ static ExpressionType ResolveThisValueType(const ValueExpressionFact& value, con
 static ExpressionType ResolveIdentifierValueType(const ValueExpressionFact& value, const Scope* scope,
                                                  const DiagnosticContext& ctx)
 {
-    if (value.text == "this")
+    if (value.text == parser::keywords::This)
     {
         return ResolveThisValueType(value, ctx);
     }
@@ -162,7 +163,7 @@ static ExpressionType ResolveLiteralValueType(const ValueExpressionFact& value, 
         result.baseName = ctx.request.GetEffectiveStringTypeName();
         break;
     case ValueExpressionKind::Boolean:
-        result.baseName = "bool";
+        result.baseName = parser::primitives::Bool;
         break;
     default:
         return {};
@@ -204,9 +205,9 @@ static ExpressionType ResolveMemberValueType(const ValueExpressionFact& value, c
  */
 static void NegateUnsignedType(ExpressionType& type)
 {
-    if (type.baseName == "uint" || type.baseName == "uint32")
+    if (type.baseName == parser::primitives::UInt || type.baseName == "uint32")
     {
-        type.baseName = "int";
+        type.baseName = parser::primitives::Int;
     }
     else if (type.baseName == "uint8")
     {
@@ -226,7 +227,7 @@ ExpressionType ResolveValueType(const ValueExpressionFact& value, const Scope* s
 {
     if (value.logicalNot)
     {
-        return ExpressionType{"bool", true, false};
+        return ExpressionType{std::string(parser::primitives::Bool), true, false};
     }
 
     ExpressionType result;

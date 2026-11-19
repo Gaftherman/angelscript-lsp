@@ -77,7 +77,7 @@ static std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(std::strin
     {
         return ArgumentConversion{ConversionRank::Exact, 0, 0, false, 0};
     }
-    if (argType == "null")
+    if (parser::primitives::IsNullType(argType))
     {
         const bool paramIsHandle = param.isHandle || IsHandleTypeView(param.typeName);
         if (paramIsHandle || IsWildcardParameter(param) || IsFuncdefParam(param, symbolTable))

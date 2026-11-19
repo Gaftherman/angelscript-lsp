@@ -4,6 +4,7 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string>
@@ -30,14 +31,14 @@ const Scope* ResolveNodeScope(const SourceRange& at, const TypeConversionCheckRe
 
 static bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
 {
-    return typeName == "uint" || typeName == "uint8" || typeName == "uint16" || typeName == "uint32" ||
-           typeName == "uint64";
+    return typeName == parser::primitives::UInt || typeName == "uint8" || typeName == "uint16" ||
+           typeName == "uint32" || typeName == "uint64";
 }
 
 static bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
 {
-    return typeName == "int" || typeName == "int8" || typeName == "int16" || typeName == "int32" ||
-           typeName == "int64" || typeName == "float" || typeName == "double";
+    return typeName == parser::primitives::Int || typeName == "int8" || typeName == "int16" || typeName == "int32" ||
+           typeName == "int64" || typeName == parser::primitives::Float || typeName == parser::primitives::Double;
 }
 
 static bool IsConstantIdentifier(std::string_view identifier, uint32_t byte, const Scope* scope,

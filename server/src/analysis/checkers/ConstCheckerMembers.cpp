@@ -1,5 +1,6 @@
 #include "analysis/checkers/ConstCheckerCommon.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string_view>
@@ -87,7 +88,7 @@ bool IsMemberOfThis(const ConstAssignmentTargetFact& target, const ConstSiteFact
 
     if (target.kind == ConstTargetKind::This)
     {
-        outMemberName = "this";
+        outMemberName = parser::keywords::This;
         return true;
     }
 
@@ -104,7 +105,7 @@ bool IsMemberOfThis(const ConstAssignmentTargetFact& target, const ConstSiteFact
 
     if (target.kind == ConstTargetKind::Member)
     {
-        if (target.receiverText == "this")
+        if (target.receiverText == parser::keywords::This)
         {
             outMemberName = target.memberName;
             return true;
@@ -113,7 +114,7 @@ bool IsMemberOfThis(const ConstAssignmentTargetFact& target, const ConstSiteFact
         if (target.leafIsThis)
         {
             bool hasHandleType = false;
-            if (!target.leafText.empty() && target.leafText != "this")
+            if (!target.leafText.empty() && target.leafText != parser::keywords::This)
             {
                 if (const auto* var =
                         FindClassMemberVariable(encInfo->className, target.leafText, ctx.symbolTable, ctx.cache))

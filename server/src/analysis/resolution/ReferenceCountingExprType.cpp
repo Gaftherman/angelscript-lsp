@@ -8,6 +8,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -27,7 +28,7 @@ static std::string ComputeExprTypeUncached(const IndexedExprNode& node, ExprType
     case IndexedExprKind::Literal:
         return (node.text == "string") ? std::string(ctx.symbolTable.GetStringType()) : node.text;
     case IndexedExprKind::Null:
-        return "null";
+        return std::string(parser::keywords::Null);
     case IndexedExprKind::Construct:
     case IndexedExprKind::Cast:
         return node.text;
@@ -104,7 +105,7 @@ static std::string ComputeExprTypeUncached(const IndexedExprNode& node, ExprType
     {
         if (node.text == "!" || node.text == "not")
         {
-            return "bool";
+            return std::string(parser::primitives::Bool);
         }
         const std::string opType = ResolveIndexedExprType(node.left, ctx);
         if (opType.empty())

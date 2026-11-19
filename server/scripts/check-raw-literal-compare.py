@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Ratchet gate for AGENTS.md PROHIBITION 16 (no raw literal comparisons).
 
-Counts comparisons of type names, keywords and literals against raw string literals, and
-`find('<')` / `starts_with("const")` template and qualifier probes, per source file. A file's count
+Counts comparisons of type names, keywords and literals against raw string literals, the same
+literals built or passed as raw strings (`push_back("void")`, `return "bool"`, `insert(0, "const ")`),
+and `find('<')` / `starts_with("const")` template and qualifier probes, per source file. A file's count
 may only go down. A file with no baseline entry must have none. `--update` rewrites the baseline
 after a migration lowered counts; it refuses to raise any count.
 """
@@ -20,10 +21,16 @@ EXEMPT = ("analysis/formatting/ClangFormat",)
 LITERALS = (
     "auto|void|null|true|false|this|super|const|bool|int|uint|float|double|string|any|\\?"
 )
+# Literals that are also counted when built or passed (`push_back("void")`, `return "bool"`,
+# `insert(0, "const ")`), not only when compared.
+STANDALONE = (
+    "auto|auto@|void|null|true|false|this|super|function|const |const|bool|int|uint|float|double"
+)
 PATTERN = re.compile(
-    r'[!=]=\s*"(?:' + LITERALS + r')"'
-    r"|find\('<'\)"
-    r'|starts_with\("const'
+    r"find\('<'\)"
+    r'|starts_with\("const[^"]*"'
+    r'|[!=]=\s*"(?:' + LITERALS + r')"'
+    r'|"(?:' + STANDALONE + r')"'
 )
 
 

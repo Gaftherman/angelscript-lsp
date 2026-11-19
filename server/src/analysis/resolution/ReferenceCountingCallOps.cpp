@@ -6,6 +6,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/OperatorRules.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -29,7 +30,7 @@ static void CheckCallArgumentConversions(const FunctionSignature& sig, const Ind
     {
         const uint32_t argExprId = evalCtx.sites.argIds[site.argBegin + i];
         const std::string argType = ResolveIndexedExprType(argExprId, ctx);
-        if (argType.empty() || argType == "null")
+        if (argType.empty() || parser::primitives::IsNullType(argType))
         {
             continue;
         }

@@ -1,4 +1,5 @@
 #include "analysis/formatting/FormattingLineBuilder.h"
+#include "parser/Keywords.h"
 
 #include <algorithm>
 #include <vector>
@@ -92,7 +93,8 @@ void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t
 
     if (isValueBrace)
     {
-        const bool padded = i > 0 && (tokens[i - 1].type == TokenType::CloseParen || tokens[i - 1].text == "function");
+        const bool padded =
+            i > 0 && (tokens[i - 1].type == TokenType::CloseParen || tokens[i - 1].text == parser::keywords::Function);
         tokens[i].isPaddedBrace = padded;
         state.BeginLineIfEmpty();
         state.currentLine.tokenIndices.push_back(i);

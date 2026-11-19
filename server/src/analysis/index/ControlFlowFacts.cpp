@@ -7,6 +7,7 @@
 #include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Keywords.h"
 #include "utils/Utils.h"
 
 #include <cstdint>
@@ -87,10 +88,10 @@ static ControlFlowConditionFact ReadCondition(TSNode condNode, const NodeIndex& 
     const TSNode child = ts_node_child_count(inner) > 0 ? ts_node_child(inner, 0) : TSNode{};
     const TSSymbol childSym = !ts_node_is_null(child) ? ts_node_symbol(child) : 0;
     const std::string_view innerText = utils::TrimView(parser::NodeText(inner, source));
-    const bool isTrue =
-        sym == gs.tokTrue || childSym == gs.tokTrue || (sym == gs.symBooleanLiteral && innerText == "true");
-    const bool isFalse =
-        sym == gs.tokFalse || childSym == gs.tokFalse || (sym == gs.symBooleanLiteral && innerText == "false");
+    const bool isTrue = sym == gs.tokTrue || childSym == gs.tokTrue ||
+                        (sym == gs.symBooleanLiteral && innerText == parser::keywords::True);
+    const bool isFalse = sym == gs.tokFalse || childSym == gs.tokFalse ||
+                         (sym == gs.symBooleanLiteral && innerText == parser::keywords::False);
     const bool isNull = sym == gs.tokNull || sym == gs.symNullLiteral || childSym == gs.tokNull;
     const bool isNumber = sym == gs.symNumberLiteral;
 

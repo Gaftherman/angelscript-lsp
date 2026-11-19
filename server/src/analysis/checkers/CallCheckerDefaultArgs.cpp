@@ -41,11 +41,11 @@ static bool IsDefaultArgumentTypeMismatch(const ParameterInformation& param, con
     }
 
     const bool isStringLit = dv.size() >= 2 && dv.front() == '"' && dv.back() == '"';
-    const bool isBoolLit = (dv == "true" || dv == "false");
-    const bool isNullLit = (dv == "null");
+    const bool isBoolLit = (dv == parser::keywords::True || dv == parser::keywords::False);
+    const bool isNullLit = (parser::primitives::IsNullType(dv));
     const bool isEnum = ResolvesToEnum(paramBase, table);
 
-    return (isStringLit && (IsNumericPrimitive(paramBase) || paramBase == "bool" || isEnum)) ||
+    return (isStringLit && (IsNumericPrimitive(paramBase) || parser::primitives::IsBoolType(paramBase) || isEnum)) ||
            (isBoolLit && (IsNumericPrimitive(paramBase) || isEnum || param.isHandle)) ||
            (isNullLit && !param.isHandle && (IsCorePrimitive(paramBase) || isEnum));
 }
@@ -203,7 +203,7 @@ static bool DoesUnqualifiedDefaultRefResolve(std::string_view refName, const Sym
 static bool DoesDefaultArgRefResolve(const DefaultArgSymbolRef& ref, const Symbol& candidate,
                                      const DiagnosticContext& ctx)
 {
-    if (ref.name == "this")
+    if (ref.name == parser::keywords::This)
     {
         return false;
     }

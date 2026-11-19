@@ -107,7 +107,7 @@ static void ProcessAutoDeclarator(const AutoDeclaratorFact& declarator, const Ty
     {
         ctx.EmitAtRange(value.range, "as-err-cannot-infer-void");
     }
-    else if (rhsType == "null")
+    else if (parser::primitives::IsNullType(rhsType))
     {
         ctx.EmitAtRange(value.range, "as-err-cannot-infer-null");
     }

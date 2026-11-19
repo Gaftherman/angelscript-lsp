@@ -324,7 +324,7 @@ TemplateTypeInfo ParseTemplateType(std::string_view typeName)
     TemplateTypeInfo info;
     StripTemplateDecorations(typeName);
 
-    const size_t openBracket = typeName.find('<');
+    const size_t openBracket = TemplateArgumentsStart(typeName);
     if (openBracket == std::string_view::npos || !typeName.ends_with('>'))
     {
         info.containerName = std::string(typeName);
@@ -377,7 +377,8 @@ std::optional<size_t> GetTemplateParameterCount(std::string_view typeName, const
  */
 bool IsIgnoredTemplateType(std::string_view s)
 {
-    return s.empty() || s == "null" || parser::primitives::IsAutoType(s) || parser::primitives::IsVoidType(s);
+    return s.empty() || parser::primitives::IsNullType(s) || parser::primitives::IsAutoType(s) ||
+           parser::primitives::IsVoidType(s);
 }
 
 bool AreCompatibleTemplateContainers(std::string_view fromContainer, std::string_view toContainer) noexcept
@@ -401,8 +402,8 @@ bool AreCompatibleTemplateArgPair(std::string_view va, std::string_view vb)
     {
         return true;
     }
-    const bool vaIsTmpl = (va.find('<') != std::string_view::npos && va.ends_with('>'));
-    const bool vbIsTmpl = (vb.find('<') != std::string_view::npos && vb.ends_with('>'));
+    const bool vaIsTmpl = (HasTemplateArgumentsView(va) && va.ends_with('>'));
+    const bool vbIsTmpl = (HasTemplateArgumentsView(vb) && vb.ends_with('>'));
     if (vaIsTmpl && vbIsTmpl)
     {
         return !AreIncompatibleTemplateTypes(va, vb);
@@ -438,8 +439,8 @@ bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to)
     {
         return false;
     }
-    const bool fromIsTmpl = (from.find('<') != std::string_view::npos && from.ends_with('>'));
-    const bool toIsTmpl = (to.find('<') != std::string_view::npos && to.ends_with('>'));
+    const bool fromIsTmpl = (HasTemplateArgumentsView(from) && from.ends_with('>'));
+    const bool toIsTmpl = (HasTemplateArgumentsView(to) && to.ends_with('>'));
     if (fromIsTmpl != toIsTmpl)
     {
         return true;
@@ -448,8 +449,8 @@ bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to)
     {
         return false;
     }
-    const size_t fromOpen = from.find('<');
-    const size_t toOpen = to.find('<');
+    const size_t fromOpen = TemplateArgumentsStart(from);
+    const size_t toOpen = TemplateArgumentsStart(to);
     if (!AreCompatibleTemplateContainers(from.substr(0, fromOpen), to.substr(0, toOpen)))
     {
         return true;

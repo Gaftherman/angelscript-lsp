@@ -6,6 +6,7 @@
 #include "analysis/index/SyntaxErrorPinpointing.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
 #include "parser/BraceBalance.h"
@@ -183,7 +184,7 @@ void SymbolCollector::PushClassContainer(TSNode node, const SymbolCollectContext
     }
     TSNode nameNode = GetChildByFieldName(node, "name");
     std::string className(parser::NodeText(nameNode, sCtx.request.sourceCode));
-    const size_t angle = className.find('<');
+    const size_t angle = TemplateArgumentsStart(className);
     if (angle != std::string_view::npos)
     {
         className.resize(angle);
@@ -1017,7 +1018,7 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
         ts_tree_cursor_delete(&cursor);
     }
 
-    size_t angleInName = sym.name.find('<');
+    size_t angleInName = TemplateArgumentsStart(sym.name);
     if (angleInName != std::string::npos)
     {
         sym.name = sym.name.substr(0, angleInName);
@@ -1416,7 +1417,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
     if (ctx.isInsideFunction)
         return;
 
-    TSNode functionNode = GetChildByFieldName(callNode, "function");
+    TSNode functionNode = GetChildByFieldId(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(functionNode))
         return;
 
@@ -1713,9 +1714,28 @@ static size_t FindNextClauseBoundary(std::string_view text, size_t start, size_t
 
 static bool IsStatementStart(std::string_view word)
 {
-    static constexpr std::string_view k_keywords[] = {
-        "bool",  "break", "case",   "continue", "default", "double", "float",  "for",    "if",    "int",  "int16",
-        "int64", "int8",  "return", "string",   "switch",  "uint",   "uint16", "uint64", "uint8", "void", "while"};
+    static constexpr std::string_view k_keywords[] = {parser::primitives::Bool,
+                                                      "break",
+                                                      "case",
+                                                      "continue",
+                                                      "default",
+                                                      parser::primitives::Double,
+                                                      parser::primitives::Float,
+                                                      "for",
+                                                      "if",
+                                                      parser::primitives::Int,
+                                                      "int16",
+                                                      "int64",
+                                                      "int8",
+                                                      "return",
+                                                      "string",
+                                                      "switch",
+                                                      parser::primitives::UInt,
+                                                      "uint16",
+                                                      "uint64",
+                                                      "uint8",
+                                                      parser::keywords::Void,
+                                                      "while"};
     return std::binary_search(std::begin(k_keywords), std::end(k_keywords), word);
 }
 
@@ -2436,7 +2456,7 @@ bool SymbolCollector::ApplyAccessOrStorageString(std::string_view text, SymbolMo
         modifiers.access = AccessModifier::Protected;
     else if (text == "public")
         modifiers.access = AccessModifier::Public;
-    else if (text == "const")
+    else if (text == parser::keywords::Const)
         modifiers.isConst = true;
     else if (text == "shared")
         modifiers.isShared = true;
@@ -2600,7 +2620,7 @@ void SymbolCollector::ExtractParamTypeRefAndConst(TSNode pTypeNode, std::string_
             if (!ts_node_is_named(typeChild))
             {
                 std::string_view tok = parser::NodeText(typeChild, sourceCode);
-                if (tok == "const")
+                if (tok == parser::keywords::Const)
                     paramInfo.isConst = true;
                 else if (tok == "&")
                 {
@@ -2792,7 +2812,7 @@ static void CollectDefaultArgSymbolRefs(TSNode defaultNode, uint32_t paramIndex,
         }
         if (sym == gs.symThisExpression)
         {
-            out.push_back(DefaultArgSymbolRef{paramIndex, "this", false});
+            out.push_back(DefaultArgSymbolRef{paramIndex, std::string(parser::keywords::This), false});
             continue;
         }
         if (sym == gs.symMemberExpression)

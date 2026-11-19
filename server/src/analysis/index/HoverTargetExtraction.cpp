@@ -190,19 +190,19 @@ static void ClassifyHoverTargetKind(TSNode targetNode, TSNode parent, std::strin
             site.topmostBinaryPlusRange = {ts_node_start_byte(topPlus), ts_node_end_byte(topPlus)};
         }
     }
-    else if (parser::primitives::IsAutoType(nodeText) || nodeText == "auto@")
+    else if (parser::primitives::IsAutoType(nodeText) || parser::primitives::IsAutoHandleType(nodeText))
     {
         site.kind = HoverNodeKind::Auto;
-        if (nodeText == "auto@")
+        if (parser::primitives::IsAutoHandleType(nodeText))
         {
             site.isAutoHandle = 1;
         }
     }
-    else if (nodeText == "this")
+    else if (nodeText == parser::keywords::This)
     {
         site.kind = HoverNodeKind::This;
     }
-    else if (nodeText == "function")
+    else if (nodeText == parser::keywords::Function)
     {
         site.kind = HoverNodeKind::Lambda;
     }

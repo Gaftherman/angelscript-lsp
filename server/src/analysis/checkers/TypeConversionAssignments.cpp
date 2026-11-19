@@ -31,7 +31,7 @@ static void CheckHandleConstAssignment(const AssignmentSiteFact& site, const Con
     if (rightVal.isConst && !leftVal.isConst && !types.from.empty() && !types.to.empty())
     {
         ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion",
-                        {"const " + types.from + "@", types.to + "@"});
+                        {ConstHandleSpelling(types.from), types.to + "@"});
     }
 }
 
@@ -230,8 +230,9 @@ void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionC
 
     if (parser::primitives::IsVoidType(normFrom))
     {
-        ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion",
-                        {"void", normTo.empty() ? std::string_view("value") : std::string_view(normTo)});
+        ctx.EmitAtRange(
+            site.right.range, "as-err-no-implicit-conversion",
+            {parser::keywords::Void, normTo.empty() ? std::string_view("value") : std::string_view(normTo)});
         return;
     }
 

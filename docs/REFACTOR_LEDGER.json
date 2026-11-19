@@ -3737,6 +3737,54 @@
       "verifiedByTests": [
         "Full suite 2976/2976 and differential corpus"
       ]
+    },
+    {
+      "id": "REF-P19-RAW-LITERALS-C2",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/ExpressionTypeTernary.cpp",
+      "deletedLineRange": "1",
+      "originalSymbolOrCode": "raw comparisons and constructions of the literals null, true, false, bool, int, uint, float, double, void, auto, auto@ in about 60 files",
+      "whatItDidAndWhyInThatFile": "Checkers and resolvers compared and built type text with raw literals, repeating each spelling.",
+      "whyChangedOrDeleted": "PROHIBITION 16: one canonical constant or predicate per literal in parser/Primitives.h and parser/Keywords.h; the gate now also counts constructed literals.",
+      "replacedByCanonicalFile": "server/src/parser/Primitives.h",
+      "replacedByCanonicalSymbol": "IsNullType",
+      "ramOrCpuImpact": "None; constexpr string_view comparisons identical to the replaced expressions.",
+      "verifiedByTests": [
+        "Full suite 2976/2976 and differential corpus"
+      ]
+    },
+    {
+      "id": "REF-P19-RAW-LITERALS-C3",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/ConstCheckerMembers.cpp",
+      "deletedLineRange": "1",
+      "originalSymbolOrCode": "raw comparisons of the this and super literals in 23 files",
+      "whatItDidAndWhyInThatFile": "Receiver and member checks compared identifier text with this and super.",
+      "whyChangedOrDeleted": "PROHIBITION 16: parser::keywords::This and Super are the single spelling.",
+      "replacedByCanonicalFile": "server/src/parser/Keywords.h",
+      "replacedByCanonicalSymbol": "This",
+      "ramOrCpuImpact": "None; identical string_view comparisons.",
+      "verifiedByTests": [
+        "Full suite 2976/2976 and differential corpus"
+      ]
+    },
+    {
+      "id": "REF-P19-RAW-LITERALS-C4",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/types/TypeSanitization.h",
+      "deletedLineRange": "1",
+      "originalSymbolOrCode": "type.find('<') template probes and starts_with(\"const\") qualifier probes in about 40 files",
+      "whatItDidAndWhyInThatFile": "Each site probed the type spelling for template arguments or a const prefix by hand.",
+      "whyChangedOrDeleted": "PROHIBITION 16: HasTemplateArgumentsView, TemplateArgumentsStart and PrependConst are the single forms.",
+      "replacedByCanonicalFile": "server/src/analysis/types/TypeSanitization.h",
+      "replacedByCanonicalSymbol": "HasTemplateArgumentsView",
+      "ramOrCpuImpact": "None; the helpers are constexpr and inline the same find call.",
+      "verifiedByTests": [
+        "Full suite 2976/2976 and differential corpus"
+      ]
     }
   ]
 }

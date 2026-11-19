@@ -54,7 +54,7 @@ DeclaredType ReadDeclaredType(std::string_view raw, const DiagnosticContext& ctx
         return result;
     }
 
-    if (raw.find('<') != std::string_view::npos || raw.find('[') != std::string_view::npos)
+    if (HasTemplateArgumentsView(raw) || raw.find('[') != std::string_view::npos)
     {
         result.usable = true;
         result.isTemplateOrArray = true;
@@ -154,7 +154,7 @@ static bool IsVisibleScriptClassOrInterface(std::string_view typeName, const Dia
 static void CheckHandleInitializer(const VariableDeclaratorFact& declarator, const ExpressionType& source,
                                    const DeclaredType& declared, DiagnosticContext& ctx)
 {
-    if (source.baseName == "null")
+    if (parser::primitives::IsNullType(source.baseName))
     {
         return;
     }
@@ -167,7 +167,7 @@ static void CheckHandleInitializer(const VariableDeclaratorFact& declarator, con
     if (source.isConst && !declared.qualifiers.isConst)
     {
         ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion",
-                        {"const " + source.baseName + "@", declared.baseName + "@"});
+                        {ConstHandleSpelling(source.baseName), declared.baseName + "@"});
         return;
     }
     if (IsSameType(source.baseName, declared.baseName))
@@ -278,7 +278,7 @@ static void ProcessDeclaredVariableDeclarators(const VariableDeclarationSiteFact
             if (declarator.hasValue && !declarator.valueIsInitializerList)
             {
                 const ExpressionType source = ResolveValueType(declarator.value, scope, ctx);
-                if (source.known && !source.baseName.empty() && source.baseName != "null" &&
+                if (source.known && !source.baseName.empty() && !parser::primitives::IsNullType(source.baseName) &&
                     !parser::primitives::IsAutoType(source.baseName) && !IsVariableTypeToken(source.baseName) &&
                     !ctx.request.IsRegisteredSymbol(source.baseName) &&
                     !IsSameType(UnwrapTypedef(source.baseName, ctx.request.symbolTable),

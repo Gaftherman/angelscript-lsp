@@ -42,7 +42,8 @@ static bool CheckBoolCompatibility(bool isRelational, std::string_view other, co
     {
         return false;
     }
-    if (TypeHasOperator(other, "opEquals", "bool", table) || TypeHasOpImplConvTo(other, "bool", table))
+    if (TypeHasOperator(other, "opEquals", parser::primitives::Bool, table) ||
+        TypeHasOpImplConvTo(other, parser::primitives::Bool, table))
     {
         return !isRelational;
     }
@@ -52,7 +53,7 @@ static bool CheckBoolCompatibility(bool isRelational, std::string_view other, co
 static bool CheckStringCompatibility(bool isRelational, std::string_view other, const SymbolTable& table,
                                      std::string_view stringTypeName)
 {
-    if (IsNumericPrimitive(other) || other == "bool" || ResolvesToEnum(other, table))
+    if (IsNumericPrimitive(other) || parser::primitives::IsBoolType(other) || ResolvesToEnum(other, table))
     {
         return false;
     }
@@ -100,7 +101,7 @@ static bool CheckBoolBranch(bool isRelational, const OperandTypePair& types, con
         return !isRelational;
     }
     const std::string_view other =
-        (types.left == "bool") ? std::string_view(types.right) : std::string_view(types.left);
+        (parser::primitives::IsBoolType(types.left)) ? std::string_view(types.right) : std::string_view(types.left);
     return CheckBoolCompatibility(isRelational, other, table, stringTypeName);
 }
 
@@ -140,7 +141,7 @@ static bool AreComparisonTypesCompatible(std::string_view op, const OperandTypeP
         return true;
     }
     const bool isRelational = IsRelationalOp(op);
-    if (types.left == "bool" || types.right == "bool")
+    if (parser::primitives::IsBoolType(types.left) || parser::primitives::IsBoolType(types.right))
     {
         return CheckBoolBranch(isRelational, types, table, stringTypeName);
     }
@@ -162,7 +163,8 @@ static bool AreComparisonTypesCompatible(std::string_view op, const OperandTypeP
 static void EmitComparisonDiagnostics(SourceRange range, std::string_view op, const OperandTypePair& types,
                                       DiagnosticContext& ctx)
 {
-    if (IsRelationalOp(op) && (types.left == "bool" || types.right == "bool"))
+    if (IsRelationalOp(op) &&
+        (parser::primitives::IsBoolType(types.left) || parser::primitives::IsBoolType(types.right)))
     {
         ctx.EmitAtRange(range, diagnostics::codes::IllegalOperation, DiagnosticSeverity::Error);
         return;
@@ -208,7 +210,8 @@ void CheckComparisonOperatorCompatibility(const BinaryExpressionFact& fact, cons
     }
     if (IsFunctionReference(fact.left.bytes, exprCtx) || IsFunctionReference(fact.right.bytes, exprCtx))
     {
-        ctx.EmitAtRange(fact.operatorRange, diagnostics::codes::NoMatchingOperator, {fact.op, "function", "value"});
+        ctx.EmitAtRange(fact.operatorRange, diagnostics::codes::NoMatchingOperator,
+                        {fact.op, std::string(parser::keywords::Function), "value"});
         return;
     }
 

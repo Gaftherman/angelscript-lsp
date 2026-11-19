@@ -5,6 +5,7 @@
 #include "analysis/resolution/DefinitionResolutionInternal.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "config/EngineRuleConfig.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -221,7 +222,7 @@ std::vector<Symbol> TryResolveScopedIdentifier(const DefinitionQuery& query)
 std::vector<Symbol> TryResolveThisKeyword(std::string_view nodeText, const Scope* innerScope,
                                           const DefinitionQuery& query)
 {
-    if (nodeText != "this")
+    if (nodeText != parser::keywords::This)
     {
         return {};
     }

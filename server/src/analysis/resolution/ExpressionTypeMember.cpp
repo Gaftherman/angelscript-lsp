@@ -163,11 +163,11 @@ std::string ResolveContainerMethodFallback(std::string_view memName, const Templ
     {
         if (memName == "length" || memName == "size")
         {
-            return "uint";
+            return std::string(parser::primitives::UInt);
         }
         if (memName == "isEmpty")
         {
-            return "bool";
+            return std::string(parser::primitives::Bool);
         }
     }
     return "";

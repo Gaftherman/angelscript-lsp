@@ -1,4 +1,5 @@
 #include "analysis/index/SemanticTokenFactsInternal.h"
+#include "parser/Keywords.h"
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 
@@ -106,7 +107,7 @@ static bool MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)
  */
 static bool MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)
 {
-    if (name == "function" || name == "function.method")
+    if (name == parser::keywords::Function || name == "function.method")
     {
         rule.tokenType = (name == "function.method") ? Type_Method : Type_Function;
         rule.tokenMod = Mod_Declaration;

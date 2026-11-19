@@ -6,6 +6,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "parser/Keywords.h"
 #include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
 
@@ -83,7 +84,7 @@ static bool IsSpecialContextCallee(std::string_view name, const CallSiteFact& ca
         return true;
     }
 
-    if (name == "super")
+    if (name == parser::keywords::Super)
     {
         const std::string_view encClass = CallSiteFacts::SliceText(cctx.sourceCode, call.enclosingClassNameBytes);
         const std::string_view encFunc = CallSiteFacts::SliceText(cctx.sourceCode, call.enclosingFunctionNameBytes);

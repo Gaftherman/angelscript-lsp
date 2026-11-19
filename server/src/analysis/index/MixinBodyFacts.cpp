@@ -1,6 +1,7 @@
 #include "analysis/index/ClassRuleFacts.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -117,7 +118,8 @@ static void AppendMemberRefs(TSNode funcBody, const NodeIndex& index, std::strin
         {
             const TSNode objNode = parser::GetChildByField(n, gs.fieldObject);
             const TSNode propNode = parser::GetChildByField(n, gs.fieldMember);
-            if (!ts_node_is_null(objNode) && !ts_node_is_null(propNode) && parser::NodeText(objNode, source) == "this")
+            if (!ts_node_is_null(objNode) && !ts_node_is_null(propNode) &&
+                parser::NodeText(objNode, source) == parser::keywords::This)
             {
                 if (!parser::NodeText(propNode, source).empty())
                 {

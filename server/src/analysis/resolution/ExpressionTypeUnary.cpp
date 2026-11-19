@@ -3,6 +3,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/Utils.h"
 
 #include <string>
@@ -42,9 +43,9 @@ bool IsFunctionHandleTargetName(std::string_view targetName, std::span<const Sym
 std::string ResolveUnaryMinus(std::string_view operandType)
 {
     const std::string_view clean = CleanExpressionTypeView(operandType);
-    if (clean == "uint" || clean == "uint32")
+    if (clean == parser::primitives::UInt || clean == "uint32")
     {
-        return "int";
+        return std::string(parser::primitives::Int);
     }
     if (clean == "uint8")
     {

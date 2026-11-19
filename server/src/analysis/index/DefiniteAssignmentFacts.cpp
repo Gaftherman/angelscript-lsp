@@ -8,6 +8,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Keywords.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -85,7 +86,7 @@ static bool IsLoopConditionAlwaysTrue(TSNode condNode, bool isFor, std::string_v
         return isFor;
     const std::string_view val =
         isFor ? utils::TrimView(parser::NodeText(condNode, source)) : parser::NodeText(condNode, source);
-    return val == "true" || (isFor && (val.empty() || val == ";"));
+    return val == parser::keywords::True || (isFor && (val.empty() || val == ";"));
 }
 
 /** @brief Extracts reads, assignments, and call sites from an expression sub-tree. */

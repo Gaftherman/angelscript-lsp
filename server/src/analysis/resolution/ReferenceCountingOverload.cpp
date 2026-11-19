@@ -26,7 +26,7 @@ std::string SubstituteMemberReturnType(std::string_view returnType, std::string_
         return std::string(returnType);
     }
     const std::string normalized = NormalizeType(ownerType, symbolTable.GetDefaultArrayType());
-    if (normalized.find('<') == std::string::npos)
+    if (!HasTemplateArgumentsView(normalized))
     {
         return std::string(returnType);
     }
@@ -81,9 +81,8 @@ ResolvedOverloadMatch ResolveMemberOverload(const MemberOverloadQuery& query, co
     {
         return {};
     }
-    const TemplateBinding binding = (normalized.find('<') != std::string::npos)
-                                        ? BindTemplateArguments(normalized, symbolTable)
-                                        : TemplateBinding{};
+    const TemplateBinding binding =
+        (HasTemplateArgumentsView(normalized)) ? BindTemplateArguments(normalized, symbolTable) : TemplateBinding{};
 
     std::vector<Symbol> originals;
     std::vector<Symbol> substituted;

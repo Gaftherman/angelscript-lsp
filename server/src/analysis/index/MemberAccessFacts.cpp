@@ -137,7 +137,7 @@ static MemberAccessIdentifierFact MakeIdentifierFact(TSNode node, std::string_vi
     return {BytesOf(node),
             RangeOf(node),
             name,
-            (name == "this" || name == "super"),
+            (name == parser::keywords::This || name == parser::keywords::Super),
             index.IsInsideLambdaClosure(startByte),
             encClass,
             insideMixin,
@@ -174,7 +174,7 @@ static void CollectMemberExpressions(const NodeIndex& index, std::string_view so
                                   memberName,
                                   {},
                                   false,
-                                  (parser::NodeText(objectNode, source) == "this")};
+                                  (parser::NodeText(objectNode, source) == parser::keywords::This)};
         fact.enclosingClassName = EnclosingClass(fact.bytes.startByte, source, fact.insideMixin, index);
         facts.memberExpressions.push_back(fact);
     }
@@ -197,7 +197,7 @@ static void CollectIdentifiers(const NodeIndex& index, std::string_view source, 
     const auto& gs = parser::GetGrammarSymbols();
     for (TSNode thisNode : index.Nodes(gs.symThisExpression))
     {
-        facts.identifiers.push_back(MakeIdentifierFact(thisNode, "this", index, source));
+        facts.identifiers.push_back(MakeIdentifierFact(thisNode, parser::keywords::This, index, source));
     }
 
     const TSSymbol kIdSymbols[] = {gs.symIdentifier, gs.symScopedIdentifier};
@@ -211,7 +211,7 @@ static void CollectIdentifiers(const NodeIndex& index, std::string_view source, 
             }
 
             const std::string_view idText = ExtractCleanIdentifier(node, source);
-            const bool isThisOrSuper = (idText == "this" || idText == "super");
+            const bool isThisOrSuper = (idText == parser::keywords::This || idText == parser::keywords::Super);
             if (!isThisOrSuper && (idText.empty() || parser::keywords::IsKeyword(idText) || idText == "value"))
             {
                 continue;

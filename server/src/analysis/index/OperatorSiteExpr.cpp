@@ -1,6 +1,7 @@
 #include "analysis/index/OperatorSiteIndexInternal.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string>
@@ -13,7 +14,7 @@ static std::string ClassifyNumberLiteralSpelling(std::string_view text)
     const bool isHex = text.size() > 1 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
     if (isHex)
     {
-        return "int";
+        return std::string(parser::primitives::Int);
     }
     bool isFloatSuffix = false;
     bool hasDecimalOrExp = false;
@@ -30,9 +31,9 @@ static std::string ClassifyNumberLiteralSpelling(std::string_view text)
     }
     if (isFloatSuffix)
     {
-        return "float";
+        return std::string(parser::primitives::Float);
     }
-    return hasDecimalOrExp ? "double" : "int";
+    return hasDecimalOrExp ? std::string(parser::primitives::Double) : std::string(parser::primitives::Int);
 }
 
 static std::string ExtractConstructTypeText(TSNode node, const parser::GrammarSymbols& gs, std::string_view source)
@@ -160,12 +161,12 @@ static void PopulateExprChildren(TSNode node, uint32_t id, OperatorSiteBuilder& 
     else if (sym == gs.symNullLiteral)
     {
         expr.kind = IndexedExprKind::Null;
-        expr.text = "null";
+        expr.text = parser::keywords::Null;
     }
     else if (sym == gs.symBooleanLiteral)
     {
         expr.kind = IndexedExprKind::Literal;
-        expr.text = "bool";
+        expr.text = parser::primitives::Bool;
     }
     else if (sym == gs.symStringLiteral || sym == gs.symConcatenatedString)
     {

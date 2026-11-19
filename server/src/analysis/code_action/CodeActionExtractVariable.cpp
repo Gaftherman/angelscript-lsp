@@ -156,9 +156,9 @@ static std::optional<CodeActionEntry> BuildExtractVariableEntry(const CodeAction
     {
         return std::nullopt;
     }
-    if (analysis::IsUnusableTypeName(varType) || varType == "null")
+    if (analysis::IsUnusableTypeName(varType) || parser::primitives::IsNullType(varType))
     {
-        varType = "auto";
+        varType = parser::keywords::Auto;
     }
 
     std::string varName = SuggestVariableName(site, varType, query, scope);

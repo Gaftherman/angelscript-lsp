@@ -86,7 +86,7 @@ inline bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target,
  */
 struct ExpressionType
 {
-    std::string baseName;   ///< Cleaned base type name, e.g. "Money" or "int".
+    std::string baseName;   ///< Cleaned base type name, e.g. `Money` or `int`.
     bool known = false;     ///< False means "give up" - never a reason to diagnose.
     bool isLiteral = false; ///< A literal's type is exact, so it can be judged strictly.
     bool isConst = false;   ///< True if expression has const-qualified type.

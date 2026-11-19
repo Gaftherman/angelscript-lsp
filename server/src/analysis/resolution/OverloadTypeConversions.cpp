@@ -2,6 +2,7 @@
 
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -175,7 +176,7 @@ bool HasConvertingConstructor(std::string_view fromType, std::string_view toType
     {
         return false;
     }
-    const size_t openBracket = cleanTo.find('<');
+    const size_t openBracket = TemplateArgumentsStart(cleanTo);
     const std::string baseName = (openBracket == std::string::npos) ? cleanTo : cleanTo.substr(0, openBracket);
     const std::string shortName{LastScopeSegment(baseName)};
     const TemplateBinding binding =
@@ -195,7 +196,7 @@ UserConversionMatch CheckConversionMethod(std::string_view fromType, std::string
     UserConversionMatch bestMatch;
     const std::string cleanFrom = NormalizeType(fromType, symbolTable.GetDefaultArrayType());
     const std::string cleanTo = NormalizeType(toType, symbolTable.GetDefaultArrayType());
-    const size_t openBracket = cleanFrom.find('<');
+    const size_t openBracket = TemplateArgumentsStart(cleanFrom);
     const std::string baseName = (openBracket == std::string::npos) ? cleanFrom : cleanFrom.substr(0, openBracket);
     const std::string shortName{LastScopeSegment(baseName)};
     TemplateBinding binding;
@@ -295,7 +296,7 @@ std::string UnwrapTypedef(std::string_view typeName, const SymbolTable& symbolTa
         return current;
     }
 
-    const size_t open = current.find('<');
+    const size_t open = TemplateArgumentsStart(current);
     if (open == std::string::npos || open == 0 || current.back() != '>')
     {
         return current;
@@ -324,8 +325,8 @@ bool IsIntegerType(std::string_view typeName)
 bool IsUnsignedInteger(std::string_view typeName)
 {
     const std::string_view normalized = CleanBaseTypeView(typeName);
-    return normalized == "uint" || normalized == "uint8" || normalized == "uint16" || normalized == "uint32" ||
-           normalized == "uint64";
+    return normalized == parser::primitives::UInt || normalized == "uint8" || normalized == "uint16" ||
+           normalized == "uint32" || normalized == "uint64";
 }
 
 bool IsFloatingPointType(std::string_view typeName)
@@ -342,34 +343,40 @@ bool CheckWideningTarget(std::string_view from, std::string_view to)
 {
     if (from == "int8")
     {
-        return IsInTypeList(
-            to, {"int16", "int", "int32", "int64", "uint8", "uint16", "uint", "uint32", "uint64", "float", "double"});
+        return IsInTypeList(to, {"int16", parser::primitives::Int, "int32", "int64", "uint8", "uint16",
+                                 parser::primitives::UInt, "uint32", "uint64", parser::primitives::Float,
+                                 parser::primitives::Double});
     }
     if (from == "uint8")
     {
-        return IsInTypeList(to, {"uint16", "int16", "uint", "int", "uint64", "int64", "float", "double"});
+        return IsInTypeList(to, {"uint16", "int16", parser::primitives::UInt, parser::primitives::Int, "uint64",
+                                 "int64", parser::primitives::Float, parser::primitives::Double});
     }
     if (from == "int16")
     {
-        return IsInTypeList(to, {"int", "int32", "int64", "uint16", "uint", "uint32", "uint64", "float", "double"});
+        return IsInTypeList(to, {parser::primitives::Int, "int32", "int64", "uint16", parser::primitives::UInt,
+                                 "uint32", "uint64", parser::primitives::Float, parser::primitives::Double});
     }
     if (from == "uint16")
     {
-        return IsInTypeList(to, {"uint", "int", "uint64", "int64", "float", "double"});
+        return IsInTypeList(to, {parser::primitives::UInt, parser::primitives::Int, "uint64", "int64",
+                                 parser::primitives::Float, parser::primitives::Double});
     }
-    if (from == "int" || from == "int32")
+    if (from == parser::primitives::Int || from == "int32")
     {
-        return IsInTypeList(to, {"int32", "int", "int64", "uint", "uint32", "uint64", "float", "double"});
+        return IsInTypeList(to, {"int32", parser::primitives::Int, "int64", parser::primitives::UInt, "uint32",
+                                 "uint64", parser::primitives::Float, parser::primitives::Double});
     }
-    if (from == "uint" || from == "uint32")
+    if (from == parser::primitives::UInt || from == "uint32")
     {
-        return IsInTypeList(to, {"uint32", "uint", "uint64", "int", "int32", "int64", "float", "double"});
+        return IsInTypeList(to, {"uint32", parser::primitives::UInt, "uint64", parser::primitives::Int, "int32",
+                                 "int64", parser::primitives::Float, parser::primitives::Double});
     }
     if (from == "int64" || from == "uint64")
     {
-        return IsInTypeList(to, {"int64", "uint64", "double"});
+        return IsInTypeList(to, {"int64", "uint64", parser::primitives::Double});
     }
-    return from == "float" && to == "double";
+    return from == parser::primitives::Float && to == parser::primitives::Double;
 }
 
 bool IsPrimitiveWidening(std::string_view fromType, std::string_view toType)
@@ -377,7 +384,7 @@ bool IsPrimitiveWidening(std::string_view fromType, std::string_view toType)
     const std::string_view from = CleanBaseTypeView(fromType);
     const std::string_view to = CleanBaseTypeView(toType);
 
-    if (from == to || from == "bool" || to == "bool")
+    if (from == to || parser::primitives::IsBoolType(from) || parser::primitives::IsBoolType(to))
     {
         return false;
     }
@@ -436,7 +443,7 @@ bool IsOutParameter(const ParameterInformation& param)
  */
 static std::optional<std::string_view> ExtractTemplateBaseName(std::string_view typeName)
 {
-    const size_t openBracket = typeName.find('<');
+    const size_t openBracket = TemplateArgumentsStart(typeName);
     const size_t closeBracket = typeName.rfind('>');
     if (openBracket == std::string_view::npos || closeBracket == std::string_view::npos || closeBracket <= openBracket)
     {
@@ -559,8 +566,8 @@ bool IsSameType(std::string_view a, std::string_view b)
     {
         return true;
     }
-    const size_t aOpen = a.find('<');
-    const size_t bOpen = b.find('<');
+    const size_t aOpen = TemplateArgumentsStart(a);
+    const size_t bOpen = TemplateArgumentsStart(b);
     if (aOpen != std::string::npos && a.ends_with('>') && bOpen != std::string::npos && b.ends_with('>'))
     {
         const std::string_view aCont = std::string_view(a).substr(0, aOpen);

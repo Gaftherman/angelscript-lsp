@@ -1,6 +1,8 @@
 #include "analysis/formatting/FormattingTokens.h"
 
 #include "analysis/formatting/FormattingLexer.h"
+#include "parser/Keywords.h"
+#include "parser/Primitives.h"
 
 #include <unordered_set>
 
@@ -108,9 +110,22 @@ static void MarkClangFormatPragmas(std::vector<Token>& tokens)
  */
 static bool IsBuiltInTypeKeyword(std::string_view text)
 {
-    static const std::unordered_set<std::string_view> kTypeKeywords = {
-        "auto", "void",  "bool",   "int",    "int8",   "int16", "int32",  "int64",
-        "uint", "uint8", "uint16", "uint32", "uint64", "float", "double", "const"};
+    static const std::unordered_set<std::string_view> kTypeKeywords = {parser::keywords::Auto,
+                                                                       parser::keywords::Void,
+                                                                       parser::primitives::Bool,
+                                                                       parser::primitives::Int,
+                                                                       "int8",
+                                                                       "int16",
+                                                                       "int32",
+                                                                       "int64",
+                                                                       parser::primitives::UInt,
+                                                                       "uint8",
+                                                                       "uint16",
+                                                                       "uint32",
+                                                                       "uint64",
+                                                                       parser::primitives::Float,
+                                                                       parser::primitives::Double,
+                                                                       parser::keywords::Const};
     return kTypeKeywords.contains(text);
 }
 
@@ -163,7 +178,7 @@ bool IsStatementStartBefore(const std::vector<Token>& tokens, size_t p)
 
 bool IsIdentifierReferenceDecl(const std::vector<Token>& tokens, size_t p, size_t ampIdx)
 {
-    if (p >= 2 && tokens[p - 2].text == "const")
+    if (p >= 2 && tokens[p - 2].text == parser::keywords::Const)
         return true;
     if (ampIdx + 1 < tokens.size() && IsDirectionKeyword(tokens[ampIdx + 1]))
         return true;

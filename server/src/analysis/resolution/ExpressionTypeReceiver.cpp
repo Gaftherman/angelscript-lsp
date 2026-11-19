@@ -204,7 +204,7 @@ static std::string ResolveReceiverTypeUncached(IndexedByteRange objRange, std::s
     const std::string_view arrayTypeName =
         ctx.arrayTypeName.empty() ? symbolTable.GetDefaultArrayType() : ctx.arrayTypeName;
 
-    if (objText == "this")
+    if (objText == parser::keywords::This)
     {
         return ResolveThisReceiver(objRange, sourceCode, effectiveHostClass, ctx.nodeIndex);
     }

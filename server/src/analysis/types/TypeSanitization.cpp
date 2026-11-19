@@ -2,6 +2,7 @@
 
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -118,11 +119,11 @@ std::string CanonicalizeType(std::string_view typeName)
     std::string clean = CleanExpressionType(typeName);
     if (clean == "int32")
     {
-        return "int";
+        return std::string(parser::primitives::Int);
     }
     if (clean == "uint32")
     {
-        return "uint";
+        return std::string(parser::primitives::UInt);
     }
     if (clean == "short")
     {

@@ -153,7 +153,7 @@ void CollectKeywords(CompletionCollector& collector)
         {
             continue;
         }
-        if (kw == "super" && (!inClass || !hasBaseClass))
+        if (kw == parser::keywords::Super && (!inClass || !hasBaseClass))
         {
             continue;
         }

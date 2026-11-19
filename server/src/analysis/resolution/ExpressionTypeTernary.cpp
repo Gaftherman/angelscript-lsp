@@ -45,17 +45,17 @@ static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, cons
 
 static std::string ResolveTernaryNumericPromotion(std::string_view c1, std::string_view c2)
 {
-    if (c1 == "double" || c2 == "double")
-        return "double";
-    if (c1 == "float" || c2 == "float")
-        return "float";
+    if (c1 == parser::primitives::Double || c2 == parser::primitives::Double)
+        return std::string(parser::primitives::Double);
+    if (c1 == parser::primitives::Float || c2 == parser::primitives::Float)
+        return std::string(parser::primitives::Float);
     if (c1 == "int64" || c2 == "int64")
         return "int64";
     if (c1 == "uint64" || c2 == "uint64")
         return "uint64";
-    if (c1 == "uint" || c2 == "uint")
-        return "uint";
-    return "int";
+    if (c1 == parser::primitives::UInt || c2 == parser::primitives::UInt)
+        return std::string(parser::primitives::UInt);
+    return std::string(parser::primitives::Int);
 }
 
 static std::string ResolveTernaryEnumPromotion(std::string_view c1, std::string_view c2, const SymbolTable& symbolTable)
@@ -70,15 +70,19 @@ static std::string ResolveTernaryEnumPromotion(std::string_view c1, std::string_
 static std::string ResolveTernaryNullBranch(std::string_view t1, std::string_view t2, std::string_view c1,
                                             std::string_view c2)
 {
-    if (c1 == "null" && IsHandleTypeView(t2))
+    if (parser::primitives::IsNullType(c1) && IsHandleTypeView(t2))
     {
         return std::string(t2);
     }
-    if (c2 == "null" && IsHandleTypeView(t1))
+    if (parser::primitives::IsNullType(c2) && IsHandleTypeView(t1))
     {
         return std::string(t1);
     }
-    return (c1 == "null" && c2 == "null") ? "null" : "";
+    if (parser::primitives::IsNullType(c1) && parser::primitives::IsNullType(c2))
+    {
+        return std::string(parser::keywords::Null);
+    }
+    return {};
 }
 
 std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_view t2, const SymbolTable& symbolTable)

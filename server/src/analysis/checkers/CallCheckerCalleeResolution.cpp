@@ -4,6 +4,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -118,7 +119,7 @@ static bool ResolveSuperCallee(const CallSiteFact& site, std::string_view enclos
     const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
     const std::string_view enclosingFn =
         CallSiteFacts::SliceText(ctx.request.sourceCode, site.enclosingFunctionNameBytes);
-    if (calleeName != "super" || enclosingFn != LastScopeSegment(enclosingClass))
+    if (calleeName != parser::keywords::Super || enclosingFn != LastScopeSegment(enclosingClass))
     {
         return false;
     }

@@ -31,11 +31,11 @@ static std::string GetDefaultReturnValue(std::string_view returnType, std::strin
     std::string cleanRet = analysis::CleanBaseType(returnType);
     if (analysis::IsHandleTypeView(returnType))
     {
-        return "null";
+        return std::string(parser::keywords::Null);
     }
-    if (cleanRet == "bool")
+    if (parser::primitives::IsBoolType(cleanRet))
     {
-        return "false";
+        return std::string(parser::keywords::False);
     }
     if (!stringTypeName.empty() && cleanRet == stringTypeName)
     {
@@ -57,7 +57,7 @@ static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis:
     for (const auto& m : missingMethods)
     {
         const auto& fn = m.GetFunction();
-        std::string ret = fn.returnType.empty() ? "void" : fn.returnType;
+        std::string ret = fn.returnType.empty() ? std::string(parser::keywords::Void) : fn.returnType;
         if (fn.modifiers.isReturnReference && analysis::TrailingReferenceModifierLength(ret) == 0)
         {
             ret += "&";

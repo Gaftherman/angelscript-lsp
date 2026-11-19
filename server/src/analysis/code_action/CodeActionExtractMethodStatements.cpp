@@ -4,6 +4,7 @@
  */
 
 #include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
+#include "parser/Keywords.h"
 #include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
@@ -61,7 +62,7 @@ static bool IsValidMethodInputRef(const analysis::LocalReference& ref, const ana
         return false;
     }
 
-    std::string tName = def->typeName.empty() ? "auto" : def->typeName;
+    std::string tName = def->typeName.empty() ? std::string(parser::keywords::Auto) : def->typeName;
     outInfo = {def->name, std::move(tName), false};
     return true;
 }

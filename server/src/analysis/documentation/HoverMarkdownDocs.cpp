@@ -208,7 +208,7 @@ void AppendTypedefDoc(const Symbol& sym, const SymbolTable& symbolTable, const a
             std::string doc = desc + underlying;
             if (!info->range.empty())
             {
-                if (primitiveBase == "bool")
+                if (parser::primitives::IsBoolType(primitiveBase))
                 {
                     doc += "\n\n" +
                            angel_lsp::i18n::FormatMessage(i18n, "hover-primitive-values", "Values: `{}`", info->range);

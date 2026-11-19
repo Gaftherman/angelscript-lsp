@@ -8,6 +8,7 @@
 #include "analysis/rules/ClassRules.h"
 #include "analysis/types/TypeSanitization.h"
 #include "document/Document.h"
+#include "parser/Primitives.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -28,8 +29,9 @@ namespace angel_lsp::analysis::rules
  */
 static bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringTypeName)
 {
-    if (name.empty() || name == "this" || name == "super" || name == "cast" || name == "null" || name == "true" ||
-        name == "false" || name == effectiveStringTypeName)
+    if (name.empty() || name == parser::keywords::This || name == parser::keywords::Super || name == "cast" ||
+        parser::primitives::IsNullType(name) || name == parser::keywords::True || name == parser::keywords::False ||
+        name == effectiveStringTypeName)
     {
         return true;
     }

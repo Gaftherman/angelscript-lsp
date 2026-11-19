@@ -1,5 +1,6 @@
 #include "lsp/Server.h"
 #include "lsp/handlers/WorkspaceConfigHelpers.h"
+#include "parser/Keywords.h"
 
 #include <algorithm>
 #include <string>
@@ -34,7 +35,7 @@ static void UpdateInlayHintDisplayConfig(const lsp::LSPObject& section, const ls
     }
     if (auto omitted = FindSectionString(section, ihObj, "omittedDefaultArguments", "inlayHints"); omitted.has_value())
     {
-        if (*omitted == "off" || *omitted == "false")
+        if (*omitted == "off" || *omitted == parser::keywords::False)
         {
             cfg.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::Off;
         }

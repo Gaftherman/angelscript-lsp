@@ -23,7 +23,7 @@ void AppendBoolConditionSite(TSNode condNode, OperatorSiteBuilder& builder)
     site.scopeLine = pt.row;
     site.scopeCharacter = pt.column;
     site.exprId = exprId;
-    site.targetType = "bool";
+    site.targetType = parser::primitives::Bool;
     site.isCondition = true;
     builder.out.sites.push_back(std::move(site));
 }

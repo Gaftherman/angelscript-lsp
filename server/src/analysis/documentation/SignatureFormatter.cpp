@@ -353,7 +353,7 @@ std::string FormatVariableDeclaration(const VariableSignature& var, std::string_
     oss << FormatAccessPrefix(var.modifiers);
 
     const std::string typeText = ApplyConstAndHandle(var.typeName, var.modifiers.isConst, var.modifiers.isHandle);
-    oss << (typeText.empty() ? "auto" : typeText) << " " << name;
+    oss << (typeText.empty() ? parser::keywords::Auto : typeText) << " " << name;
 
     // A virtual property is a variable to the symbol table and an accessor pair to the reader.
     // Rendering only the former gave hover `string Name` for `string Name { get const {...} }`,

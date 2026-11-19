@@ -1,5 +1,7 @@
 #include "analysis/resolution/ExpressionTypeLiterals.h"
 
+#include "parser/Primitives.h"
+
 #include <string>
 #include <string_view>
 
@@ -10,12 +12,12 @@ std::string_view ResolveFloatingPointLiteral(std::string_view text)
 {
     if (text.find('f') != std::string_view::npos || text.find('F') != std::string_view::npos)
     {
-        return "float";
+        return parser::primitives::Float;
     }
     if (text.find('.') != std::string_view::npos || text.find('e') != std::string_view::npos ||
         text.find('E') != std::string_view::npos)
     {
-        return "double";
+        return parser::primitives::Double;
     }
     return {};
 }
@@ -34,9 +36,9 @@ std::string_view ResolveIntegerLiteralSuffix(std::string_view text)
     }
     if (hasU)
     {
-        return "uint";
+        return parser::primitives::UInt;
     }
-    return "int";
+    return parser::primitives::Int;
 }
 
 std::string_view ResolveNumberLiteral(std::string_view text)

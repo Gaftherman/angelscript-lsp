@@ -1,6 +1,7 @@
 #include "analysis/resolution/ReferenceCountingOperators.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <array>
 #include <string>
@@ -87,7 +88,8 @@ void EvaluateBinarySite(const IndexedOperatorSite& site, OperatorEvalContext& ev
 
     if (op == "==" || op == "!=")
     {
-        if (site.leftIsHandle || site.rightIsHandle || leftType == "null" || rightType == "null")
+        if (site.leftIsHandle || site.rightIsHandle || parser::primitives::IsNullType(leftType) ||
+            parser::primitives::IsNullType(rightType))
         {
             return;
         }

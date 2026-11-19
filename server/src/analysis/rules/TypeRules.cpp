@@ -36,7 +36,7 @@ std::string_view KindWord(SymbolType type)
     switch (type)
     {
     case SymbolType::Function:
-        return "function";
+        return parser::keywords::Function;
     case SymbolType::Class:
         return "class";
     case SymbolType::Interface:

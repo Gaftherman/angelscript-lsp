@@ -27,7 +27,7 @@ struct MemberExpressionFact
     std::string_view enclosingClassName; ///< Innermost class enclosing this expression; empty if outside class or
                                          ///< inside lambda closure.
     bool insideMixin = false;            ///< True if the innermost enclosing class is a mixin class.
-    bool isThisAccess = false;           ///< True if objectText is "this".
+    bool isThisAccess = false;           ///< True if objectText is `this`.
 };
 
 /**
@@ -38,8 +38,8 @@ struct MemberAccessIdentifierFact
 {
     IndexedByteRange bytes;      ///< Byte span of the identifier or this-expression node.
     SourceRange range;           ///< Line and column span used for diagnostics.
-    std::string_view name;       ///< Cleaned identifier spelling (e.g. variable name, "this", "super", or scoped name).
-    bool isThisOrSuper = false;  ///< True if name is "this" or "super".
+    std::string_view name;       ///< Cleaned identifier spelling (e.g. variable name, `this`, `super`, or scoped name).
+    bool isThisOrSuper = false;  ///< True if name is `this` or `super`.
     bool isInsideLambda = false; ///< True if enclosed by an intermediate lambda closure barrier.
     std::string_view
         enclosingClassName; ///< Innermost class enclosing this access; empty if outside class or inside lambda closure.

@@ -5,6 +5,7 @@
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -104,8 +105,8 @@ static void ExpandVirtualPropertyAccessors(const Symbol& propSym, std::vector<Sy
         setter.type = SymbolType::Function;
         setter.name = "set_" + propSym.name;
         FunctionSignature fn;
-        fn.returnType = "void";
-        fn.returnBaseTypeName = "void";
+        fn.returnType = parser::keywords::Void;
+        fn.returnBaseTypeName = parser::keywords::Void;
         fn.returnTypeKind = TypeKind::Void;
         fn.modifiers.access = var.modifiers.access;
         fn.modifiers.isFinal = var.isSetFinal;

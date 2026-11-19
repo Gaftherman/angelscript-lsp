@@ -4,6 +4,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
@@ -37,7 +38,7 @@ static std::string_view CleanReceiverTypeName(std::string_view rawType) noexcept
     {
         return "array";
     }
-    if (const auto pos = rawType.find('<'); pos != std::string_view::npos)
+    if (const auto pos = TemplateArgumentsStart(rawType); pos != std::string_view::npos)
     {
         return rawType.substr(0, pos);
     }
@@ -113,7 +114,7 @@ static std::string ResolveReceiverType(std::string_view receiverText, const Scop
         }
         return MemberTypeThroughHierarchy(CleanReceiverTypeName(head), receiverText.substr(dot + 1), symbolTable);
     }
-    if (receiverText == "this")
+    if (receiverText == parser::keywords::This)
     {
         return scope ? std::string(scope->GetEnclosingClass()) : std::string{};
     }

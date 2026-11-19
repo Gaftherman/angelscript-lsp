@@ -1,5 +1,7 @@
 #include "analysis/formatting/FormattingSpacing.h"
 
+#include "parser/Keywords.h"
+
 #include <optional>
 #include <unordered_set>
 
@@ -199,8 +201,8 @@ static std::optional<bool> CheckAtRefAndTemplateSpacing(const std::vector<Token>
 
 static bool IsCallLikePrecedingToken(const Token& tok)
 {
-    return tok.type == TokenType::Identifier || tok.text == "super" || tok.text == "this" || tok.text == "cast" ||
-           tok.text == "function";
+    return tok.type == TokenType::Identifier || tok.text == parser::keywords::Super ||
+           tok.text == parser::keywords::This || tok.text == "cast" || tok.text == parser::keywords::Function;
 }
 
 static std::optional<bool> CheckParenAndBracketSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,

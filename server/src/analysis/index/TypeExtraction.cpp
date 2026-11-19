@@ -2,6 +2,7 @@
 
 #include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
+#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <span>
@@ -17,31 +18,31 @@ TypeExtractionSymbols::TypeExtractionSymbols()
 {
     const TSLanguage* lang = tree_sitter_angelscript();
 
-    auto addPrimitive = [&](const char* name, uint32_t len, TypeKind kind)
+    auto addPrimitive = [&](std::string_view name, TypeKind kind)
     {
-        TSSymbol sym = ts_language_symbol_for_name(lang, name, len, false);
+        TSSymbol sym = ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.size()), false);
         if (sym != 0)
         {
             primitiveKindMap.emplace(sym, kind);
         }
     };
 
-    addPrimitive("void", 4, TypeKind::Void);
-    addPrimitive("int", 3, TypeKind::Int32);
-    addPrimitive("int32", 5, TypeKind::Int32);
-    addPrimitive("int8", 4, TypeKind::Int8);
-    addPrimitive("int16", 5, TypeKind::Int16);
-    addPrimitive("int64", 5, TypeKind::Int64);
-    addPrimitive("uint", 4, TypeKind::UInt32);
-    addPrimitive("uint32", 6, TypeKind::UInt32);
-    addPrimitive("uint8", 5, TypeKind::UInt8);
-    addPrimitive("uint16", 6, TypeKind::UInt16);
-    addPrimitive("uint64", 6, TypeKind::UInt64);
-    addPrimitive("float", 5, TypeKind::Float);
-    addPrimitive("double", 6, TypeKind::Double);
-    addPrimitive("bool", 4, TypeKind::Bool);
-    addPrimitive("string", 6, TypeKind::String);
-    addPrimitive("auto", 4, TypeKind::Auto);
+    addPrimitive(parser::keywords::Void, TypeKind::Void);
+    addPrimitive(parser::primitives::Int, TypeKind::Int32);
+    addPrimitive("int32", TypeKind::Int32);
+    addPrimitive("int8", TypeKind::Int8);
+    addPrimitive("int16", TypeKind::Int16);
+    addPrimitive("int64", TypeKind::Int64);
+    addPrimitive(parser::primitives::UInt, TypeKind::UInt32);
+    addPrimitive("uint32", TypeKind::UInt32);
+    addPrimitive("uint8", TypeKind::UInt8);
+    addPrimitive("uint16", TypeKind::UInt16);
+    addPrimitive("uint64", TypeKind::UInt64);
+    addPrimitive(parser::primitives::Float, TypeKind::Float);
+    addPrimitive(parser::primitives::Double, TypeKind::Double);
+    addPrimitive(parser::primitives::Bool, TypeKind::Bool);
+    addPrimitive("string", TypeKind::String);
+    addPrimitive(parser::keywords::Auto, TypeKind::Auto);
 }
 
 static const TypeExtractionSymbols& GetTypeExtractionSymbols()

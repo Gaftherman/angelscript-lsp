@@ -85,8 +85,8 @@ std::optional<AutoVariableHintText> FormatAutoVariableHint(const IndexedAutoDecl
                                                            const angel_lsp::i18n::I18n* i18n)
 {
     const auto deduced = DeduceExpressionTypeAt(autoVar.initExprStartByte, autoVar.initExprEndByte, exprCtx);
-    if (IsUnusableTypeName(deduced) || parser::primitives::IsAutoType(deduced) || deduced == "null" ||
-        parser::primitives::IsVoidType(deduced))
+    if (IsUnusableTypeName(deduced) || parser::primitives::IsAutoType(deduced) ||
+        parser::primitives::IsNullType(deduced) || parser::primitives::IsVoidType(deduced))
     {
         return std::nullopt;
     }

@@ -109,9 +109,10 @@ static void CheckRefTypeBoolConversion(const ConversionExpressionFact& unwrapped
     {
         if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
         {
-            if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+            if (parser::primitives::IsBoolType(CleanBaseType(sym.GetFunction().returnType)))
             {
-                ctx.EmitAtRange(unwrapped.range, "as-err-ref-type-bool-conv-disallowed", {baseClass, "bool"});
+                ctx.EmitAtRange(unwrapped.range, "as-err-ref-type-bool-conv-disallowed",
+                                {baseClass, parser::primitives::Bool});
                 break;
             }
         }

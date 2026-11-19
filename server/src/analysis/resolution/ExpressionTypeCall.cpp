@@ -138,7 +138,7 @@ void CollectScopeAndGlobalFunctions(std::string_view funcName, std::span<const S
 
 std::string FindClassOrInterfaceName(std::string_view funcName, const SymbolTable& symbolTable)
 {
-    const auto templatePos = funcName.find('<');
+    const auto templatePos = TemplateArgumentsStart(funcName);
     const std::string_view baseName =
         (templatePos != std::string_view::npos) ? funcName.substr(0, templatePos) : funcName;
 
