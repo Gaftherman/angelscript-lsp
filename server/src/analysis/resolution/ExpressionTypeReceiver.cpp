@@ -3,6 +3,7 @@
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <cstdint>
@@ -27,7 +28,7 @@ static std::string ExtractMemberSymbolOwner(const Symbol& sym, std::string_view 
     else if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
     {
         const auto& fn = sym.GetFunction();
-        if (!fn.returnType.empty() && fn.returnType != "void")
+        if (!fn.returnType.empty() && !parser::primitives::IsVoidType(fn.returnType))
         {
             return MemberOwnerType(fn.returnType, arrayTypeName);
         }
@@ -148,7 +149,7 @@ static std::string ResolveReceiverScope(const Scope* scope, std::string_view obj
         const LocalDefinition* objDef = ResolveInScopeAt(scope, objText, refByte);
         if (objDef)
         {
-            if (!objDef->typeName.empty() && CleanBaseTypeView(objDef->typeName) != "auto")
+            if (!objDef->typeName.empty() && !parser::primitives::IsAutoType(CleanBaseTypeView(objDef->typeName)))
             {
                 return MemberOwnerType(objDef->typeName, arrayTypeName);
             }
@@ -231,7 +232,7 @@ static std::string ResolveReceiverTypeUncached(IndexedByteRange objRange, std::s
     }
 
     std::string exprType = ResolveExpressionTypeAt(objRange, exprCtx);
-    if (!exprType.empty() && exprType != "void" && exprType != "unknown")
+    if (!exprType.empty() && !parser::primitives::IsVoidType(exprType) && exprType != "unknown")
     {
         return MemberOwnerType(exprType, arrayTypeName);
     }

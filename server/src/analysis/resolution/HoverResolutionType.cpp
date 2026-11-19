@@ -117,7 +117,7 @@ std::string FormatLambdaSignature(uint32_t lambdaStartByte, uint32_t lambdaEndBy
 std::string DeduceLocalDefinitionHoverType(const LocalDefinition& def, IndexedByteRange hoverNode,
                                            const ExpressionTypeContext& ctx)
 {
-    if (!def.typeName.empty() && analysis::CleanBaseTypeView(def.typeName) != "auto")
+    if (!def.typeName.empty() && !parser::primitives::IsAutoType(analysis::CleanBaseTypeView(def.typeName)))
     {
         return def.typeName;
     }
@@ -141,7 +141,7 @@ std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, const Exp
                 if (d.hasValue)
                 {
                     std::string res = ResolveExpressionTypeAt(d.valueOperand.bytes, ctx);
-                    if (!res.empty() && res != "void" && res != "null" &&
+                    if (!res.empty() && !parser::primitives::IsVoidType(res) && res != "null" &&
                         res != constants::k_initializerListTypeSentinel)
                     {
                         return res;
@@ -150,7 +150,7 @@ std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, const Exp
                 if (d.hasArguments && d.argument.present)
                 {
                     std::string res = ResolveExpressionTypeAt(d.argument.operand.bytes, ctx);
-                    if (!res.empty() && res != "void" && res != "null")
+                    if (!res.empty() && !parser::primitives::IsVoidType(res) && res != "null")
                     {
                         return res;
                     }

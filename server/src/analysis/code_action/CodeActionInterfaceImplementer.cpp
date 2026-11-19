@@ -80,7 +80,7 @@ static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis:
             stubs += " const";
         }
         stubs += " override\n    {\n";
-        if (ret != "void")
+        if (!parser::primitives::IsVoidType(ret))
         {
             const auto value = GetDefaultReturnValue(ret, stringTypeName);
             if (value.empty() || fn.modifiers.isReturnReference)

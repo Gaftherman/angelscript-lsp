@@ -2,6 +2,7 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string_view>
@@ -102,7 +103,7 @@ static void ProcessAutoDeclarator(const AutoDeclaratorFact& declarator, const Ty
 
     const auto rhsType = ResolveExpressionType(value.bytes, ExpressionTypeContext(scope, ctx));
 
-    if (rhsType == "void")
+    if (parser::primitives::IsVoidType(rhsType))
     {
         ctx.EmitAtRange(value.range, "as-err-cannot-infer-void");
     }
@@ -113,7 +114,7 @@ static void ProcessAutoDeclarator(const AutoDeclaratorFact& declarator, const Ty
     else if (!rhsType.empty() && request.mutableScopeRoot && scope)
     {
         const LocalDefinition* def = ResolveInScope(scope, declarator.name);
-        if (def && CleanBaseType(def->typeName) == "auto")
+        if (def && parser::primitives::IsAutoType(CleanBaseType(def->typeName)))
         {
             auto finalType = rhsType;
             if ((def->isHandleType || IsHandleTypeView(def->typeName)) && !IsHandleTypeView(finalType))

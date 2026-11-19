@@ -2,6 +2,7 @@
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
+#include "parser/Primitives.h"
 
 #include <utility>
 
@@ -38,7 +39,7 @@ static void CollectVariableInitConversionSites(OperatorSiteBuilder& builder)
             continue;
         }
         const std::string_view typeText = parser::NodeText(typeNode, builder.source);
-        if (typeText.empty() || typeText == "auto")
+        if (typeText.empty() || parser::primitives::IsAutoType(typeText))
         {
             continue;
         }

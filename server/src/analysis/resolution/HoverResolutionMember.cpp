@@ -10,6 +10,7 @@
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <optional>
@@ -76,7 +77,7 @@ std::string ResolveAutoHoverMarkdown(IndexedByteRange autoDeclRange, bool isAuto
         }
     }
 
-    if (!deduced.empty() && deduced != "auto")
+    if (!deduced.empty() && !parser::primitives::IsAutoType(deduced))
     {
         if (isAutoHandle && !IsHandleTypeView(deduced))
         {

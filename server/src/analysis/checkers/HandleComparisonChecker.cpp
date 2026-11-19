@@ -8,6 +8,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string_view>
 
@@ -93,7 +94,8 @@ static void CheckRelationalComparison(SourceRange opRange, const RelationalCheck
     }
     // Identity compares references, so every object type qualifies; only primitives and enums are values.
     const std::string_view clean = CleanBaseTypeView(typeName);
-    if (clean.empty() || clean == "auto" || IsVariableTypeToken(clean) || ctx.request.IsRegisteredSymbol(clean))
+    if (clean.empty() || parser::primitives::IsAutoType(clean) || IsVariableTypeToken(clean) ||
+        ctx.request.IsRegisteredSymbol(clean))
     {
         return true;
     }

@@ -162,7 +162,7 @@ template <typename RefLike, typename TargetLike>
     // `auto` is here and is not a primitive - it is not a type at all, but a stand-in for
     // whatever the initializer produces. Callers that care about the difference test for it by
     // name; see the handle-on-primitive rule in SemanticAnalyzer, which had to.
-    return parser::primitives::IsPrimitive(typeName) || typeName == "auto";
+    return parser::primitives::IsPrimitive(typeName) || parser::primitives::IsAutoType(typeName);
 }
 
 /**

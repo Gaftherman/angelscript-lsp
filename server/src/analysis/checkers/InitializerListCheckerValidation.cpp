@@ -2,6 +2,7 @@
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string>
 #include <string_view>
@@ -107,7 +108,7 @@ void InitializerListValidator::ValidateList(const InitializerListFact& list, std
                                             const ListValidationContext& valCtx)
 {
     const std::string_view type = StripDecorations(targetType);
-    if (type.empty() || type == "auto" || type == "void")
+    if (type.empty() || parser::primitives::IsAutoType(type) || parser::primitives::IsVoidType(type))
     {
         return;
     }

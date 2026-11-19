@@ -3721,6 +3721,22 @@
       "verifiedByTests": [
         "IsolationChecker variable and shared-context tests"
       ]
+    },
+    {
+      "id": "REF-P19-RAW-LITERALS-C1",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionDeclarations.cpp",
+      "deletedLineRange": "320",
+      "originalSymbolOrCode": "raw comparisons of type text against \"auto\" and \"void\" in 55 files",
+      "whatItDidAndWhyInThatFile": "Each checker, rule and resolver compared resolved type text with the literals auto and void, repeating the spelling in 107 places.",
+      "whyChangedOrDeleted": "PROHIBITION 16: one canonical predicate per literal; the ratchet baseline drops accordingly.",
+      "replacedByCanonicalFile": "server/src/parser/Primitives.h",
+      "replacedByCanonicalSymbol": "IsAutoType",
+      "ramOrCpuImpact": "None; the predicates are constexpr string_view comparisons identical to the replaced expressions.",
+      "verifiedByTests": [
+        "Full suite 2976/2976 and differential corpus"
+      ]
     }
   ]
 }

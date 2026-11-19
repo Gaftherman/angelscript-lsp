@@ -41,7 +41,7 @@ static void CheckSwitchConditionType(const ControlFlowRecord& record, Diagnostic
 
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string unwrapped = UnwrapTypedef(CleanBaseType(rawType), table);
-    if (unwrapped.empty() || unwrapped == "auto" || IsVariableTypeToken(unwrapped) ||
+    if (unwrapped.empty() || parser::primitives::IsAutoType(unwrapped) || IsVariableTypeToken(unwrapped) ||
         ctx.request.IsRegisteredSymbol(unwrapped))
     {
         return;
@@ -52,7 +52,7 @@ static void CheckSwitchConditionType(const ControlFlowRecord& record, Diagnostic
         return;
     }
 
-    const bool known = parser::primitives::IsPrimitive(unwrapped) || unwrapped == "void" ||
+    const bool known = parser::primitives::IsPrimitive(unwrapped) || parser::primitives::IsVoidType(unwrapped) ||
                        unwrapped == ctx.request.GetEffectiveStringTypeName() ||
                        unwrapped == ctx.request.GetEffectiveArrayTypeName() ||
                        table.FindSymbolsPtr(unwrapped) != nullptr;

@@ -5,6 +5,7 @@
 #include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/VariableRules.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -115,7 +116,7 @@ void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, con
 
     for (const auto& argument : sig.templateArgumentTypes)
     {
-        if (CleanBaseTypeView(argument) != "void")
+        if (!parser::primitives::IsVoidType(CleanBaseTypeView(argument)))
         {
             continue;
         }
@@ -184,7 +185,7 @@ static void CheckNonInstantiableType(const Symbol& sym, const VariableSignature&
 static void CheckUnresolvedVariableType(const Symbol& sym, const VariableSignature& sig, std::string_view baseType,
                                         std::string_view enclosingNs, const DiagnosticContext& ctx)
 {
-    if (baseType.empty() || baseType == "auto" || IsReservedKeyword(baseType))
+    if (baseType.empty() || parser::primitives::IsAutoType(baseType) || IsReservedKeyword(baseType))
     {
         return;
     }
@@ -223,7 +224,7 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
     CheckPrimitiveOrVoidType(sym, sig, ctx);
 
     const std::string_view baseType = CleanBaseTypeView(sig.baseTypeName.empty() ? sig.typeName : sig.baseTypeName);
-    if (baseType == "auto" && IsClassOrInterfaceMember(sym, ctx.request.symbolTable))
+    if (parser::primitives::IsAutoType(baseType) && IsClassOrInterfaceMember(sym, ctx.request.symbolTable))
     {
         ctx.LogRule("CheckDeclaredType", "as-err-auto-not-allowed", sym);
         ctx.Emit(sym, "as-err-auto-not-allowed");

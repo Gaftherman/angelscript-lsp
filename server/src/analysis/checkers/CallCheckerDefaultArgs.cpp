@@ -4,6 +4,7 @@
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string>
@@ -25,7 +26,7 @@ static bool IsDefaultArgumentTypeMismatch(const ParameterInformation& param, con
     {
         return false;
     }
-    if (dv == "void")
+    if (parser::primitives::IsVoidType(dv))
     {
         return param.modifier != ParameterModifier::Out;
     }
@@ -33,7 +34,7 @@ static bool IsDefaultArgumentTypeMismatch(const ParameterInformation& param, con
     const std::string_view rawBase =
         CleanBaseTypeView(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
     const std::string paramBase = UnwrapTypedef(rawBase, table);
-    if (paramBase.empty() || paramBase == "auto" || param.typeKind == TypeKind::VarType ||
+    if (paramBase.empty() || parser::primitives::IsAutoType(paramBase) || param.typeKind == TypeKind::VarType ||
         IsVariableTypeToken(paramBase) || param.isArray || !param.templateName.empty())
     {
         return false;

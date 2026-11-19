@@ -102,7 +102,7 @@ static std::string ResolveBinary64OrFloat(std::string_view cleanLeft, std::strin
 
 static std::string ResolveBinary32OrLess(std::string_view cleanLeft, std::string_view cleanRight)
 {
-    if (cleanLeft == "void" || cleanRight == "void")
+    if (parser::primitives::IsVoidType(cleanLeft) || parser::primitives::IsVoidType(cleanRight))
     {
         return "";
     }
@@ -139,7 +139,8 @@ std::string ResolveBinaryPrimitivePromotion(std::string_view op, std::string_vie
                                             std::string_view cleanRight, bool disableIntegerDivision,
                                             const SymbolTable* symbolTable)
 {
-    if (cleanLeft.empty() || cleanRight.empty() || cleanLeft == "void" || cleanRight == "void")
+    if (cleanLeft.empty() || cleanRight.empty() || parser::primitives::IsVoidType(cleanLeft) ||
+        parser::primitives::IsVoidType(cleanRight))
     {
         return "";
     }

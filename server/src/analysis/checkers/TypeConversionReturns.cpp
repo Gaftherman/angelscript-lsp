@@ -3,6 +3,7 @@
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string_view>
 
@@ -21,7 +22,7 @@ static void CheckReturnedValue(const ReturnSiteFact& site, std::string_view expe
                                const Scope* scope, DiagnosticContext& ctx)
 {
     const BinaryOperandFact& value = site.value;
-    if (expected == "void")
+    if (parser::primitives::IsVoidType(expected))
     {
         ctx.EmitAtRange(value.range, "as-err-void-return-value");
         return;

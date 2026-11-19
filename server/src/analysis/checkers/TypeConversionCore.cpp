@@ -3,6 +3,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string_view>
 #include <utility>
@@ -27,7 +28,7 @@ bool CanTriviallyConvert(std::string_view from, std::string_view to, const Diagn
         return true;
     }
 
-    if (from == "auto" || to == "auto")
+    if (parser::primitives::IsAutoType(from) || parser::primitives::IsAutoType(to))
     {
         return true;
     }
@@ -186,7 +187,7 @@ bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_v
     {
         return true;
     }
-    if (from == "void" || to == "void")
+    if (parser::primitives::IsVoidType(from) || parser::primitives::IsVoidType(to))
     {
         return false;
     }
@@ -207,7 +208,7 @@ bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_v
     const std::string unwrappedTo = UnwrapTypedef(NormalizeType(to, arrayType), table);
     const std::string_view uFrom = unwrappedFrom;
     const std::string_view uTo = unwrappedTo;
-    if (uFrom == "void" || uTo == "void")
+    if (parser::primitives::IsVoidType(uFrom) || parser::primitives::IsVoidType(uTo))
     {
         return false;
     }

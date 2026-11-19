@@ -5,6 +5,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <span>
@@ -48,7 +49,8 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
     std::string_view rawDeclaredType = CallSiteFacts::SliceText(request.sourceCode, init.declaredTypeBytes);
     TrimTypeWhitespace(rawDeclaredType);
     const std::string declaredType = CleanExpressionType(rawDeclaredType);
-    if (declaredType.empty() || declaredType == "auto" || rawDeclaredType.find('[') != std::string_view::npos)
+    if (declaredType.empty() || parser::primitives::IsAutoType(declaredType) ||
+        rawDeclaredType.find('[') != std::string_view::npos)
     {
         return;
     }

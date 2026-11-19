@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/SymbolTable.h"
+#include "parser/Primitives.h"
 
 #include <cstddef>
 #include <string>
@@ -260,7 +261,7 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
     {
         return q;
     }
-    q.isAuto = (type == "auto");
+    q.isAuto = (parser::primitives::IsAutoType(type));
     q.isConst = IsConstTypeView(type);
     q.isHandle = IsHandleTypeView(type);
     q.isConstHandle = q.isConst && q.isHandle;

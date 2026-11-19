@@ -194,7 +194,8 @@ static std::vector<Symbol> CollectOpIndexCandidates(std::span<const std::string>
         {
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
             {
-                if (sym.GetFunction().returnType != "void" && sym.GetFunction().parameters.size() == 1)
+                if (!parser::primitives::IsVoidType(sym.GetFunction().returnType) &&
+                    sym.GetFunction().parameters.size() == 1)
                 {
                     candidates.push_back(sym);
                 }
@@ -376,7 +377,7 @@ std::optional<size_t> GetTemplateParameterCount(std::string_view typeName, const
  */
 bool IsIgnoredTemplateType(std::string_view s)
 {
-    return s.empty() || s == "null" || s == "auto" || s == "void";
+    return s.empty() || s == "null" || parser::primitives::IsAutoType(s) || parser::primitives::IsVoidType(s);
 }
 
 bool AreCompatibleTemplateContainers(std::string_view fromContainer, std::string_view toContainer) noexcept

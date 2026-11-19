@@ -4,6 +4,7 @@
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Primitives.h"
 
 #include <cstdint>
 #include <string>
@@ -45,7 +46,7 @@ void ProcessVariableDeclarationNode(TSNode node, std::string_view sourceCode, co
 
     std::string_view typeText =
         utils::SliceSource(sourceCode, ts_node_start_byte(varTypeNode), ts_node_end_byte(varTypeNode));
-    const bool isAuto = (CleanBaseTypeView(typeText) == "auto");
+    const bool isAuto = (parser::primitives::IsAutoType(CleanBaseTypeView(typeText)));
     const bool isHandle = IsHandleTypeView(typeText);
 
     parser::ForEachChildNode(node,

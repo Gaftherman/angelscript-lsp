@@ -295,7 +295,8 @@ static bool HasReferenceOrHandleReturnType(TSNode funcNode, TSNode typeNode, con
                                            std::string_view sourceCode) noexcept
 {
     std::string_view retText = parser::NodeText(typeNode, sourceCode);
-    if (retText.empty() || retText == "void" || IsReferenceTypeView(retText) || IsHandleTypeView(retText))
+    if (retText.empty() || parser::primitives::IsVoidType(retText) || IsReferenceTypeView(retText) ||
+        IsHandleTypeView(retText))
     {
         return true;
     }
@@ -564,7 +565,8 @@ static bool IsValidParameterCapture(ScopeKind kind, TSSymbol enclosingSym, TSSym
 static bool IsDisallowedVariableType(std::string_view typeName)
 {
     const std::string baseType = CleanBaseType(typeName);
-    return parser::keywords::IsReserved(baseType) && !parser::primitives::IsPrimitive(baseType) && baseType != "auto";
+    return parser::keywords::IsReserved(baseType) && !parser::primitives::IsPrimitive(baseType) &&
+           !parser::primitives::IsAutoType(baseType);
 }
 
 /**

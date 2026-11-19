@@ -14,6 +14,7 @@
 #include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string>
 #include <string_view>
@@ -115,7 +116,7 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Exp
     const std::string rawType = ResolveExpressionType(site.operandBytes, ExpressionTypeContext(scope, ctx));
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string cleanType = UnwrapTypedef(CleanBaseType(rawType), table);
-    if (cleanType.empty() || cleanType == "auto" || IsVariableTypeToken(cleanType) ||
+    if (cleanType.empty() || parser::primitives::IsAutoType(cleanType) || IsVariableTypeToken(cleanType) ||
         IsBuiltInValueType(cleanType, ctx) || ResolvesToEnum(cleanType, table) ||
         cleanType.find('<') != std::string::npos || rawType.find('[') != std::string::npos ||
         ctx.request.IsRegisteredSymbol(cleanType) || !HierarchyIsFullyVisible(cleanType, table))
@@ -359,7 +360,7 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string_view arrayTypeName = ctx.request.GetEffectiveArrayTypeName();
     const std::string normalizedObj = UnwrapTypedef(NormalizeType(rawObjType, arrayTypeName), table);
-    if (normalizedObj.empty() || normalizedObj == "auto" || IsVariableTypeToken(normalizedObj) ||
+    if (normalizedObj.empty() || parser::primitives::IsAutoType(normalizedObj) || IsVariableTypeToken(normalizedObj) ||
         ctx.request.IsRegisteredSymbol(normalizedObj))
         return;
 
@@ -392,7 +393,7 @@ static void ValidateOpIndexInvocation(const IndexExpressionSiteFact& site, const
     {
         std::string argType = ResolveExpressionType(argBytes, exprCtx);
         const std::string_view cleanArg = CleanBaseTypeView(argType);
-        if (argType.empty() || cleanArg == "auto" || IsVariableTypeToken(cleanArg) ||
+        if (argType.empty() || parser::primitives::IsAutoType(cleanArg) || IsVariableTypeToken(cleanArg) ||
             ctx.request.IsRegisteredSymbol(cleanArg))
             allResolved = false;
         argTypes.push_back(std::move(argType));

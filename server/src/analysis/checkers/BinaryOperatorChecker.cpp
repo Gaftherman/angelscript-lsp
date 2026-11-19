@@ -9,6 +9,7 @@
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/OperandTypePair.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string>
 #include <string_view>
@@ -186,7 +187,7 @@ static bool AreArithmeticOperandsCompatible(std::string_view op, const OperandTy
 static bool AreBinaryOperandsCompatible(std::string_view op, const OperandTypePair& types, const SymbolTable& table,
                                         std::string_view stringTypeName)
 {
-    if (types.left == "void" || types.right == "void")
+    if (parser::primitives::IsVoidType(types.left) || parser::primitives::IsVoidType(types.right))
     {
         return false;
     }
@@ -194,8 +195,8 @@ static bool AreBinaryOperandsCompatible(std::string_view op, const OperandTypePa
     {
         return true;
     }
-    if (types.left == "auto" || types.right == "auto" || IsVariableTypeToken(types.left) ||
-        IsVariableTypeToken(types.right))
+    if (parser::primitives::IsAutoType(types.left) || parser::primitives::IsAutoType(types.right) ||
+        IsVariableTypeToken(types.left) || IsVariableTypeToken(types.right))
     {
         return true;
     }
@@ -226,12 +227,12 @@ static void CheckLogicalOperand(const BinaryOperandFact& operand, const Expressi
     }
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string clean = UnwrapTypedef(CleanBaseType(rawType), table);
-    if (clean.empty() || clean == "auto" || IsVariableTypeToken(clean) || ctx.request.IsRegisteredSymbol(clean) ||
-        !IsKnownType(clean, table, ctx.request.GetEffectiveStringTypeName()))
+    if (clean.empty() || parser::primitives::IsAutoType(clean) || IsVariableTypeToken(clean) ||
+        ctx.request.IsRegisteredSymbol(clean) || !IsKnownType(clean, table, ctx.request.GetEffectiveStringTypeName()))
     {
         return;
     }
-    if (clean == "void" || (!IsHandleTypeView(rawType) && !IsTruthyCondition(clean, table)))
+    if (parser::primitives::IsVoidType(clean) || (!IsHandleTypeView(rawType) && !IsTruthyCondition(clean, table)))
     {
         ctx.EmitAtRange(operand.range, diagnostics::codes::NoImplicitConversion, {clean, "bool"});
     }

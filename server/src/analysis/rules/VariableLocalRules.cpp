@@ -5,6 +5,7 @@
 #include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/VariableRules.h"
 #include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -68,8 +69,8 @@ static void ValidateTemplateArguments(const LocalDefinition& def, const Template
 
 static bool CheckMissingFuncdefHint(std::string_view base, const SourceRange& range, DiagnosticContext& ctx)
 {
-    if (ctx.request.diagnostics && ctx.request.diagnostics->reportMissingFuncdef && base != "auto" &&
-        NamesAFunctionNotAType(base, ctx.request.symbolTable))
+    if (ctx.request.diagnostics && ctx.request.diagnostics->reportMissingFuncdef &&
+        !parser::primitives::IsAutoType(base) && NamesAFunctionNotAType(base, ctx.request.symbolTable))
     {
         ctx.EmitAtRange(range, "as-hint-funcdef-missing", base, DiagnosticSeverity::Hint);
         return true;
@@ -100,7 +101,7 @@ static bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, std::strin
             .baseTypeName = base,
             .enclosingNs = enclosingNs,
             .hasPrimitiveHandle = (def.isHandleType && def.typeKind != TypeKind::Array && IsPrimitiveTypeName(base)),
-            .checkPrimitiveFlag = (base != "auto"),
+            .checkPrimitiveFlag = (!parser::primitives::IsAutoType(base)),
         },
         ctx);
     if (result.HasError())
@@ -165,7 +166,7 @@ static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& 
     const SourceRange range = GetDefinitionTypeRange(def);
     const std::string_view base = CleanBaseTypeView(def.typeName);
 
-    if (def.typeName == "void" || base == "void")
+    if (parser::primitives::IsVoidType(def.typeName) || parser::primitives::IsVoidType(base))
     {
         if (def.kind == LocalDefinitionKind::Parameter)
         {
@@ -182,7 +183,7 @@ static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& 
         ctx.EmitAtRange(range, "as-err-mixin-not-a-type", base, DiagnosticSeverity::Error);
         return;
     }
-    if (def.kind == LocalDefinitionKind::Parameter && base == "auto")
+    if (def.kind == LocalDefinitionKind::Parameter && parser::primitives::IsAutoType(base))
     {
         ctx.EmitAtRange(range, "as-err-auto-not-allowed", DiagnosticSeverity::Error);
         return;

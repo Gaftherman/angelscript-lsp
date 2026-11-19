@@ -6,6 +6,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <cstdint>
 #include <string_view>
@@ -57,7 +58,8 @@ static void CheckDialectCharacterLiterals(const EngineDialectFacts& facts, Diagn
         const std::string_view typeText = ctx.request.sourceCode.substr(
             decl.declaredTypeRange.startByte, decl.declaredTypeRange.endByte - decl.declaredTypeRange.startByte);
         const std::string_view declared = CleanBaseTypeView(typeText);
-        if (!IsPrimitiveTypeName(declared) || declared == "auto" || declared == "void")
+        if (!IsPrimitiveTypeName(declared) || parser::primitives::IsAutoType(declared) ||
+            parser::primitives::IsVoidType(declared))
         {
             continue;
         }

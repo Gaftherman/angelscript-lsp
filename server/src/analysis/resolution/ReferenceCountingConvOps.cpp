@@ -5,6 +5,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <optional>
 #include <string>
@@ -207,7 +208,7 @@ static void EvaluateImplicitConversionSite(const IndexedOperatorSite& site, Oper
     {
         targetType = std::string(ctx.scope->GetReturnType());
     }
-    if (targetType.empty() || targetType == "void" || targetType == "auto")
+    if (targetType.empty() || parser::primitives::IsVoidType(targetType) || parser::primitives::IsAutoType(targetType))
     {
         return;
     }

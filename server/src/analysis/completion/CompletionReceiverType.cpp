@@ -9,6 +9,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "utils/AccessorNames.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
@@ -103,7 +104,7 @@ static std::string ResolveScopeOrGlobalVariableType(std::string_view nodeText, c
         const analysis::LocalDefinition* def = analysis::ResolveInScope(innermostScope, nodeText);
         if (def)
         {
-            if (!def->typeName.empty() && analysis::CleanBaseTypeView(def->typeName) != "auto")
+            if (!def->typeName.empty() && !parser::primitives::IsAutoType(analysis::CleanBaseTypeView(def->typeName)))
             {
                 return def->typeName;
             }
@@ -285,7 +286,7 @@ bool TryCompleteMemberAccess(std::string_view prefix, const analysis::Scope* inn
         }
     }
 
-    if (rawTypeName.empty() || analysis::IsCorePrimitive(rawTypeName) || rawTypeName == "void")
+    if (rawTypeName.empty() || analysis::IsCorePrimitive(rawTypeName) || parser::primitives::IsVoidType(rawTypeName))
     {
         return true;
     }

@@ -47,7 +47,7 @@ void CheckParamModifiers(const Symbol& sym, const ParameterInformation& param, c
             ctx.LogParam("ValidateParameters", "as-err-const-out-param", param, sym);
             ctx.Emit(param, sym, "as-err-const-out-param", param.name);
         }
-        if (!param.defaultValue.empty() && CleanBaseType(param.defaultValue) != "void")
+        if (!param.defaultValue.empty() && !parser::primitives::IsVoidType(CleanBaseType(param.defaultValue)))
         {
             ctx.LogParam("ValidateParameters", "as-err-out-param-default", param, sym);
             ctx.Emit(param, sym, "as-err-out-param-default", param.name);

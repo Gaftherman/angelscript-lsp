@@ -3,6 +3,7 @@
 #include "analysis/index/MemberAccessFacts.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string>
@@ -155,7 +156,7 @@ void CheckMemberExpression(const MemberExpressionFact& fact, const Scope* scope,
 {
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string objectType = ResolveObjectOwnerType(fact.objectBytes, scope, ctx);
-    if (objectType.empty() || objectType == "auto")
+    if (objectType.empty() || parser::primitives::IsAutoType(objectType))
     {
         return;
     }
@@ -171,7 +172,8 @@ void CheckMemberExpression(const MemberExpressionFact& fact, const Scope* scope,
         return;
     }
 
-    if ((IsCorePrimitive(objectType) && objectType != "auto") || objectType == "void")
+    if ((IsCorePrimitive(objectType) && !parser::primitives::IsAutoType(objectType)) ||
+        parser::primitives::IsVoidType(objectType))
     {
         ctx.EmitAtRange(fact.memberRange, diagnostics::codes::MemberNotFound, objectType, fact.memberName);
         return;

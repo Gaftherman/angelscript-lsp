@@ -5,6 +5,7 @@
 #include "analysis/resolution/ExpressionTypeTernary.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Primitives.h"
 
 #include <string>
 #include <string_view>
@@ -97,7 +98,7 @@ static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeConte
     {
         return t1;
     }
-    if (t1 == "void" || t2 == "void")
+    if (parser::primitives::IsVoidType(t1) || parser::primitives::IsVoidType(t2))
     {
         return "";
     }

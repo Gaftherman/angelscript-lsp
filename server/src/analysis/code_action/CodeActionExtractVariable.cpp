@@ -8,6 +8,7 @@
 #include "analysis/resolution/CodeActionResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "utils/AccessorNames.h"
 #include "utils/Utils.h"
 
@@ -151,7 +152,7 @@ static std::optional<CodeActionEntry> BuildExtractVariableEntry(const CodeAction
 
     std::string varType = analysis::ResolveExpressionTypeAt(
         site.expression, {scope, query.symbolTable, query.sourceCode, query.uri, query.nodeIndex});
-    if (analysis::CleanBaseTypeView(varType) == "void")
+    if (parser::primitives::IsVoidType(analysis::CleanBaseTypeView(varType)))
     {
         return std::nullopt;
     }

@@ -5,6 +5,7 @@
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -272,7 +273,7 @@ static void BuildAutoFacts(const NodeIndex& index, std::string_view source, Conv
         {
             typeNode = syntax.Field(gs.fieldType);
         }
-        if (CleanBaseTypeView(parser::NodeText(typeNode, source)) != "auto")
+        if (!parser::primitives::IsAutoType(CleanBaseTypeView(parser::NodeText(typeNode, source))))
         {
             continue;
         }

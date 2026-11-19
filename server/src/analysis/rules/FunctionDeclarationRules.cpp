@@ -104,7 +104,7 @@ static ParameterModifier EffectiveOverrideModifier(const ParameterInformation& p
 static std::string CanonicalOverrideType(std::string_view rawType, const SymbolTable& table)
 {
     const std::string_view cleaned = CleanBaseTypeView(rawType);
-    if (cleaned.empty() || IsVariableTypeToken(cleaned) || cleaned == "auto")
+    if (cleaned.empty() || IsVariableTypeToken(cleaned) || parser::primitives::IsAutoType(cleaned))
     {
         return {};
     }

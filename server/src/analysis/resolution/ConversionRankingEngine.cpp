@@ -3,6 +3,7 @@
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/Constants.h"
 
 #include <algorithm>
@@ -72,7 +73,7 @@ static std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(std::strin
     {
         return ArgumentConversion{ConversionRank::StandardConv, 220, 0, false, 10};
     }
-    if (argType.empty() || argType == "auto")
+    if (argType.empty() || parser::primitives::IsAutoType(argType))
     {
         return ArgumentConversion{ConversionRank::Exact, 0, 0, false, 0};
     }
@@ -92,7 +93,7 @@ static std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(std::strin
         return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
                                   static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
-    if (argType == "void")
+    if (parser::primitives::IsVoidType(argType))
     {
         if (IsOutParameter(param))
         {
@@ -421,7 +422,7 @@ static ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContex
 
 static ArgumentConversion EvaluateConversionMatch(const MatchContext& ctx)
 {
-    if (ctx.cleanArg == "auto" || ctx.cleanParam == "auto")
+    if (parser::primitives::IsAutoType(ctx.cleanArg) || parser::primitives::IsAutoType(ctx.cleanParam))
     {
         return ArgumentConversion{ConversionRank::StandardConv, 100, 0, false,
                                   static_cast<int>(OverloadMatchPenalty::UnknownTypes)};
@@ -471,7 +472,8 @@ ArgumentConversion EvaluateArgumentConversion(std::string_view argType, const Pa
 {
     if (auto specialScore = EvaluateSpecialArgumentMatch(argType, param, symbolTable))
     {
-        return AdjustForLValueConstraint(*specialScore, IsOutParameter(param) && argType != "void", argIsLValue);
+        return AdjustForLValueConstraint(
+            *specialScore, IsOutParameter(param) && !parser::primitives::IsVoidType(argType), argIsLValue);
     }
 
     const std::string cleanArg = UnwrapTypedef(NormalizeType(argType, symbolTable.GetDefaultArrayType()), symbolTable);

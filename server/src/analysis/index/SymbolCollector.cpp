@@ -9,6 +9,7 @@
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
 #include "parser/BraceBalance.h"
+#include "parser/Primitives.h"
 #include "parser/SyntaxTree.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
@@ -661,7 +662,7 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
     std::string typeStr(parser::NodeText(typeNode, sCtx.request.sourceCode));
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     if (IsReservedKeyword(typeInfo.baseTypeName) && !IsPrimitiveTypeName(typeInfo.baseTypeName) &&
-        typeInfo.baseTypeName != "auto")
+        !parser::primitives::IsAutoType(typeInfo.baseTypeName))
     {
         return;
     }
@@ -803,7 +804,8 @@ static bool HasDisqualifyingModifiers(const SymbolModifiers& modifiers)
 
 static bool IsDisqualifyingReturnType(const TypeExtractionResult& retInfo, std::string_view typeText)
 {
-    return retInfo.baseTypeName == "void" || typeText == "void" || retInfo.isReference || retInfo.isHandle;
+    return parser::primitives::IsVoidType(retInfo.baseTypeName) || parser::primitives::IsVoidType(typeText) ||
+           retInfo.isReference || retInfo.isHandle;
 }
 
 bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const SymbolModifiers& modifiers,
@@ -2852,7 +2854,7 @@ SymbolCollector::ExtractParameters(TSNode paramsNode, const SymbolCollectContext
                 }
                 return true;
             });
-    if (parameters.size() == 1 && parameters[0].typeName == "void" && parameters[0].name.empty())
+    if (parameters.size() == 1 && parser::primitives::IsVoidType(parameters[0].typeName) && parameters[0].name.empty())
     {
         parameters.clear();
         if (outDefaultRefs)

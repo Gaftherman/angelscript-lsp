@@ -5,6 +5,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <optional>
@@ -234,7 +235,7 @@ IllegalHandleCheckResult CheckIllegalHandleType(const IllegalHandleCheckRequest&
 {
     if (req.isAddressOfOperand)
     {
-        if (req.baseTypeName.empty() || req.baseTypeName == "auto")
+        if (req.baseTypeName.empty() || parser::primitives::IsAutoType(req.baseTypeName))
         {
             return {};
         }
@@ -253,7 +254,7 @@ IllegalHandleCheckResult CheckIllegalHandleType(const IllegalHandleCheckRequest&
         return {};
     }
 
-    if (req.checkPrimitiveFlag && req.hasPrimitiveHandle && req.baseTypeName != "auto")
+    if (req.checkPrimitiveFlag && req.hasPrimitiveHandle && !parser::primitives::IsAutoType(req.baseTypeName))
     {
         return {diagnostics::codes::HandleOnPrimitive, std::string(req.baseTypeName)};
     }
@@ -338,7 +339,7 @@ IllegalHandleCheckResult CheckIllegalHandleType(const IllegalHandleCheckRequest&
             TrimTypeWhitespace(rest);
         }
 
-        if (rest.starts_with('@') && baseName != "auto")
+        if (rest.starts_with('@') && !parser::primitives::IsAutoType(baseName))
         {
             if (auto matched = ResolveNoHandleType(baseName, req.enclosingNs, ctx.request.symbolTable, noHandleTypes))
             {

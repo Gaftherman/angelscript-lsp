@@ -15,7 +15,7 @@ namespace angel_lsp::analysis
 
 static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 {
-    return type.empty() || type == "auto";
+    return type.empty() || parser::primitives::IsAutoType(type);
 }
 
 static bool AreTernaryBranchesIncompatible(std::string_view clean1, std::string_view clean2, DiagnosticContext& ctx)
@@ -157,7 +157,7 @@ static auto ForeachValueType(std::string_view containerType, uint32_t variableIn
             }
 
             auto returnType = std::get<FunctionSignature>(overload.signature).returnType;
-            if (returnType.empty() || returnType == "void")
+            if (returnType.empty() || parser::primitives::IsVoidType(returnType))
             {
                 continue;
             }
@@ -201,7 +201,7 @@ static void InferForeachVariables(const ForeachSiteFact& site, std::string_view 
             bodyScope ? bodyScope : FindInnermostScope(request.scopeRoot, at.startLine, at.startCharacter),
             variable.name);
 
-        if (def && CleanBaseType(def->typeName) == "auto")
+        if (def && parser::primitives::IsAutoType(CleanBaseType(def->typeName)))
         {
             const_cast<LocalDefinition*>(def)->typeName = valueType;
         }
@@ -231,7 +231,7 @@ static bool IsInvalidScriptForeachContainer(std::string_view containerBase, std:
                                             uint32_t variableCount, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
-    if (containerBase.empty() || containerBase == "auto" || IsVariableTypeToken(containerBase) ||
+    if (containerBase.empty() || parser::primitives::IsAutoType(containerBase) || IsVariableTypeToken(containerBase) ||
         containerBase.find('<') != std::string_view::npos || rawContainerType.find('[') != std::string_view::npos ||
         ctx.request.IsRegisteredSymbol(containerBase) || !HierarchyIsFullyVisible(containerBase, table))
     {
@@ -290,7 +290,8 @@ void ProcessForeachSite(const ForeachSiteFact& site, const TypeConversionCheckRe
     const auto containerType = ResolveExpressionType(site.collection.bytes, ExpressionTypeContext(scope, ctx));
 
     const auto containerBase = CleanExpressionType(containerType);
-    if ((IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void") ||
+    if ((IsCorePrimitive(containerBase) && !parser::primitives::IsAutoType(containerBase) &&
+         !parser::primitives::IsVoidType(containerBase)) ||
         IsInvalidScriptForeachContainer(containerBase, containerType, site.variableCount, ctx))
     {
         ctx.EmitAtRange(site.collection.range, "as-err-invalid-foreach-container", containerBase);

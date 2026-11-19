@@ -5,6 +5,7 @@
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 #include "i18n/i18n.h"
+#include "parser/Primitives.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <string>
@@ -84,7 +85,8 @@ std::optional<AutoVariableHintText> FormatAutoVariableHint(const IndexedAutoDecl
                                                            const angel_lsp::i18n::I18n* i18n)
 {
     const auto deduced = DeduceExpressionTypeAt(autoVar.initExprStartByte, autoVar.initExprEndByte, exprCtx);
-    if (IsUnusableTypeName(deduced) || deduced == "auto" || deduced == "null" || deduced == "void")
+    if (IsUnusableTypeName(deduced) || parser::primitives::IsAutoType(deduced) || deduced == "null" ||
+        parser::primitives::IsVoidType(deduced))
     {
         return std::nullopt;
     }
@@ -99,7 +101,8 @@ std::optional<AutoVariableHintText> FormatAutoVariableHint(const IndexedAutoDecl
 std::string FormatLambdaReturnLabel(const IndexedLambdaSite& lambda, const ExpressionTypeContext& exprCtx)
 {
     const auto deduced = DeduceLambdaReturnTypeAt(lambda, exprCtx);
-    if (!IsUnusableTypeName(deduced) && deduced != "void" && CleanBaseTypeView(deduced) != "auto")
+    if (!IsUnusableTypeName(deduced) && !parser::primitives::IsVoidType(deduced) &&
+        !parser::primitives::IsAutoType(CleanBaseTypeView(deduced)))
     {
         return fmt::format(": {}", deduced);
     }

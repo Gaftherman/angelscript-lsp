@@ -112,11 +112,31 @@ inline constexpr std::array<PrimitiveDocInfo, 14> k_primitiveDocTable = {{
 }
 
 /**
+ * @brief True for the `void` return type spelling, the only primitive that holds no value.
+ * @param[in] name Type text with qualifiers already removed.
+ * @return True when name is exactly `void`.
+ */
+[[nodiscard]] constexpr bool IsVoidType(std::string_view name) noexcept
+{
+    return name == "void";
+}
+
+/**
+ * @brief True for the `auto` placeholder, which stands in for the type its initializer produces.
+ * @param[in] name Type text with qualifiers already removed.
+ * @return True when name is exactly `auto`; `auto` is not a primitive and is not matched by IsPrimitive.
+ */
+[[nodiscard]] constexpr bool IsAutoType(std::string_view name) noexcept
+{
+    return name == "auto";
+}
+
+/**
  * @brief A primitive that can hold a value, so `null` can never be assigned to it.
  *        Everything but `void`, which holds nothing at all - the distinction ControlFlowChecker draws
  */
 [[nodiscard]] constexpr bool IsNonNullable(std::string_view name) noexcept
 {
-    return IsPrimitive(name) && name != "void";
+    return IsPrimitive(name) && !IsVoidType(name);
 }
 } // namespace angel_lsp::parser::primitives

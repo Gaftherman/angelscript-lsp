@@ -3,6 +3,7 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/Constants.h"
 
 #include <algorithm>
@@ -51,7 +52,7 @@ static std::string FindFallbackSymbolType(std::string_view name, const SymbolTab
 
 static bool IsValidDeducedRhsType(std::string_view rhsType)
 {
-    return !rhsType.empty() && rhsType != "void" && rhsType != "null" &&
+    return !rhsType.empty() && !parser::primitives::IsVoidType(rhsType) && rhsType != "null" &&
            rhsType != constants::k_initializerListTypeSentinel;
 }
 
@@ -96,7 +97,7 @@ static std::string TryDeduceAutoDefinition(const LocalDefinition& def, const Exp
 
 std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx)
 {
-    if (!def.typeName.empty() && CleanBaseTypeView(def.typeName) != "auto")
+    if (!def.typeName.empty() && !parser::primitives::IsAutoType(CleanBaseTypeView(def.typeName)))
     {
         return def.typeName;
     }
@@ -121,7 +122,7 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
         }
     }
 
-    if (CleanBaseTypeView(def.typeName) != "auto" && def.typeKind != TypeKind::Auto)
+    if (!parser::primitives::IsAutoType(CleanBaseTypeView(def.typeName)) && def.typeKind != TypeKind::Auto)
     {
         return def.typeName;
     }

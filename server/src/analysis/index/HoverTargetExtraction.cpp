@@ -190,7 +190,7 @@ static void ClassifyHoverTargetKind(TSNode targetNode, TSNode parent, std::strin
             site.topmostBinaryPlusRange = {ts_node_start_byte(topPlus), ts_node_end_byte(topPlus)};
         }
     }
-    else if (nodeText == "auto" || nodeText == "auto@")
+    else if (parser::primitives::IsAutoType(nodeText) || nodeText == "auto@")
     {
         site.kind = HoverNodeKind::Auto;
         if (nodeText == "auto@")

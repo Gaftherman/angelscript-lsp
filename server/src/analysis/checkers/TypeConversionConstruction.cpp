@@ -3,6 +3,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -94,7 +95,7 @@ static bool IsTargetTypeIgnoredForConstruction(std::string_view targetType, cons
 static bool IsVisibleScriptClassForPrimitiveCast(std::string_view typeName, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
-    if (typeName.empty() || typeName == "auto" || IsVariableTypeToken(typeName) ||
+    if (typeName.empty() || parser::primitives::IsAutoType(typeName) || IsVariableTypeToken(typeName) ||
         typeName.find('<') != std::string_view::npos || ctx.request.IsRegisteredSymbol(typeName) ||
         !HierarchyIsFullyVisible(typeName, table))
     {

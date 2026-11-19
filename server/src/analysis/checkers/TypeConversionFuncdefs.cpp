@@ -6,6 +6,7 @@
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string>
 #include <string_view>
@@ -148,7 +149,7 @@ void CheckDelegateConstruction(const CallConstructSiteFact& site, const FuncdefS
     const std::string rawObj = ResolveExpressionType(propAccess.receiver, ExpressionTypeContext(scope, ctx));
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string cleanObj = UnwrapTypedef(CleanBaseType(rawObj), table);
-    if (cleanObj.empty() || cleanObj == "auto" || IsVariableTypeToken(cleanObj) ||
+    if (cleanObj.empty() || parser::primitives::IsAutoType(cleanObj) || IsVariableTypeToken(cleanObj) ||
         cleanObj.find('<') != std::string::npos || ctx.request.IsRegisteredSymbol(cleanObj) ||
         !HierarchyIsFullyVisible(cleanObj, table))
     {

@@ -6,6 +6,7 @@
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/OperandTypePair.h"
+#include "parser/Primitives.h"
 
 #include <string_view>
 
@@ -124,7 +125,7 @@ static bool CheckStringBranch(bool isRelational, const OperandTypePair& types, c
 static bool AreComparisonTypesCompatible(std::string_view op, const OperandTypePair& types, const SymbolTable& table,
                                          std::string_view stringTypeName)
 {
-    if (types.left == "void" || types.right == "void")
+    if (parser::primitives::IsVoidType(types.left) || parser::primitives::IsVoidType(types.right))
     {
         return false;
     }

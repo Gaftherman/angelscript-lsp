@@ -7,6 +7,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <cstdint>
 #include <span>
@@ -128,7 +129,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
 
         std::string_view trimmedArg = CallSiteFacts::SliceText(ctx.request.sourceCode, arg.bytes);
         TrimTypeWhitespace(trimmedArg);
-        if (trimmedArg == "void")
+        if (parser::primitives::IsVoidType(trimmedArg))
         {
             result.argTypes.push_back("void");
             continue;
@@ -147,7 +148,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
 
         if (!dataTypeName.empty())
         {
-            if (dataTypeName == "void")
+            if (parser::primitives::IsVoidType(dataTypeName))
             {
                 result.argTypes.push_back("void");
                 continue;
@@ -260,7 +261,7 @@ void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentF
 
         std::string_view aText = CallSiteFacts::SliceText(ctx.request.sourceCode, arguments[i].bytes);
         TrimTypeWhitespace(aText);
-        if (aText == "void" && (param.isOutRef || param.modifier == ParameterModifier::Out))
+        if (parser::primitives::IsVoidType(aText) && (param.isOutRef || param.modifier == ParameterModifier::Out))
         {
             continue;
         }

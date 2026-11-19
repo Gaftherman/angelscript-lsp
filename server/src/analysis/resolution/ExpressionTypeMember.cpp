@@ -7,6 +7,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <string>
@@ -119,7 +120,7 @@ std::string ExtractAccessorMemberType(const Symbol& sym)
     {
         return "";
     }
-    if (!fn.returnType.empty() && fn.returnType != "void")
+    if (!fn.returnType.empty() && !parser::primitives::IsVoidType(fn.returnType))
     {
         return CleanExpressionType(fn.returnType);
     }

@@ -129,7 +129,7 @@ static bool CheckNullAssignmentToNonHandle(const AssignmentSiteFact& site, std::
         return false;
     }
 
-    if (rawLeftType == "auto" || IsVariableTypeToken(rawLeftType))
+    if (parser::primitives::IsAutoType(rawLeftType) || IsVariableTypeToken(rawLeftType))
     {
         return true;
     }
@@ -228,7 +228,7 @@ void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionC
     const std::string normTo =
         leftType.empty() ? std::string() : UnwrapTypedef(NormalizeType(leftType, arrayType), table);
 
-    if (normFrom == "void")
+    if (parser::primitives::IsVoidType(normFrom))
     {
         ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion",
                         {"void", normTo.empty() ? std::string_view("value") : std::string_view(normTo)});

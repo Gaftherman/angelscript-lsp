@@ -148,7 +148,7 @@ static std::vector<ParameterInformation> CollectPropertySetterParams(const Assig
 static void CheckPropertyCompoundAssignment(const AssignmentConversionInput& input, DiagnosticContext& ctx)
 {
     const std::string_view displayTarget = input.leftType.empty() ? std::string_view("value") : input.leftType;
-    if (input.rightType == "void")
+    if (parser::primitives::IsVoidType(input.rightType))
     {
         ctx.EmitAtRange(input.site.right.range, "as-err-no-implicit-conversion", {"void", displayTarget});
         return;
@@ -234,7 +234,7 @@ void CheckPropertySetterAssignment(const AssignmentConversionInput& input, Diagn
         displayTo = targetParams.front().typeName;
     }
 
-    if (input.rightType == "void")
+    if (parser::primitives::IsVoidType(input.rightType))
     {
         ctx.EmitAtRange(input.site.range, "as-err-no-implicit-conversion", {"void", displayTo});
         return;

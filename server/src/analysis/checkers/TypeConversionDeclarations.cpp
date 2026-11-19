@@ -3,6 +3,7 @@
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <algorithm>
 #include <string_view>
@@ -278,7 +279,7 @@ static void ProcessDeclaredVariableDeclarators(const VariableDeclarationSiteFact
             {
                 const ExpressionType source = ResolveValueType(declarator.value, scope, ctx);
                 if (source.known && !source.baseName.empty() && source.baseName != "null" &&
-                    source.baseName != "auto" && !IsVariableTypeToken(source.baseName) &&
+                    !parser::primitives::IsAutoType(source.baseName) && !IsVariableTypeToken(source.baseName) &&
                     !ctx.request.IsRegisteredSymbol(source.baseName) &&
                     !IsSameType(UnwrapTypedef(source.baseName, ctx.request.symbolTable),
                                 UnwrapTypedef(funcdef->name, ctx.request.symbolTable)) &&
@@ -317,7 +318,7 @@ static void ProcessDeclaredVariableDeclarators(const VariableDeclarationSiteFact
 void ProcessVariableDeclarationSite(const VariableDeclarationSiteFact& site, const TypeConversionCheckRequest& request,
                                     DiagnosticContext& ctx)
 {
-    if (CleanBaseType(site.typeText) == "auto")
+    if (parser::primitives::IsAutoType(CleanBaseType(site.typeText)))
     {
         if (request.conversionSites)
         {

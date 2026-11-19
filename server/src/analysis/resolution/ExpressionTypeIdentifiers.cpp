@@ -5,6 +5,7 @@
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <span>
@@ -112,7 +113,7 @@ std::string ResolveIdentifierAccessorFallback(std::string_view name, const Symbo
                     {
                         continue;
                     }
-                    if (!fn.returnType.empty() && fn.returnType != "void")
+                    if (!fn.returnType.empty() && !parser::primitives::IsVoidType(fn.returnType))
                     {
                         return CleanExpressionType(fn.returnType);
                     }

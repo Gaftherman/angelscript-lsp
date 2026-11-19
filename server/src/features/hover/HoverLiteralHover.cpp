@@ -5,6 +5,7 @@
 #include "features/hover/HoverInternal.h"
 #include "i18n/i18n.h"
 #include "parser/Keywords.h"
+#include "parser/Primitives.h"
 #include "utils/Timer.h"
 
 #include <lsp/types.h>
@@ -17,7 +18,7 @@ namespace angel_lsp::features
 std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const lsp::Range& range,
                                                 const angel_lsp::i18n::I18n* i18n, HoverProfiler& profiler)
 {
-    if (!analysis::IsPrimitiveTypeName(nodeText) || nodeText == "auto")
+    if (!analysis::IsPrimitiveTypeName(nodeText) || parser::primitives::IsAutoType(nodeText))
     {
         return std::nullopt;
     }
@@ -119,7 +120,7 @@ std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
 
 std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
 {
-    if (ctx.nodeText != "auto" && ctx.nodeText != "auto@")
+    if (!parser::primitives::IsAutoType(ctx.nodeText) && ctx.nodeText != "auto@")
     {
         return std::nullopt;
     }

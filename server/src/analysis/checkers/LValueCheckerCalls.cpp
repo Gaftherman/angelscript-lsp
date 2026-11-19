@@ -8,6 +8,7 @@
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string>
 #include <string_view>
@@ -154,7 +155,7 @@ static void ValidateCandidateReturnTypes(const SourceRange& range, const std::ve
 
         const auto& fn = sym.GetFunction();
         const auto retClean = CleanBaseType(fn.returnType);
-        if (fn.returnTypeKind != TypeKind::Void && retClean != "void")
+        if (fn.returnTypeKind != TypeKind::Void && !parser::primitives::IsVoidType(retClean))
         {
             allVoid = false;
         }

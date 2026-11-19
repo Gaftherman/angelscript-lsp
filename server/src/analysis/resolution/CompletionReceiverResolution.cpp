@@ -1,6 +1,7 @@
 #include "analysis/resolution/CompletionReceiverResolution.h"
 
 #include "analysis/resolution/ExpressionTypeResolver.h"
+#include "parser/Primitives.h"
 
 namespace angel_lsp::analysis
 {
@@ -11,7 +12,7 @@ std::string ResolveCompletionReceiverType(IndexedByteRange receiverRange, const 
     exprCtx.stringTypeName = ctx.symbolTable.GetStringType();
     exprCtx.arrayTypeName = ctx.symbolTable.GetDefaultArrayType();
     std::string exprType = ResolveExpressionTypeAt(receiverRange, exprCtx);
-    if (!exprType.empty() && exprType != "void" && exprType != "unknown")
+    if (!exprType.empty() && !parser::primitives::IsVoidType(exprType) && exprType != "unknown")
     {
         return exprType;
     }
@@ -19,7 +20,7 @@ std::string ResolveCompletionReceiverType(IndexedByteRange receiverRange, const 
     ReceiverTypeContext recvCtx{ctx.scope, "", ctx.uri};
     recvCtx.nodeIndex = ctx.nodeIndex;
     std::string recvType = ResolveReceiverType(receiverRange, ctx.sourceCode, ctx.symbolTable, recvCtx);
-    if (!recvType.empty() && recvType != "void" && recvType != "unknown")
+    if (!recvType.empty() && !parser::primitives::IsVoidType(recvType) && recvType != "unknown")
     {
         return recvType;
     }

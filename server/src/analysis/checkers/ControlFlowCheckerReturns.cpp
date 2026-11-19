@@ -7,6 +7,7 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <optional>
 #include <string_view>
@@ -19,7 +20,7 @@ namespace angel_lsp::analysis
  */
 static bool IsNonNullablePrimitiveName(std::string_view typeName)
 {
-    return IsPrimitiveTypeName(typeName) && typeName != "void";
+    return IsPrimitiveTypeName(typeName) && !parser::primitives::IsVoidType(typeName);
 }
 
 /**
@@ -95,7 +96,8 @@ static std::optional<LambdaTargetFact> FindLambdaTargetFact(IndexedByteRange lam
 void ControlFlowVisitor::CheckReturnStatement(const ControlFlowRecord& record, const ControlFlowState& state)
 {
     // A bare `return;` in a function that owes a value.
-    if (!state.requiredReturn.empty() && state.requiredReturn != "void" && record.returnFact.isBare)
+    if (!state.requiredReturn.empty() && !parser::primitives::IsVoidType(state.requiredReturn) &&
+        record.returnFact.isBare)
     {
         m_ctx.EmitAtRange(record.range, "as-err-return-value-required", state.functionName);
     }
@@ -142,7 +144,7 @@ void ControlFlowVisitor::CheckFunctionDeclaration(const ControlFlowRecord& recor
                 if (const auto target = FuncdefTargetOfLambda(*ltf, m_ctx.request.symbolTable))
                 {
                     const std::string_view retType = CleanBaseTypeView(target->GetFuncdef().returnType);
-                    if (retType == "void")
+                    if (parser::primitives::IsVoidType(retType))
                     {
                         requiredReturn = "void";
                     }
@@ -168,7 +170,7 @@ void ControlFlowVisitor::CheckFunctionDeclaration(const ControlFlowRecord& recor
                     if (const auto target = FuncdefTargetOfLambda(ret.lambdaTarget, m_ctx.request.symbolTable))
                     {
                         const std::string_view retType = CleanBaseTypeView(target->GetFuncdef().returnType);
-                        if (retType == "void")
+                        if (parser::primitives::IsVoidType(retType))
                         {
                             requiredReturn = "void";
                         }
@@ -186,7 +188,8 @@ void ControlFlowVisitor::CheckFunctionDeclaration(const ControlFlowRecord& recor
         }
     }
 
-    if (fnFact->bodyBytes.startByte != fnFact->bodyBytes.endByte && !requiredReturn.empty() && requiredReturn != "void")
+    if (fnFact->bodyBytes.startByte != fnFact->bodyBytes.endByte && !requiredReturn.empty() &&
+        !parser::primitives::IsVoidType(requiredReturn))
     {
         if (!fnFact->hasSyntaxError && !fnFact->definitelyReturns)
         {

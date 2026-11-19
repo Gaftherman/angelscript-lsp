@@ -61,7 +61,7 @@ bool IsAssignmentRhsFunctionReference(const AssignmentSiteFact& site, const Scop
 bool IsAssignmentValueCompatibleWithParam(std::string_view rawArgType, const ParameterInformation& param,
                                           const DiagnosticContext& ctx)
 {
-    if (rawArgType == "void")
+    if (parser::primitives::IsVoidType(rawArgType))
     {
         return false;
     }

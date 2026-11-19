@@ -2,6 +2,7 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
+#include "parser/Primitives.h"
 
 #include <string_view>
 #include <variant>
@@ -53,7 +54,8 @@ static void CheckBooleanOperands(const ConversionSiteFacts& facts, const Conditi
         const ConversionExpressionFact& operand = facts.booleanOperands[site.operandBegin + i];
         const auto operandType = CleanBaseType(ResolveExpressionType(operand.bytes, ExpressionTypeContext(scope, ctx)));
 
-        if (operandType.empty() || operandType == "auto" || operandType == "void")
+        if (operandType.empty() || parser::primitives::IsAutoType(operandType) ||
+            parser::primitives::IsVoidType(operandType))
         {
             continue;
         }
