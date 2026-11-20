@@ -533,10 +533,10 @@ SyntaxNodeId NodeIndex::FlowFactCollector::AddSyntaxFact(Frame& frame, TSNode no
     const bool inBucket = syntaxSlot != SIZE_MAX;
     auto& facts = m_index.MutableFlowFacts();
     const auto id = static_cast<SyntaxNodeId>(facts.syntaxNodes.size());
-    facts.syntaxNodes.push_back({static_cast<uint32_t>(inBucket ? syntaxSlot : StoreUnbucketedSyntax(node)), NoSyntaxNode, NoSyntaxNode,
-                                 frame.symbol, frame.field, frame.parentSymbol, frame.isNamed, afterAssign,
-                                 frame.inCallable && frame.isNamed && IsAssignmentStatement(frame.symbol), false,
-                                 inBucket});
+    facts.syntaxNodes.push_back(
+        {static_cast<uint32_t>(inBucket ? syntaxSlot : StoreUnbucketedSyntax(node)), NoSyntaxNode, NoSyntaxNode,
+         frame.symbol, frame.field, frame.parentSymbol, frame.isNamed, afterAssign,
+         frame.inCallable && frame.isNamed && IsAssignmentStatement(frame.symbol), false, inBucket});
     if (frame.captureOperands)
     {
         facts.operandSyntax.try_emplace(std::make_pair(node.id, ts_node_start_byte(node)), id);

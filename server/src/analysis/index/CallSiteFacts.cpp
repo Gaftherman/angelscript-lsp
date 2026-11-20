@@ -269,6 +269,9 @@ static void CollectDirectInits(const NodeIndex& index, CallSiteFacts& facts)
                 initFact.bytes = BytesOf(declarator);
                 initFact.range = RangeOf(declarator);
                 initFact.declaredTypeBytes = rawTypeBytes;
+                const TSNode nameNode = declSyntax.Field(gs.fieldName);
+                initFact.nameBytes = BytesOf(nameNode);
+                initFact.nameRange = RangeOf(nameNode);
                 initFact.argumentListRange = RangeOf(argsNode);
                 initFact.argumentBegin = static_cast<uint32_t>(facts.arguments.size());
                 ExtractCallArguments(argsNode, index, facts);

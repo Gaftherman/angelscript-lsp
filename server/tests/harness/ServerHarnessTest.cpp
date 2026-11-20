@@ -714,25 +714,36 @@ TEST_CASE("Server - Answers a semantic token delta against the payload it last s
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)"
                 R"("textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
-    // The id the server minted for the payload above is "1": the counter starts at zero and this
-    // is the first token stream of the session.
-    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
-    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+    stream.PushAction(
+        [&]()
+        {
+            const auto full = lsp::json::parse(stream.ResponseFor(2));
+            const auto& previousId = full.object().get("result").object().get("resultId").string();
+            stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
+                        R"("textDocument":{"uri":")" +
+                        fixture.Uri("main.as") + R"("},"previousResultId":")" + previousId + R"("}})");
+            stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/semanticTokens/full","params":{)"
+                        R"("textDocument":{"uri":")" +
+                        fixture.Uri("main.as") + R"("}}})");
+            stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+        });
 
     config::ServerConfig serverConfig;
     RunScript(serverConfig, stream);
 
-    const std::string r2 = stream.ResponseFor(2);
-    CHECK(r2.find("\"data\"") != std::string::npos);
-    CHECK(r2.find("\"resultId\":\"1\"") != std::string::npos);
-
-    // Nothing changed between the two requests, so the delta is an empty edit list rather than a
-    // second copy of the whole stream.
-    const std::string r3 = stream.ResponseFor(3);
-    CHECK(r3.find("\"edits\":[]") != std::string::npos);
-    CHECK(r3.find("\"resultId\":\"2\"") != std::string::npos);
+    const auto initial = lsp::json::parse(stream.ResponseFor(2));
+    const auto delta = lsp::json::parse(stream.ResponseFor(3));
+    const auto repeated = lsp::json::parse(stream.ResponseFor(4));
+    const auto& initialData = initial.object().get("result").object().get("data").array();
+    const auto& repeatedData = repeated.object().get("result").object().get("data").array();
+    REQUIRE_FALSE(initialData.empty());
+    CHECK(initialData.size() % 5 == 0);
+    CHECK(delta.object().get("result").object().get("edits").array().empty());
+    REQUIRE(repeatedData.size() == initialData.size());
+    for (size_t i = 0; i < initialData.size(); ++i)
+    {
+        CHECK(repeatedData[i].integer() == initialData[i].integer());
+    }
 }
 
 TEST_CASE("Server - Falls back to a full stream when the delta base is unknown")
@@ -845,57 +856,81 @@ TEST_CASE("Server - Invalidates delta cache on syntax error transition")
     CHECK(r4.find("\"resultId\":\"3\"") != std::string::npos);
 }
 
-/**
- * @brief Verifies that delta token requests correctly splice edits after modifications,
- *        remain stable during settled idle states, and cleanly refresh on error recovery.
- */
-TEST_CASE("Server - Delta tokens splice edits after modifications and stabilize in idle state")
+TEST_CASE("Server - Delta token edits reconstruct a fresh full stream")
 {
+    const std::string original = "void main() { int a = 1; }\n";
+    const std::string changed = "void main() { int a = 1; int b = 2; }\n";
+    const auto payload = [](const test::ScriptedStream& input, int id)
+    {
+        const auto response = lsp::json::parse(input.ResponseFor(id));
+        return response.object().get("result");
+    };
+
     WorkspaceFixture fixture;
-    fixture.Write("main.as", "void main() { int a = 1; }\n");
+    fixture.Write("main.as", original);
 
     test::ScriptedStream stream;
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(DidOpenMessage(fixture.Uri("main.as"), "void main() { int a = 1; }\n"));
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), original));
 
     // 1. Initial full tokens request upon opening
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)"
                 R"("textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
 
-    // 2. Incremental modification appending a variable declaration
-    stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, "void main() { int a = 1; int b = 2; }\n"));
-
-    // 3. Delta request after edit -> returns spliced edits against resultId 1
-    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
-
-    // 4. Settled post-edit idle state: second delta request with resultId 2 -> empty edits
-    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"("},"previousResultId":"2"}})");
-
-    stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+    stream.PushAction(
+        [&]()
+        {
+            const auto initial = payload(stream, 2);
+            const auto& previousId = initial.object().get("resultId").string();
+            stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, changed));
+            stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
+                        R"("textDocument":{"uri":")" +
+                        fixture.Uri("main.as") + R"("},"previousResultId":")" + previousId + R"("}})");
+            stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+        });
 
     config::ServerConfig serverConfig;
     RunScript(serverConfig, stream);
 
-    // Verify initial full tokens
-    const std::string r2 = stream.ResponseFor(2);
-    CHECK(r2.find("\"data\"") != std::string::npos);
-    CHECK(r2.find("\"resultId\":\"1\"") != std::string::npos);
+    auto reconstructed = payload(stream, 2).object().get("data").array();
+    REQUIRE_FALSE(reconstructed.empty());
+    const auto edited = payload(stream, 3);
+    auto edits = edited.object().get("edits").array();
+    REQUIRE_FALSE(edits.empty());
+    std::sort(edits.begin(), edits.end(), [](const lsp::json::Value& left, const lsp::json::Value& right)
+              { return left.object().get("start").integer() > right.object().get("start").integer(); });
+    for (const auto& edit : edits)
+    {
+        const auto start = edit.object().get("start").integer();
+        const auto count = edit.object().get("deleteCount").integer();
+        REQUIRE(start >= 0);
+        REQUIRE(count >= 0);
+        REQUIRE(static_cast<size_t>(start + count) <= reconstructed.size());
+        const auto insertion =
+            reconstructed.erase(reconstructed.begin() + start, reconstructed.begin() + start + count);
+        if (const auto* data = edit.object().find("data"))
+        {
+            reconstructed.insert(insertion, data->array().begin(), data->array().end());
+        }
+    }
+    test::ScriptedStream control;
+    control.Push(InitializeMessage(fixture.RootUri()));
+    control.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    control.Push(DidOpenMessage(fixture.Uri("main.as"), changed));
+    control.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)"
+                 R"("textDocument":{"uri":")" +
+                 fixture.Uri("main.as") + R"("}}})");
+    control.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+    RunScript(serverConfig, control);
 
-    // Verify delta response with edits
-    const std::string r3 = stream.ResponseFor(3);
-    CHECK(r3.find("\"edits\"") != std::string::npos);
-    CHECK(r3.find("\"resultId\":\"2\"") != std::string::npos);
-
-    // Verify settled idle state (no further edits needed)
-    const std::string r4 = stream.ResponseFor(4);
-    CHECK(r4.find("\"edits\":[]") != std::string::npos);
-    CHECK(r4.find("\"resultId\":\"3\"") != std::string::npos);
+    const auto fresh = payload(control, 2).object().get("data").array();
+    REQUIRE(reconstructed.size() == fresh.size());
+    for (size_t i = 0; i < fresh.size(); ++i)
+    {
+        CHECK(reconstructed[i].integer() == fresh[i].integer());
+    }
 }
 
 TEST_CASE("Server - Inlay hint locations use the callee document's position encoding")

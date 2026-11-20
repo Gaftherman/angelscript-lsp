@@ -288,13 +288,43 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         ts_tree_delete(tree);
     }
 
+    TEST_CASE("CallSiteFacts - Direct initializers keep each declarator identifier span")
+    {
+        angel_lsp::parser::AngelScriptParser parser;
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("Point");
+        const std::string firstName = angel_lsp::test::GenerateRandomSymbolName("first");
+        const std::string secondName = angel_lsp::test::GenerateRandomSymbolName("second");
+        const std::string code =
+            "void " + fnName + "()\n{\n    " + typeName + "\n    " + firstName + "(1), " + secondName + "(2);\n}\n";
+
+        const auto tree = parser.ParseTree(code);
+        REQUIRE(tree != nullptr);
+        const angel_lsp::analysis::NodeIndex index(ts_tree_root_node(tree.get()),
+                                                   angel_lsp::analysis::NodeIndexOptions{.source = code});
+        const auto facts = angel_lsp::analysis::BuildCallSiteFacts(index, code);
+
+        REQUIRE(facts.directInits.size() == 2);
+        const auto& first = facts.directInits[0];
+        const auto& second = facts.directInits[1];
+        CHECK(first.nameBytes.startByte == code.find(firstName));
+        CHECK(second.nameBytes.startByte == code.find(secondName));
+        CHECK(facts.TextOf(first.nameBytes) == firstName);
+        CHECK(facts.TextOf(second.nameBytes) == secondName);
+        const auto firstEnd = 4 + static_cast<uint32_t>(firstName.size());
+        const auto secondStart = firstEnd + 5; // Skip "(1), ".
+        const auto secondEnd = secondStart + static_cast<uint32_t>(secondName.size());
+        CHECK(first.nameRange == (angel_lsp::analysis::SourceRange{3, 4, 3, firstEnd}));
+        CHECK(second.nameRange == (angel_lsp::analysis::SourceRange{3, secondStart, 3, secondEnd}));
+    }
+
     TEST_CASE("CallSiteFacts - Compact RAM layout, empty-call reserve, and pool slicing")
     {
         CHECK(sizeof(angel_lsp::analysis::CallArgumentTernaryFact) <= 16);
         CHECK(sizeof(angel_lsp::analysis::CallLambdaParamFact) <= 12);
         CHECK(sizeof(angel_lsp::analysis::CallArgumentFact) <= 48);
         CHECK(sizeof(angel_lsp::analysis::CallSiteFact) <= 108);
-        CHECK(sizeof(angel_lsp::analysis::DirectInitSiteFact) <= 56);
+        CHECK(sizeof(angel_lsp::analysis::DirectInitSiteFact) <= 80);
 
         angel_lsp::parser::AngelScriptParser parser;
         std::string noCallsCode;

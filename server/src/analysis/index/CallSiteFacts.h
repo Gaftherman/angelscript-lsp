@@ -120,9 +120,13 @@ struct DirectInitSiteFact
     IndexedByteRange bytes;             ///< Byte span of the variable declarator node.
     SourceRange range;                  ///< Line and column span; start point selects lexical scope.
     IndexedByteRange declaredTypeBytes; ///< Byte span of trimmed declared type in variable declaration.
-    SourceRange argumentListRange;      ///< Line and column span of the constructor argument list.
-    uint32_t argumentBegin = 0;         ///< First slice index into CallSiteFacts::arguments.
-    uint32_t argumentCount = 0;         ///< Number of arguments in CallSiteFacts::arguments.
+    /** @brief Byte span of the declarator identifier, empty when the name is missing. */
+    IndexedByteRange nameBytes;
+    /** @brief Line and column span of the identifier used to publish the constructor binding. */
+    SourceRange nameRange;
+    SourceRange argumentListRange; ///< Line and column span of the constructor argument list.
+    uint32_t argumentBegin = 0;    ///< First slice index into CallSiteFacts::arguments.
+    uint32_t argumentCount = 0;    ///< Number of arguments in CallSiteFacts::arguments.
 };
 
 /**

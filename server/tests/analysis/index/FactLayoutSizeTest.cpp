@@ -18,7 +18,7 @@ TEST_SUITE("Fact layout")
         CHECK(sizeof(CallLambdaParamFact) <= 12);
         CHECK(sizeof(CallArgumentFact) <= 48);
         CHECK(sizeof(CallSiteFact) <= 108);
-        CHECK(sizeof(DirectInitSiteFact) <= 56);
+        CHECK(sizeof(DirectInitSiteFact) <= 80);
         // ExpressionSiteFacts.h
         CHECK(sizeof(BinarySiteFact) <= 8);
         CHECK(sizeof(FoldedConstantFact) <= 24);

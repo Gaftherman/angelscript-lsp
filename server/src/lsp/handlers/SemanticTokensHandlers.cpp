@@ -10,7 +10,6 @@
 #include <chrono>
 #include <spdlog/fmt/fmt.h>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace angel_lsp

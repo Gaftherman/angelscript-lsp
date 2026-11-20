@@ -495,7 +495,7 @@ TEST_SUITE("analysis/index/NodeIndex")
 
         // Out-of-bounds SyntaxHandle safety invariant
         IndexedSyntaxNode outOfBoundsBucket{UINT32_MAX, NoSyntaxNode, NoSyntaxNode, gs.symIdentifier, 0, 0, true, false,
-                                            false,    false,        true};
+                                            false,      false,        true};
         CHECK(ts_node_is_null(index.SyntaxHandle(outOfBoundsBucket)));
         IndexedSyntaxNode outOfBoundsUnbucketed{
             UINT32_MAX, NoSyntaxNode, NoSyntaxNode, gs.symIdentifier, 0, 0, true, false, false, false, false};

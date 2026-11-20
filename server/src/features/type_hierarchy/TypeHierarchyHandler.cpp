@@ -51,12 +51,17 @@ static lsp::TypeHierarchyItem ToItem(const analysis::Symbol& sym)
 }
 
 /**
- * @brief The type declarations a bare name resolves to, if any.
+ * @brief Looks up class and interface declarations for an exact symbol name.
+ * @param[in] name Name to look up, optionally qualified relative to scope.
+ * @param[in] table Symbol table containing the declarations.
+ * @param[in] scope Enclosing namespace, or empty to look up name directly.
+ * @return Matching type declarations, or an empty vector if none exist.
  */
-static std::vector<analysis::Symbol> FindTypeDeclarations(std::string_view name, const analysis::SymbolTable& table)
+static std::vector<analysis::Symbol> FindTypeDeclarations(std::string_view name, const analysis::SymbolTable& table,
+                                                          std::string_view scope = {})
 {
     std::vector<analysis::Symbol> found;
-    const auto symbols = table.FindSymbolsPtr(name);
+    const auto symbols = scope.empty() ? table.FindSymbolsPtr(name) : table.FindMemberSymbolPtr(scope, name);
     if (!symbols)
     {
         return found;
@@ -351,7 +356,7 @@ static std::vector<analysis::Symbol> FindReferencedTypes(const TypeHierarchyPrep
         const auto enclosingNamespace = request.nodeIndex.FindEnclosingNamespace(cursorByte, request.parsedSource);
         if (!enclosingNamespace.empty())
         {
-            declarations = FindTypeDeclarations(utils::JoinScopedName(enclosingNamespace, name), request.symbolTable);
+            declarations = FindTypeDeclarations(name, request.symbolTable, enclosingNamespace);
         }
     }
     if (declarations.empty())

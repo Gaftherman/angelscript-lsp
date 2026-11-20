@@ -7,8 +7,6 @@
 #include "analysis/types/TypeSanitization.h"
 #include "parser/Primitives.h"
 
-#include <algorithm>
-#include <cctype>
 #include <span>
 #include <string>
 #include <string_view>
@@ -45,27 +43,15 @@ static void CheckPrimitiveDirectInit(SourceRange argumentListRange, std::span<co
  * Declarators that share a written type (`A x(1), y(2);`) or put the name on another line each get their own
  * binding, because the identifier, not the type, is unique to the declarator.
  * @param[in] constructor Winning constructor.
- * @param[in] init Direct initialization site fact; its declarator starts with the variable name.
- * @param[in] source Source text of the revision.
+ * @param[in] init Direct initialization site with the indexed span of the variable name.
  * @param[in,out] ctx Diagnostic context owning the revision's call bindings.
  */
-static void PublishConstructorUse(const Symbol& constructor, const DirectInitSiteFact& init, std::string_view source,
-                                  DiagnosticContext& ctx)
+static void PublishConstructorUse(const Symbol& constructor, const DirectInitSiteFact& init, DiagnosticContext& ctx)
 {
-    const std::string_view declarator = CallSiteFacts::SliceText(source, init.bytes);
-    size_t length = 0;
-    while (length < declarator.size() &&
-           (std::isalnum(static_cast<unsigned char>(declarator[length])) != 0 || declarator[length] == '_'))
+    if (!init.nameBytes.Empty())
     {
-        ++length;
+        PublishCallBinding(ctx, init.nameBytes.startByte, init.nameRange, constructor);
     }
-    if (length == 0)
-    {
-        return;
-    }
-    const SourceRange use{init.range.startLine, init.range.startCharacter, init.range.startLine,
-                          init.range.startCharacter + static_cast<uint32_t>(length)};
-    PublishCallBinding(ctx, init.bytes.startByte, use, constructor);
 }
 
 void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const AstCheckContext& request,
@@ -132,7 +118,7 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
         SpecializeConstructors(rawConstructors, vctx.tmplInfo, vctx.baseName, ctx.request.symbolTable);
     if (const Symbol* winner = CheckConstructorOverload(init.argumentListRange, candidates, argTypes, vctx))
     {
-        PublishConstructorUse(*winner, init, request.sourceCode, ctx);
+        PublishConstructorUse(*winner, init, ctx);
     }
 }
 
