@@ -63,7 +63,15 @@ bool IsDestructorSymbol(const Symbol& sym);
  */
 bool IsDestructorDeclaration(const Symbol& sym);
 
-NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable& table);
+/**
+ * @brief Classifies a type whose declaration prohibits direct construction.
+ * @param[in] baseTypeName Canonical type name to inspect.
+ * @param[in] table Workspace symbol table.
+ * @param[in] declarationUri File of the resolved declaration, or empty when no exact declaration was selected.
+ * @return The restriction declared by the type, or None when no restriction is found.
+ */
+NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable& table,
+                                            std::string_view declarationUri = {});
 bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table);
 std::vector<std::string> GetInheritedTypeHierarchy(std::string_view className, const SymbolTable& symbolTable,
                                                    ExpressionTypeCache* cache = nullptr);

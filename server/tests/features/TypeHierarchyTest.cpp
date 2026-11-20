@@ -1,13 +1,17 @@
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
+#include "utils/PositionEncoding.h"
 
 #include <algorithm>
 #include <doctest/doctest.h>
 #include <random>
 #include <string>
+#include <string_view>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
@@ -31,25 +35,19 @@ struct Fixture
     SymbolTable table;
     std::string uri = "file:///types.as";
     std::string sourceCode;
-    TSTree* tree = nullptr;
+    TreePtr tree;
+    NodeIndex index;
 
-    explicit Fixture(std::string code) : sourceCode(std::move(code))
+    explicit Fixture(std::string code)
+        : sourceCode(std::move(code)), tree(MakeTreePtr(parser.Parse(sourceCode))), index(GetRootNode(tree), sourceCode)
     {
-        tree = parser.Parse(sourceCode);
-        collector.CollectSymbols(uri, sourceCode, parser, table);
-    }
-
-    ~Fixture()
-    {
-        if (tree)
-        {
-            ts_tree_delete(tree);
-        }
+        collector.CollectSymbolsWithIndex(SymbolCollectRequest{uri, sourceCode}, index, table);
     }
 
     std::optional<std::vector<lsp::TypeHierarchyItem>> Prepare(uint32_t line, uint32_t character)
     {
-        const TypeHierarchyPrepareRequest request{uri, sourceCode, table, lsp::Position{line, character}};
+        const TypeHierarchyPrepareRequest request{
+            uri, sourceCode, sourceCode, table, index, lsp::Position{line, character}, utils::PositionEncoding::Utf16};
         return PrepareTypeHierarchy(request);
     }
 
@@ -384,5 +382,57 @@ TEST_SUITE("features/TypeHierarchy")
         REQUIRE(baseItems.has_value());
         const auto subs = fixture.Subtypes((*baseItems)[0]);
         CHECK(HasName(subs, derivedName));
+    }
+
+    TEST_CASE("TypeHierarchy - Same-line declarations and bodies resolve to their qualified owner")
+    {
+        std::mt19937_64 rng(0xC070001);
+        const auto outer = test::GenerateIdentifier(rng, "Outer");
+        const auto inner = test::GenerateIdentifier(rng, "Inner");
+        const auto type = test::GenerateIdentifier(rng, "Derived");
+        const auto firstBase = test::GenerateIdentifier(rng, "FirstBase");
+        const auto secondBase = test::GenerateIdentifier(rng, "SecondBase");
+        const std::string first = "class " + type + " : " + firstBase + " { }";
+        const std::string second = "class " + type + " : " + secondBase + " { }";
+        const std::string line = "/* \xC3\xA9 \xF0\x9F\x98\x80 */ namespace " + outer + " { " + first + " namespace " +
+                                 inner + " { " + second + " } }";
+        Fixture fixture("class " + firstBase + " { }\nclass " + secondBase + " { }\n" + line);
+
+        auto checkOwner = [&](std::string_view declaration, std::string_view qualifiedName, std::string_view base)
+        {
+            const size_t start = line.find(declaration);
+            REQUIRE(start != std::string::npos);
+            const size_t name = start + declaration.find(type);
+            const size_t body = start + declaration.find('{') + 1;
+            for (const size_t byteColumn : {name, body})
+            {
+                // U+00E9 and U+1F600 use six UTF-8 bytes and three UTF-16 code units.
+                const auto items = fixture.Prepare(2, static_cast<uint32_t>(byteColumn - 3));
+                REQUIRE(items.has_value());
+                REQUIRE(items->size() == 1);
+                REQUIRE(items->front().data.has_value());
+                CHECK(items->front().data->string() == qualifiedName);
+
+                const auto bases = fixture.Supertypes(items->front());
+                REQUIRE(bases.has_value());
+                REQUIRE(bases->size() == 1);
+                CHECK(bases->front().name == base);
+            }
+            CHECK_FALSE(fixture.Prepare(2, static_cast<uint32_t>(start + declaration.size() - 3)).has_value());
+        };
+        checkOwner(first, outer + "::" + type, firstBase);
+        checkOwner(second, outer + "::" + inner + "::" + type, secondBase);
+    }
+
+    TEST_CASE("TypeHierarchy - A recovered type owns the physical EOF cursor")
+    {
+        const auto type = test::GenerateRandomSymbolName("Open");
+        const auto member = test::GenerateRandomSymbolName("member");
+        Fixture fixture("class " + type + " { int " + member + ";\n  ");
+
+        const auto items = fixture.Prepare(1, 2);
+        REQUIRE(items.has_value());
+        REQUIRE(items->size() == 1);
+        CHECK(items->front().name == type);
     }
 }

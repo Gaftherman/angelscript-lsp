@@ -1,6 +1,8 @@
 #include "analysis/resolution/TargetResolution.h"
 
 #include "analysis/index/CallArgumentFacts.h"
+#include "analysis/resolution/ReferenceCountingAccess.h"
+#include "analysis/resolution/ReferenceCountingScope.h"
 #include "analysis/resolution/ReferenceReceiver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/Keywords.h"
@@ -642,6 +644,24 @@ static bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const
     return false;
 }
 
+static std::shared_ptr<const Symbol> ResolveCallDeclaration(const SymbolTable& symbols,
+                                                            const CallDeclaration& declaration)
+{
+    const auto candidates = symbols.FindSymbolsPtr(declaration.qualifiedName);
+    if (!candidates)
+    {
+        return {};
+    }
+    for (const auto& symbol : *candidates)
+    {
+        if (symbol.type == SymbolType::Function && !symbol.isSynthesized && declaration.Matches(symbol))
+        {
+            return {candidates, &symbol};
+        }
+    }
+    return {};
+}
+
 std::shared_ptr<const Symbol> ResolveIndexedCall(const SymbolTable& symbols, const Scope* root, uint32_t nameByte,
                                                  const std::optional<CallBindingRevision>& revision)
 {
@@ -651,23 +671,7 @@ std::shared_ptr<const Symbol> ResolveIndexedCall(const SymbolTable& symbols, con
         return {};
     }
     const auto* binding = bindings->Find(nameByte);
-    if (!binding)
-    {
-        return {};
-    }
-    const auto candidates = symbols.FindSymbolsPtr(binding->qualifiedName);
-    if (!candidates)
-    {
-        return {};
-    }
-    for (const auto& symbol : *candidates)
-    {
-        if (symbol.type == SymbolType::Function && !symbol.isSynthesized && binding->Matches(symbol))
-        {
-            return {candidates, &symbol};
-        }
-    }
-    return {};
+    return binding ? ResolveCallDeclaration(symbols, *binding) : std::shared_ptr<const Symbol>{};
 }
 
 static bool ResolveTargetFromCall(const ResolveTargetRequest& request, const Scope* root, TargetDescriptor& target,
@@ -1130,6 +1134,39 @@ static bool HasGlobalSymbolOrAccessor(const SymbolTable& table, std::string_view
     return table.FindSymbolsPtr(name) != nullptr || !analysis::FindGlobalPropertyAccessors(name, table).empty();
 }
 
+static bool ResolveClassDeclarationTarget(const ResolveTargetRequest& request, const Scope* root, uint32_t startByte,
+                                          TargetDescriptor& target)
+{
+    const auto& position = request.position;
+    const Scope* scope = FindInnermostScope(root, position.line, position.character);
+    const std::string_view owner = scope ? scope->GetEnclosingNamespace() : std::string_view{};
+    const auto symbols = owner.empty() ? request.symbolTable.FindSymbolsPtr(target.name)
+                                       : request.symbolTable.FindMemberSymbolPtr(owner, target.name);
+    if (!symbols)
+    {
+        return false;
+    }
+    for (const auto& symbol : *symbols)
+    {
+        if ((symbol.type != SymbolType::Class && symbol.type != SymbolType::Interface) ||
+            symbol.fileUri != request.uri || symbol.selectionRange.startLine != position.line || symbol.isSynthesized)
+        {
+            continue;
+        }
+        uint32_t lineStartByte = 0;
+        ExtractLineFromSource(request.sourceCode, position.line, lineStartByte);
+        if (symbol.selectionRange.startCharacter != startByte - lineStartByte)
+        {
+            continue;
+        }
+        AssignTargetFromContainerKind(symbol, target);
+        target.classDeclaration.emplace(OccurrenceLocation{symbol.fileUri, symbol.selectionRange});
+        target.qualifiedName = symbol.qualifiedName;
+        return true;
+    }
+    return false;
+}
+
 std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& request)
 {
     if (request.logger && request.logger->IsDebugEnabled())
@@ -1151,7 +1188,8 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
     TargetDescriptor target;
     target.name = std::string(nodeText);
-    if (ResolveTargetFromCall(request, rootScope.get(), target, identStartByte))
+    if (ResolveTargetFromCall(request, rootScope.get(), target, identStartByte) ||
+        ResolveClassDeclarationTarget(request, rootScope.get(), identStartByte, target))
     {
         return target;
     }
@@ -1605,14 +1643,16 @@ static bool IsUnboundSearchCandidate(const Scope& root, const LocalReference& re
  * @param[in] root Document root scope.
  * @param[in] relatedSet Set of related class names.
  * @param[in,out] ctx Occurrence scan context.
+ * @param[in] constructor Exact constructor under search, or null for ordinary members.
  */
 static void ScanDocumentForClassMember(const analysis::Scope* root, const TransparentStringSet& relatedSet,
-                                       OccurrenceScanContext& ctx)
+                                       OccurrenceScanContext& ctx, const Symbol* constructor)
 {
     if (!root)
     {
         return;
     }
+    const DefaultConstructorLookup constructorLookup{ctx.request.symbolTable, root->alwaysImplementsDefaultConstruct};
     std::vector<const analysis::Scope*> stack{root};
     while (!stack.empty())
     {
@@ -1621,6 +1661,14 @@ static void ScanDocumentForClassMember(const analysis::Scope* root, const Transp
 
         for (const auto& ref : s->references)
         {
+            if (constructor && !ref.isCall)
+            {
+                for (const auto& use : FindDefaultConstructorUses(ref, *s, *constructor, constructorLookup))
+                {
+                    ctx.collector.Add(ctx.fileUri, use.declaratorRange);
+                }
+                continue;
+            }
             if (!IsUnboundSearchCandidate(*root, ref, ctx))
             {
                 continue;
@@ -1651,6 +1699,17 @@ static void ScanDocumentForClassMember(const analysis::Scope* root, const Transp
     }
 }
 
+static std::shared_ptr<const Symbol> FindConstructorOccurrenceTarget(const CollectOccurrencesRequest& request)
+{
+    const auto& declaration = request.target.callDeclaration;
+    if (!declaration)
+    {
+        return {};
+    }
+    auto symbol = ResolveCallDeclaration(request.symbolTable, *declaration);
+    return symbol && IsConstructorDeclaration(*symbol) ? std::move(symbol) : std::shared_ptr<const Symbol>{};
+}
+
 /**
  * @brief Collects all occurrences of a class member across all indexed documents.
  * @param[in] request Occurrences request.
@@ -1658,7 +1717,12 @@ static void ScanDocumentForClassMember(const analysis::Scope* root, const Transp
  */
 static void CollectClassMemberOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
-    TransparentStringSet relatedSet(request.target.relatedClasses.begin(), request.target.relatedClasses.end());
+    const auto constructor = FindConstructorOccurrenceTarget(request);
+    TransparentStringSet relatedSet;
+    if (!constructor)
+    {
+        relatedSet.insert(request.target.relatedClasses.begin(), request.target.relatedClasses.end());
+    }
     if (!request.target.declaringClass.empty())
     {
         relatedSet.insert(request.target.declaringClass);
@@ -1681,7 +1745,7 @@ static void CollectClassMemberOccurrences(const CollectOccurrencesRequest& reque
             .declRanges = allDeclRanges,
             .collector = collector,
         };
-        ScanDocumentForClassMember(docScopeRoot.get(), relatedSet, ctx);
+        ScanDocumentForClassMember(docScopeRoot.get(), relatedSet, ctx, constructor.get());
     }
 }
 
@@ -1706,6 +1770,12 @@ static void CollectDeclarations(std::string_view symQuery, const CollectOccurren
         SymbolSpan span = GetSymbolSpan(sym);
         allDeclRanges.insert({sym.fileUri, span.sL, span.sC});
 
+        if (const auto& selected = request.target.classDeclaration;
+            selected &&
+            (selected->fileUri != sym.fileUri || selected->range != sym.selectionRange || sym.isSynthesized))
+        {
+            continue;
+        }
         if (!FunctionMatchesTarget(sym, request.target))
         {
             continue;
@@ -1731,6 +1801,10 @@ static bool IsRefInsideNamespace(const analysis::LocalReference& ref,
                                  const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
                                  const OccurrenceScanContext& ctx, const analysis::Scope* scope)
 {
+    if (ctx.request.target.classDeclaration && ref.isTypeSpecifier)
+    {
+        return MatchesWrittenTypeOwner(ref, *scope, ctx.request.target.declaringNamespace, ctx.request.symbolTable);
+    }
     const auto qualifier = GetIndexedReferenceQualifier(ref, *scope);
     if (ref.isMemberAccess || !qualifier.empty())
     {
@@ -1838,7 +1912,19 @@ static void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanCon
 
         for (const auto& ref : s->references)
         {
-            if (ref.isMemberAccess || !IsUnboundSearchCandidate(*root, ref, ctx))
+            if (!IsUnboundSearchCandidate(*root, ref, ctx))
+            {
+                continue;
+            }
+            if (ctx.request.target.classDeclaration && ref.isTypeSpecifier)
+            {
+                if (MatchesWrittenTypeOwner(ref, *s, {}, ctx.request.symbolTable))
+                {
+                    ctx.collector.Add(ctx.fileUri, ref);
+                }
+                continue;
+            }
+            if (ref.isMemberAccess)
             {
                 continue;
             }

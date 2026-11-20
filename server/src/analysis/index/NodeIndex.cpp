@@ -154,6 +154,10 @@ size_t NodeIndex::IndexNode(TSNode node, parser::TraversalBudget* budget, uint32
         m_commentRanges.push_back(
             CommentRange{ts_node_start_byte(node), ts_node_end_byte(node), sp.row, sp.column, ep.row, ep.column});
     }
+    else if (sym == gs.symStringLiteral)
+    {
+        MutableFlowFacts().stringLiteralRanges.push_back({ts_node_start_byte(node), ts_node_end_byte(node)});
+    }
 
     const bool isQueriedAnonymous = sym == gs.tokShared || sym == gs.tokMixin || sym == m_symComment;
     if ((ts_node_is_named(node) || isQueriedAnonymous) && !isError && sym < 4096)
@@ -187,6 +191,14 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSp
         span.isMixin =
             ((sym == gs.symMixinDeclaration) || !ts_node_is_null(parser::FindChildWithSymbol(node, gs.tokMixin))) ? 1
                                                                                                                   : 0;
+        if (span.endByte == ts_node_end_byte(m_root) &&
+            (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration || sym == gs.symInterfaceDeclaration))
+        {
+            const TSNode body = parser::GetChildByField(node, gs.fieldBody);
+            const TSNode close = parser::FindChildWithSymbol(body, gs.symImplicitCloseBrace);
+            span.recoveredClose = !ts_node_is_null(close) && ts_node_start_byte(close) == span.endByte &&
+                                  ts_node_end_byte(close) == span.endByte;
+        }
         m_containerSpans.push_back(span);
     }
 }
@@ -1103,7 +1115,12 @@ void NodeIndex::Build(TSNode root, const NodeIndexOptions& options)
     m_language = options.lang ? options.lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
     m_symComment = SymbolForName("comment");
-    TraverseTree(root, options.budget, options.contents == NodeIndexContents::Full, options.source);
+    const bool full = options.contents == NodeIndexContents::Full;
+    if (full && !options.source.empty())
+    {
+        m_lines = utils::LineIndex::Build(options.source);
+    }
+    TraverseTree(root, options.budget, full, options.source);
     BuildEnclosingSameSym();
     PostProcessErrorRanges();
     PostProcessCommentRanges();
@@ -1203,7 +1220,7 @@ size_t NodeIndex::EstimateMemoryBytes() const noexcept
 
     size_t bytes = sizeof(*this) + vectorBytes(m_errorNodes) + vectorBytes(m_implicitCloseBraces) +
                    vectorBytes(m_nodesBySymbol) + vectorBytes(m_errorRanges) + vectorBytes(m_commentRanges) +
-                   vectorBytes(m_containerSpans);
+                   vectorBytes(m_containerSpans) + vectorBytes(m_lines.starts);
 
     for (const SymbolBucket& bucket : m_nodesBySymbol)
     {
@@ -1221,7 +1238,7 @@ size_t NodeIndex::EstimateMemoryBytes() const noexcept
                  vectorBytes(facts.assignmentLambdas) + vectorBytes(facts.classByFunctionSlot) +
                  vectorBytes(facts.callableByReturnSlot) + vectorBytes(facts.conditionalStatements) +
                  vectorBytes(facts.selectionSpans) + vectorBytes(facts.foldableSpans) +
-                 vectorBytes(facts.includeDirectives);
+                 vectorBytes(facts.includeDirectives) + vectorBytes(facts.stringLiteralRanges);
 
         for (const IndexedSwitch& sw : facts.switches)
         {
@@ -1313,6 +1330,16 @@ bool NodeIndex::IsInsideComment(uint32_t byteOffset) const noexcept
     return IsByteInRanges(std::span<const CommentRange>(m_commentRanges), byteOffset);
 }
 
+bool NodeIndex::IsInsideStringLiteral(uint32_t byteOffset) const noexcept
+{
+    return m_flowFacts && IsByteInRanges(std::span<const ErrorRange>(m_flowFacts->stringLiteralRanges), byteOffset);
+}
+
+const utils::LineIndex& NodeIndex::Lines() const noexcept
+{
+    return m_lines;
+}
+
 bool NodeIndex::IsInsideCommentLineCol(uint32_t line, uint32_t col) const noexcept
 {
     if (m_commentRanges.empty())
@@ -1387,6 +1414,7 @@ void NodeIndex::Clear() noexcept
     m_errorRanges.clear();
     m_commentRanges.clear();
     m_containerSpans.clear();
+    m_lines.starts.clear();
     m_flowFacts.reset();
     m_symComment = 0;
 }
@@ -1650,6 +1678,85 @@ std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOf
 {
     return CollectContainersFrom(FindInnermostSpan(std::span<const IndexedContainerSpan>(m_containerSpans), byteOffset),
                                  sourceCode);
+}
+
+std::string NodeIndex::QualifyContainerName(const IndexedContainerSpan& span, std::string_view sourceCode) const
+{
+    std::vector<std::string_view> segments;
+    const auto* current = &span;
+    while (current)
+    {
+        if (current->nameStartByte < current->nameEndByte && current->nameEndByte <= sourceCode.size())
+        {
+            auto name = sourceCode.substr(current->nameStartByte, current->nameEndByte - current->nameStartByte);
+            if (ClassifyContainerKind(current->symbol) == ContainerKind::Class)
+            {
+                name = name.substr(0, TemplateArgumentsStart(name));
+            }
+            segments.push_back(name);
+        }
+        current = current->parentSpanIndex == UINT32_MAX ? nullptr : &m_containerSpans[current->parentSpanIndex];
+    }
+    std::string qualified;
+    for (auto it = segments.rbegin(); it != segments.rend(); ++it)
+    {
+        if (!qualified.empty())
+        {
+            qualified += "::";
+        }
+        qualified += *it;
+    }
+    return qualified;
+}
+
+std::optional<EnclosingType> NodeIndex::FindEnclosingType(uint32_t byteOffset, std::string_view sourceCode,
+                                                          EnclosingTypeBoundary boundary) const
+{
+    if (byteOffset > sourceCode.size())
+    {
+        return std::nullopt;
+    }
+    const bool atEof = byteOffset == sourceCode.size();
+    if (atEof && byteOffset == 0)
+    {
+        return std::nullopt;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    const auto spans = std::span<const IndexedContainerSpan>(m_containerSpans);
+    // At EOF, start from the last byte and require a recovered close at the cursor.
+    const auto* span = FindInnermostSpan(spans, atEof ? byteOffset - 1 : byteOffset);
+    while (span)
+    {
+        if (!atEof && boundary == EnclosingTypeBoundary::StopAtLambda && span->symbol == gs.symLambdaExpression)
+        {
+            return std::nullopt;
+        }
+        const auto kind = ClassifyContainerKind(span->symbol);
+        const bool containsCursor = !atEof || (span->endByte == byteOffset && span->recoveredClose);
+        if (containsCursor && kind && *kind != ContainerKind::Namespace && span->nameStartByte < span->nameEndByte &&
+            span->nameEndByte <= sourceCode.size())
+        {
+            return EnclosingType{QualifyContainerName(*span, sourceCode), {span->nameStartByte, span->nameEndByte}};
+        }
+        span = span->parentSpanIndex == UINT32_MAX ? nullptr : &spans[span->parentSpanIndex];
+    }
+    return std::nullopt;
+}
+
+std::string NodeIndex::FindEnclosingNamespace(uint32_t byteOffset, std::string_view sourceCode) const
+{
+    const auto spans = std::span<const IndexedContainerSpan>(m_containerSpans);
+    const auto* span = FindInnermostSpan(spans, byteOffset);
+    const auto namespaceSymbol = parser::GetGrammarSymbols().symNamespaceDeclaration;
+    while (span)
+    {
+        if (span->symbol == namespaceSymbol && span->nameStartByte < span->nameEndByte)
+        {
+            return QualifyContainerName(*span, sourceCode);
+        }
+        span = span->parentSpanIndex == UINT32_MAX ? nullptr : &spans[span->parentSpanIndex];
+    }
+    return {};
 }
 
 bool NodeIndex::IsInsideBaseClassList(uint32_t startByte, uint32_t endByte) const noexcept

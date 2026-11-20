@@ -162,8 +162,8 @@ Server::HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHi
     {
         LogInfo(
             fmt::format("[Inlay Hints] Finished in {:.2f} ms for {} ({} hints)", elapsedMs, doc->uri, hints->size()));
-        EncodeIn(*doc->text, hints.value());
-        return hints.value();
+        EncodeIn(*doc, hints.value());
+        return std::move(*hints);
     }
     return lsp::Null{};
 }

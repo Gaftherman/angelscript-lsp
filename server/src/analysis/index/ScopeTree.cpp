@@ -283,7 +283,7 @@ bool ScopeIndex::MatchesModule(const Scope& scope, const std::optional<std::stri
 
 void ScopeIndex::AddCallUses(const std::string& uri, const Scope& scope)
 {
-    if (const auto* bindings = scope.GetCallBindings())
+    if (const auto* bindings = scope.GetCallBindings(); bindings && !bindings->Empty())
     {
         auto& calls = m_callUses[bindings->Module()];
         bindings->ForEachDeclaration([&](const CallDeclaration& declaration, std::span<const SourceRange> ranges)

@@ -1,6 +1,8 @@
+#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "helpers/TestUtils.h"
 #include "helpers/UnifiedFeatureAuditHarness.h"
 
+#include <algorithm>
 #include <doctest/doctest.h>
 
 using namespace angel_lsp::test;
@@ -54,6 +56,21 @@ TEST_SUITE("oracle/GitHubIssuesOracleParity")
         harness.AssertCompletionExcludes(derivedUri, 7, 13, "m_priv");
         harness.AssertCompletionContains(derivedUri, 7, 13, "m_prot", lsp::CompletionItemKind::Field);
         harness.AssertCompletionContains(derivedUri, 7, 13, "m_pub", lsp::CompletionItemKind::Field);
+    }
+
+    TEST_CASE("Issue #1 - A weakref built from this inside a derived class constructor is accepted")
+    {
+        UnifiedFeatureAuditHarness harness;
+        harness.LoadPredefinedStub("sdk-addons.as.predefined");
+        const std::string ns = GenerateRandomSymbolName("Space");
+        const std::string base = GenerateRandomSymbolName("Base");
+        const std::string derived = GenerateRandomSymbolName("Derived");
+        const std::string list = GenerateRandomSymbolName("refs");
+        const std::string script = "namespace " + ns + "\n{\n    class " + base + " {}\n    array<weakref<" + base +
+                                   ">> " + list + ";\n}\n\nclass " + derived + " : " + ns + "::" + base + "\n{\n    " +
+                                   derived + "()\n    {\n        weakref<" + ns + "::" + base +
+                                   "> ref(this);\n        " + ns + "::" + list + ".insertLast( ref );\n    }\n}\n";
+        harness.VerifyGoodPath("scripts/" + GenerateRandomSymbolName("weakref_ctor") + ".as", script);
     }
 
     TEST_CASE("Issue #4 - Overload ambiguity on initializer list arguments reports error")
@@ -295,4 +312,198 @@ TEST_SUITE("oracle/GitHubIssuesOracleParity")
                               "as-err-read-only-property");
     }
 
+    TEST_CASE("Issue #15 - Instance getter resolves when a namespace type shares its name")
+    {
+        const std::string owner = GenerateRandomSymbolName("Owner");
+        const std::string inner = GenerateRandomSymbolName("Inner");
+        const std::string other = GenerateRandomSymbolName("Other");
+
+        const auto build = [&](bool withGetter, const std::string& receiverStmt)
+        {
+            const std::string getter =
+                withGetter ? "    " + owner + "::" + inner + "@ get_" + inner + "() property { return null; }\n" : "";
+            return "namespace " + owner + " { class " + inner + " {} }\nclass " + other + " {\n    " + owner +
+                   "::" + inner + "@ get_" + inner + "() property { return null; }\n}\nclass " + owner + " {\n" +
+                   getter + "    void Run() {\n        " + receiverStmt + "\n    }\n}\n";
+        };
+        const std::string access = "auto@ v = this." + inner + ";";
+
+        const auto memberNotFound = [](const std::vector<angel_lsp::analysis::Diagnostic>& diags)
+        {
+            return std::count_if(diags.begin(), diags.end(), [](const angel_lsp::analysis::Diagnostic& d)
+                                 { return d.code == angel_lsp::diagnostics::codes::MemberNotFound; });
+        };
+
+        SUBCASE("the getter binds and the qualified type stays resolvable")
+        {
+            UnifiedFeatureAuditHarness harness;
+            const std::string uri = harness.SandboxUri("scripts/" + GenerateRandomSymbolName("getter") + ".as");
+            harness.AddVirtualDocument(uri, build(true, access));
+            CHECK(memberNotFound(harness.GetDiagnostics(uri)) == 0);
+        }
+
+        SUBCASE("without the getter the member is genuinely missing, even with an unrelated same-name getter")
+        {
+            UnifiedFeatureAuditHarness harness;
+            const std::string uri = harness.SandboxUri("scripts/" + GenerateRandomSymbolName("nogetter") + ".as");
+            harness.AddVirtualDocument(uri, build(false, access));
+            const auto& diags = harness.GetDiagnostics(uri);
+            REQUIRE(memberNotFound(diags) == 1);
+            const auto hit = std::find_if(diags.begin(), diags.end(), [](const angel_lsp::analysis::Diagnostic& d)
+                                          { return d.code == angel_lsp::diagnostics::codes::MemberNotFound; });
+            CHECK(hit->range.start.line == 6);
+            CHECK(hit->range.start.character == 8 + std::string("auto@ v = this.").size());
+        }
+    }
+
+    TEST_CASE("Property accessors - Names around the old buffer sizes resolve like any other")
+    {
+        UnifiedFeatureAuditHarness harness;
+        // 124 and 125 straddle the 128 byte buffer once `get_` is added; 508 and 509 straddle the 512 byte one.
+        for (const size_t length :
+             {size_t(20), size_t(124), size_t(125), size_t(130), size_t(508), size_t(509), size_t(600)})
+        {
+            const std::string cls = GenerateRandomSymbolName("Holder");
+            const std::string fn = GenerateRandomSymbolName("use");
+            const std::string prop = "p" + std::string(length - 1, 'x');
+            const std::string script = "class " + cls + "\n{\n    int get_" + prop +
+                                       "() property { return 1; }\n    void set_" + prop +
+                                       "(int v) property { }\n}\nvoid " + fn + "(" + cls + "@ c)\n{\n    c." + prop +
+                                       " = c." + prop + " + 1;\n}\n";
+            INFO("property name length " << length);
+            harness.VerifyGoodPath("scripts/" + GenerateRandomSymbolName("long") + ".as", script);
+        }
+    }
+
+    TEST_CASE("Property accessors - A missing accessor of a long name is still reported")
+    {
+        UnifiedFeatureAuditHarness harness;
+        const std::string cls = GenerateRandomSymbolName("Holder");
+        const std::string fn = GenerateRandomSymbolName("use");
+        const std::string prop = "p" + std::string(199, 'x');
+        const std::string script = "class " + cls + "\n{\n    int get_" + prop + "() property { return 1; }\n}\nvoid " +
+                                   fn + "(" + cls + "@ c)\n{\n    c." + prop + " = 2;\n}\n";
+        // The setter is absent, so the write must fail whatever the length of the name.
+        harness.VerifyBadPath("scripts/" + GenerateRandomSymbolName("readonly") + ".as", script,
+                              "as-err-read-only-property");
+    }
+
+    TEST_CASE("Property accessors - Reads and writes bind to the accessors that exist")
+    {
+        UnifiedFeatureAuditHarness harness;
+        const auto path = [](const char* prefix) { return "scripts/" + GenerateRandomSymbolName(prefix) + ".as"; };
+
+        // Documents of one workspace share a global scope, so each script declares its own class name.
+        const auto script = [](const std::string& declarations, const std::string& body)
+        {
+            const std::string name = GenerateRandomSymbolName("Cls");
+            std::string text = declarations + "void use(" + name + "@ c) { " + body + " }\n";
+            for (size_t at = text.find("@@"); at != std::string::npos; at = text.find("@@"))
+            {
+                text.replace(at, 2, name);
+            }
+            return text;
+        };
+        const std::string readWrite =
+            "class @@ { int v; int get_p() property { return v; } void set_p(int x) property { v = x; } }\n";
+        const std::string readOnly = "class @@ { int v; int get_p() property { return v; } }\n";
+        const std::string writeOnly = "class @@ { void set_p(int x) property { } }\n";
+
+        SUBCASE("a property with both accessors can be read, written and compounded")
+        {
+            harness.VerifyGoodPath(path("rw"), script(readWrite, "c.p = 1; c.p = c.p + 1; c.p += 2;"));
+        }
+        SUBCASE("a derived getter keeps the setter of its base")
+        {
+            const std::string name = GenerateRandomSymbolName("Cls");
+            harness.VerifyGoodPath(path("derived"),
+                                   "class " + name +
+                                       " { int v; int get_p() property { return v; } void set_p(int x) "
+                                       "property { v = x; } }\nclass D" +
+                                       name + " : " + name + " { int get_p() property { return 2; } }\nvoid use(D" +
+                                       name + "@ d) { d.p = 3; }\n");
+        }
+        SUBCASE("a write of the wrong type is rejected")
+        {
+            harness.VerifyBadPath(path("badtype"), script(readWrite, "c.p = \"x\";"), "as-err-no-implicit-conversion");
+        }
+        SUBCASE("a read-only property rejects plain and compound writes")
+        {
+            harness.VerifyBadPath(path("ro1"), script(readOnly, "c.p = 1;"), "as-err-read-only-property");
+            harness.VerifyBadPath(path("ro2"), script(readOnly, "c.p += 1;"), "as-err-read-only-property");
+            harness.VerifyBadPath(path("ro3"), script(readOnly, "c.p -= 2;"), "as-err-read-only-property");
+        }
+        SUBCASE("a read-only property rejects increment")
+        {
+            harness.VerifyBadPath(path("ro4"), script(readOnly, "c.p++;"), "as-err-inc-dec-on-virtual-prop");
+        }
+        SUBCASE("a write-only property rejects every kind of read")
+        {
+            harness.VerifyBadPath(path("wo1"), script(writeOnly, "int y = c.p;"), "as-err-write-only-property");
+            harness.VerifyBadPath(path("wo2"), script(writeOnly, "int y = 0; y = c.p;"), "as-err-write-only-property");
+        }
+    }
+
+    TEST_CASE("Issue #6 - An object reference parameter accepts what the compiler accepts and rejects null")
+    {
+        UnifiedFeatureAuditHarness harness;
+        const auto path = [](const char* prefix) { return "scripts/" + GenerateRandomSymbolName(prefix) + ".as"; };
+
+        // Every script gets its own class and function names: documents of one workspace share a global scope.
+        struct Names
+        {
+            std::string a = GenerateRandomSymbolName("Alpha");
+            std::string b = GenerateRandomSymbolName("Beta");
+            std::string take = GenerateRandomSymbolName("take");
+            std::string Decl() const
+            {
+                return "class " + a + " { }\nvoid " + take + "(" + a + "&in p) { }\n";
+            }
+        };
+
+        // Accepted by the compiler: a value, a handle, and a const handle all bind to a copying reference.
+        const Names value;
+        harness.VerifyGoodPath(path("val"), value.Decl() + "void main1()\n{\n    " + value.a + " v;\n    " +
+                                                value.take + "(v);\n}\n");
+        const Names handle;
+        harness.VerifyGoodPath(path("hnd"), handle.Decl() + "void main2()\n{\n    " + handle.a + "@ h = " + handle.a +
+                                                "();\n    " + handle.take + "(h);\n}\n");
+        const Names constHandle;
+        harness.VerifyGoodPath(path("chnd"), constHandle.Decl() + "void main3()\n{\n    const " + constHandle.a +
+                                                 "@ h = " + constHandle.a + "();\n    " + constHandle.take +
+                                                 "(h);\n}\n");
+
+        // A constructor taking the argument converts it, whether the argument is a value or a handle.
+        const Names ctorInt;
+        harness.VerifyGoodPath(path("ctorint"), "class " + ctorInt.a + " { " + ctorInt.a + "(int x) { } }\nvoid " +
+                                                    ctorInt.take + "(" + ctorInt.a +
+                                                    "&in p) { }\nvoid main4()\n{\n    " + ctorInt.take + "(1);\n}\n");
+        const Names ctorHandle;
+        harness.VerifyGoodPath(path("ctorhandle"),
+                               "class " + ctorHandle.b + " { }\nclass " + ctorHandle.a + " { " + ctorHandle.a + "(" +
+                                   ctorHandle.b + "@ x) { } }\nvoid " + ctorHandle.take + "(" + ctorHandle.a +
+                                   "&in p) { }\nvoid main5()\n{\n    " + ctorHandle.b + "@ h = " + ctorHandle.b +
+                                   "();\n    " + ctorHandle.take + "(h);\n}\n");
+
+        // A handle parameter takes null; an object reference parameter does not, whatever its direction.
+        const Names nullHandle;
+        harness.VerifyGoodPath(path("nullhandle"), "class " + nullHandle.a + " { }\nvoid " + nullHandle.take + "(" +
+                                                       nullHandle.a + "@ p) { }\nvoid main6()\n{\n    " +
+                                                       nullHandle.take + "(null);\n}\n");
+
+        SUBCASE("null to an object reference parameter")
+        {
+            const Names n;
+            harness.VerifyBadPath(path("nullref"), n.Decl() + "void main7()\n{\n    " + n.take + "(null);\n}\n",
+                                  "as-err-call-no-matching-signature");
+        }
+        SUBCASE("null to an out reference parameter")
+        {
+            const Names n;
+            harness.VerifyBadPath(path("nullout"),
+                                  "class " + n.a + " { }\nvoid " + n.take + "(" + n.a +
+                                      "&out p) { }\nvoid main8()\n{\n    " + n.take + "(null);\n}\n",
+                                  "as-err-call-no-matching-signature");
+        }
+    }
 } // TEST_SUITE

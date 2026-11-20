@@ -38,7 +38,8 @@ bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table)
     return false;
 }
 
-NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable& table)
+NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable& table,
+                                            std::string_view declarationUri)
 {
     if (baseTypeName.empty())
     {
@@ -53,6 +54,10 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
 
     for (const auto& sym : *symsPtr)
     {
+        if (!declarationUri.empty() && sym.fileUri != declarationUri)
+        {
+            continue;
+        }
         if (sym.type == SymbolType::Interface)
         {
             return NonInstantiableKind::Interface;

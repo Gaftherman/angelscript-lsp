@@ -4,11 +4,13 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/TraversalBudget.h"
+#include "utils/PositionEncoding.h"
 
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -29,6 +31,16 @@ struct IndexedByteRange
     [[nodiscard]] constexpr bool Empty() const noexcept
     {
         return startByte >= endByte;
+    }
+
+    /**
+     * @brief Tests whether the offset lies in the half-open span.
+     * @param[in] byteOffset Byte offset within the same document.
+     * @return True from the first byte up to the exclusive end.
+     */
+    [[nodiscard]] constexpr bool Contains(uint32_t byteOffset) const noexcept
+    {
+        return startByte <= byteOffset && byteOffset < endByte;
     }
 };
 
@@ -77,6 +89,23 @@ struct IndexedContainerSpan
     uint32_t parentSpanIndex = UINT32_MAX;
     TSSymbol symbol : 15 = 0;
     uint16_t isMixin : 1 = 0;
+    bool recoveredClose = false; ///< The declaration body ends with a synthetic closing brace.
+};
+
+/**
+ * @brief Identifies an enclosing type declaration within one syntax revision.
+ */
+struct EnclosingType
+{
+    std::string qualifiedName;  ///< Type name including its enclosing namespaces.
+    IndexedByteRange nameBytes; ///< Exact byte range of the declaration's identifier.
+};
+
+/** @brief Controls whether a lexical type lookup crosses lambda bodies. */
+enum class EnclosingTypeBoundary
+{
+    StopAtLambda, ///< Keeps completion within the lambda's receiver context.
+    CrossLambda,  ///< Keeps navigation within the enclosing type declaration.
 };
 
 enum class IndexedFlowFindingKind : uint8_t
@@ -480,6 +509,19 @@ class NodeIndex
     [[nodiscard]] bool IsInsideComment(uint32_t byteOffset) const noexcept;
 
     /**
+     * @brief Checks whether a byte offset lies inside an indexed string literal.
+     * @param[in] byteOffset Byte offset to test.
+     * @return True when the byte is within a string literal.
+     */
+    [[nodiscard]] bool IsInsideStringLiteral(uint32_t byteOffset) const noexcept;
+
+    /**
+     * @brief Returns the cached line starts for the source used to build this index.
+     * @return Line index for this revision, empty if built without source text.
+     */
+    [[nodiscard]] const utils::LineIndex& Lines() const noexcept;
+
+    /**
      * @brief Checks in O(log C) whether the given line and column fall inside any comment node.
      * @param[in] line 0-based line index.
      * @param[in] col 0-based column index.
@@ -536,6 +578,28 @@ class NodeIndex
     [[nodiscard]] const IndexedContainerSpan* FindInnermostClassSpan(uint32_t byteOffset) const noexcept;
 
     /**
+     * @brief Finds the innermost enclosing class, mixin, or interface by declaration span.
+     * @param[in] byteOffset Document byte offset, including the EOF insertion position.
+     * @param[in] sourceCode Source text for this index's syntax revision.
+     * @param[in] boundary Whether enclosing types remain visible from a lambda body.
+     * @return Qualified declaration and name range, or nullopt if no enclosing type is visible.
+     * @note Spans are half-open except at physical EOF for a type with a synthetic closing brace.
+     *       Searches in O(log K + D) for K container spans and nesting depth D, plus name reconstruction.
+     */
+    [[nodiscard]] std::optional<EnclosingType>
+    FindEnclosingType(uint32_t byteOffset, std::string_view sourceCode,
+                      EnclosingTypeBoundary boundary = EnclosingTypeBoundary::StopAtLambda) const;
+
+    /**
+     * @brief Finds the qualified name of the innermost namespace enclosing a position.
+     * @param[in] byteOffset Document byte offset to test.
+     * @param[in] sourceCode Source text for this index's syntax revision.
+     * @return Qualified namespace name, or an empty string at global scope.
+     * @note Searches in O(log K + D) for K container spans and nesting depth D, plus the name length.
+     */
+    [[nodiscard]] std::string FindEnclosingNamespace(uint32_t byteOffset, std::string_view sourceCode) const;
+
+    /**
      * @brief Tests whether byteOffset is enclosed by an intermediate lambda expression closure barrier.
      * @param[in] byteOffset Document byte offset to test.
      * @return True if the innermost callable enclosing byteOffset is a lambda expression.
@@ -544,7 +608,7 @@ class NodeIndex
 
     /**
      * @brief Reconstructs the enclosing container hierarchy (namespaces, classes, interfaces) for byteOffset.
-     *        Operates in O(K) where K is the number of containers in the document, with zero GetParent calls.
+     *        Searches in O(log K + D), plus reconstruction of the returned names.
      * @param[in] byteOffset Document byte offset to test.
      * @param[in] sourceCode Document source text buffer.
      * @return Vector of ContainerInfo ordered from innermost to outermost container.
@@ -713,6 +777,7 @@ class NodeIndex
         std::vector<IndexedSelectionRange> selectionSpans;
         std::vector<IndexedFoldableSpan> foldableSpans;
         std::vector<IndexedIncludeDirective> includeDirectives;
+        std::vector<ErrorRange> stringLiteralRanges; ///< Disjoint literal ranges in source order.
     };
 
     FlowFacts& MutableFlowFacts();
@@ -808,6 +873,7 @@ class NodeIndex
     [[nodiscard]] bool IsInsideBaseClassList(uint32_t startByte, uint32_t endByte) const noexcept;
     [[nodiscard]] std::vector<ContainerInfo> CollectContainersFrom(const IndexedContainerSpan* span,
                                                                    std::string_view sourceCode) const;
+    [[nodiscard]] std::string QualifyContainerName(const IndexedContainerSpan& span, std::string_view sourceCode) const;
 
     /**
      * @brief Finds the smallest node of any target symbol enclosing byteOffset.
@@ -834,6 +900,7 @@ class NodeIndex
     std::vector<ErrorRange> m_errorRanges;
     std::vector<CommentRange> m_commentRanges;
     std::vector<IndexedContainerSpan> m_containerSpans;
+    utils::LineIndex m_lines;
     std::shared_ptr<FlowFacts> m_flowFacts;
     TSSymbol m_symComment = 0;
     bool m_hasSyntaxErrors = false;

@@ -76,7 +76,7 @@ static ObjectTypeInfo ResolveMemberObjectType(const CallSiteFact& site, const Sc
     return info;
 }
 
-static bool CheckNonCallableVariable(const NonCallableCheckRequest& req, DiagnosticContext& ctx, CalleeResolution& res)
+bool CheckNonCallableVariable(const NonCallableCheckRequest& req, DiagnosticContext& ctx, CalleeResolution& res)
 {
     const std::string_view cleanType = CleanBaseTypeView(req.typeName);
     if (!cleanType.empty())

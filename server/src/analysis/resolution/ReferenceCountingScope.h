@@ -68,6 +68,27 @@ namespace angel_lsp::analysis
                                              const ReferenceCollectionCriteria& criteria);
 
 /**
+ * @brief Finds the nearest enclosing class or namespace that declares a type.
+ * @param[in] scope Lexical scope of the unqualified use.
+ * @param[in] name Unqualified type name.
+ * @param[in] table Symbol table used for type lookup.
+ * @return Container name borrowed from the scope, or empty if no enclosing container declares the type.
+ */
+[[nodiscard]] std::string_view FindEnclosingTypeContainer(const Scope& scope, std::string_view name,
+                                                          const SymbolTable& table);
+
+/**
+ * @brief Checks which container owns a written class type reference.
+ * @param[in] reference Indexed type occurrence, including its authored qualifier.
+ * @param[in] scope Lexical scope at the occurrence.
+ * @param[in] container Container of the declaration under search, empty for global types.
+ * @param[in] table Symbol table used for lexical shadowing.
+ * @return True when the occurrence names the type from the given container.
+ */
+[[nodiscard]] bool MatchesWrittenTypeOwner(const LocalReference& reference, const Scope& scope,
+                                           std::string_view container, const SymbolTable& table);
+
+/**
  * @brief Checks if a global type target is shadowed by an enclosing class or namespace type.
  * @param[in] scope Lexical scope containing the reference.
  * @param[in] criteria Active reference collection criteria.

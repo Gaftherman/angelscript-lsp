@@ -85,15 +85,10 @@ CheckCandidateNamedArgs(const FunctionSignature& sig, std::span<const std::strin
     return matchedParams;
 }
 
-static void RecordBoundCall(const Symbol& declaration, const CallSiteFact& site, DiagnosticContext& ctx)
+void PublishCallBinding(DiagnosticContext& ctx, uint32_t useByte, const SourceRange& use, const Symbol& declaration)
 {
     if (!ctx.request.mutableScopeRoot || declaration.type != SymbolType::Function || declaration.isSynthesized ||
         declaration.fileUri.empty() || declaration.selectionRange == SourceRange{})
-    {
-        return;
-    }
-    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
-    if (calleeName.empty() || calleeName != declaration.name)
     {
         return;
     }
@@ -105,7 +100,17 @@ static void RecordBoundCall(const Symbol& declaration, const CallSiteFact& site,
                                                   request.moduleContext ? std::string_view(request.moduleContext->name)
                                                                         : std::string_view{});
     }
-    bindings->Add(site.calleeNameBytes.startByte, site.calleeNameRange, declaration);
+    bindings->Add(useByte, use, declaration);
+}
+
+static void RecordBoundCall(const Symbol& declaration, const CallSiteFact& site, DiagnosticContext& ctx)
+{
+    const std::string_view calleeName = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeNameBytes);
+    if (calleeName.empty() || calleeName != declaration.name)
+    {
+        return;
+    }
+    PublishCallBinding(ctx, site.calleeNameBytes.startByte, site.calleeNameRange, declaration);
 }
 
 static void HandleNamedCallOverloads(const CallOverloadCheckRequest& req, DiagnosticContext& ctx)

@@ -3,6 +3,7 @@
 #include "lsp/state/PositionCodec.h"
 #include "parser/SyntaxTree.h"
 #include "utils/IncludeResolver.h"
+#include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
 
 #include <memory>
@@ -15,58 +16,102 @@
 namespace angel_lsp
 {
 
-lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(std::string_view uriStr, std::string_view text)
+SemanticTokensRevisionKey
+Server::CaptureSemanticTokensRevisionKey(const document::Document& doc,
+                                         const std::shared_ptr<const analysis::Scope>& scopeRoot,
+                                         const std::shared_ptr<const TransparentStringSet>& words) const
 {
-    const auto docHandle = GetDocumentStore().GetDocument(uriStr);
-    const int currentVersion = docHandle ? docHandle->version : GetDocumentStore().GetVersion(uriStr);
-    const uint64_t tableVersion = m_symbolTable.Version();
-    const auto cachedScopeRoot = m_scopeIndex.GetRoot(uriStr);
+    return {doc.generation,
+            doc.version,
+            m_symbolTable.Version(),
+            m_sessionCoordinator->GetConfigRevision(),
+            GetPositionEncoding(),
+            scopeRoot,
+            words};
+}
 
-    // The tokens are a pure function of the text, the symbol table and the scope tree, so a request that
-    // sees the same three as the cached entry gets the cached answer without a second classification pass.
-    if (currentVersion >= 0)
+std::optional<SemanticTokensSnapshot> Server::FindSemanticTokensSnapshot(std::string_view uri)
+{
+    std::lock_guard lock(m_semanticTokensMutex);
+    const auto found = m_semanticTokensCache.find(uri);
+    return found == m_semanticTokensCache.end() ? std::nullopt : std::optional{found->second};
+}
+
+SemanticTokensSnapshot Server::ResolveSemanticTokensSnapshot(const OpenDocument& doc)
+{
+    const bool cacheable = doc.docHandle && doc.docHandle->generation != 0 && doc.docHandle->version >= 0 &&
+                           doc.text == &doc.docHandle->text;
+    // Analysis can publish a new semantic revision while tokens are being classified.
+    // Retry once for the same document so that a background publication need not force a full response.
+    for (bool retried = false;; retried = true)
     {
-        std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
-        if (const auto cached = m_semanticTokensCache.find(uriStr);
-            cached != m_semanticTokensCache.end() && cached->second.version == currentVersion &&
-            cached->second.tableVersion == tableVersion && cached->second.scopeIdentity == cachedScopeRoot.get())
+        std::shared_ptr<const analysis::Scope> scopeRoot;
+        std::shared_ptr<const TransparentStringSet> words;
+        SemanticTokensRevisionKey key;
+        std::optional<SemanticTokensSnapshot> cached;
         {
-            lsp::SemanticTokens hit;
-            hit.resultId = cached->second.resultId;
-            hit.data = cached->second.data;
-            return hit;
+            std::lock_guard lifecycleLock(m_lifecycleMutex);
+            scopeRoot = m_scopeIndex.GetRoot(doc.uri);
+            words = DefinedWords();
+            if (cacheable)
+            {
+                key = CaptureSemanticTokensRevisionKey(*doc.docHandle, scopeRoot, words);
+                cached = FindSemanticTokensSnapshot(doc.uri);
+            }
+            else
+            {
+                key.encoding = GetPositionEncoding();
+            }
+        }
+        if (cached && cached->key == key)
+        {
+            return std::move(*cached);
+        }
+
+        const auto syntax =
+            doc.docHandle && doc.docHandle->tree
+                ? ResolveProtocolSyntax(doc.uri, doc.docHandle->ParsedSource(), doc.docHandle.get()).syntax
+                : nullptr;
+        const std::string_view text = *doc.text;
+        const analysis::SemanticTokenFacts facts =
+            syntax ? analysis::CollectSemanticTokenFacts(syntax->index, text) : analysis::SemanticTokenFacts{};
+
+        features::SemanticTokensRequest request{doc.uri, text, facts, m_symbolTable};
+        request.scopeRoot = scopeRoot;
+        if (syntax && m_localScopeCollector && !request.scopeRoot)
+        {
+            request.scopeRoot = m_localScopeCollector->CollectScopesFromIndex(syntax->index, text);
+        }
+        request.excludedLineRanges = utils::FindExcludedLineRanges(text, *words, m_config.preprocessor);
+        auto tokens = features::GetSemanticTokens(request);
+        codec::EncodeSemanticTokens(text, key.encoding, tokens.data);
+
+        SemanticTokensSnapshot snapshot{{},
+                                        std::make_shared<const std::vector<lsp::uint>>(std::move(tokens.data)),
+                                        syntax && parser::TreeHasError(syntax->tree),
+                                        key};
+        if (!cacheable)
+        {
+            return snapshot;
+        }
+
+        std::lock_guard lifecycleLock(m_lifecycleMutex);
+        if (GetDocumentStore().GetDocument(doc.uri) != doc.docHandle)
+        {
+            return snapshot;
+        }
+        if (CaptureSemanticTokensRevisionKey(*doc.docHandle, m_scopeIndex.GetRoot(doc.uri), DefinedWords()) == key)
+        {
+            std::lock_guard cacheLock(m_semanticTokensMutex);
+            snapshot.resultId = std::to_string(++m_semanticTokensRevision);
+            m_semanticTokensCache.insert_or_assign(doc.uri, snapshot);
+            return snapshot;
+        }
+        if (retried)
+        {
+            return snapshot;
         }
     }
-
-    const auto syntax = docHandle && docHandle->tree
-                            ? ResolveProtocolSyntax(uriStr, docHandle->ParsedSource(), docHandle.get()).syntax
-                            : nullptr;
-    const analysis::SemanticTokenFacts facts =
-        syntax ? analysis::CollectSemanticTokenFacts(syntax->index, text) : analysis::SemanticTokenFacts{};
-
-    features::SemanticTokensRequest request{uriStr, text, facts, m_symbolTable};
-    request.scopeRoot = cachedScopeRoot;
-    if (syntax && m_localScopeCollector && !request.scopeRoot)
-    {
-        request.scopeRoot = m_localScopeCollector->CollectScopesFromIndex(syntax->index, text);
-    }
-    request.excludedLineRanges = ExcludedLineRanges(text);
-    lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
-    codec::EncodeSemanticTokens(text, m_sessionCoordinator->GetPositionEncoding(), tokens.data);
-
-    const bool hasError = syntax && parser::TreeHasError(syntax->tree);
-
-    // Cached after encoding, so a delta is computed against exactly the bytes the client holds.
-    const std::string resultId = std::to_string(++m_semanticTokensRevision);
-    tokens.resultId = resultId;
-    {
-        std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
-        m_semanticTokensCache.insert_or_assign(std::string(uriStr),
-                                               SemanticTokensSnapshot{resultId, tokens.data, hasError, currentVersion,
-                                                                      tableVersion, cachedScopeRoot.get()});
-    }
-
-    return tokens;
 }
 
 std::string Server::CanonicalPathFromUri(std::string_view uriStr)

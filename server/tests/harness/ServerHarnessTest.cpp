@@ -898,6 +898,246 @@ TEST_CASE("Server - Delta tokens splice edits after modifications and stabilize 
     CHECK(r4.find("\"resultId\":\"3\"") != std::string::npos);
 }
 
+TEST_CASE("Server - Inlay hint locations use the callee document's position encoding")
+{
+    const std::string wide = "\xC3\xA9"
+                             "\xF0\x9F\x92\xA1"
+                             "\xE4\xB8\xAD";
+    const std::string callee = test::GenerateRandomSymbolName("Apply");
+    const std::string amount = test::GenerateRandomSymbolName("amount");
+    const std::string flags = test::GenerateRandomSymbolName("flags");
+    const std::string callPrefix = "void Run() { " + callee + "(";
+    const std::string mainText = "#include \"defs.as\"\n" + callPrefix + "5); }\n";
+    const std::string diskText = "/*" + wide + "*/ void " + callee + "(int " + amount + ", int " + flags + " = 7) {}\n";
+    const std::string openText = "\n/*x" + diskText.substr(2);
+    const std::pair<std::string_view, size_t> profiles[] = {
+        {"utf-8", 9},
+        {"utf-16", 4},
+        {"utf-32", 3},
+    };
+    for (const auto& [encodingName, wideColumns] : profiles)
+    {
+        CAPTURE(encodingName);
+        WorkspaceFixture fixture;
+        fixture.Write("main.as", mainText);
+        fixture.Write("defs.as", diskText);
+        const std::string mainUri = fixture.Uri("main.as");
+        const std::string defsUri = fixture.Uri("defs.as");
+        std::string initialize = InitializeForPull(InitializeMessage(fixture.RootUri()));
+        constexpr std::string_view capabilities = R"("capabilities":{)";
+        initialize.insert(initialize.find(capabilities) + capabilities.size(),
+                          R"("window":{"workDoneProgress":true},"general":{"positionEncodings":[")" +
+                              std::string(encodingName) + R"("]},)");
+        const std::string hintParams =
+            R"("method":"textDocument/inlayHint","params":{"textDocument":{"uri":")" + mainUri +
+            R"("},"range":{"start":{"line":0,"character":0},"end":{"line":2,"character":0}}}})";
+
+        test::ScriptedStream stream;
+        stream.Push(initialize);
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.PushAction([&stream]() { stream.WaitForCount("\"kind\":\"end\"", 1); });
+        stream.Push(DidOpenMessage(mainUri, mainText));
+        stream.Push(R"({"jsonrpc":"2.0","id":2,)" + hintParams);
+        stream.Push(DidOpenMessage(defsUri, openText));
+        stream.Push(R"({"jsonrpc":"2.0","id":3,)" + hintParams);
+        stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+        config::ServerConfig config;
+        config.features.enablePredefinedLoader = false;
+        config.features.enablePullDiagnostics = true;
+        config.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue;
+        RunScript(config, stream);
+
+        for (const int id : {2, 3})
+        {
+            CAPTURE(id);
+            const std::string response = stream.ResponseFor(id);
+            const auto result = lsp::json::parse(response);
+            REQUIRE_MESSAGE(result.object().contains("result"), response);
+            const auto& hints = result.object().get("result").array();
+            REQUIRE(hints.size() == 2);
+            for (const auto& hint : hints)
+            {
+                const auto& parts = hint.object().get("label").array();
+                REQUIRE(parts.size() == 1);
+                const auto& part = parts.front().object();
+                const auto& label = part.get("value").string();
+                const bool omitted = label.find(flags + ": 7") != std::string::npos;
+                CHECK((omitted || label == amount + ":"));
+                const auto& position = hint.object().get("position").object();
+                CHECK(position.get("line").integer() == 1);
+                CHECK(position.get("character").integer() ==
+                      static_cast<lsp::json::Integer>(callPrefix.size() + (omitted ? 1 : 0)));
+                CHECK_FALSE(part.contains("tooltip"));
+                REQUIRE(part.contains("location"));
+                const auto& location = part.get("location").object();
+                CHECK(utils::UriToPath(location.get("uri").string()) == utils::UriToPath(defsUri));
+                const auto& range = location.get("range").object();
+                const auto& start = range.get("start").object();
+                const auto& end = range.get("end").object();
+                const int targetLine = id == 2 ? 0 : 1;
+                const size_t amountColumn = 15 + wideColumns + callee.size() + targetLine;
+                const size_t startColumn = omitted ? amountColumn + amount.size() + 2 : amountColumn;
+                const size_t length = omitted ? flags.size() + 8 : amount.size();
+                CHECK(start.get("line").integer() == targetLine);
+                CHECK(end.get("line").integer() == targetLine);
+                CHECK(start.get("character").integer() == static_cast<lsp::json::Integer>(startColumn));
+                CHECK(end.get("character").integer() == static_cast<lsp::json::Integer>(startColumn + length));
+            }
+        }
+    }
+}
+
+TEST_CASE("Server - Cross-document diagnostics and edits use each target's position encoding")
+{
+    const std::string wide = "\xC3\xA9"
+                             "\xF0\x9F\x92\xA1"
+                             "\xE4\xB8\xAD";
+    const std::string mixinName = test::GenerateRandomSymbolName("ImportedMixin");
+    const std::string missing = test::GenerateRandomSymbolName("missing");
+    const std::string function = test::GenerateRandomSymbolName("EncodedTarget");
+    const std::string replacement = test::GenerateRandomSymbolName("UpdatedTarget");
+    const std::string mainText =
+        "#include \"dep.as\"\nclass Host : " + mixinName + " {}\nvoid Use() { " + function + "(); }\n";
+    const std::string depText = "mixin class " + mixinName + " {\n  void Check() { /* " + wide + " */ this." + missing +
+                                " = 1; }\n}\n/* " + wide + " */ void " + function + "() {}\n";
+    const std::pair<std::string_view, size_t> profiles[] = {
+        {"utf-8", 9},
+        {"utf-16", 4},
+        {"utf-32", 3},
+    };
+    for (const auto& [name, wideColumns] : profiles)
+    {
+        CAPTURE(name);
+        WorkspaceFixture fixture;
+        fixture.Write("main.as", mainText);
+        fixture.Write("dep.as", depText);
+        const std::string mainUri = fixture.Uri("main.as");
+        const std::string depUri = fixture.Uri("dep.as");
+        std::string initialize = InitializeForPull(InitializeMessage(fixture.RootUri()));
+        constexpr std::string_view capabilities = R"("capabilities":{)";
+        initialize.insert(initialize.find(capabilities) + capabilities.size(),
+                          R"("window":{"workDoneProgress":true},"general":{"positionEncodings":[")" +
+                              std::string(name) + R"("]},)");
+
+        test::ScriptedStream stream;
+        stream.Push(initialize);
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.PushAction([&stream]() { stream.WaitForCount("\"kind\":\"end\"", 1); });
+        stream.Push(DidOpenMessage(mainUri, mainText));
+        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                    mainUri + R"("}}})");
+        stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/rename","params":{"textDocument":{"uri":")" +
+                    mainUri + R"("},"position":{"line":2,"character":13},"newName":")" + replacement + R"("}})");
+        std::string unsavedDependency = depText;
+        unsavedDependency.insert(depText.find(wide), "x");
+        stream.Push(DidOpenMessage(depUri, unsavedDependency));
+        stream.Push(DidChangeMessage(mainUri, 2, mainText + "\n"));
+        stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                    mainUri + R"("}}})");
+        stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+        config::ServerConfig config;
+        config.features.enablePredefinedLoader = false;
+        config.features.enablePullDiagnostics = true;
+        Server server(config, stream);
+        server.Run();
+        const auto initialized = lsp::json::parse(stream.ResponseFor(1));
+        CHECK(
+            initialized.object().get("result").object().get("capabilities").object().get("positionEncoding").string() ==
+            name);
+
+        const auto checkRange = [](const lsp::json::Value& range, int line, size_t column, size_t length)
+        {
+            const auto& start = range.object().get("start").object();
+            const auto& end = range.object().get("end").object();
+            CHECK(start.get("line").integer() == line);
+            CHECK(end.get("line").integer() == line);
+            CHECK(start.get("character").integer() == static_cast<lsp::json::Integer>(column));
+            CHECK(end.get("character").integer() == static_cast<lsp::json::Integer>(column + length));
+        };
+        const std::string diagnosticResponse = stream.ResponseFor(2);
+        const auto report = lsp::json::parse(diagnosticResponse);
+        REQUIRE_MESSAGE(report.object().contains("result"), diagnosticResponse);
+        const auto& diagnostics = report.object().get("result").object().get("items").array();
+        const auto isMissingMixinMember = [](const lsp::json::Value& item)
+        {
+            const auto* code = item.object().find("code");
+            return code && code->string() == "as-err-mixin-instantiation-member-not-found";
+        };
+        const auto diagnostic = std::find_if(diagnostics.begin(), diagnostics.end(), isMissingMixinMember);
+        REQUIRE_MESSAGE(diagnostic != diagnostics.end(), diagnosticResponse);
+        const auto& item = diagnostic->object();
+        checkRange(item.get("range"), 1, 13, mixinName.size());
+        const auto& related = item.get("relatedInformation").array();
+        REQUIRE(related.size() == 1);
+        const auto& location = related.front().object().get("location").object();
+        CHECK(utils::UriToPath(location.get("uri").string()) == utils::UriToPath(depUri));
+        checkRange(location.get("range"), 1, 29 + wideColumns, missing.size());
+
+        const std::string changedResponse = stream.ResponseFor(4);
+        const auto changedReport = lsp::json::parse(changedResponse);
+        REQUIRE_MESSAGE(changedReport.object().contains("result"), changedResponse);
+        const auto& changedDiagnostics = changedReport.object().get("result").object().get("items").array();
+        const auto changed = std::find_if(changedDiagnostics.begin(), changedDiagnostics.end(), isMissingMixinMember);
+        REQUIRE_MESSAGE(changed != changedDiagnostics.end(), changedResponse);
+        CHECK_FALSE(changed->object().contains("relatedInformation"));
+
+        const std::string renameResponse = stream.ResponseFor(3);
+        const auto workspaceEdit = lsp::json::parse(renameResponse);
+        REQUIRE_MESSAGE(workspaceEdit.object().contains("result"), renameResponse);
+        const auto& changes = workspaceEdit.object().get("result").object().get("changes").object();
+        for (const auto& uri : {mainUri, depUri})
+        {
+            const auto& edits = changes.get(lsp::Uri::parse(uri).toString()).array();
+            REQUIRE(edits.size() == 1);
+            const auto& edit = edits.front().object();
+            checkRange(edit.get("range"), uri == mainUri ? 2 : 3, uri == mainUri ? 13 : 12 + wideColumns,
+                       function.size());
+            CHECK(edit.get("newText").string() == replacement);
+        }
+
+        lsp::WorkspaceEdit versioned;
+        lsp::TextDocumentEdit target;
+        target.textDocument.uri = lsp::DocumentUri(lsp::Uri::parse(depUri));
+        target.textDocument.version = 2;
+        const auto definitionByte = static_cast<uint32_t>(utils::GetLine(unsavedDependency, 3).find(function));
+        const lsp::Range byteRange{{3, definitionByte}, {3, definitionByte + static_cast<uint32_t>(function.size())}};
+        target.edits.emplace_back(lsp::TextEdit{byteRange, replacement});
+        versioned.documentChanges.emplace().emplace_back(std::move(target));
+        auto& versionedTarget = std::get<lsp::TextDocumentEdit>(versioned.documentChanges->front());
+        auto& versionedRange = std::get<lsp::TextEdit>(versionedTarget.edits.front()).range;
+        CHECK_FALSE(server.TryEncodeWorkspaceEdit(versioned));
+        CHECK(versionedRange.start.character == byteRange.start.character);
+        versionedTarget.textDocument.version = 1;
+        REQUIRE(server.TryEncodeWorkspaceEdit(versioned));
+        CHECK(versionedRange.start.character == 12 + wideColumns);
+        CHECK(versionedRange.end.character == 12 + wideColumns + function.size());
+
+        versionedRange = byteRange;
+        const auto trailingLine =
+            static_cast<lsp::uint>(std::count(unsavedDependency.begin(), unsavedDependency.end(), '\n'));
+        versionedTarget.edits.emplace_back(lsp::TextEdit{{{trailingLine + 1, 0}, {trailingLine + 1, 0}}, replacement});
+        CHECK_FALSE(server.TryEncodeWorkspaceEdit(versioned));
+        CHECK(std::get<lsp::TextEdit>(versionedTarget.edits.front()).range.start.character ==
+              byteRange.start.character);
+
+        std::get<lsp::TextEdit>(versionedTarget.edits.back()).range = {{trailingLine, 0}, {trailingLine, 0}};
+        REQUIRE(server.TryEncodeWorkspaceEdit(versioned));
+        CHECK(std::get<lsp::TextEdit>(versionedTarget.edits.front()).range.start.character == 12 + wideColumns);
+
+        lsp::WorkspaceEdit unversioned;
+        auto& single = unversioned.changes.emplace()[lsp::DocumentUri(lsp::Uri::parse(depUri))];
+        single.emplace_back(lsp::TextEdit{byteRange, replacement});
+        REQUIRE(server.TryEncodeWorkspaceEdit(unversioned));
+        CHECK(single.front().range.start.character == 12 + wideColumns);
+        CHECK(single.front().range.end.character == 12 + wideColumns + function.size());
+
+        single.front().range = {{trailingLine + 1, 0}, {trailingLine + 1, 0}};
+        CHECK_FALSE(server.TryEncodeWorkspaceEdit(unversioned));
+        CHECK(single.front().range.start.line == trailingLine + 1);
+    }
+}
+
 // =====================================================================================
 // Every rule module, over the protocol
 //
@@ -1363,6 +1603,155 @@ std::string InitializeWithProgress(const std::string& rootUri, bool workDoneProg
 }
 } // namespace
 
+TEST_CASE("Server - Semantic tokens follow dependency and configuration revisions")
+{
+    bool changeInclude = false;
+    SUBCASE("a watched include changes")
+    {
+        changeInclude = true;
+    }
+    SUBCASE("the active predefined stub changes")
+    {
+        changeInclude = false;
+    }
+
+    WorkspaceFixture fixture;
+    constexpr std::string_view declaration = "void Inspect(TokenSubject parameter) {}";
+    constexpr auto subjectColumn = declaration.find("TokenSubject");
+    const std::string mainText = std::string(changeInclude ? "#include \"dep.as\"\n" : "// Uses the active stub\n") +
+                                 std::string(declaration) + "\n";
+    fixture.Write("main.as", mainText);
+    config::ServerConfig config;
+    if (changeInclude)
+    {
+        fixture.Write("dep.as", "class TokenSubject {}\n");
+    }
+    else
+    {
+        fixture.Write("first.as.predefined", "class TokenSubject {}\n");
+        fixture.Write("second.as.predefined", "enum TokenSubject { Item }\n");
+        config.activePredefined = fixture.Path("first.as.predefined");
+    }
+
+    test::ScriptedStream stream;
+    Server server(config, stream);
+    const auto uri = fixture.Uri("main.as");
+    const auto dispatch = [&stream, &server](const std::string& message)
+    {
+        stream.Push(message);
+        REQUIRE(server.ProcessIncomingMessageStep());
+    };
+    const auto tokenRequest = [&dispatch, &uri](int id, std::string_view previousId = {})
+    {
+        std::string message =
+            R"({"jsonrpc":"2.0","id":)" + std::to_string(id) + R"(,"method":"textDocument/semanticTokens/full)";
+        if (!previousId.empty())
+        {
+            message += "/delta";
+        }
+        message += R"(","params":{"textDocument":{"uri":")" + uri + R"("})";
+        if (!previousId.empty())
+        {
+            message += R"(,"previousResultId":")";
+            message.append(previousId);
+            message += '"';
+        }
+        dispatch(message + "}}");
+    };
+    const auto payload = [&stream](int id) { return lsp::json::parse(stream.ResponseFor(id)).object().get("result"); };
+
+    dispatch(InitializeMessage(fixture.RootUri()));
+    dispatch(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    // The scan logs this after scheduling reanalysis, so the queue can safely be drained afterwards.
+    constexpr auto scanScheduled = "now the workspace is indexed";
+    WaitForCount(stream, scanScheduled, 1);
+    dispatch(DidOpenMessage(uri, mainText));
+    server.DrainQueue();
+    tokenRequest(2);
+    tokenRequest(3);
+    if (changeInclude)
+    {
+        fixture.Write("dep.as", "enum TokenSubject { Item }\n");
+        dispatch(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[{"uri":")" +
+                 fixture.Uri("dep.as") + R"(","type":2}]}})");
+    }
+    else
+    {
+        dispatch(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":{"settings":{)"
+                 R"("angelscript":{"predefined":{"active":")" +
+                 JsonEscape(fixture.Path("second.as.predefined")) + R"("}}}}})");
+        WaitForCount(stream, scanScheduled, 2);
+    }
+    server.DrainQueue();
+    tokenRequest(4, payload(2).object().get("resultId").string());
+    tokenRequest(5);
+    tokenRequest(6);
+    tokenRequest(7, payload(5).object().get("resultId").string());
+    dispatch(R"({"jsonrpc":"2.0","id":8,"method":"shutdown"})");
+
+    const auto initial = payload(2);
+    const auto equivalentBefore = payload(3);
+    const auto delta = payload(4);
+    const auto full = payload(5);
+    const auto equivalentAfter = payload(6);
+    const auto equivalentDelta = payload(7);
+    const auto kindAtSubject = [subjectColumn](const lsp::json::Array& data) -> int64_t
+    {
+        int64_t line = 0;
+        int64_t column = 0;
+        for (size_t i = 0; i + 4 < data.size(); i += 5)
+        {
+            const auto advance = data[i].integer();
+            line += advance;
+            column = (advance == 0 ? column : 0) + data[i + 1].integer();
+            if (line == 1 && column == static_cast<int64_t>(subjectColumn))
+            {
+                CHECK(data[i + 2].integer() == 12);
+                return data[i + 3].integer();
+            }
+        }
+        return -1;
+    };
+
+    const auto& initialId = initial.object().get("resultId").string();
+    const auto& fullId = full.object().get("resultId").string();
+    CHECK(equivalentBefore.object().get("resultId").string() == initialId);
+    CHECK(fullId != initialId);
+    CHECK(delta.object().get("resultId").string() == fullId);
+    CHECK(equivalentAfter.object().get("resultId").string() == fullId);
+    CHECK(equivalentDelta.object().get("resultId").string() == fullId);
+    CHECK(equivalentDelta.object().get("edits").array().empty());
+
+    auto reconstructed = initial.object().get("data").array();
+    const auto& current = full.object().get("data").array();
+    CHECK(kindAtSubject(reconstructed) == 2); // class
+    CHECK(kindAtSubject(current) == 3);       // enum
+
+    auto edits = delta.object().get("edits").array();
+    REQUIRE_FALSE(edits.empty());
+    std::sort(edits.begin(), edits.end(), [](const auto& left, const auto& right)
+              { return left.object().get("start").integer() > right.object().get("start").integer(); });
+    for (const auto& edit : edits)
+    {
+        const auto start = edit.object().get("start").integer();
+        const auto count = edit.object().get("deleteCount").integer();
+        REQUIRE(start >= 0);
+        REQUIRE(count >= 0);
+        REQUIRE(static_cast<size_t>(start + count) <= reconstructed.size());
+        const auto insertion =
+            reconstructed.erase(reconstructed.begin() + start, reconstructed.begin() + start + count);
+        if (const auto* data = edit.object().find("data"))
+        {
+            reconstructed.insert(insertion, data->array().begin(), data->array().end());
+        }
+    }
+    REQUIRE(reconstructed.size() == current.size());
+    for (size_t i = 0; i < current.size(); ++i)
+    {
+        CHECK(reconstructed[i].integer() == current[i].integer());
+    }
+}
+
 TEST_CASE("ServerHarness - Reports workspace scan progress when the client supports it")
 {
     WorkspaceFixture fixture;
@@ -1651,6 +2040,188 @@ TEST_CASE("Server - Renaming a file nothing includes asks for no edit")
     RunScript(serverConfig, stream);
 
     CHECK_FALSE(stream.OutputContains("workspace/applyEdit"));
+}
+
+static constexpr std::string_view k_widePositionText = "\xC3\xA9\xF0\x9F\x92\xA1\xE4\xB8\xAD";
+
+static void CheckEncodedColumns(const lsp::json::Value& value, int line, int startColumn, int endColumn)
+{
+    const auto& range = value.object();
+    const auto& start = range.get("start").object();
+    const auto& end = range.get("end").object();
+    CHECK(start.get("line").integer() == line);
+    CHECK(end.get("line").integer() == line);
+    CHECK(start.get("character").integer() == startColumn);
+    CHECK(end.get("character").integer() == endColumn);
+}
+
+TEST_CASE("Server - Include completion encodes the replacement end in UTF-16")
+{
+    WorkspaceFixture fixture;
+    const std::string candidate = test::GenerateRandomSymbolName("Candidate") + ".as";
+    const std::string target = test::GenerateRandomSymbolName("CompletionTarget") + ".as";
+    const std::string active = test::GenerateRandomSymbolName("Active") + ".as";
+    // Include completion starts the edit just after the opening quote. The multibyte path shifts its end column.
+    const std::string targetText = "#include \"" + std::string(k_widePositionText) + "\"\n";
+    const std::string activeText = "void " + test::GenerateRandomSymbolName("ActiveFunction") + "() {}\n";
+    fixture.Write(candidate, "");
+    fixture.Write(target, targetText);
+    fixture.Write(active, activeText);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(DidOpenMessage(fixture.Uri(target), targetText));
+    stream.Push(DidOpenMessage(fixture.Uri(active), activeText));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":")" +
+                fixture.Uri(target) + R"("},"position":{"line":0,"character":14}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig config;
+    config.features.enablePredefinedLoader = false;
+    config.features.enableCompletion = true;
+    Server server(config, stream);
+    server.GetIncludeGraph().UpdateFile(fixture.Path(candidate), "", {});
+    server.Run();
+
+    const auto response = lsp::json::parse(stream.ResponseFor(2));
+    const auto& items = response.object().get("result").array();
+    const auto item = std::find_if(items.begin(), items.end(), [&](const auto& entry)
+                                   { return entry.object().get("label").string() == candidate; });
+    REQUIRE(item != items.end());
+    const auto& edit = item->object().get("textEdit").object();
+    CHECK(edit.get("newText").string() == candidate);
+    CheckEncodedColumns(edit.get("range"), 0, 10, 14);
+}
+
+TEST_CASE("Server - Include rename encodes edit columns in the closed includer")
+{
+    WorkspaceFixture fixture;
+    const std::string active = test::GenerateRandomSymbolName("Active") + ".as";
+    const std::string includer = test::GenerateRandomSymbolName("Includer") + ".as";
+    const std::string oldName = test::GenerateRandomSymbolName("BeforeRename") + ".as";
+    const std::string newName = test::GenerateRandomSymbolName("AfterRename") + ".as";
+    const std::string activeText = "void " + test::GenerateRandomSymbolName("ActiveFunction") + "() {}\n";
+    const std::string includerText = "/*" + std::string(k_widePositionText) + "*/ #include \"" + oldName + "\"\n";
+    fixture.Write(active, activeText);
+    fixture.Write(oldName, "");
+    fixture.Write(includer, includerText);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(DidOpenMessage(fixture.Uri(active), activeText));
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didRenameFiles","params":{"files":[{"oldUri":")" +
+                fixture.Uri(oldName) + R"(","newUri":")" + fixture.Uri(newName) + R"("}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig config;
+    config.features.enablePredefinedLoader = false;
+    Server server(config, stream);
+    server.GetIncludeGraph().UpdateFile(fixture.Path(includer), includerText, {});
+    server.Run();
+
+    const std::string output = stream.Output();
+    const auto method = output.find(R"("method":"workspace/applyEdit")");
+    REQUIRE(method != std::string::npos);
+    const auto separator = output.rfind("\r\n\r\n", method);
+    REQUIRE(separator != std::string::npos);
+    const auto end = output.find("Content-Length:", method);
+    const auto request = lsp::json::parse(output.substr(separator + 4, end - separator - 4));
+    const auto& workspaceEdit = request.object().get("params").object().get("edit").object();
+    const auto& changes = workspaceEdit.get("documentChanges").array();
+    REQUIRE(changes.size() == 1);
+    const auto& change = changes.front().object();
+    CHECK(utils::UriToPath(change.get("textDocument").object().get("uri").string()) ==
+          utils::UriToPath(fixture.Uri(includer)));
+    const auto& edits = change.get("edits").array();
+    REQUIRE(edits.size() == 1);
+    CHECK(edits.front().object().get("newText").string() == newName);
+    CheckEncodedColumns(edits.front().object().get("range"), 0, 19, 19 + static_cast<int>(oldName.size()));
+}
+
+TEST_CASE("Server - Hierarchies encode closed declarations and drop unavailable sources")
+{
+    WorkspaceFixture fixture;
+    const std::string active = test::GenerateRandomSymbolName("Active") + ".as";
+    const std::string definitions = test::GenerateRandomSymbolName("Definitions") + ".as";
+    const std::string missing = test::GenerateRandomSymbolName("MissingSource") + ".as";
+    const std::string type = test::GenerateRandomSymbolName("Type");
+    const std::string variable = test::GenerateRandomSymbolName("value");
+    const std::string callee = test::GenerateRandomSymbolName("Callee");
+    const std::string caller = test::GenerateRandomSymbolName("Caller");
+    const std::string activeText = type + " " + variable + ";\nvoid " + caller + "() { " + callee + "(); }\n";
+    const std::string prefix = "/*" + std::string(k_widePositionText) + "*/ ";
+    fixture.Write(active, activeText);
+    fixture.Write(definitions, prefix + "void " + callee + "() {}\n" + prefix + "class " + type + " {}\n");
+
+    const auto callColumn = static_cast<int>(10 + caller.size());
+    const std::string activeUri = fixture.Uri(active);
+    const std::string definitionsUri = fixture.Uri(definitions);
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(DidOpenMessage(activeUri, activeText));
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"textDocument/prepareCallHierarchy","params":{"textDocument":{"uri":")" +
+        activeUri + R"("},"position":{"line":1,"character":)" + std::to_string(callColumn + 1) + "}}}");
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":3,"method":"textDocument/prepareTypeHierarchy","params":{"textDocument":{"uri":")" +
+        activeUri + R"("},"position":{"line":0,"character":1}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"callHierarchy/outgoingCalls","params":{"item":{"name":")" +
+                caller + R"(","kind":12,"uri":")" + activeUri +
+                R"(","range":{"start":{"line":1,"character":0},"end":{"line":1,"character":)" +
+                std::to_string(callColumn + static_cast<int>(callee.size()) + 5) +
+                R"(}},"selectionRange":{"start":{"line":1,"character":5},"end":{"line":1,"character":)" +
+                std::to_string(5 + caller.size()) + "}}}}}");
+    stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+
+    config::ServerConfig config;
+    config.features.enablePredefinedLoader = false;
+    Server server(config, stream);
+    const auto calleeLength = static_cast<uint32_t>(callee.size());
+    const auto typeLength = static_cast<uint32_t>(type.size());
+    // Seed indexed declarations with and without a source, independently of workspace scan timing.
+    for (const auto& uri : {fixture.Uri(missing), definitionsUri})
+    {
+        analysis::Symbol function;
+        function.name = callee;
+        function.fileUri = Server::DocumentKey(uri);
+        function.signature = analysis::FunctionSignature{};
+        function.fullRange = {0, 14, 0, 24 + calleeLength};
+        function.selectionRange = {0, 19, 0, 19 + calleeLength};
+        function.type = analysis::SymbolType::Function;
+        server.GetMutableSymbolTable().AddSymbol(function);
+
+        analysis::Symbol classType;
+        classType.name = type;
+        classType.fileUri = function.fileUri;
+        classType.signature = analysis::ClassSignature{};
+        classType.fullRange = {1, 14, 1, 23 + typeLength};
+        classType.selectionRange = {1, 20, 1, 20 + typeLength};
+        classType.type = analysis::SymbolType::Class;
+        server.GetMutableSymbolTable().AddSymbol(classType);
+    }
+    server.Run();
+
+    for (const int id : {2, 3, 4})
+    {
+        CAPTURE(id);
+        const auto response = lsp::json::parse(stream.ResponseFor(id));
+        const auto& items = response.object().get("result").array();
+        REQUIRE(items.size() == 1);
+        const auto& entry = items.front().object();
+        const auto& item = id == 4 ? entry.get("to").object() : entry;
+        CHECK(utils::UriToPath(item.get("uri").string()) == utils::UriToPath(definitionsUri));
+        const int line = id == 3 ? 1 : 0;
+        const int selectionStart = id == 3 ? 15 : 14;
+        const auto length = static_cast<int>(id == 3 ? typeLength : calleeLength);
+        CheckEncodedColumns(item.get("range"), line, 9, (id == 3 ? 18 : 19) + length);
+        CheckEncodedColumns(item.get("selectionRange"), line, selectionStart, selectionStart + length);
+        if (id == 4)
+        {
+            const auto& ranges = entry.get("fromRanges").array();
+            REQUIRE(ranges.size() == 1);
+            CheckEncodedColumns(ranges.front(), 1, callColumn, callColumn + length);
+        }
+    }
 }
 
 TEST_CASE("Server - Deleting a file drops its symbols from the workspace")
@@ -4515,6 +5086,40 @@ std::string TextInRange(const std::string& source, const PublishedDiagnostic& di
     return source.substr(from, to - from);
 }
 } // namespace
+
+TEST_CASE("Server - Save diagnostics use saved text when the open buffer differs")
+{
+    const std::string wide = "\xC3\xA9"
+                             "\xF0\x9F\x92\xA1"
+                             "\xE4\xB8\xAD";
+    const std::string missing = test::GenerateRandomSymbolName("Missing");
+    const std::string savedText = "void Run() { /*" + wide + "*/ " + missing + "(); }\n";
+    const std::string openText = "void Run() { /*xxxxxxxxx*/ return; }\n";
+    WorkspaceFixture fixture;
+    fixture.Write("saved.as", savedText);
+    const auto uri = fixture.Uri("saved.as");
+    const std::string save = R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                             uri + R"("},"text":")" + JsonEscape(savedText) + R"("}})";
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(DidOpenMessage(uri, openText));
+    stream.PushAction([&stream]() { WaitForCount(stream, "textDocument/publishDiagnostics", 1); });
+    stream.Push(save);
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig config;
+    config.features.enablePredefinedLoader = false;
+    const auto output = RunScript(config, stream);
+    const auto diagnostics = ParsePublished(LastPublishedFor(output, "saved.as"));
+    const auto diagnostic = std::find_if(diagnostics.begin(), diagnostics.end(), [](const PublishedDiagnostic& item)
+                                         { return item.code == "as-err-undefined-identifier"; });
+    REQUIRE_MESSAGE(diagnostic != diagnostics.end(), output);
+    CHECK(diagnostic->startLine == 0);
+    CHECK(diagnostic->endLine == 0);
+    CHECK(diagnostic->startCharacter == 22);
+    CHECK(diagnostic->endCharacter == 22 + missing.size());
+}
 
 TEST_CASE("Server - A diagnostic underlines the text it is about")
 {

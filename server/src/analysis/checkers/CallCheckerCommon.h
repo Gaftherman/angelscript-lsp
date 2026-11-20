@@ -183,6 +183,26 @@ struct NonCallableCheckRequest
 };
 
 /**
+ * @brief Resolves a callee of a known declared type to a funcdef or `opCall` candidate set.
+ *
+ * Emits CallNoMatchingSignature at the callee range when the type is neither a funcdef nor has `opCall`.
+ * @param[in] req Callee spelling, its resolved type and the range diagnostics anchor to.
+ * @param[in,out] ctx Diagnostic context receiving the diagnostic and providing the symbol table.
+ * @param[out] res Candidate set and `shouldCheck` state to fill.
+ * @return True; the callee is always concluded here, with candidates or with a diagnostic.
+ */
+bool CheckNonCallableVariable(const NonCallableCheckRequest& req, DiagnosticContext& ctx, CalleeResolution& res);
+
+/**
+ * @brief Publishes the declaration a use site resolved to, when the declaration has a stable identity.
+ * @param[in,out] ctx Diagnostic context owning the revision's call bindings.
+ * @param[in] useByte Start byte of the use, the key later lookups use.
+ * @param[in] use Exact source range of the use.
+ * @param[in] declaration The winning function or constructor; synthesized declarations are never published.
+ */
+void PublishCallBinding(DiagnosticContext& ctx, uint32_t useByte, const SourceRange& use, const Symbol& declaration);
+
+/**
  * @brief Checks whether a member variable in a type hierarchy is non-callable or a callable funcdef.
  * @param[in] site Call site fact.
  * @param[in] objType Enclosing object type name view.
@@ -443,9 +463,11 @@ std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& rawConstru
  * @param[in] candidates Candidate constructor symbols.
  * @param[in] argTypes Resolved argument types.
  * @param[in] vctx Variable initialization context.
+ * @return The constructor the arguments select, pointing into `candidates`; nullptr when none is viable or the
+ *         choice is ambiguous, in which case the diagnostic has been emitted.
  */
-void CheckConstructorOverload(SourceRange argumentListRange, const std::vector<Symbol>& candidates,
-                              const std::vector<std::string>& argTypes, const VarInitContext& vctx);
+const Symbol* CheckConstructorOverload(SourceRange argumentListRange, const std::vector<Symbol>& candidates,
+                                       const std::vector<std::string>& argTypes, const VarInitContext& vctx);
 
 /**
  * @brief Checks direct variable initialization syntax against accessible constructors.

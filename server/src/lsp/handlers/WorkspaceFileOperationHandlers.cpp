@@ -4,7 +4,6 @@
 #include "utils/Utils.h"
 
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -47,26 +46,17 @@ static std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
     return edit;
 }
 
-static std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const Server& server, std::string_view includerPath,
-                                                                const std::string& oldTargetPath,
-                                                                const std::string& newTargetPath)
+std::optional<lsp::TextDocumentEdit> Server::BuildIncludeRewrite(std::string_view includerPath,
+                                                                 std::string_view oldTargetPath,
+                                                                 std::string_view newTargetPath) const
 {
-    // Read from the editor's buffer when it has one - it may hold unsaved edits, and rewriting
-    // against the copy on disk would produce an edit whose line numbers do not match what the
-    // user is looking at.
-    const std::string includerUri = Server::UriFromPath(includerPath);
-    std::string text;
-    if (auto open = server.FindDocumentText(includerUri))
+    const std::string includerUri = UriFromPath(includerPath);
+    const auto source = FindRangeSource(includerUri, true);
+    if (!source)
     {
-        text = *open;
+        return std::nullopt;
     }
-    else
-    {
-        std::ifstream file(std::filesystem::path(includerPath), std::ios::binary);
-        if (!file.is_open())
-            return std::nullopt;
-        text.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    }
+    const std::string_view text = *source;
 
     // The path as the directive should now spell it: relative to the including file, with
     // forward slashes, which is how every #include in the corpus is written and what
@@ -77,13 +67,15 @@ static std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const Server& se
     if (relativeError || relative.empty())
         return std::nullopt;
     const std::string replacement = relative.generic_string();
+    const auto searchDirectories = SearchDirectories();
+    const auto allowedRoots = IncludeAllowedRoots();
 
     std::vector<lsp::TextEdit> edits;
     for (const auto& directive : angel_lsp::utils::IncludeResolver::ExtractIncludes(text))
     {
-        const std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-            angel_lsp::utils::IncludeResolveRequest{directive.rawPath, includerPath, *server.SearchDirectories(),
-                                                    server.IncludeAllowedRoots(), server.ImplicitIncludeExtension()});
+        const std::string resolved =
+            angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
+                directive.rawPath, includerPath, *searchDirectories, allowedRoots, ImplicitIncludeExtension()});
         if (resolved != oldTargetPath)
             continue;
 
@@ -97,6 +89,7 @@ static std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const Server& se
     if (edits.empty())
         return std::nullopt;
 
+    EncodeIn(text, edits);
     lsp::TextDocumentEdit documentEdit;
     lsp::OptionalVersionedTextDocumentIdentifier identifier;
     identifier.uri = lsp::DocumentUri(lsp::Uri::parse(includerUri));
@@ -214,7 +207,7 @@ void Server::HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Wor
 
         for (const std::string& includer : includers)
         {
-            auto edit = BuildIncludeRewrite(*this, includer, oldPath, newPath);
+            auto edit = BuildIncludeRewrite(includer, oldPath, newPath);
             if (edit.has_value())
                 documentEdits.push_back(std::move(*edit));
         }

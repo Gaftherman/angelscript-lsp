@@ -216,13 +216,14 @@ static MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstant
         MixinFileCacheEntry entry = mixinSym.fileUri == req.ctx.request.fileUri
                                         ? BuildMixinFileCacheEntryFromText(req.ctx.request.sourceCode)
                                         : LoadMixinFileCacheEntry(mixinSym.fileUri);
-        if (entry.source.empty())
+        if (!entry.source)
         {
             return target;
         }
         it = req.fileCache.emplace(mixinSym.fileUri, std::move(entry)).first;
     }
-    target.source = it->second.source;
+    target.sourceSnapshot = it->second.source;
+    target.source = *target.sourceSnapshot;
     target.nodeIndex = it->second.nodeIndex.get();
     return target;
 }
@@ -258,9 +259,14 @@ static void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
 
     SourceRange hostRange = FindHostMixinRange(req.hostSym, *mixinSym, req.mixinName, req.ctx);
     MemberNameSet reportedMissingMembers;
-    MixinCheckContext mctx{
-        req.baseMembers.hostClassName, mixinSym,        hostRange, req.baseMembers.hostMembers, mixinSelfMembers,
-        reportedMissingMembers,        target.nodeIndex};
+    MixinCheckContext mctx{req.baseMembers.hostClassName,
+                           mixinSym,
+                           hostRange,
+                           req.baseMembers.hostMembers,
+                           mixinSelfMembers,
+                           reportedMissingMembers,
+                           target.nodeIndex,
+                           target.sourceSnapshot};
     CheckMixinFunctions(facts, target.source, mctx, req.ctx);
 }
 

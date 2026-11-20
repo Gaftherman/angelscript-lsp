@@ -70,10 +70,9 @@ Server::HandleRequestsTextDocument_Rename(lsp::requests::TextDocument_Rename::Pa
                                [&uris = ctx->predefinedUris](std::string_view uri) { return uris.contains(uri); },
                                m_logger.get()};
     auto edit = features::Rename(rr);
-    if (edit.has_value())
+    if (edit.has_value() && TryEncodeWorkspaceEdit(*edit, &ctx->doc))
     {
-        EncodeAcrossDocuments(edit.value());
-        return edit.value();
+        return std::move(*edit);
     }
     return lsp::Null{};
 }
@@ -110,7 +109,7 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
     auto actions = features::GetCodeActions(car);
     if (actions.has_value())
     {
-        EncodeAcrossDocuments(*actions);
+        EncodeAcrossDocuments(*actions, *doc);
         lsp::Array<lsp::OneOf<lsp::Command, lsp::CodeAction>> resultList;
         resultList.reserve(actions->size());
         for (auto& action : *actions)
@@ -134,11 +133,11 @@ Server::HandleRequestsCodeAction_Resolve(lsp::requests::CodeAction_Resolve::Para
     auto resolved = features::ResolveCodeAction(carr);
     if (resolved.has_value())
     {
-        if (resolved->edit.has_value())
+        if (resolved->edit.has_value() && !TryEncodeWorkspaceEdit(*resolved->edit))
         {
-            EncodeAcrossDocuments(resolved->edit.value());
+            resolved->edit.reset();
         }
-        return resolved.value();
+        return std::move(*resolved);
     }
     return req;
 }

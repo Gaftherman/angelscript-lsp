@@ -27,9 +27,10 @@ static void CountStringLiteralReferences(std::string_view fileUri, const Scope& 
                 const uint64_t pos = (static_cast<uint64_t>(strRef.line) << 32) | strRef.column;
                 for (size_t targetIdx : it->second)
                 {
-                    if (!ctx.targets[targetIdx].isTypeTarget)
+                    auto& target = ctx.targets[targetIdx];
+                    if (!target.isTypeTarget && !(target.isFunction && IsConstructorDeclaration(target.group.front())))
                     {
-                        ctx.targets[targetIdx].seenRefs.insert({std::string(fileUri), pos});
+                        target.seenRefs.insert({std::string(fileUri), pos});
                     }
                 }
             }
@@ -38,8 +39,10 @@ static void CountStringLiteralReferences(std::string_view fileUri, const Scope& 
 }
 
 static void ProcessScopeReferencesBatch(std::string_view fileUri, const Scope* scope, const BatchReferenceContext& ctx,
-                                        const CallBindings* bindings)
+                                        const Scope& root)
 {
+    const auto* bindings = root.GetCallBindings();
+    const DefaultConstructorLookup constructorLookup{ctx.request.symbolTable, root.alwaysImplementsDefaultConstruct};
     for (const auto& ref : scope->references)
     {
         auto it = ctx.targetsByName.find(ref.name);
@@ -68,6 +71,17 @@ static void ProcessScopeReferencesBatch(std::string_view fileUri, const Scope* s
             if (bound && target.isFunction &&
                 (target.compatibleClasses.empty() || target.group.front().qualifiedName == bound->qualifiedName))
             {
+                continue;
+            }
+            if (!ref.isCall && target.isFunction && IsConstructorDeclaration(target.group.front()))
+            {
+                for (const auto& site :
+                     FindDefaultConstructorUses(ref, *scope, target.group.front(), constructorLookup))
+                {
+                    const auto& range = site.declaratorRange;
+                    const uint64_t use = (static_cast<uint64_t>(range.startLine) << 32) | range.startCharacter;
+                    target.seenRefs.insert({std::string(fileUri), use});
+                }
                 continue;
             }
             ReferenceCollectionCriteria criteria{
@@ -109,7 +123,7 @@ static void CollectReferencesInScopeTreeBatch(std::string_view fileUri, const Sc
     {
         const Scope* scope = stack.back();
         stack.pop_back();
-        ProcessScopeReferencesBatch(fileUri, scope, ctx, root->GetCallBindings());
+        ProcessScopeReferencesBatch(fileUri, scope, ctx, *root);
         for (const auto& child : scope->children)
         {
             if (child)

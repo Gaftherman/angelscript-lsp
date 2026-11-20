@@ -132,6 +132,31 @@ static void ReadCallee(TSNode calleeNode, std::string_view source, CallSiteFact&
             fact.calleeNameRange = RangeOf(mem);
         }
     }
+    else if (calleeSym == gs.symIndexExpression || calleeSym == gs.symCallExpression ||
+             calleeSym == gs.symParenthesizedExpression)
+    {
+        fact.calleeKind = CalleeKind::Indirect;
+        fact.calleeNameBytes = fact.calleeBytes;
+        fact.calleeNameRange = fact.calleeRange;
+        TSNode root = calleeNode;
+        while (ts_node_symbol(root) == gs.symIndexExpression)
+        {
+            const TSNode receiver = parser::GetChildByField(root, gs.fieldObject);
+            if (ts_node_is_null(receiver))
+            {
+                break;
+            }
+            root = receiver;
+        }
+        const TSSymbol rootSym = ts_node_symbol(root);
+        const bool isPlainName =
+            rootSym == gs.symIdentifier ||
+            (rootSym == gs.symScopedIdentifier && !utils::ContainsScopeSeparator(parser::NodeText(root, source)));
+        if (isPlainName)
+        {
+            fact.objectBytes = BytesOf(root);
+        }
+    }
     else if (calleeSym == gs.symScopedIdentifier)
     {
         const TSNode tail = ScopedIdentifierTail(calleeNode);

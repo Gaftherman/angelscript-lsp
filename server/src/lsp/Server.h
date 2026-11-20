@@ -136,21 +136,47 @@ class Server
     template <typename FeatureFn>
     lsp::requests::TextDocument_Definition::Result
     DispatchDefinitionQuery(std::string_view uriStr, const lsp::Position& position, FeatureFn&& fn);
-    template <typename ItemT> void EncodeItemRanges(ItemT& item) const;
+    /**
+     * @brief Encodes a hierarchy item's declaration and selection ranges in its own document.
+     * @param[in,out] item Hierarchy item containing byte-column ranges.
+     * @return True if the source was available and both ranges were encoded.
+     */
+    template <typename ItemT> [[nodiscard]] bool TryEncodeItemRanges(ItemT& item) const;
     void EncodeIn(std::string_view text, lsp::Range& range) const;
     void EncodeIn(std::string_view text, lsp::Hover& hover) const;
     void EncodeIn(std::string_view text, std::vector<lsp::TextEdit>& edits) const;
     void EncodeIn(std::string_view text, std::vector<lsp::DocumentHighlight>& highlights) const;
     void EncodeIn(std::string_view text, std::vector<lsp::FoldingRange>& ranges) const;
     void EncodeIn(std::string_view text, std::vector<lsp::DocumentLink>& links) const;
-    void EncodeIn(std::string_view text, std::vector<lsp::InlayHint>& hints) const;
+    /**
+     * @brief Encodes hint positions, text edits, and label links against their source snapshots.
+     * @param[in] doc Request document that owns the hint positions and edits.
+     * @param[in,out] hints Byte-column hints to convert.
+     */
+    void EncodeIn(const OpenDocument& doc, std::vector<lsp::InlayHint>& hints) const;
     void EncodeIn(std::string_view text, std::vector<lsp::DocumentSymbol>& symbols) const;
     void EncodeIn(std::string_view text, std::vector<lsp::CodeLens>& lenses) const;
     void EncodeIn(std::string_view text, lsp::PrepareRenameResult& result) const;
     void EncodeAcrossDocuments(std::vector<lsp::Location>& locations) const;
     void EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols) const;
-    void EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const;
-    void EncodeAcrossDocuments(std::vector<lsp::CodeAction>& actions) const;
+    /**
+     * @brief Encodes a workspace edit against the source snapshots it addresses.
+     * @param[in,out] edit Byte-column edit to convert as one unit.
+     * @param[in] active Request document snapshot, when already resolved.
+     * @return True when the edit is ready to send. On failure the edit remains unchanged.
+     */
+    [[nodiscard]] bool TryEncodeWorkspaceEdit(lsp::WorkspaceEdit& edit, const OpenDocument* active = nullptr) const;
+    /**
+     * @brief Encodes code-action edits and removes actions whose edits cannot be validated.
+     * @param[in,out] actions Actions returned by the request.
+     * @param[in] doc Request document shared by the actions.
+     */
+    void EncodeAcrossDocuments(std::vector<lsp::CodeAction>& actions, const OpenDocument& doc) const;
+    /**
+     * @brief Encodes call-site ranges in their caller document.
+     * @param[in] uri Document containing the call sites.
+     * @param[in,out] ranges Byte-column ranges, cleared if their source is unavailable.
+     */
     void EncodeRangesIn(std::string_view uri, std::vector<lsp::Range>& ranges) const;
 
     void LogInfo(std::string_view message) const;
@@ -264,6 +290,45 @@ class Server
     lsp::json::Value HandleRequestsAngelscript_DebugCompletion(lsp::json::Value&& params);
 
   private:
+    /**
+     * @brief Retains the request document's URI and line lookups across workspace edits.
+     */
+    struct ActiveEditDocument
+    {
+        /** @brief Snapshot retained by the request. */
+        const OpenDocument& doc;
+        /** @brief Parsed canonical URI for allocation-free comparisons. */
+        lsp::Uri uri;
+        /** @brief Line lookups shared across edits targeting this snapshot. */
+        codec::DocumentPositionEncoder encoder;
+    };
+
+    /**
+     * @brief Validates and converts a workspace edit against its target snapshots.
+     * @param[in,out] edit Workspace edit to convert only if all its ranges are valid.
+     * @param[in,out] active Optional request snapshot and its reusable encoder.
+     * @return True if the workspace edit can be sent.
+     */
+    [[nodiscard]] bool EncodeWorkspaceEdit(lsp::WorkspaceEdit& edit, ActiveEditDocument* active) const;
+
+    /**
+     * @brief Resolves the source for an outbound range, including closed preindexed documents.
+     * @param[in] uri Document containing the range.
+     * @param[in] readDisk Allows reading the file if there is no retained snapshot.
+     * @return Document text, or null if no permitted source is available.
+     */
+    [[nodiscard]] std::shared_ptr<const std::string> FindRangeSource(std::string_view uri, bool readDisk = false) const;
+    /**
+     * @brief Builds include path edits in the negotiated position encoding.
+     * @param[in] includerPath File whose include directives point to the renamed file.
+     * @param[in] oldTargetPath Original target path.
+     * @param[in] newTargetPath Renamed target path.
+     * @return Edits for matching directives, or std::nullopt if there are none.
+     */
+    [[nodiscard]] std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(std::string_view includerPath,
+                                                                           std::string_view oldTargetPath,
+                                                                           std::string_view newTargetPath) const;
+
     angel_lsp::config::ServerConfig m_config;
     std::unique_ptr<lsp::Connection> m_connection;
     std::unique_ptr<lsp::MessageHandler> m_messageHandler;
@@ -327,6 +392,8 @@ class Server
     void RegisterWorkspaceHandlers();
     void RegisterTextDocumentHandlers();
     void RegisterHierarchyHandlers();
+    lsp::requests::TextDocument_PrepareTypeHierarchy::Result
+    PrepareTypeHierarchy(lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req);
     void RegisterTokensAndFormattingHandlers();
     void BeginWorkspaceProgress(std::string_view title);
     void ReportWorkspaceProgress(std::string_view message, unsigned percentage);
@@ -350,7 +417,29 @@ class Server
     [[nodiscard]] std::optional<analysis::SemanticAnalysisRequest::ModuleContext>
     ModuleContextFor(std::string_view uriStr) const;
     void RestartWorkspaceScan();
-    lsp::SemanticTokens ComputeAndCacheSemanticTokens(std::string_view uriStr, std::string_view text);
+    /**
+     * @brief Captures the semantic input revisions while the caller holds the lifecycle mutex.
+     * @param[in] doc Document incarnation supplying the source text.
+     * @param[in] scopeRoot Published scope tree used for classification.
+     * @param[in] words Immutable preprocessor definitions used for classification.
+     * @return Key for the given source, published analysis and protocol encoding.
+     */
+    [[nodiscard]] SemanticTokensRevisionKey
+    CaptureSemanticTokensRevisionKey(const document::Document& doc,
+                                     const std::shared_ptr<const analysis::Scope>& scopeRoot,
+                                     const std::shared_ptr<const TransparentStringSet>& words) const;
+    /**
+     * @brief Retains the published token payload and its ID for use outside the cache mutex.
+     * @param[in] uri Normalized document URI.
+     * @return Current snapshot, or nullopt when no result for the URI has been published.
+     */
+    [[nodiscard]] std::optional<SemanticTokensSnapshot> FindSemanticTokensSnapshot(std::string_view uri);
+    /**
+     * @brief Reuses or computes an encoded token snapshot for the requested source.
+     * @param[in] doc Document and source lease for the message-loop request.
+     * @return Encoded snapshot with a result ID when the revision was cacheable and current at publication.
+     */
+    [[nodiscard]] SemanticTokensSnapshot ResolveSemanticTokensSnapshot(const OpenDocument& doc);
     void UpdateSavedDocumentCaches(std::string_view uriStr, std::string_view text,
                                    const std::vector<utils::ExcludedLineRange>& excluded);
     void HandleSavedInterfaceChange(std::string_view uriStr, bool interfaceChanged);
@@ -400,7 +489,7 @@ class Server
     void PublishDiagnostics(std::string_view uriStr, std::string_view text,
                             const std::vector<analysis::Diagnostic>& diagnostics, int version = -1,
                             std::shared_ptr<const utils::PreprocessorScan> preprocessing = {});
-    std::vector<lsp::Diagnostic> ToProtocolDiagnostics(std::string_view text,
+    std::vector<lsp::Diagnostic> ToProtocolDiagnostics(std::string_view uri, std::string_view text,
                                                        std::span<const analysis::Diagnostic> diagnostics,
                                                        std::span<const utils::ExcludedLineRange> excluded) const;
     [[nodiscard]] std::optional<lsp::requests::TextDocument_Diagnostic::Result>
@@ -645,17 +734,15 @@ ResultT Server::ExecuteAtDocumentPosition(std::string_view uriStr, const lsp::Po
     return fn(*doc, decodedPos);
 }
 
-template <typename ItemT> void Server::EncodeItemRanges(ItemT& item) const
+template <typename ItemT> bool Server::TryEncodeItemRanges(ItemT& item) const
 {
-    if (GetPositionEncoding() == utils::PositionEncoding::Utf8)
-    {
-        return;
-    }
-    if (auto text = FindDocumentText(item.uri.toString()))
+    if (auto text = FindRangeSource(item.uri.toString(), true))
     {
         EncodeIn(*text, item.range);
         EncodeIn(*text, item.selectionRange);
+        return true;
     }
+    return false;
 }
 
 } // namespace angel_lsp

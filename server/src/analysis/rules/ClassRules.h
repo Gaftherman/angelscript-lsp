@@ -142,6 +142,8 @@ struct MixinCheckContext
     const MemberNameSet& mixinSelfMembers;
     MemberNameSet& reported;
     const NodeIndex* nodeIndex = nullptr;
+    /** @brief Retained source for related ranges in an external mixin. */
+    std::shared_ptr<const std::string> sourceSnapshot;
 };
 
 /**
@@ -194,6 +196,8 @@ struct MixinAstTarget
 {
     /// Mixin document text; borrows the current request or a file cache entry.
     std::string_view source;
+    /** @brief Owns external mixin text when the current request refers to a different document. */
+    std::shared_ptr<const std::string> sourceSnapshot;
     /// Index over source; points at the request index, the cache entry index or localIndex.
     const NodeIndex* nodeIndex = nullptr;
     /// Index built on demand when the current document has a tree but no request index.

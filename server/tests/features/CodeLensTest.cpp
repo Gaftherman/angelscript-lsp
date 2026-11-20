@@ -1,6 +1,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
+#include "analysis/resolution/ReferenceCountingAccess.h"
 #include "analysis/resolution/TargetResolution.h"
 #include "config/EngineRuleConfig.h"
 #include "document/Document.h"
@@ -17,6 +18,7 @@
 #include <array>
 #include <doctest/doctest.h>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace angel_lsp;
@@ -36,6 +38,7 @@ struct CodeLensFixture
     std::string uri = "file:///test.as";
     std::string sourceCode;
     TSTree* tree = nullptr;
+    std::optional<config::EngineProperties> engineProperties;
 
     explicit CodeLensFixture(std::string code) : sourceCode(std::move(code))
     {
@@ -66,7 +69,8 @@ struct CodeLensFixture
         }
     }
 
-    auto AddAnalyzedDocument(const std::string& fileUri, const std::string& code, CallBindingRevision revision)
+    auto AddAnalyzedDocument(const std::string& fileUri, const std::string& code, CallBindingRevision revision,
+                             std::string_view module = {})
     {
         symbolCollector.CollectSymbols(fileUri, code, parser, symbolTable);
         auto scope = std::shared_ptr<Scope>(scopeCollector.CollectScopes(code, parser));
@@ -78,8 +82,14 @@ struct CodeLensFixture
         analysis.sourceCode = code;
         analysis.scopeRoot = scope;
         analysis.mutableScopeRoot = scope.get();
+        analysis.engineProperties = engineProperties ? &*engineProperties : nullptr;
         analysis.nodeIndex = &index;
         analysis.moduleFileUris = {fileUri, uri};
+        if (!module.empty())
+        {
+            analysis.moduleContext.emplace();
+            analysis.moduleContext->name = module;
+        }
         analysis.callBindingRevision = revision;
         const SemanticAnalyzer analyzer(nullptr);
         analyzer.Analyze(analysis);
@@ -100,6 +110,63 @@ struct CodeLensFixture
 
 TEST_SUITE("features/CodeLens")
 {
+    TEST_CASE("CodeLens - Bare constructor and type uses stay in their module without bound calls")
+    {
+        const auto name = angel_lsp::test::GenerateRandomSymbolName("ModuleType");
+        const std::string declaration = "class " + name + " {\n    " + name + "() {}\n}\n";
+        CodeLensFixture fixture(declaration + "void InAlpha() { " + name + " value; }\n");
+        const auto alphaSyntax = fixture.AddAnalyzedDocument(fixture.uri, fixture.sourceCode, {1, 1, 0}, "alpha");
+        const std::string betaUri = "file:///beta.as";
+        const std::string betaSource = declaration + "void InBeta() { " + name + " value; }\n";
+        const auto betaSyntax = fixture.AddAnalyzedDocument(betaUri, betaSource, {2, 1, 0}, "beta");
+        REQUIRE(alphaSyntax);
+        REQUIRE(betaSyntax);
+
+        const ModuleFilter alpha = "alpha";
+        const ModuleFilter beta = "beta";
+        CodeLensRequest alphaRequest{fixture.uri, fixture.sourceCode, fixture.symbolTable, fixture.scopeIndex};
+        CodeLensRequest betaRequest{betaUri, betaSource, fixture.symbolTable, fixture.scopeIndex};
+        alphaRequest.occurrenceModule = &alpha;
+        betaRequest.occurrenceModule = &beta;
+        for (const auto& request : {alphaRequest, betaRequest})
+        {
+            const auto lenses = GetCodeLenses(request);
+            REQUIRE(lenses.has_value());
+            for (const auto line : {0u, 1u})
+            {
+                const auto found = std::ranges::find_if(*lenses, [line](const lsp::CodeLens& lens)
+                                                        { return lens.range.start.line == line; });
+                REQUIRE(found != lenses->end());
+                REQUIRE(found->command.has_value());
+                CHECK(found->command->title == "1 reference");
+
+                const bool isConstructor = line == 1;
+                const lsp::Position declarationPosition{line, isConstructor ? 4u : 6u};
+                ReferencesRequest refsRequest{request.uri, request.sourceCode,  declarationPosition,
+                                              true,        request.symbolTable, request.scopeIndex};
+                refsRequest.occurrenceModule = **request.occurrenceModule;
+                const auto references = GetReferences(refsRequest);
+                REQUIRE(references.has_value());
+                REQUIRE(references->size() == 2);
+                const auto& definition = references->front();
+                CHECK(definition.uri.toString() == request.uri);
+                CHECK(definition.range.start.line == declarationPosition.line);
+                CHECK(definition.range.start.character == declarationPosition.character);
+                CHECK(definition.range.end.line == declarationPosition.line);
+                CHECK(definition.range.end.character == declarationPosition.character + name.size());
+
+                const auto& use = references->back();
+                const auto function = request.sourceCode.substr(request.sourceCode.find("void"));
+                const std::string_view spelling = isConstructor ? std::string_view("value") : name;
+                CHECK(use.uri.toString() == request.uri);
+                CHECK(use.range.start.line == 3);
+                CHECK(use.range.start.character == function.find(spelling));
+                CHECK(use.range.end.line == 3);
+                CHECK(use.range.end.character == function.find(spelling) + spelling.size());
+            }
+        }
+    }
+
     TEST_CASE("CodeLens - Computes reference count for functions")
     {
         CodeLensFixture fixture("void Helper() {}\n"
@@ -920,6 +987,295 @@ TEST_SUITE("features/CodeLens")
         CHECK(foundPropLens);
     }
 
+    TEST_CASE("CodeLens - Generated defaults do not count as uses of declared constructor overloads")
+    {
+        const std::string useUri = "file:///constructor_uses.as";
+        const std::string uses = "void Use() { Defaulted first; Explicit second; }";
+        for (const bool generateDefault : {false, true})
+        {
+            CodeLensFixture fixture("class Defaulted {\n"
+                                    "    Defaulted(int value = 3) {}\n"
+                                    "}\n"
+                                    "class Explicit {\n"
+                                    "    Explicit() {}\n"
+                                    "    Explicit(int value = 3) {}\n"
+                                    "}\n");
+            fixture.engineProperties.emplace().alwaysImplDefaultConstruct = generateDefault;
+            const auto syntax = fixture.AddAnalyzedDocument(useUri, uses, {1, 1, 1});
+            REQUIRE(syntax);
+            const auto lenses = fixture.GetLenses();
+            REQUIRE(lenses.has_value());
+            const std::array declarations{lsp::Position{1, 4}, lsp::Position{4, 4}, lsp::Position{5, 4}};
+            for (const auto& declaration : declarations)
+            {
+                const bool hasUse = declaration.line == 4 || (declaration.line == 1 && !generateDefault);
+                const auto lens = std::ranges::find_if(*lenses, [&](const lsp::CodeLens& entry)
+                                                       { return entry.range.start.line == declaration.line; });
+                REQUIRE(lens != lenses->end());
+                REQUIRE(lens->command);
+                CHECK(lens->command->title == (hasUse ? "1 reference" : "0 references"));
+
+                const ReferencesRequest request{fixture.uri, fixture.sourceCode,  declaration,
+                                                false,       fixture.symbolTable, fixture.scopeIndex};
+                const auto references = GetReferences(request);
+                if (hasUse)
+                {
+                    REQUIRE(references.has_value());
+                    REQUIRE(references->size() == 1);
+                    const std::string_view variable = declaration.line == 1 ? "first" : "second";
+                    const auto& use = references->front();
+                    CHECK(use.uri.toString() == useUri);
+                    CHECK(use.range.start.line == 0);
+                    CHECK(use.range.start.character == uses.find(variable));
+                    CHECK(use.range.end.line == 0);
+                    CHECK(use.range.end.character == uses.find(variable) + variable.size());
+                }
+                else
+                {
+                    CHECK((!references || references->empty()));
+                }
+            }
+        }
+    }
+
+    TEST_CASE("CodeLens - Issue 16 counts handle return types only for the class")
+    {
+        CodeLensFixture fixture("class A\n"
+                                "{\n"
+                                "    A() {}\n"
+                                "    A@ someRef() { return this; }\n"
+                                "    A@ someRef2() { return this; }\n"
+                                "    A@ someRef3() { return this; }\n"
+                                "}\n");
+
+        const auto lenses = fixture.GetLenses();
+        REQUIRE(lenses.has_value());
+        const std::array declarations{lsp::Position{0, 6}, lsp::Position{2, 4}};
+        for (const auto& declaration : declarations)
+        {
+            const bool isClass = declaration.line == 0;
+            const auto lens = std::ranges::find_if(*lenses, [&](const lsp::CodeLens& entry)
+                                                   { return entry.range.start.line == declaration.line; });
+            REQUIRE(lens != lenses->end());
+            REQUIRE(lens->command.has_value());
+            CHECK(lens->command->title == (isClass ? "3 references" : "0 references"));
+
+            const ReferencesRequest request{fixture.uri, fixture.sourceCode,  declaration,
+                                            false,       fixture.symbolTable, fixture.scopeIndex};
+            const auto references = GetReferences(request);
+            if (isClass)
+            {
+                REQUIRE(references.has_value());
+                REQUIRE(references->size() == 3);
+                for (uint32_t line : {3u, 4u, 5u})
+                {
+                    CHECK(std::ranges::any_of(*references,
+                                              [&](const lsp::Location& reference)
+                                              {
+                                                  return reference.uri.toString() == fixture.uri &&
+                                                         reference.range.start.line == line &&
+                                                         reference.range.start.character == 4 &&
+                                                         reference.range.end.line == line &&
+                                                         reference.range.end.character == 5;
+                                              }));
+                }
+            }
+            else
+            {
+                CHECK((!references || references->empty()));
+            }
+        }
+    }
+
+    TEST_CASE("CodeLens - Handle declarations refer to the class without invoking its constructor")
+    {
+        const std::string name = angel_lsp::test::GenerateRandomSymbolName("HandleType");
+        CodeLensFixture fixture("class " + name + " {\n  " + name + "() {}\n}\nvoid Use(" + name + "@ input) {\n  " +
+                                name + "@ first;\n  " + name + "@ second;\n}\n");
+
+        const auto root = fixture.scopeIndex.GetRoot(fixture.uri);
+        REQUIRE(root);
+        const std::array<lsp::Position, 3> mentions{{{3, 9}, {4, 2}, {5, 2}}};
+        for (const auto& position : mentions)
+        {
+            const Scope* scope = FindInnermostScope(root.get(), position.line, position.character);
+            REQUIRE(scope);
+            const auto mention = std::ranges::find_if(
+                scope->references, [&](const LocalReference& ref)
+                { return ref.startLine == position.line && ref.startCharacter == position.character; });
+            REQUIRE(mention != scope->references.end());
+            CHECK(mention->name == name);
+            CHECK(mention->endLine == position.line);
+            CHECK(mention->endCharacter == position.character + name.size());
+            CHECK(mention->isTypeSpecifier);
+            CHECK(FindDefaultConstructionSites(*mention, *scope).empty());
+        }
+
+        const auto lenses = fixture.GetLenses();
+        REQUIRE(lenses.has_value());
+        for (uint32_t line : {0u, 1u})
+        {
+            const auto lens = std::ranges::find_if(*lenses, [line](const lsp::CodeLens& entry)
+                                                   { return entry.range.start.line == line; });
+            REQUIRE(lens != lenses->end());
+            REQUIRE(lens->command.has_value());
+            CHECK(lens->command->title == (line == 0 ? "3 references" : "0 references"));
+        }
+    }
+
+    TEST_CASE("CodeLens - Qualified default construction has one owning class")
+    {
+        const std::string name = angel_lsp::test::GenerateRandomSymbolName("QualifiedType");
+        CodeLensFixture fixture("namespace First {\nclass " + name + " {\n  " + name + "(int n = 1) {}\n  " + name +
+                                "() {}\n};\n}\nnamespace Second {\nclass " + name + " {\n  " + name +
+                                "(int n = 2) {}\n};\n}\nvoid Use() {\n  First::" + name + " a, b;\n  Second::" + name +
+                                "@ c;\n  Second::" + name + " d;\n}\n");
+
+        constexpr uint32_t lineOfDeclaration = 12;
+        constexpr uint32_t typeColumn = 9;
+        const auto root = fixture.scopeIndex.GetRoot(fixture.uri);
+        REQUIRE(root);
+        const Scope* scope = FindInnermostScope(root.get(), lineOfDeclaration, typeColumn);
+        REQUIRE(scope);
+        const auto type =
+            std::ranges::find_if(scope->references, [](const LocalReference& ref)
+                                 { return ref.startLine == lineOfDeclaration && ref.startCharacter == typeColumn; });
+        REQUIRE(type != scope->references.end());
+        const auto sites = FindDefaultConstructionSites(*type, *scope);
+        REQUIRE(sites.size() == 2);
+        const auto firstColumn = typeColumn + static_cast<uint32_t>(name.size()) + 1;
+        for (const uint32_t column : {firstColumn, firstColumn + 3})
+        {
+            const SourceRange expected{lineOfDeclaration, column, lineOfDeclaration, column + 1};
+            CHECK(std::ranges::any_of(sites, [&](const auto& site) { return site.declaratorRange == expected; }));
+        }
+
+        const auto lenses = fixture.GetLenses();
+        REQUIRE(lenses.has_value());
+        const std::pair<uint32_t, std::string_view> expectedLenses[] = {
+            {2, "0 references"}, {3, "2 references"}, {8, "1 reference"}};
+        for (const auto& [line, title] : expectedLenses)
+        {
+            const auto lens = std::ranges::find_if(*lenses, [line](const lsp::CodeLens& entry)
+                                                   { return entry.range.start.line == line; });
+            REQUIRE(lens != lenses->end());
+            REQUIRE(lens->command.has_value());
+            CHECK(lens->command->title == title);
+        }
+    }
+
+    TEST_CASE("CodeLens - Bare construction resolves the nearest homonymous class")
+    {
+        const std::string name = angel_lsp::test::GenerateRandomSymbolName("LexicalType");
+        const std::string declaration = "class " + name + " { " + name + "() {} }\n";
+        CodeLensFixture fixture(declaration + "namespace Outer {\n" + declaration + "void UseOuter() { " + name +
+                                " local; ::" + name + " root; }\nnamespace Inner {\n" + declaration +
+                                "void UseInner() { " + name + " local; }\n}\n}\n");
+
+        const auto lenses = fixture.GetLenses();
+        REQUIRE(lenses.has_value());
+        const auto constructorColumn = static_cast<uint32_t>(6 + name.size() + 3);
+        for (const uint32_t line : {0u, 2u, 5u})
+        {
+            for (const auto column : {0u, constructorColumn})
+            {
+                const auto lens = std::ranges::find_if(
+                    *lenses, [line, column](const lsp::CodeLens& entry)
+                    { return entry.range.start.line == line && entry.range.start.character == column; });
+                REQUIRE(lens != lenses->end());
+                REQUIRE(lens->command.has_value());
+                CHECK(lens->command->title == "1 reference");
+            }
+        }
+    }
+
+    TEST_CASE("CodeLens - A relative type qualifier selects the nearest homonymous namespace")
+    {
+        const auto type = angel_lsp::test::GenerateRandomSymbolName("Type");
+        const auto scope = angel_lsp::test::GenerateRandomSymbolName("Shared");
+        const std::string declaration = "namespace " + scope + " {\nclass " + type + " { " + type + "() {} }\n}\n";
+        CodeLensFixture fixture(declaration + "namespace Outer {\n" + declaration + "void Use() {\n    " + scope +
+                                "::" + type + " local;\n    ::" + scope + "::" + type + " root;\n}\n}\n");
+
+        const auto lenses = fixture.GetLenses();
+        REQUIRE(lenses.has_value());
+        const auto constructorColumn = static_cast<uint32_t>(6 + type.size() + 3);
+        for (const auto line : {1u, 5u})
+        {
+            for (const auto column : {0u, constructorColumn})
+            {
+                const auto lens = std::ranges::find_if(
+                    *lenses, [line, column](const lsp::CodeLens& entry)
+                    { return entry.range.start.line == line && entry.range.start.character == column; });
+                REQUIRE(lens != lenses->end());
+                REQUIRE(lens->command.has_value());
+                CHECK(lens->command->title == "1 reference");
+            }
+        }
+    }
+
+    TEST_CASE("CodeLens - Qualified construction can name a type in the qualifier's parent namespace")
+    {
+        const auto type = angel_lsp::test::GenerateRandomSymbolName("Type");
+        const auto scope = angel_lsp::test::GenerateRandomSymbolName("Inner");
+        CodeLensFixture fixture("namespace Outer {\nclass " + type + " { " + type + "() {} }\nnamespace " + scope +
+                                " { class Other {} }\nvoid Use() {\n    " + scope + "::" + type +
+                                " local;\n    ::Outer::" + scope + "::" + type + " anchored;\n}\n}\n");
+
+        const auto lenses = fixture.GetLenses();
+        REQUIRE(lenses.has_value());
+        const auto constructorColumn = static_cast<uint32_t>(6 + type.size() + 3);
+        for (const auto column : {0u, constructorColumn})
+        {
+            const auto lens =
+                std::ranges::find_if(*lenses, [column](const lsp::CodeLens& entry)
+                                     { return entry.range.start.line == 1 && entry.range.start.character == column; });
+            REQUIRE(lens != lenses->end());
+            REQUIRE(lens->command.has_value());
+            CHECK(lens->command->title == "2 references");
+        }
+    }
+
+    TEST_CASE("CodeLens - Bare abstract declaration does not invoke a constructor")
+    {
+        const auto abstractType = angel_lsp::test::GenerateRandomSymbolName("AbstractType");
+        const auto concreteType = angel_lsp::test::GenerateRandomSymbolName("ConcreteType");
+        CodeLensFixture fixture("abstract class " + abstractType + " {\n  " + abstractType + "() {}\n}\nclass " +
+                                concreteType + " {\n  " + concreteType + "() {}\n}\nvoid Use() { " + abstractType +
+                                " invalid; " + concreteType + " valid; }\n");
+
+        const auto lenses = fixture.GetLenses();
+        REQUIRE(lenses.has_value());
+        const std::pair<uint32_t, std::string_view> expectedLenses[] = {
+            {0, "1 reference"}, {1, "0 references"}, {3, "1 reference"}, {4, "1 reference"}};
+        for (const auto& [line, title] : expectedLenses)
+        {
+            const auto lens = std::ranges::find_if(*lenses, [line](const lsp::CodeLens& entry)
+                                                   { return entry.range.start.line == line; });
+            REQUIRE(lens != lenses->end());
+            REQUIRE(lens->command.has_value());
+            CHECK(lens->command->title == title);
+        }
+    }
+
+    TEST_CASE("CodeLens - Private default constructor only counts uses in its lexical class")
+    {
+        const auto name = angel_lsp::test::GenerateRandomSymbolName("PrivateDefault");
+        CodeLensFixture fixture("class " + name + " { private " + name + "() {} void Own() { " + name +
+                                " owned; } } void Use() { " + name + " outside; }\nnamespace Other { class " + name +
+                                " { void Use() { ::" + name + " foreign; } } }\n");
+
+        const auto lenses = fixture.GetLenses();
+        REQUIRE(lenses.has_value());
+        const auto declarationColumn = static_cast<uint32_t>(name.size() + 9);
+        const auto lens = std::ranges::find_if(
+            *lenses, [declarationColumn](const lsp::CodeLens& entry)
+            { return entry.range.start.line == 0 && entry.range.start.character == declarationColumn; });
+        REQUIRE(lens != lenses->end());
+        REQUIRE(lens->command.has_value());
+        CHECK(lens->command->title == "1 reference");
+    }
+
     TEST_CASE("CodeLens - Class and constructor reference counting and destructor suppression")
     {
         const std::string charClass = angel_lsp::test::GenerateRandomSymbolName("CCharacter");
@@ -958,13 +1314,13 @@ TEST_SUITE("features/CodeLens")
             {
                 // Class declaration
                 foundClassLens = true;
-                CHECK(lens.command->title != "0 references");
+                CHECK(lens.command->title == "2 references");
             }
             else if (lens.range.start.line == 2 && lens.command.has_value())
             {
                 // Constructor
                 foundCtorLens = true;
-                CHECK(lens.command->title != "0 references");
+                CHECK(lens.command->title == "1 reference");
             }
             else if (lens.range.start.line == 3 && lens.command.has_value())
             {
@@ -1043,12 +1399,20 @@ TEST_SUITE("features/CodeLens")
     TEST_CASE("CodeLens - Counts string-literal callback references")
     {
         const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("DestroyThrowableWeapon");
+        const std::string className = angel_lsp::test::GenerateRandomSymbolName("CallbackCollision");
         const std::string code = "void " + fnName +
                                  "() {}\n"
+                                 "class " +
+                                 className + " {\n    " + className +
+                                 "() {}\n"
+                                 "}\n"
                                  "void Trigger()\n"
                                  "{\n"
                                  "    g_Scheduler.SetTimeout(\"" +
                                  fnName +
+                                 "\", 1.0f);\n"
+                                 "    g_Scheduler.SetTimeout(\"" +
+                                 className +
                                  "\", 1.0f);\n"
                                  "}\n";
 
@@ -1056,16 +1420,14 @@ TEST_SUITE("features/CodeLens")
         auto lenses = fixture.GetLenses();
         REQUIRE(lenses.has_value());
 
-        bool foundLens = false;
-        for (const auto& lens : *lenses)
+        for (const uint32_t line : {0u, 2u})
         {
-            if (lens.range.start.line == 0 && lens.command.has_value())
-            {
-                foundLens = true;
-                CHECK(lens.command->title == "1 reference");
-            }
+            const auto lens = std::ranges::find_if(*lenses, [line](const lsp::CodeLens& entry)
+                                                   { return entry.range.start.line == line; });
+            REQUIRE(lens != lenses->end());
+            REQUIRE(lens->command.has_value());
+            CHECK(lens->command->title == (line == 0 ? "1 reference" : "0 references"));
         }
-        CHECK(foundLens);
     }
 
     TEST_CASE("CodeLens - Engine managed lifecycle methods and callbacks receive +1 reference")

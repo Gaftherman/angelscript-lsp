@@ -210,8 +210,8 @@ std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& rawConstru
     return candidates;
 }
 
-void CheckConstructorOverload(SourceRange argumentListRange, const std::vector<Symbol>& candidates,
-                              const std::vector<std::string>& argTypes, const VarInitContext& vctx)
+const Symbol* CheckConstructorOverload(SourceRange argumentListRange, const std::vector<Symbol>& candidates,
+                                       const std::vector<std::string>& argTypes, const VarInitContext& vctx)
 {
     const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
     const std::vector<const Symbol*> matchingArity = FilterMatchingArityCandidates(candidates, argCount);
@@ -220,7 +220,7 @@ void CheckConstructorOverload(SourceRange argumentListRange, const std::vector<S
     {
         vctx.ctx.EmitAtRange(argumentListRange, "as-err-no-matching-constructor",
                              FormatSignatureAttempt(vctx.declaredType, argTypes));
-        return;
+        return nullptr;
     }
 
     auto match = ResolveBestOverload(matchingArity, argTypes, vctx.ctx.request.symbolTable);
@@ -228,7 +228,9 @@ void CheckConstructorOverload(SourceRange argumentListRange, const std::vector<S
     {
         vctx.ctx.EmitAtRange(argumentListRange, "as-err-no-matching-constructor",
                              FormatSignatureAttempt(vctx.declaredType, argTypes));
+        return nullptr;
     }
+    return match.isAmbiguous ? nullptr : match.bestCandidate;
 }
 
 } // namespace angel_lsp::analysis

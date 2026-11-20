@@ -31,13 +31,20 @@ void Encode(std::string_view text, utils::PositionEncoding enc, lsp::Position& p
     position.character = utils::ByteToLspCharColumn(line, position.character, enc);
 }
 
-void Encode(std::string_view text, utils::PositionEncoding enc, lsp::Range& range)
+template <typename GetLine> static void EncodeRange(GetLine getLine, utils::PositionEncoding enc, lsp::Range& range)
 {
     if (enc == utils::PositionEncoding::Utf8)
         return;
 
-    Encode(text, enc, range.start);
-    Encode(text, enc, range.end);
+    const auto startLine = getLine(range.start.line);
+    const auto endLine = range.end.line == range.start.line ? startLine : getLine(range.end.line);
+    range.start.character = utils::ByteToLspCharColumn(startLine, range.start.character, enc);
+    range.end.character = utils::ByteToLspCharColumn(endLine, range.end.character, enc);
+}
+
+void Encode(std::string_view text, utils::PositionEncoding enc, lsp::Range& range)
+{
+    EncodeRange([&](lsp::uint line) { return utils::GetLine(text, line); }, enc, range);
 }
 
 void Encode(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc,
@@ -52,11 +59,112 @@ void Encode(const utils::LineIndex& lineIndex, std::string_view text, utils::Pos
 
 void Encode(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc, lsp::Range& range)
 {
-    if (enc == utils::PositionEncoding::Utf8)
-        return;
+    EncodeRange([&](lsp::uint line) { return lineIndex.Line(text, line); }, enc, range);
+}
 
-    Encode(lineIndex, text, enc, range.start);
-    Encode(lineIndex, text, enc, range.end);
+template <typename FindLine>
+static bool TryEncodeRange(FindLine findLine, utils::PositionEncoding enc, lsp::Range& range)
+{
+    const auto hasValidColumn = [](std::string_view line, lsp::uint column)
+    {
+        return column <= line.size() &&
+               (column == line.size() || (static_cast<unsigned char>(line[column]) & 0xC0u) != 0x80u);
+    };
+    const bool sameLine = range.start.line == range.end.line;
+    if (range.end.line < range.start.line || (sameLine && range.end.character < range.start.character))
+    {
+        return false;
+    }
+    const auto startLine = findLine(range.start.line);
+    if (!startLine || !hasValidColumn(*startLine, range.start.character))
+    {
+        return false;
+    }
+    const auto endLine = sameLine ? startLine : findLine(range.end.line);
+    if (!endLine || !hasValidColumn(*endLine, range.end.character))
+    {
+        return false;
+    }
+    if (enc != utils::PositionEncoding::Utf8)
+    {
+        range.start.character = utils::ByteToLspCharColumn(*startLine, range.start.character, enc);
+        range.end.character = utils::ByteToLspCharColumn(*endLine, range.end.character, enc);
+    }
+    return true;
+}
+
+bool TryEncode(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc, lsp::Range& range)
+{
+    return TryEncodeRange(
+        [&](lsp::uint line) -> std::optional<std::string_view>
+        {
+            if (line >= lineIndex.LineCount())
+            {
+                return std::nullopt;
+            }
+            return lineIndex.Line(text, line);
+        },
+        enc, range);
+}
+
+void DocumentPositionEncoder::Prepare(size_t count)
+{
+    constexpr size_t k_indexAfter = 4;
+    if (m_index.LineCount() != 0)
+    {
+        return;
+    }
+    if (count > k_indexAfter - m_sparseLookups)
+    {
+        m_index = utils::LineIndex::Build(m_text);
+    }
+    else
+    {
+        m_sparseLookups += count;
+    }
+}
+
+void DocumentPositionEncoder::Encode(lsp::Position& position) const
+{
+    if (m_index.LineCount() != 0)
+    {
+        codec::Encode(m_index, m_text, m_encoding, position);
+    }
+    else
+    {
+        codec::Encode(m_text, m_encoding, position);
+    }
+}
+
+void DocumentPositionEncoder::Encode(lsp::Range& range) const
+{
+    if (m_index.LineCount() != 0)
+    {
+        codec::Encode(m_index, m_text, m_encoding, range);
+    }
+    else
+    {
+        codec::Encode(m_text, m_encoding, range);
+    }
+}
+
+bool DocumentPositionEncoder::TryEncode(lsp::Range& range)
+{
+    if (m_index.LineCount() != 0)
+    {
+        return codec::TryEncode(m_index, m_text, m_encoding, range);
+    }
+    return TryEncodeRange(
+        [&](lsp::uint line)
+        {
+            if (!m_cachedLineText || m_cachedLine != line)
+            {
+                m_cachedLine = line;
+                m_cachedLineText = utils::FindLine(m_text, line);
+            }
+            return m_cachedLineText;
+        },
+        m_encoding, range);
 }
 
 void EncodeSemanticTokens(std::string_view text, utils::PositionEncoding enc, std::vector<lsp::uint>& data)

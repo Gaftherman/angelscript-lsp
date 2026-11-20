@@ -1,7 +1,8 @@
 #pragma once
 
 #include <algorithm>
-#include <span>
+#include <cstddef>
+#include <string>
 #include <string_view>
 
 namespace angel_lsp::utils
@@ -56,35 +57,62 @@ inline constexpr std::string_view k_setterPrefix = "set_";
 }
 
 /**
- * @brief Writes `<prefix><name>` into a caller-owned buffer, so an accessor lookup needs no heap allocation.
+ * @brief Storage for composed accessor names that needs no heap allocation for ordinary identifiers.
+ *
+ * Names that do not fit the inline storage fall back to a heap string, so a long property name is
+ * looked up like any other. A returned view stays valid until the next Compose on the same buffer.
+ */
+class AccessorNameBuffer
+{
+  public:
+    /**
+     * @brief Writes `<prefix><name>` into this buffer.
+     * @param[in] prefix Accessor prefix, normally k_getterPrefix or k_setterPrefix.
+     * @param[in] name Property name to prefix.
+     * @return View of the composed name; never truncated.
+     */
+    [[nodiscard]] std::string_view Compose(std::string_view prefix, std::string_view name)
+    {
+        const size_t size = prefix.size() + name.size();
+        char* out = m_inline;
+        if (size >= k_inlineSize)
+        {
+            m_heap.resize(size);
+            out = m_heap.data();
+        }
+        std::copy(prefix.begin(), prefix.end(), out);
+        std::copy(name.begin(), name.end(), out + prefix.size());
+        return std::string_view(out, size);
+    }
+
+  private:
+    static constexpr size_t k_inlineSize = 128;
+    char m_inline[k_inlineSize];
+    std::string m_heap;
+};
+
+/**
+ * @brief Composes `<prefix><name>` into a caller-owned buffer.
  * @param[in] prefix Accessor prefix, normally k_getterPrefix or k_setterPrefix.
  * @param[in] name Property name to prefix.
  * @param[out] buffer Storage that receives the composed name.
- * @return View of the composed name inside buffer, or an empty view when the name does not fit with room
- *         to spare.
+ * @return View of the composed name inside buffer; never truncated.
  */
 [[nodiscard]] inline std::string_view ComposeAccessorName(std::string_view prefix, std::string_view name,
-                                                          std::span<char> buffer) noexcept
+                                                          AccessorNameBuffer& buffer)
 {
-    if (name.size() + prefix.size() >= buffer.size())
-    {
-        return {};
-    }
-    std::copy(prefix.begin(), prefix.end(), buffer.begin());
-    std::copy(name.begin(), name.end(), buffer.begin() + prefix.size());
-    return std::string_view(buffer.data(), prefix.size() + name.size());
+    return buffer.Compose(prefix, name);
 }
 
 /**
- * @brief Writes `get_<name>` into a caller-owned buffer, so a getter lookup needs no heap allocation.
+ * @brief Composes `get_<name>` into a caller-owned buffer.
  * @param[in] name Property name to prefix.
  * @param[out] buffer Storage that receives the composed name.
- * @return View of the composed name inside buffer, or an empty view when the name does not fit with room
- *         to spare.
+ * @return View of the composed name inside buffer; never truncated.
  */
-[[nodiscard]] inline std::string_view ComposeGetterName(std::string_view name, std::span<char> buffer) noexcept
+[[nodiscard]] inline std::string_view ComposeGetterName(std::string_view name, AccessorNameBuffer& buffer)
 {
-    return ComposeAccessorName(k_getterPrefix, name, buffer);
+    return buffer.Compose(k_getterPrefix, name);
 }
 
 } // namespace angel_lsp::utils

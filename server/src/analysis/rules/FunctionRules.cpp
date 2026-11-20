@@ -30,12 +30,8 @@ static void ValidateNonMemberPropertyAccessors(const Symbol& sym, const Function
     {
         return;
     }
-    std::array<char, 512> getterBuf{};
+    utils::AccessorNameBuffer getterBuf;
     const std::string_view getterName = utils::ComposeGetterName(propName, getterBuf);
-    if (getterName.empty())
-    {
-        return;
-    }
     std::shared_ptr<const std::vector<Symbol>> getSyms;
     if (sym.containerName.empty() || sym.containerKind == ContainerKind::None)
     {

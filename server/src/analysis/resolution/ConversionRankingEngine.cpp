@@ -259,7 +259,7 @@ static bool IsHandleToReferenceBinding(bool argIsHandle, bool paramIsHandle, con
 }
 
 static std::optional<ArgumentConversion> EvaluateSameTypeMatch(const MatchContext& ctx, bool isHandleToRef,
-                                                               bool isValueToHandle)
+                                                               bool isValueToHandle, bool copiesArgument)
 {
     if (!IsSameType(ctx.cleanArg, ctx.cleanParam))
     {
@@ -274,7 +274,8 @@ static std::optional<ArgumentConversion> EvaluateSameTypeMatch(const MatchContex
     }
     if (isHandleToRef || isValueToHandle)
     {
-        if (ctx.paramIsConst || !ctx.argIsConst)
+        // An `&in` parameter receives a copy, so what the source handle points at being const does not matter.
+        if (ctx.paramIsConst || !ctx.argIsConst || (isHandleToRef && copiesArgument))
         {
             return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
                                       static_cast<int>(OverloadMatchPenalty::Exact)};
@@ -313,7 +314,8 @@ static std::optional<ArgumentConversion> EvaluateSameTypeOrSubtypeMatch(const Pa
     const bool isHandleToRef = IsHandleToReferenceBinding(ctx.argIsHandle, ctx.paramIsHandle, param);
     const bool isValueToHandle = !ctx.argIsHandle && ctx.paramIsHandle;
 
-    if (auto sameConv = EvaluateSameTypeMatch(ctx, isHandleToRef, isValueToHandle))
+    if (auto sameConv =
+            EvaluateSameTypeMatch(ctx, isHandleToRef, isValueToHandle, param.modifier == ParameterModifier::In))
     {
         return sameConv;
     }

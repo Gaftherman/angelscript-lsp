@@ -14,6 +14,8 @@ void NegotiateClientCapabilities(LspSessionCoordinator& sessionCoordinator, cons
     utils::PositionEncoding positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
     if (capabilities.general.has_value() && capabilities.general->positionEncodings.has_value())
     {
+        bool offersUtf16 = false;
+        bool offersUtf32 = false;
         for (const auto& offered : capabilities.general->positionEncodings.value())
         {
             if (offered == lsp::PositionEncodingKind::UTF8)
@@ -21,6 +23,12 @@ void NegotiateClientCapabilities(LspSessionCoordinator& sessionCoordinator, cons
                 positionEncoding = angel_lsp::utils::PositionEncoding::Utf8;
                 break;
             }
+            offersUtf16 |= offered == lsp::PositionEncodingKind::UTF16;
+            offersUtf32 |= offered == lsp::PositionEncodingKind::UTF32;
+        }
+        if (positionEncoding != utils::PositionEncoding::Utf8 && !offersUtf16 && offersUtf32)
+        {
+            positionEncoding = utils::PositionEncoding::Utf32;
         }
     }
     sessionCoordinator.SetPositionEncoding(positionEncoding);
@@ -254,8 +262,18 @@ lsp::ServerCapabilities BuildServerCapabilities(const angel_lsp::config::ServerC
                                                 utils::PositionEncoding enc, bool usePullDiagnostics)
 {
     lsp::ServerCapabilities caps;
-    caps.positionEncoding = (enc == angel_lsp::utils::PositionEncoding::Utf8) ? lsp::PositionEncodingKind::UTF8
-                                                                              : lsp::PositionEncodingKind::UTF16;
+    switch (enc)
+    {
+    case utils::PositionEncoding::Utf8:
+        caps.positionEncoding = lsp::PositionEncodingKind::UTF8;
+        break;
+    case utils::PositionEncoding::Utf16:
+        caps.positionEncoding = lsp::PositionEncodingKind::UTF16;
+        break;
+    case utils::PositionEncoding::Utf32:
+        caps.positionEncoding = lsp::PositionEncodingKind::UTF32;
+        break;
+    }
 
     lsp::TextDocumentSyncOptions sync;
     sync.openClose = true;

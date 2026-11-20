@@ -8,6 +8,7 @@
 #include "parser/Primitives.h"
 
 #include <algorithm>
+#include <cctype>
 #include <span>
 #include <string>
 #include <string_view>
@@ -36,6 +37,35 @@ static void CheckPrimitiveDirectInit(SourceRange argumentListRange, std::span<co
             vctx.ctx.EmitAtRange(argumentListRange, "as-err-no-implicit-conversion", argTypes[0], vctx.baseName);
         }
     }
+}
+
+/**
+ * @brief Publishes the constructor a direct initialization selected, keyed on the declarator's own identifier.
+ *
+ * Declarators that share a written type (`A x(1), y(2);`) or put the name on another line each get their own
+ * binding, because the identifier, not the type, is unique to the declarator.
+ * @param[in] constructor Winning constructor.
+ * @param[in] init Direct initialization site fact; its declarator starts with the variable name.
+ * @param[in] source Source text of the revision.
+ * @param[in,out] ctx Diagnostic context owning the revision's call bindings.
+ */
+static void PublishConstructorUse(const Symbol& constructor, const DirectInitSiteFact& init, std::string_view source,
+                                  DiagnosticContext& ctx)
+{
+    const std::string_view declarator = CallSiteFacts::SliceText(source, init.bytes);
+    size_t length = 0;
+    while (length < declarator.size() &&
+           (std::isalnum(static_cast<unsigned char>(declarator[length])) != 0 || declarator[length] == '_'))
+    {
+        ++length;
+    }
+    if (length == 0)
+    {
+        return;
+    }
+    const SourceRange use{init.range.startLine, init.range.startCharacter, init.range.startLine,
+                          init.range.startCharacter + static_cast<uint32_t>(length)};
+    PublishCallBinding(ctx, init.bytes.startByte, use, constructor);
 }
 
 void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const AstCheckContext& request,
@@ -100,7 +130,10 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
 
     const std::vector<Symbol> candidates =
         SpecializeConstructors(rawConstructors, vctx.tmplInfo, vctx.baseName, ctx.request.symbolTable);
-    CheckConstructorOverload(init.argumentListRange, candidates, argTypes, vctx);
+    if (const Symbol* winner = CheckConstructorOverload(init.argumentListRange, candidates, argTypes, vctx))
+    {
+        PublishConstructorUse(*winner, init, request.sourceCode, ctx);
+    }
 }
 
 } // namespace angel_lsp::analysis

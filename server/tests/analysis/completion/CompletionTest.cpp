@@ -9,11 +9,13 @@
 #include "features/completion/CompletionHandler.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
+#include "lsp/state/PositionCodec.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
 #include <doctest/doctest.h>
 #include <string>
+#include <string_view>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
@@ -144,6 +146,66 @@ TEST_CASE("CompletionHandler - Member Access Completion")
     // Unrelated keywords / globals shouldn't pollute member access
     CHECK(!HasItem(items, "while"));
     CHECK(!HasItem(items, "for"));
+}
+
+TEST_CASE("CompletionHandler - Same-line receivers use their own declaring classes")
+{
+    const auto firstType = test::GenerateRandomSymbolName("First");
+    const auto secondType = test::GenerateRandomSymbolName("Second");
+    const auto firstMember = test::GenerateRandomSymbolName("firstMember");
+    const auto secondMember = test::GenerateRandomSymbolName("secondMember");
+    const auto method = test::GenerateRandomSymbolName("Run");
+    const auto declaration = [&](std::string_view type, std::string_view member)
+    {
+        std::string result = "class ";
+        result.append(type).append(" { int ").append(member).append("; void ").append(method);
+        result.append("() { this.").append(member).append(" = 1; } }");
+        return result;
+    };
+    std::string source = declaration(firstType, firstMember) + "  " + declaration(secondType, secondMember);
+    SUBCASE("ASCII")
+    {
+    }
+    SUBCASE("UTF-16 cursor after multibyte text")
+    {
+        source.insert(0, "/* \xc3\xa9 \xf0\x9f\x98\x80 */ ");
+    }
+    SUBCASE("Same-spelled classes in different namespaces")
+    {
+        const auto left = test::GenerateRandomSymbolName("Left");
+        const auto right = test::GenerateRandomSymbolName("Right");
+        source = "namespace " + left + " { " + declaration(firstType, firstMember) + " }  namespace " + right + " { " +
+                 declaration(firstType, secondMember) + " }";
+    }
+    TestEnvironment env(source);
+    const auto completeMember = [&](std::string_view member)
+    {
+        constexpr std::string_view prefix = "this.";
+        const size_t receiver = source.find(std::string(prefix).append(member));
+        REQUIRE(receiver != std::string::npos);
+        const auto cursor = static_cast<uint32_t>(receiver + prefix.size());
+        lsp::Position position{0, utils::ByteToLspCharColumn(source, cursor, utils::PositionEncoding::Utf16)};
+        position = codec::Decode(source, utils::PositionEncoding::Utf16, position);
+        return env.CompleteAt(position.line, position.character);
+    };
+
+    const auto first = completeMember(firstMember);
+    CHECK(HasItem(first, firstMember));
+    CHECK_FALSE(HasItem(first, secondMember));
+    const auto second = completeMember(secondMember);
+    CHECK(HasItem(second, secondMember));
+    CHECK_FALSE(HasItem(second, firstMember));
+}
+
+TEST_CASE("CompletionHandler - Recovered class still owns a receiver at EOF")
+{
+    const auto type = test::GenerateRandomSymbolName("Open");
+    const auto member = test::GenerateRandomSymbolName("member");
+    const auto method = test::GenerateRandomSymbolName("Run");
+    const std::string source = "class " + type + " { int " + member + "; void " + method + "() { this.";
+    TestEnvironment env(source);
+
+    CHECK(HasItem(env.CompleteAt(0, static_cast<uint32_t>(source.size())), member));
 }
 
 TEST_CASE("CompletionHandler - Scope Resolution Completion")

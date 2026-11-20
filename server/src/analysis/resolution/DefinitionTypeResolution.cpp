@@ -57,7 +57,7 @@ std::string ResolveTargetTypeName(std::string_view nodeText, const DefinitionQue
                 }
             }
         }
-        char accBuf[128];
+        utils::AccessorNameBuffer accBuf;
         for (const std::string_view prefix : {utils::k_getterPrefix, utils::k_setterPrefix})
         {
             const std::string_view accName = utils::ComposeAccessorName(prefix, nodeText, accBuf);

@@ -97,7 +97,7 @@ static bool IsAssignableMember(const LValueCandidateFact& candidate, const LValu
                 for (const auto& ancestor :
                      GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable, ctx.request.exprCache))
                 {
-                    char setterBuf[512];
+                    utils::AccessorNameBuffer setterBuf;
                     const std::string_view setterName =
                         utils::ComposeAccessorName(utils::k_setterPrefix, memberName, setterBuf);
                     auto setters = setterName.empty()

@@ -36,7 +36,7 @@ std::vector<Symbol> FindPropertyAccessors(std::string_view typeName, std::string
 
     auto hierarchy = GetInheritedTypeHierarchy(typeName, symbolTable);
     ExpandMixinHostHierarchies(typeName, symbolTable, hierarchy);
-    char accBuf[128];
+    utils::AccessorNameBuffer accBuf;
     for (const std::string_view prefix : {utils::k_getterPrefix, utils::k_setterPrefix})
     {
         const std::string_view accessorName = utils::ComposeAccessorName(prefix, propertyName, accBuf);
@@ -80,16 +80,10 @@ std::vector<Symbol> FindGlobalPropertyAccessors(std::string_view propertyName, c
         return accessors;
     }
 
-    char buf[128];
-    for (const std::string_view prefix : {std::string_view("get_"), std::string_view("set_")})
+    utils::AccessorNameBuffer buf;
+    for (const std::string_view prefix : {utils::k_getterPrefix, utils::k_setterPrefix})
     {
-        if (prefix.size() + propertyName.size() >= sizeof(buf))
-        {
-            continue;
-        }
-        memcpy(buf, prefix.data(), prefix.size());
-        memcpy(buf + prefix.size(), propertyName.data(), propertyName.size());
-        const std::string_view key(buf, prefix.size() + propertyName.size());
+        const std::string_view key = buf.Compose(prefix, propertyName);
 
         const auto syms = symbolTable.FindSymbolsPtr(key);
         if (!syms)

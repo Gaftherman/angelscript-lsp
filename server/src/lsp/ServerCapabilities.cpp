@@ -37,8 +37,6 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
         m_config.features.enablePullDiagnostics && m_sessionCoordinator->GetClientPullsDiagnostics();
     m_sessionCoordinator->SetClientPullsDiagnostics(usePullDiagnostics);
 
-    const bool useUtf8 = (m_sessionCoordinator->GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8);
-    LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
     m_symbolTable.SetConfiguredTypes(m_config.types.arrayTypeName, m_config.types.stringTypeName);
 
     BuildDiagnosticSeverityOverrides(m_diagnosticsPipeline.get(), m_config, m_logger.get());
@@ -50,6 +48,7 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
     result.serverInfo = info;
     result.capabilities =
         BuildServerCapabilities(m_config, m_sessionCoordinator->GetPositionEncoding(), usePullDiagnostics);
+    LogInfo(fmt::format("Negotiated position encoding: {}", result.capabilities.positionEncoding->value()));
 
     return result;
 }

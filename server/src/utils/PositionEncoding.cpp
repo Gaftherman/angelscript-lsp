@@ -32,10 +32,9 @@ LineIndex LineIndex::Build(std::string_view text)
     index.starts.reserve(text.size() / 32 + 1);
     index.starts.push_back(0);
 
-    for (size_t offset = 0; offset < text.size(); ++offset)
+    for (size_t newline = text.find('\n'); newline != std::string_view::npos; newline = text.find('\n', newline + 1))
     {
-        if (text[offset] == '\n')
-            index.starts.push_back(offset + 1);
+        index.starts.push_back(newline + 1);
     }
 
     return index;
@@ -67,26 +66,33 @@ std::string_view LineIndex::Line(std::string_view text, uint32_t line) const noe
     return text.substr(start, end - start);
 }
 
-size_t LineStartOffset(std::string_view text, uint32_t line)
+static size_t FindLineStart(std::string_view text, uint32_t line)
 {
     size_t offset = 0;
-    uint32_t currentLine = 0;
-
-    while (offset < text.size() && currentLine < line)
+    for (uint32_t current = 0; current < line; ++current)
     {
-        if (text[offset] == '\n')
-            currentLine++;
-        offset++;
+        const size_t newline = text.find('\n', offset);
+        if (newline == std::string_view::npos)
+        {
+            return newline;
+        }
+        offset = newline + 1;
     }
-
     return offset;
 }
 
-std::string_view GetLine(std::string_view text, uint32_t line)
+size_t LineStartOffset(std::string_view text, uint32_t line)
 {
-    size_t start = LineStartOffset(text, line);
-    if (start >= text.size())
-        return {};
+    return std::min(FindLineStart(text, line), text.size());
+}
+
+std::optional<std::string_view> FindLine(std::string_view text, uint32_t line)
+{
+    const size_t start = FindLineStart(text, line);
+    if (start == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
 
     size_t end = text.find('\n', start);
     if (end == std::string_view::npos)
@@ -96,6 +102,11 @@ std::string_view GetLine(std::string_view text, uint32_t line)
         end--;
 
     return text.substr(start, end - start);
+}
+
+std::string_view GetLine(std::string_view text, uint32_t line)
+{
+    return FindLine(text, line).value_or(std::string_view{});
 }
 
 uint32_t LspCharToByteColumn(std::string_view line, uint32_t lspChar, PositionEncoding enc)
@@ -115,7 +126,7 @@ uint32_t LspCharToByteColumn(std::string_view line, uint32_t lspChar, PositionEn
             break; // Truncated sequence at end of line - stop rather than read past it.
 
         byteIndex += step.bytes;
-        units += step.units;
+        units += enc == PositionEncoding::Utf32 ? 1 : step.units;
     }
 
     return byteIndex;
@@ -139,7 +150,7 @@ uint32_t ByteToLspCharColumn(std::string_view line, uint32_t byteColumn, Positio
             break;
 
         byteIndex += step.bytes;
-        units += step.units;
+        units += enc == PositionEncoding::Utf32 ? 1 : step.units;
     }
 
     return units;

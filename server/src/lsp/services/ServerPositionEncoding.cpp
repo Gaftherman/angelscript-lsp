@@ -1,13 +1,19 @@
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
 #include "utils/PositionEncoding.h"
-#include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
+#include <ankerl/unordered_dense.h>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
+#include <lsp/strmap.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -15,46 +21,103 @@
 namespace angel_lsp
 {
 /**
- * @brief Encodes a batch of ranges against the documents they belong to, indexing each document once.
- * @details A workspace result can hold thousands of ranges across a few documents, and utils::GetLine() rescans
- *          its document from byte 0 for each one. A document's LineIndex costs one pass over the whole text, so
- *          it is only built once a document has more than k_indexAfter ranges; small results keep the cheap path.
+ * @brief Creates an encoder for a batch of ranges belonging to multiple documents.
  * @param[in] enc Negotiated position encoding.
  * @param[in] findText Returns the text of the document stored under a document key, or null when unknown.
- * @param[in,out] targets Document key and the range to rewrite in place.
+ * @param[in] activeText Request snapshot that may also be addressed through a label URI alias.
+ * @param[in] activeIndex Line index shared with the request document.
+ * @return Callable that encodes a range in place and returns false when its source is unavailable.
  */
-static void EncodeRangesByDocument(utils::PositionEncoding enc,
-                                   const std::function<std::shared_ptr<const std::string>(std::string_view)>& findText,
-                                   const std::vector<std::pair<std::string, lsp::Range*>>& targets)
+template <typename Key = std::string, typename FindText>
+static auto MakeDocumentRangeEncoder(utils::PositionEncoding enc, FindText findText,
+                                     const std::string* activeText = nullptr,
+                                     const utils::LineIndex* activeIndex = nullptr)
 {
-    constexpr size_t k_indexAfter = 4;
-    ankerl::unordered_dense::map<std::string, std::pair<std::shared_ptr<const std::string>, utils::LineIndex>,
-                                 TransparentStringHash, std::equal_to<>>
-        documents;
-    ankerl::unordered_dense::map<std::string, size_t, TransparentStringHash, std::equal_to<>> uses;
-    for (const auto& [key, range] : targets)
+    using Source = std::pair<std::shared_ptr<const std::string>, codec::DocumentPositionEncoder>;
+    using Documents = ankerl::unordered_dense::map<Key, Source, lsp::TransparentStrHash, std::equal_to<>>;
+    return [enc, findText = std::move(findText), activeText, activeIndex,
+            documents = std::optional<Documents>{}](const auto& key, lsp::Range& range) mutable
     {
-        auto it = documents.find(key);
-        if (it == documents.end())
+        if (!documents)
         {
-            it = documents.emplace(key, std::pair{findText(key), utils::LineIndex{}}).first;
+            documents.emplace();
         }
-        const auto& text = it->second.first;
+        auto it = documents->find(key);
+        if (it == documents->end())
+        {
+            auto text = findText(key);
+            codec::DocumentPositionEncoder encoder(text ? std::string_view(*text) : std::string_view{}, enc);
+            it = documents->try_emplace(Key(key), std::move(text), std::move(encoder)).first;
+        }
+        auto& [text, encoder] = it->second;
         if (!text)
         {
-            continue;
+            return false;
         }
-        if (++uses[key] <= k_indexAfter)
+        if (enc != utils::PositionEncoding::Utf8)
         {
-            codec::Encode(*text, enc, *range);
-            continue;
+            if (activeIndex && text.get() == activeText)
+            {
+                codec::Encode(*activeIndex, *text, enc, range);
+            }
+            else
+            {
+                encoder.Prepare(1);
+                encoder.Encode(range);
+            }
         }
-        if (it->second.second.LineCount() == 0)
+        return true;
+    };
+}
+
+template <typename Item, typename Encode, typename LocationOf>
+static void EncodeLocatedItems(std::vector<Item>& items, Encode encode, LocationOf locationOf)
+{
+    auto output = items.begin();
+    for (auto item = items.begin(); item != items.end(); ++item)
+    {
+        auto& location = locationOf(*item);
+        if (encode(Server::DocumentKey(location.uri.toString()), location.range))
         {
-            it->second.second = utils::LineIndex::Build(*text);
+            if (output != item)
+            {
+                *output = std::move(*item);
+            }
+            ++output;
         }
-        codec::Encode(it->second.second, *text, enc, *range);
     }
+    items.erase(output, items.end());
+}
+
+std::shared_ptr<const std::string> Server::FindRangeSource(std::string_view uri, bool readDisk) const
+{
+    if (auto text = FindDocumentText(uri))
+    {
+        return text;
+    }
+    if (m_workspaceStore)
+    {
+        if (auto document = m_workspaceStore->GetPreindexedDocument(DocumentKey(uri)))
+        {
+            return std::shared_ptr<const std::string>(document, &document->text);
+        }
+    }
+    if (!readDisk || !uri.starts_with("file://"))
+    {
+        return nullptr;
+    }
+    const std::filesystem::path path(utils::UriToPath(uri));
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(path, error))
+    {
+        return nullptr;
+    }
+    std::ifstream file(path, std::ios::binary);
+    if (!file)
+    {
+        return nullptr;
+    }
+    return std::make_shared<const std::string>(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
 static void EncodeSymbolsRecursive(const utils::LineIndex& lineIndex, std::string_view text,
@@ -123,20 +186,21 @@ void Server::EncodeIn(std::string_view text, std::vector<lsp::FoldingRange>& ran
     }
 
     const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
+    const auto encoding = GetPositionEncoding();
     for (auto& range : ranges)
     {
         if (range.startCharacter.has_value())
         {
-            const std::string_view line = lineIndex.Line(text, range.startLine);
-            range.startCharacter =
-                angel_lsp::utils::ByteToLspCharColumn(line, range.startCharacter.value(), GetPositionEncoding());
+            lsp::Position start{range.startLine, *range.startCharacter};
+            codec::Encode(lineIndex, text, encoding, start);
+            range.startCharacter = start.character;
         }
 
         if (range.endCharacter.has_value())
         {
-            const std::string_view line = lineIndex.Line(text, range.endLine);
-            range.endCharacter =
-                angel_lsp::utils::ByteToLspCharColumn(line, range.endCharacter.value(), GetPositionEncoding());
+            lsp::Position end{range.endLine, *range.endCharacter};
+            codec::Encode(lineIndex, text, encoding, end);
+            range.endCharacter = end.character;
         }
     }
 }
@@ -155,23 +219,64 @@ void Server::EncodeIn(std::string_view text, std::vector<lsp::DocumentLink>& lin
     }
 }
 
-void Server::EncodeIn(std::string_view text, std::vector<lsp::InlayHint>& hints) const
+void Server::EncodeIn(const OpenDocument& doc, std::vector<lsp::InlayHint>& hints) const
 {
-    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || hints.empty())
+    const auto encoding = GetPositionEncoding();
+    if (encoding == utils::PositionEncoding::Utf8 || hints.empty())
     {
         return;
     }
 
-    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
+    const std::string_view text = *doc.text;
+    const auto index = utils::LineIndex::Build(text);
+    std::optional<lsp::Uri> activeUri;
+    auto encodeDestination = MakeDocumentRangeEncoder<lsp::Uri>(
+        encoding,
+        [this, &doc](const lsp::Uri& uri)
+        {
+            const auto key = DocumentKey(uri.toString());
+            if (key == doc.uri)
+            {
+                return doc.predefinedHandle ? doc.predefinedHandle
+                                            : std::shared_ptr<const std::string>(doc.docHandle, doc.text);
+            }
+            return FindRangeSource(key);
+        },
+        doc.text, &index);
     for (auto& hint : hints)
     {
-        codec::Encode(lineIndex, text, GetPositionEncoding(), hint.position);
+        codec::Encode(index, text, encoding, hint.position);
 
-        if (hint.textEdits.has_value())
+        if (hint.textEdits)
         {
-            for (auto& edit : hint.textEdits.value())
+            for (auto& edit : *hint.textEdits)
             {
-                codec::Encode(lineIndex, text, GetPositionEncoding(), edit.range);
+                codec::Encode(index, text, encoding, edit.range);
+            }
+        }
+        auto* parts = std::get_if<std::vector<lsp::InlayHintLabelPart>>(&hint.label);
+        if (!parts)
+        {
+            continue;
+        }
+        for (auto& part : *parts)
+        {
+            auto& location = part.location;
+            if (!location)
+            {
+                continue;
+            }
+            if (!activeUri)
+            {
+                activeUri.emplace(lsp::Uri::parse(doc.uri));
+            }
+            if (location->uri == *activeUri)
+            {
+                codec::Encode(index, text, encoding, location->range);
+            }
+            else if (!encodeDestination(location->uri, location->range))
+            {
+                location.reset();
             }
         }
     }
@@ -226,14 +331,10 @@ void Server::EncodeAcrossDocuments(std::vector<lsp::Location>& locations) const
         return;
     }
 
-    std::vector<std::pair<std::string, lsp::Range*>> targets;
-    targets.reserve(locations.size());
-    for (auto& location : locations)
-    {
-        targets.emplace_back(DocumentKey(location.uri.toString()), &location.range);
-    }
-    EncodeRangesByDocument(
-        GetPositionEncoding(), [this](std::string_view key) { return FindDocumentText(key); }, targets);
+    auto encode =
+        MakeDocumentRangeEncoder(GetPositionEncoding(), [this](std::string_view uri) { return FindRangeSource(uri); });
+    EncodeLocatedItems(locations, std::move(encode),
+                       [](lsp::Location& location) -> lsp::Location& { return location; });
 }
 
 void Server::EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols) const
@@ -243,96 +344,24 @@ void Server::EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols)
         return;
     }
 
-    std::vector<std::pair<std::string, lsp::Range*>> targets;
-    targets.reserve(symbols.size());
-    for (auto& symbol : symbols)
-    {
-        targets.emplace_back(DocumentKey(symbol.location.uri.toString()), &symbol.location.range);
-    }
-    EncodeRangesByDocument(
-        GetPositionEncoding(), [this](std::string_view key) { return FindDocumentText(key); }, targets);
-}
-
-void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const
-{
-    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
-    {
-        return;
-    }
-
-    if (edit.changes.has_value())
-    {
-        for (auto& [uri, edits] : edit.changes.value())
-        {
-            if (auto text = FindDocumentText(uri.toString()))
-            {
-                EncodeIn(*text, edits);
-            }
-        }
-    }
-
-    if (edit.documentChanges.has_value())
-    {
-        for (auto& docChange : edit.documentChanges.value())
-        {
-            if (std::holds_alternative<lsp::TextDocumentEdit>(docChange))
-            {
-                auto& docEdit = std::get<lsp::TextDocumentEdit>(docChange);
-                if (auto text = FindDocumentText(DocumentKey(docEdit.textDocument.uri.toString())))
-                {
-                    for (auto& e : docEdit.edits)
-                    {
-                        if (std::holds_alternative<lsp::TextEdit>(e))
-                        {
-                            auto& te = std::get<lsp::TextEdit>(e);
-                            codec::Encode(*text, GetPositionEncoding(), te.range);
-                        }
-                        else if (std::holds_alternative<lsp::AnnotatedTextEdit>(e))
-                        {
-                            auto& ate = std::get<lsp::AnnotatedTextEdit>(e);
-                            codec::Encode(*text, GetPositionEncoding(), ate.range);
-                        }
-                        else if (std::holds_alternative<lsp::SnippetTextEdit>(e))
-                        {
-                            auto& ste = std::get<lsp::SnippetTextEdit>(e);
-                            codec::Encode(*text, GetPositionEncoding(), ste.range);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    auto encode =
+        MakeDocumentRangeEncoder(GetPositionEncoding(), [this](std::string_view uri) { return FindRangeSource(uri); });
+    EncodeLocatedItems(symbols, std::move(encode),
+                       [](lsp::SymbolInformation& symbol) -> lsp::Location& { return symbol.location; });
 }
 
 void Server::EncodeRangesIn(std::string_view uri, std::vector<lsp::Range>& ranges) const
 {
-    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
+    auto encode = MakeDocumentRangeEncoder(GetPositionEncoding(),
+                                           [this](std::string_view key) { return FindRangeSource(key, true); });
+    for (auto& range : ranges)
     {
-        return;
-    }
-
-    if (auto text = FindDocumentText(uri))
-    {
-        for (auto& range : ranges)
+        if (!encode(uri, range))
         {
-            codec::Encode(*text, GetPositionEncoding(), range);
+            ranges.clear();
+            return;
         }
     }
 }
 
-void Server::EncodeAcrossDocuments(std::vector<lsp::CodeAction>& actions) const
-{
-    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
-    {
-        return;
-    }
-
-    for (auto& action : actions)
-    {
-        if (action.edit.has_value())
-        {
-            EncodeAcrossDocuments(action.edit.value());
-        }
-    }
-}
 } // namespace angel_lsp

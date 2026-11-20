@@ -11,6 +11,7 @@
 #include <doctest/doctest.h>
 #include <random>
 #include <string>
+#include <tuple>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
@@ -106,6 +107,54 @@ struct TestEnvironment
 
 TEST_SUITE("features/References")
 {
+    TEST_CASE("ReferencesHandler - Class declarations select only their own type mentions")
+    {
+        const std::string name = test::GenerateRandomSymbolName("Homonym");
+        const std::string declaration = "class " + name + " { " + name + "() {} }\n";
+        TestEnvironment env(declaration + "namespace Other {\n" + declaration + "void Use() {\n    " + name +
+                            "@ local;\n    ::" + name + "@ global;\n}\n}\n");
+        const auto typeLength = static_cast<uint32_t>(name.size());
+        for (const auto& [declarationLine, useLine, useColumn] : {std::tuple{0u, 5u, 6u}, std::tuple{2u, 4u, 4u}})
+        {
+            const auto refs = env.RefsAt(declarationLine, 6, false);
+            REQUIRE(refs.has_value());
+            REQUIRE(refs->size() == 1);
+            CHECK(refs->front().range.start.line == useLine);
+            CHECK(refs->front().range.start.character == useColumn);
+            CHECK(refs->front().range.end.line == useLine);
+            CHECK(refs->front().range.end.character == useColumn + typeLength);
+        }
+    }
+
+    TEST_CASE("ReferencesHandler - Default constructor returns bare declarator ranges across files")
+    {
+        MultiFileTestEnv env;
+        const std::string name = test::GenerateRandomSymbolName("Constructed");
+        const std::string declarationUri = "file:///declaration.as";
+        const std::string useUri = "file:///uses.as";
+        const std::string declaration = "class " + name + " {\n    " + name + "() {}\n    " + name + "(int n) {}\n}\n";
+        const std::string uses = "void Use(" + name + "@ input) {\n    " + name + " first, second;\n    " + name +
+                                 "@ uninitialized;\n}\nnamespace Other { class " + name + " {} void Use() { " + name +
+                                 " unrelated; } }\n";
+        env.AddFile(declarationUri, declaration);
+        env.AddFile(useUri, uses);
+
+        const auto refs = env.RefsAt(declarationUri, 1, 4, false);
+        REQUIRE(refs.has_value());
+        REQUIRE(refs->size() == 2);
+        for (const auto& [ref, variable] :
+             {std::pair{&refs->at(0), std::string("first")}, std::pair{&refs->at(1), std::string("second")}})
+        {
+            const auto position = FindPos(uses, variable);
+            CHECK(ref->uri.toString() == useUri);
+            CHECK(ref->range.start.line == position.line);
+            CHECK(ref->range.start.character == position.character);
+            CHECK(ref->range.end.line == position.line);
+            CHECK(ref->range.end.character == position.character + variable.size());
+        }
+        CHECK_FALSE(env.RefsAt(declarationUri, 2, 4, false).has_value());
+    }
+
     TEST_CASE("ReferencesHandler - Local Variable and Parameter References")
     {
         std::string code = "void Calculate(int baseValue) {\n"

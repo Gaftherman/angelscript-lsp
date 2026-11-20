@@ -11,6 +11,8 @@
 #include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
 
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -60,8 +62,43 @@ static std::vector<ParameterInformation> ExtractSetterParams(const std::vector<S
 }
 
 /**
- * @brief Collects the value parameter(s) of a property assignment target from `set_X` or fallback getter type.
- * @param[in] input Assignment site, property info, and fallback resolved left type.
+ * @brief Reads the value type a block-form property (`int p { get { } set { } }`) accepts.
+ *
+ * Such a property has no `set_p` method symbol, so its setter takes the type the property is declared with.
+ * @param[in] hierarchy Receiver class and its bases.
+ * @param[in] propName Property name.
+ * @param[in] table Symbol table.
+ * @return The setter's value parameter, or std::nullopt when no block-form property of that name exists.
+ */
+static std::optional<ParameterInformation>
+DeclaredPropertyValueParam(std::span<const std::string> hierarchy, std::string_view propName, const SymbolTable& table)
+{
+    for (const auto& cls : hierarchy)
+    {
+        const auto syms = table.FindMemberSymbolPtr(cls, propName);
+        if (!syms)
+        {
+            continue;
+        }
+        for (const auto& sym : *syms)
+        {
+            if (sym.type == SymbolType::Property && std::holds_alternative<VariableSignature>(sym.signature) &&
+                sym.GetVariable().isVirtualProperty)
+            {
+                const std::string& declared = sym.GetVariable().typeName;
+                ParameterInformation param("", declared);
+                param.isHandle = IsHandleTypeView(declared);
+                param.isConst = IsConstTypeView(declared);
+                return param;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Collects the value parameter(s) of a property assignment target from `set_X` or the declared property type.
+ * @param[in] input Assignment site, property info, and the resolved left type.
  * @param[in] ctx Diagnostic context.
  * @return Parameter specifications representing valid destination types for the property setter.
  */
@@ -82,20 +119,25 @@ static std::vector<ParameterInformation> CollectPropertySetterParams(const Assig
         const TemplateBinding binding = (HasTemplateArgumentsView(pInfo.receiverType))
                                             ? BindTemplateArguments(pInfo.receiverType, table)
                                             : TemplateBinding{};
-        char accBuf[128];
+        utils::AccessorNameBuffer accBuf;
         const std::string_view setterName = utils::ComposeAccessorName(utils::k_setterPrefix, pInfo.propName, accBuf);
-        if (!setterName.empty())
+        const auto hierarchy = GetInheritedTypeHierarchy(cleanObj, table);
+        for (const auto& cls : hierarchy)
         {
-            for (const auto& cls : GetInheritedTypeHierarchy(cleanObj, table))
+            if (const auto syms = table.FindMemberSymbolPtr(cls, setterName))
             {
-                if (const auto syms = table.FindMemberSymbolPtr(cls, setterName))
+                result = ExtractSetterParams(*syms, input.site.leftIsIndex, binding, table);
+                if (!result.empty())
                 {
-                    result = ExtractSetterParams(*syms, input.site.leftIsIndex, binding, table);
-                    if (!result.empty())
-                    {
-                        return result;
-                    }
+                    return result;
                 }
+            }
+        }
+        if (pInfo.hasSet && !input.site.leftIsIndex)
+        {
+            if (auto declared = DeclaredPropertyValueParam(hierarchy, pInfo.propName, table))
+            {
+                result.push_back(std::move(*declared));
             }
         }
     }
@@ -130,13 +172,6 @@ static std::vector<ParameterInformation> CollectPropertySetterParams(const Assig
         }
     }
 
-    if (result.empty() && !input.leftType.empty())
-    {
-        ParameterInformation fallback("", std::string(input.leftType));
-        fallback.isHandle = IsHandleTypeView(input.leftType);
-        fallback.isConst = IsConstTypeView(input.leftType);
-        result.push_back(std::move(fallback));
-    }
     return result;
 }
 

@@ -11,6 +11,7 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/SyntaxTree.h"
 #include "utils/LspLogger.h"
+#include "utils/PositionEncoding.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
 #include "utils/Timer.h"
@@ -43,27 +44,42 @@ struct BreakpointLocationsParams
 };
 
 /**
+ * @brief Identifies the exact semantic input state that produced a semantic tokens stream.
+ */
+struct SemanticTokensRevisionKey
+{
+    uint64_t generation = 0;     ///< Open document incarnation from the document store.
+    int version = -1;            ///< Editor version within the incarnation.
+    uint64_t tableVersion = 0;   ///< Published symbol revision, including dependency symbols.
+    uint64_t configRevision = 0; ///< Effective analysis configuration revision.
+    utils::PositionEncoding encoding = utils::PositionEncoding::Utf16; ///< Encoding of cached positions.
+    std::weak_ptr<const analysis::Scope> scopeIdentity;                ///< Ownership identity of the published scope.
+    std::weak_ptr<const TransparentStringSet> definedWordsIdentity; ///< Ownership identity of preprocessor definitions.
+
+    /**
+     * @brief Compares the inputs that determine semantic token output.
+     * @param[in] other Semantic revision to compare against.
+     * @return True when all revisions and ownership identities match.
+     */
+    bool operator==(const SemanticTokensRevisionKey& other) const noexcept
+    {
+        return generation == other.generation && version == other.version && tableVersion == other.tableVersion &&
+               configRevision == other.configRevision && encoding == other.encoding &&
+               !scopeIdentity.owner_before(other.scopeIdentity) && !other.scopeIdentity.owner_before(scopeIdentity) &&
+               !definedWordsIdentity.owner_before(other.definedWordsIdentity) &&
+               !other.definedWordsIdentity.owner_before(definedWordsIdentity);
+    }
+};
+
+/**
  * @brief Snapshot of computed semantic token data and revision tracking for delta computations.
  */
 struct SemanticTokensSnapshot
 {
-    std::string resultId;
-    std::vector<lsp::uint> data;
-    bool hasError = false;
-    int version = -1;
-    uint64_t tableVersion = 0;           ///< SymbolTable::Version() the tokens were classified against.
-    const void* scopeIdentity = nullptr; ///< Scope tree the tokens were classified with; compared, never read.
-};
-
-/**
- * @brief Thread-safe snapshot of cached semantic tokens and version metadata for document synchronization.
- */
-struct CachedTokensSnapshot
-{
-    bool canDiff{false};
-    bool prevHadError{false};
-    int cachedVersion{-1};
-    std::vector<lsp::uint> previous;
+    std::string resultId;                               ///< Published result ID, or empty for a non-cacheable response.
+    std::shared_ptr<const std::vector<lsp::uint>> data; ///< Encoded payload retained by full and delta readers.
+    bool hasError = false;                              ///< Whether the source has recovered syntax.
+    SemanticTokensRevisionKey key;                      ///< Inputs used to produce the encoded data.
 };
 
 /**
@@ -194,6 +210,8 @@ struct PublishDiagnosticsRequest
     uint64_t generation = 0;
     std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
     uint64_t closedRevision = 0;
+    /// Raw analyzed text for position encoding when it can differ from the open buffer.
+    std::optional<std::string> positionSource = {};
 };
 
 /**

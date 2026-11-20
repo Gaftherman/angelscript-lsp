@@ -209,11 +209,17 @@ void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, Dia
         });
 }
 
-static void StoreCallBindings(const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
+static void StoreOccurrenceContext(const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
 {
     if (!request.mutableScopeRoot)
     {
         return;
+    }
+    request.mutableScopeRoot->alwaysImplementsDefaultConstruct = request.AlwaysImplementsDefaultConstruct();
+    if (!ctx.callBindings && request.moduleContext)
+    {
+        // Empty snapshots still identify the module that owns lexical occurrences.
+        ctx.callBindings = std::make_shared<CallBindings>(request.callBindingRevision, request.moduleContext->name);
     }
     auto& enclosing = request.mutableScopeRoot->enclosingContext;
     if (!ctx.callBindings && (!enclosing || !enclosing->callBindings))
@@ -254,7 +260,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         breakdown.unusedMs = unusedMs;
         rules::CheckDirectivesAndModules(request, ctx);
         rules::CheckMetadataSupport(request, indexPtr, ctx);
-        StoreCallBindings(request, ctx);
+        StoreOccurrenceContext(request, ctx);
 
         if (m_logger && m_logger->IsEnabled(utils::LogLevel::Info))
         {

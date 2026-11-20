@@ -33,13 +33,14 @@ namespace angel_lsp::analysis
 {
     if (source.empty())
     {
-        return MixinFileCacheEntry{std::string{}, nullptr, parser::MakeTreePtr(), nullptr};
+        return MixinFileCacheEntry{nullptr, nullptr, parser::MakeTreePtr(), nullptr};
     }
     auto parser = std::make_unique<parser::AngelScriptParser>();
-    auto tree = parser::MakeTreePtr(parser->Parse(source));
+    auto retainedSource = std::make_shared<const std::string>(std::move(source));
+    auto tree = parser::MakeTreePtr(parser->Parse(*retainedSource));
     std::unique_ptr<NodeIndex> nodeIndex = BuildNodeIndexForTree(tree.get());
     return MixinFileCacheEntry{
-        std::move(source),
+        std::move(retainedSource),
         std::move(parser),
         std::move(tree),
         std::move(nodeIndex),

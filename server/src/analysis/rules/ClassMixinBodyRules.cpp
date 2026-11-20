@@ -34,6 +34,7 @@ static void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_v
 {
     DiagnosticRelatedInformation rel;
     rel.fileUri = mctx.mixinSym->fileUri;
+    rel.sourceSnapshot = mctx.sourceSnapshot;
     rel.range = {{span.startRow, span.startColumn}, {span.endRow, span.endColumn}};
     rel.message = i18n::FormatMessage(ctx.request.i18n, "note-in-mixin-member", "In mixin '{}': Member '{}'",
                                       std::string_view(mctx.mixinSym->name), memberName);

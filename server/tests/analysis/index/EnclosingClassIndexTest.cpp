@@ -1,5 +1,8 @@
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
+#include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <cstdint>
 #include <doctest/doctest.h>
@@ -66,6 +69,49 @@ static std::string ReferenceEnclosingClass(const SymbolTable& table, std::string
 
 TEST_SUITE("EnclosingClassIndex")
 {
+    TEST_CASE("Byte ownership keeps adjacent declaration endpoints half-open")
+    {
+        const auto first = angel_lsp::test::GenerateRandomSymbolName("First");
+        const auto second = angel_lsp::test::GenerateRandomSymbolName("Second");
+        const std::string firstDeclaration = "class " + first + " {}";
+        const std::string source = firstDeclaration + "  class " + second + " {}";
+        angel_lsp::parser::AngelScriptParser parser;
+        const auto tree = angel_lsp::parser::MakeTreePtr(parser.Parse(source));
+        REQUIRE(tree);
+        const NodeIndex index(ts_tree_root_node(tree.get()), source);
+        const auto firstEnd = static_cast<uint32_t>(firstDeclaration.size());
+        const auto secondStart = firstEnd + 2;
+
+        const auto firstOwner = index.FindEnclosingType(firstEnd - 1, source);
+        REQUIRE(firstOwner);
+        CHECK(firstOwner->qualifiedName == first);
+        CHECK_FALSE(index.FindEnclosingType(firstEnd, source));
+        const auto secondOwner = index.FindEnclosingType(secondStart, source);
+        REQUIRE(secondOwner);
+        CHECK(secondOwner->qualifiedName == second);
+        CHECK(secondOwner->nameBytes.startByte == source.find(second, secondStart));
+        CHECK(secondOwner->nameBytes.endByte == secondOwner->nameBytes.startByte + second.size());
+        CHECK_FALSE(index.FindEnclosingType(static_cast<uint32_t>(source.size()), source));
+    }
+
+    TEST_CASE("A synthetic class close keeps its owner at physical EOF")
+    {
+        const auto type = angel_lsp::test::GenerateRandomSymbolName("Open");
+        const auto member = angel_lsp::test::GenerateRandomSymbolName("member");
+        const std::string source = "class " + type + " { int " + member + ";  \n  ";
+        angel_lsp::parser::AngelScriptParser parser;
+        const auto tree = angel_lsp::parser::MakeTreePtr(parser.Parse(source));
+        REQUIRE(tree);
+        const NodeIndex index(ts_tree_root_node(tree.get()), source);
+        const auto eof = static_cast<uint32_t>(source.size());
+
+        REQUIRE_FALSE(index.ImplicitCloseBraces().empty());
+        const auto owner = index.FindEnclosingType(eof, source);
+        REQUIRE(owner);
+        CHECK(owner->qualifiedName == type);
+        CHECK_FALSE(index.FindEnclosingType(eof + 1, source));
+    }
+
     TEST_CASE("Span index agrees with the linear scan on generated nested classes")
     {
         constexpr uint32_t kSeed = 20261118;

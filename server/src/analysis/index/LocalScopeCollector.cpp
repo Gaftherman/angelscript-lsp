@@ -164,6 +164,49 @@ void LocalScopeCollector::CollectRawCaptures(TSNode rootNode, std::vector<RawCap
     }
 }
 
+/**
+ * @brief Records each bare declarator against the declaration's type identifier.
+ * @param[in] index Syntax index containing all variable declarations in this revision.
+ * @param[in] grammar Cached grammar symbols for declaration fields and type suffixes.
+ * @param[out] receivers Document facts that receive the declarator ranges.
+ */
+static void CollectDefaultConstructionTypes(const NodeIndex& index, const parser::GrammarSymbols& grammar,
+                                            IndexedReferenceReceivers& receivers)
+{
+    for (const TSNode declaration : index.Nodes(grammar.symVariableDeclaration))
+    {
+        const TSNode type = parser::GetChildByField(declaration, grammar.fieldVarType);
+        const TSNode datatype = parser::FindChildWithSymbol(type, grammar.symDatatype);
+        const TSNode name = parser::FindChildWithSymbol(datatype, grammar.symIdentifier);
+        if (ts_node_is_null(name) || !ts_node_is_null(parser::FindChildWithSymbol(type, grammar.tokAt)) ||
+            !ts_node_is_null(parser::FindChildWithSymbol(type, grammar.tokOpenBracket)) ||
+            !ts_node_is_null(parser::FindChildWithSymbol(type, grammar.symNestedTypeName)))
+        {
+            continue;
+        }
+        parser::ForEachNamedChildNode(
+            declaration,
+            [&](TSNode child)
+            {
+                if (ts_node_symbol(child) != grammar.symVariableDeclarator || ts_node_has_error(child) ||
+                    !ts_node_is_null(parser::GetChildByField(child, grammar.fieldArguments)) ||
+                    !ts_node_is_null(parser::GetChildByField(child, grammar.fieldValue)))
+                {
+                    return;
+                }
+                const TSNode variable = parser::GetChildByField(child, grammar.fieldName);
+                if (!ts_node_is_null(variable) && !ts_node_is_missing(variable))
+                {
+                    const TSPoint start = ts_node_start_point(variable);
+                    const TSPoint end = ts_node_end_point(variable);
+                    receivers.defaultConstructions.push_back(
+                        {ts_node_start_byte(name), {start.row, start.column, end.row, end.column}});
+                }
+            });
+    }
+    std::ranges::sort(receivers.defaultConstructions, {}, &IndexedDefaultConstruction::typeByte);
+}
+
 static LocalScopeCollector::DocumentContext BuildDocumentContext(const NodeIndex& index,
                                                                  const parser::GrammarSymbols& grammar)
 {
@@ -192,6 +235,7 @@ static LocalScopeCollector::DocumentContext BuildDocumentContext(const NodeIndex
                                      spans.push_back({start, end});
                                  }
                              });
+    CollectDefaultConstructionTypes(index, grammar, *context.receivers);
     return context;
 }
 

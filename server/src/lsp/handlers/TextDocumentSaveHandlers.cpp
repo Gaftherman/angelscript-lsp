@@ -6,6 +6,9 @@
 #include "utils/TransparentHash.h"
 #include "utils/Utils.h"
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <spdlog/fmt/fmt.h>
 #include <string>
 #include <utility>
@@ -122,13 +125,22 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
     LogInfo(fmt::format("[File Save] Processing save and re-analysis for: {}", uriStr));
     GetDocumentStore().SetClientUri(uriStr, params.textDocument.uri.toString());
-    std::string text = params.text.has_value() ? params.text.value() : "";
-
-    if (text.empty())
+    std::string text;
+    if (params.text)
     {
-        if (auto docText = GetDocumentStore().GetText(uriStr))
+        text = std::move(*params.text);
+    }
+    else if (const auto docText = GetDocumentStore().GetTextShared(uriStr))
+    {
+        text = *docText;
+    }
+    else
+    {
+        const std::string savedPath = CanonicalPathFromUri(uriStr);
+        if (!savedPath.empty())
         {
-            text = std::move(*docText);
+            std::ifstream savedFile(std::filesystem::path(savedPath), std::ios::binary);
+            text.assign(std::istreambuf_iterator<char>(savedFile), std::istreambuf_iterator<char>());
         }
     }
 
@@ -174,7 +186,15 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
 
     AppendIncludeDiagnostics(uriStr, prepared.text, prepared.preprocessing->excluded, diagnostics);
 
-    PublishDiagnostics(uriStr, prepared.text, diagnostics, version, prepared.preprocessing);
+    PublishDiagnostics(PublishDiagnosticsRequest{
+        .uriStr = uriStr,
+        .text = prepared.text,
+        .diagnostics = std::move(diagnostics),
+        .version = version,
+        .generation = GetDocumentStore().GetGeneration(uriStr),
+        .preprocessing = prepared.preprocessing,
+        .positionSource = std::move(text),
+    });
 
     LogInfo(fmt::format("[File Save] Finished save analysis for: {} in {} (AST extraction nodes: {})", uriStr,
                         utils::FormatDuration(totalTimer.ElapsedMs()), revision.extractedNodes));

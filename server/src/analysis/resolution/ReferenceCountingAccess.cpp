@@ -15,6 +15,24 @@
 
 namespace angel_lsp::analysis
 {
+bool IsConstructorDeclaration(const Symbol& symbol)
+{
+    return symbol.type == SymbolType::Function && symbol.containerKind == ContainerKind::Class &&
+           symbol.name == utils::LastScopeSegment(symbol.containerName);
+}
+
+std::span<const IndexedDefaultConstruction> FindDefaultConstructionSites(const LocalReference& typeReference,
+                                                                         const Scope& scope)
+{
+    if (!scope.enclosingContext || !scope.enclosingContext->receivers)
+    {
+        return {};
+    }
+    const auto sites = std::ranges::equal_range(scope.enclosingContext->receivers->defaultConstructions,
+                                                typeReference.startByte, {}, &IndexedDefaultConstruction::typeByte);
+    return {sites.begin(), sites.end()};
+}
+
 bool IsDeclarationOrDefinition(std::string_view fileUri, const LocalReference& ref, const Scope* scope,
                                const ReferenceCollectionCriteria& criteria)
 {
@@ -115,13 +133,6 @@ static bool IsCompatibleNonMemberAccess(std::string_view fileUri, const LocalRef
     return !IsLocalShadowingTarget(scope, criteria.targetName, fileUri, criteria);
 }
 
-static bool MatchesTargetNamespaceQualifier(const LocalReference& ref, const Scope* scope,
-                                            const ReferenceCollectionCriteria& criteria)
-{
-    const auto qualifier = GetIndexedReferenceQualifier(ref, *scope);
-    return MatchesReferenceQualifier(qualifier, criteria.targetNamespace, *scope);
-}
-
 static bool IsValidEnumAccess(std::string_view fileUri, const LocalReference& ref, const Scope* scope,
                               const ReferenceCollectionCriteria& criteria)
 {
@@ -168,27 +179,101 @@ static bool IsEnclosingClassIncompatible(std::string_view fileUri, uint32_t line
     return false;
 }
 
+/**
+ * @brief Checks whether the target is the class's factory for a bare declarator.
+ * @param[in] target Constructor declaration under search.
+ * @param[in] lookup Symbol snapshot and default constructor policy of the use site.
+ * @return True for the selected declared factory, or false when the engine supplies its own factory.
+ */
+static bool IsDefaultConstructorTarget(const Symbol& target, const DefaultConstructorLookup& lookup)
+{
+    const auto& table = lookup.symbolTable;
+    if (ClassifyNonInstantiable(target.containerName, table, target.fileUri) != NonInstantiableKind::None)
+    {
+        return false;
+    }
+    const auto candidates = table.FindMemberSymbolPtr(target.containerName, target.name);
+    if (!candidates)
+    {
+        return false;
+    }
+    const Symbol* selected = nullptr;
+    for (const auto& candidate : *candidates)
+    {
+        if (candidate.fileUri != target.fileUri || !IsConstructorDeclaration(candidate))
+        {
+            continue;
+        }
+        const auto& parameters = candidate.GetFunction().parameters;
+        if (parameters.empty())
+        {
+            selected = &candidate;
+            break;
+        }
+        if (!selected && (!lookup.alwaysImplementsDefaultConstruct || candidate.isPredefined) &&
+            std::ranges::all_of(parameters, [](const auto& p) { return !p.defaultValue.empty(); }))
+        {
+            selected = &candidate;
+        }
+    }
+    return selected && !selected->GetFunction().modifiers.isDelete && selected->fileUri == target.fileUri &&
+           selected->selectionRange == target.selectionRange;
+}
+
+static bool CanAccessConstructor(const Scope& scope, const Symbol& constructor, const SymbolTable& table)
+{
+    const auto access = constructor.GetFunction().modifiers.access;
+    const auto accessingClass = scope.GetEnclosingClass();
+    if (access == AccessModifier::Public || accessingClass == constructor.containerName)
+    {
+        return true;
+    }
+    return access == AccessModifier::Protected && !accessingClass.empty() &&
+           std::ranges::any_of(GetInheritedTypeHierarchy(accessingClass, table),
+                               [&](const auto& base) { return base == constructor.containerName; });
+}
+
+std::span<const IndexedDefaultConstruction> FindDefaultConstructorUses(const LocalReference& ref, const Scope& scope,
+                                                                       const Symbol& constructor,
+                                                                       const DefaultConstructorLookup& lookup)
+{
+    if (!ref.isTypeSpecifier || ref.isCall || ref.name != constructor.name || !IsConstructorDeclaration(constructor))
+    {
+        return {};
+    }
+    const auto sites = FindDefaultConstructionSites(ref, scope);
+    const auto& table = lookup.symbolTable;
+    if (sites.empty() ||
+        !MatchesWrittenTypeOwner(ref, scope, utils::ParentScopeView(constructor.containerName), table) ||
+        !CanAccessConstructor(scope, constructor, table) || !IsDefaultConstructorTarget(constructor, lookup))
+    {
+        return {};
+    }
+    return sites;
+}
+
 static bool IsValidConstructorAccess(std::string_view fileUri, const LocalReference& ref, const Scope* scope,
                                      const ReferenceCollectionCriteria& criteria)
 {
-    if (IsEnclosingClassIncompatible(fileUri, ref.startLine, criteria))
+    if (!scope || !ref.isCall || !CanAccessConstructor(*scope, criteria.group.front(), criteria.symbolTable))
     {
         return false;
     }
-    if (ref.isMemberAccess)
+    const std::string_view targetNamespace = utils::ParentScopeView(criteria.group.front().containerName);
+    const std::string_view qualifier = GetIndexedReferenceQualifier(ref, *scope);
+    if (!qualifier.empty())
     {
-        return MatchesTargetNamespaceQualifier(ref, scope, criteria);
+        return targetNamespace.empty() ? qualifier == utils::k_scopeSeparator
+                                       : MatchesReferenceQualifier(qualifier, targetNamespace, *scope);
     }
-    if (!criteria.targetNamespace.empty() &&
-        !IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable, criteria.classCache))
+    if (ref.isMemberAccess ||
+        (!targetNamespace.empty() &&
+         !IsInsideNamespace(fileUri, ref.startLine, targetNamespace, criteria.symbolTable, criteria.classCache) &&
+         !IsUsingNamespaceActive(scope, ref.startByte, targetNamespace)))
     {
         return false;
     }
-    if (IsLocalShadowingTarget(scope, ref.name, fileUri, criteria))
-    {
-        return false;
-    }
-    return (ref.isCall && MatchesCallArguments(ref, criteria)) || (ref.isTypeSpecifier && criteria.minArgs == 0);
+    return !IsLocalShadowingTarget(scope, ref.name, fileUri, criteria);
 }
 
 bool IsValidAccess(std::string_view fileUri, const LocalReference& ref, const Scope* scope,
@@ -198,11 +283,19 @@ bool IsValidAccess(std::string_view fileUri, const LocalReference& ref, const Sc
     {
         return IsValidEnumAccess(fileUri, ref, scope, criteria);
     }
-    const bool isConstructor = criteria.isFunction && !criteria.group.empty() &&
-                               criteria.group.front().name == criteria.group.front().containerName;
+    const bool isConstructor =
+        criteria.isFunction && !criteria.group.empty() && IsConstructorDeclaration(criteria.group.front());
     if (isConstructor)
     {
         return IsValidConstructorAccess(fileUri, ref, scope, criteria);
+    }
+    if (scope && ref.isTypeSpecifier && !criteria.group.empty())
+    {
+        const auto& target = criteria.group.front();
+        if (target.type == SymbolType::Class || target.type == SymbolType::Interface)
+        {
+            return MatchesWrittenTypeOwner(ref, *scope, target.containerName, criteria.symbolTable);
+        }
     }
     const std::string_view qualifier = scope ? GetIndexedReferenceQualifier(ref, *scope) : std::string_view{};
     if (!criteria.compatibleClasses.empty())

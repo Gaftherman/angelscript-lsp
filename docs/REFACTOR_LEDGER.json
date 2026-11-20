@@ -4,6 +4,22 @@
   "description": "Active burn-down queue tracking pending functions and structs to be unified or deleted until 0 remaining.",
   "entries": [
     {
+      "id": "REF-S5-C06-WORKSPACE-EDIT-ENCODING",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/services/ServerPositionEncoding.cpp",
+      "deletedLineRange": "256-305",
+      "originalSymbolOrCode": "EncodeAcrossDocuments",
+      "whatItDidAndWhyInThatFile": "Converted map edits and versioned edits in separate paths, using a separate source scan for individual versioned edits.",
+      "whyChangedOrDeleted": "Validate and encode all text ranges as one unit using the source snapshot and line index for each target URI.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerWorkspaceEditEncoding.cpp",
+      "replacedByCanonicalSymbol": "TryEncodeWorkspaceEdit",
+      "ramOrCpuImpact": "Builds at most one line index per target and buffers converted ranges until the whole edit is valid.",
+      "verifiedByTests": [
+        "Server - Cross-document diagnostics and edits use each target's position encoding"
+      ]
+    },
+    {
       "id": "REF-V118-I18N",
       "phase": "S5",
       "action": "UNIFY_FUNCTIONS",
@@ -3835,6 +3851,39 @@
       "verifiedByTests": [
         "Server harness test: repeated full request returns the same stream, an edit recomputes it",
         "Full suite and differential corpus"
+      ]
+    },
+    {
+      "id": "REF-S5-L02-INSTANCE-CANDIDATES",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/AccessCheckerLookup.cpp",
+      "deletedLineRange": "66-112",
+      "originalSymbolOrCode": "CollectDirectCandidates repeated enum-constant filters",
+      "whatItDidAndWhyInThatFile": "Repeated the enum-constant filter when testing candidates and when ordering eligible instance members.",
+      "whyChangedOrDeleted": "Use one instance-member eligibility rule so a same-name type cannot suppress lookup of a real accessor.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AccessCheckerLookup.cpp",
+      "replacedByCanonicalSymbol": "IsInstanceMemberCandidate",
+      "ramOrCpuImpact": "Keeps linear lookup and partitioning over the same candidate range.",
+      "verifiedByTests": [
+        "Issue #15 - Instance getter resolves when a namespace type shares its name"
+      ]
+    },
+    {
+      "id": "REF-C02-SEMANTIC-TOKEN-REVISION",
+      "phase": "M31",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/services/ServerAnalysisTypes.h",
+      "deletedLineRange": "59-68",
+      "originalSymbolOrCode": "CachedTokensSnapshot and ComputeAndCacheSemanticTokens",
+      "whatItDidAndWhyInThatFile": "The delta path retained the prior array in a separate snapshot and tested only the editor version for an empty edit response.",
+      "whyChangedOrDeleted": "Full and delta now share the same revision key and immutable encoded snapshot. A dependency or configuration change can invalidate it at the same editor version.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysisTypes.h",
+      "replacedByCanonicalSymbol": "SemanticTokensSnapshot",
+      "ramOrCpuImpact": "Equivalent requests reuse the encoded array and a weak ownership key does not retain superseded scope roots or preprocessor definitions. No benchmark result is claimed.",
+      "verifiedByTests": [
+        "Server - Semantic tokens follow dependency and configuration revisions",
+        "Server - Answers a semantic token delta against the payload it last sent"
       ]
     }
   ]

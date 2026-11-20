@@ -32,24 +32,15 @@ bool ShouldCompleteParens(const CompletionCollector& collector)
 
 std::string FindEnclosingClassName(const CompletionQuery& request)
 {
-    std::string fromTable = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
-    if (!fromTable.empty())
-    {
-        return fromTable;
-    }
     if (request.nodeIndex)
     {
         const uint32_t cursorByte = ByteOffsetAt(request.sourceCode, request.position.line, request.position.character);
-        auto containers = request.nodeIndex->CollectEnclosingContainers(cursorByte, request.sourceCode);
-        for (const auto& c : containers)
+        if (auto owner = request.nodeIndex->FindEnclosingType(cursorByte, request.sourceCode))
         {
-            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-            {
-                return c.qualifiedName.empty() ? c.name : c.qualifiedName;
-            }
+            return std::move(owner->qualifiedName);
         }
     }
-    return "";
+    return {};
 }
 
 static bool IsMixinIncluded(std::string_view hostClass, std::string_view mixinName, const analysis::SymbolTable& table)
@@ -233,7 +224,7 @@ bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, std::string_v
     {
         return false;
     }
-    char getterBuf[128];
+    utils::AccessorNameBuffer getterBuf;
     const std::string_view getterView = utils::ComposeGetterName(name, getterBuf);
     if (getterView.empty())
     {

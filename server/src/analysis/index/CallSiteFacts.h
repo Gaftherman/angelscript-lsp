@@ -21,7 +21,8 @@ enum class CalleeKind : uint8_t
     None,       ///< Missing, unparsed, or unsupported callee expression.
     Identifier, ///< Unqualified identifier or keyword function (e.g. `foo()`).
     Scoped,     ///< Scoped or namespace-qualified identifier (e.g. `ns::foo()` or `Math::sin()`).
-    Member      ///< Member access on an object or receiver (e.g. `obj.foo()` or `this.foo()`).
+    Member,     ///< Member access on an object or receiver (e.g. `obj.foo()` or `this.foo()`).
+    Indirect    ///< Computed callee expression such as `callbacks[0](x)`, `make()(x)` or `(fn)(x)`.
 };
 
 /**
@@ -86,13 +87,14 @@ struct CallArgumentFact
  */
 struct CallSiteFact
 {
-    IndexedByteRange bytes;                      ///< Byte span of the entire call expression.
-    SourceRange range;                           ///< Line and column span; start point selects lexical scope.
-    IndexedByteRange calleeBytes;                ///< Byte span of the callee expression.
-    SourceRange calleeRange;                     ///< Line and column span of the callee expression.
-    IndexedByteRange calleeNameBytes;            ///< Byte span of the callee identifier token or member name.
-    SourceRange calleeNameRange;                 ///< Line and column span of callee identifier; anchors diagnostics.
-    IndexedByteRange objectBytes;                ///< Byte span of the receiver object for member calls.
+    IndexedByteRange bytes;           ///< Byte span of the entire call expression.
+    SourceRange range;                ///< Line and column span; start point selects lexical scope.
+    IndexedByteRange calleeBytes;     ///< Byte span of the callee expression.
+    SourceRange calleeRange;          ///< Line and column span of the callee expression.
+    IndexedByteRange calleeNameBytes; ///< Byte span of the callee identifier token or member name.
+    SourceRange calleeNameRange;      ///< Line and column span of callee identifier; anchors diagnostics.
+    IndexedByteRange
+        objectBytes; ///< Receiver object of a member call, or the plain root identifier of an indexed Indirect callee.
     IndexedByteRange enclosingClassNameBytes;    ///< Byte span of enclosing class or interface name; empty if outside.
     IndexedByteRange enclosingFunctionNameBytes; ///< Byte span of enclosing function or method name; empty if global.
     uint32_t argumentBegin = 0;                  ///< First slice index into CallSiteFacts::arguments.

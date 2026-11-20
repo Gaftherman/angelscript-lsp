@@ -37,6 +37,15 @@ enum class TargetKind
 };
 
 /**
+ * @brief Physical source location of a declaration or use.
+ */
+struct OccurrenceLocation
+{
+    std::string fileUri; ///< URI of the document that owns the range.
+    SourceRange range;   ///< Half-open span in that document.
+};
+
+/**
  * @brief The symbol under the cursor, resolved far enough to look its occurrences up.
  */
 struct TargetDescriptor
@@ -57,6 +66,7 @@ struct TargetDescriptor
     std::string declaringEnum;
 
     std::optional<CallDeclaration> callDeclaration;
+    std::optional<OccurrenceLocation> classDeclaration; ///< Class or interface declaration selected by the cursor.
     bool isFunction = false;
     size_t minArgs = 0;
     size_t maxArgs = 0;
@@ -69,15 +79,6 @@ struct TargetPosition
 {
     uint32_t line = 0;
     uint32_t character = 0;
-};
-
-/**
- * @brief Location of a symbol occurrence in source code.
- */
-struct OccurrenceLocation
-{
-    std::string fileUri;
-    SourceRange range;
 };
 
 /**

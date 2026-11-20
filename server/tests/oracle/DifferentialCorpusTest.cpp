@@ -7,9 +7,11 @@
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /**
@@ -19,6 +21,69 @@
  */
 TEST_SUITE("oracle/DifferentialCorpus")
 {
+    /** @brief Recorded server error in a case-relative file. */
+    struct ExpectedDiagnostic
+    {
+        std::string file = "main.as";
+        /** @brief Required code, empty for legacy range-only tags. */
+        std::string code;
+        /** @brief Zero-based start and end positions with UTF-16 columns. */
+        std::array<int, 4> range{};
+    };
+
+    using DiagnosticReports = std::map<std::string, lsp::json::Value>;
+
+    static std::array<int, 4> DiagnosticRange(const lsp::json::Value& diagnostic)
+    {
+        const auto& range = diagnostic.object().get("range").object();
+        const auto& start = range.get("start").object();
+        const auto& end = range.get("end").object();
+        return {static_cast<int>(start.get("line").integer()), static_cast<int>(start.get("character").integer()),
+                static_cast<int>(end.get("line").integer()), static_cast<int>(end.get("character").integer())};
+    }
+
+    static bool IsError(const lsp::json::Value& diagnostic)
+    {
+        const auto* severity = diagnostic.object().find("severity");
+        return severity && severity->isInteger() && severity->integer() == 1;
+    }
+
+    static bool HasExpectedError(const DiagnosticReports& reports, const ExpectedDiagnostic& expected)
+    {
+        const auto report = reports.find(expected.file);
+        if (report == reports.end())
+        {
+            return false;
+        }
+        const auto& diagnostics = report->second.array();
+        return std::any_of(diagnostics.begin(), diagnostics.end(),
+                           [&](const auto& diagnostic)
+                           {
+                               const auto* code = diagnostic.object().find("code");
+                               const bool sameCode = expected.code.empty() ||
+                                                     (code && code->isString() && code->string() == expected.code);
+                               return IsError(diagnostic) && sameCode && DiagnosticRange(diagnostic) == expected.range;
+                           });
+    }
+
+    TEST_CASE("DifferentialCorpus - diagnostic expectations check file, code and both endpoints")
+    {
+        const auto diagnostic = lsp::json::parse(
+            R"([{"severity":1,"code":"as-warn-undeclared-identifier","range":{"start":{"line":4,"character":22},)"
+            R"("end":{"line":4,"character":33}}}])");
+        DiagnosticReports reports{{"main.as", diagnostic}, {"peer.as", diagnostic}};
+        const ExpectedDiagnostic primary{"main.as", "as-warn-undeclared-identifier", {4, 22, 4, 33}};
+        const ExpectedDiagnostic sibling{"peer.as", primary.code, primary.range};
+        REQUIRE(HasExpectedError(reports, primary));
+        REQUIRE(HasExpectedError(reports, sibling));
+        CHECK_FALSE(HasExpectedError(reports, {"main.as", "as-err-undefined-identifier", primary.range}));
+        CHECK_FALSE(HasExpectedError(reports, {"main.as", primary.code, {4, 21, 4, 33}}));
+        CHECK_FALSE(HasExpectedError(reports, {"main.as", primary.code, {4, 22, 4, 34}}));
+        reports.at("main.as") = lsp::json::Array{};
+        CHECK_FALSE(HasExpectedError(reports, primary));
+        CHECK(HasExpectedError(reports, sibling));
+    }
+
     /** @brief One corpus case: the main script plus any sibling files reached through #include. */
     struct CorpusCase
     {
@@ -28,8 +93,7 @@ TEST_SUITE("oracle/DifferentialCorpus")
         std::string expect;
         std::vector<std::string> required;
         std::vector<std::string> forbidden;
-        /// Exact diagnostic ranges from `// @error: L:C-L:C` as {startLine, startChar, endLine, endChar}.
-        std::vector<std::array<int, 4>> ranges;
+        std::vector<ExpectedDiagnostic> diagnostics;
         /// Fixture served to the server as workspace stub, from `// @predefined: <fixture>`; empty when none.
         std::string stub;
     };
@@ -78,11 +142,23 @@ TEST_SUITE("oracle/DifferentialCorpus")
             }
             else if (const std::string error = take("// @error:"); !error.empty())
             {
-                std::array<int, 4> range{};
-                if (std::sscanf(error.c_str(), "%d:%d-%d:%d", &range[0], &range[1], &range[2], &range[3]) == 4)
+                ExpectedDiagnostic expectation;
+                auto& range = expectation.range;
+                std::istringstream fields(error);
+                std::string coordinates, code, extra;
+                REQUIRE(static_cast<bool>(fields >> coordinates));
+                if (fields >> code)
                 {
-                    result.ranges.push_back(range);
+                    expectation.file = std::move(coordinates);
+                    expectation.code = std::move(code);
+                    REQUIRE(static_cast<bool>(fields >> coordinates));
+                    REQUIRE_FALSE(static_cast<bool>(fields >> extra));
                 }
+                char trailing = '\0';
+                REQUIRE(std::sscanf(coordinates.c_str(), "%d:%d-%d:%d%c", &range[0], &range[1], &range[2], &range[3],
+                                    &trailing) == 4);
+                REQUIRE(std::all_of(range.begin(), range.end(), [](int coordinate) { return coordinate >= 0; }));
+                result.diagnostics.push_back(std::move(expectation));
             }
         }
     }
@@ -234,10 +310,11 @@ TEST_SUITE("oracle/DifferentialCorpus")
             }
             // A real client shows every open file's diagnostics, so an error the compiler reports inside an
             // included file counts when the server reports it in that file.
-            std::vector<int> diagnosticCalls;
+            std::map<std::string, int> diagnosticCalls;
             for (const auto& file : files)
             {
-                diagnosticCalls.push_back(session.Call("diagnostics", angel_lsp::test::McpPathArgs(file.first)));
+                diagnosticCalls.emplace(file.first,
+                                        session.Call("diagnostics", angel_lsp::test::McpPathArgs(file.first)));
             }
             lsp::json::Value completionArgs = angel_lsp::test::McpPositionArgs("main.as", line, character);
             completionArgs.object()["limit"] = 500;
@@ -246,45 +323,25 @@ TEST_SUITE("oracle/DifferentialCorpus")
 
             if (markerAt == std::string::npos)
             {
-                int errors = 0;
-                const lsp::json::Value report = angel_lsp::test::McpPayload(replies.at(diagnosticCalls.back()));
-                for (const int call : diagnosticCalls)
+                bool hasErrors = false;
+                DiagnosticReports reports;
+                for (const auto& [file, call] : diagnosticCalls)
                 {
-                    const lsp::json::Value fileReport = angel_lsp::test::McpPayload(replies.at(call));
-                    for (const auto& diag : fileReport.array())
-                    {
-                        const lsp::json::Value* severity = diag.object().find("severity");
-                        errors += (severity != nullptr && severity->isInteger() && severity->integer() == 1) ? 1 : 0;
-                    }
+                    const auto& fileReport =
+                        reports.emplace(file, angel_lsp::test::McpPayload(replies.at(call))).first->second.array();
+                    hasErrors |= std::any_of(fileReport.begin(), fileReport.end(), IsError);
                 }
-                CHECK((errors == 0) == (item.expect == "accept"));
-                for (const std::array<int, 4>& want : item.ranges)
+                CHECK(hasErrors == (item.expect != "accept"));
+                for (const auto& expectation : item.diagnostics)
                 {
-                    bool found = false;
-                    for (const auto& diag : report.array())
-                    {
-                        const lsp::json::Value& range = diag.object().get("range");
-                        const lsp::json::Value& start = range.object().get("start");
-                        const lsp::json::Value& end = range.object().get("end");
-                        found = found || (start.object().get("line").integer() == want[0] &&
-                                          start.object().get("character").integer() == want[1] &&
-                                          end.object().get("line").integer() == want[2] &&
-                                          end.object().get("character").integer() == want[3]);
-                    }
-                    std::ostringstream reported;
-                    for (const auto& diag : report.array())
-                    {
-                        const lsp::json::Value& range = diag.object().get("range");
-                        const lsp::json::Value& start = range.object().get("start");
-                        const lsp::json::Value& end = range.object().get("end");
-                        reported << ' ' << start.object().get("line").integer() << ':'
-                                 << start.object().get("character").integer() << '-'
-                                 << end.object().get("line").integer() << ':'
-                                 << end.object().get("character").integer();
-                    }
-                    CHECK_MESSAGE(found, "no diagnostic covers " << want[0] << ":" << want[1] << "-" << want[2] << ":"
-                                                                 << want[3] << "; the server reported"
-                                                                 << reported.str());
+                    REQUIRE_MESSAGE(reports.contains(expectation.file), "unknown diagnostic file " << expectation.file);
+                    const bool found = HasExpectedError(reports, expectation);
+                    const auto& want = expectation.range;
+                    CHECK_MESSAGE(found, "no matching error in " << expectation.file << " (" << expectation.code
+                                                                 << ") at " << want[0] << ":" << want[1] << "-"
+                                                                 << want[2] << ":" << want[3]
+                                                                 << "; the server reported "
+                                                                 << lsp::json::stringify(reports.at(expectation.file)));
                 }
                 continue;
             }

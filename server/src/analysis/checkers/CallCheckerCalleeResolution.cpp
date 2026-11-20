@@ -2,6 +2,7 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/Keywords.h"
@@ -254,8 +255,32 @@ static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const 
     return res;
 }
 
+/**
+ * @brief Resolves a computed callee such as `callbacks[0]` through the type of the callee expression.
+ *
+ * An unresolvable type leaves the call unchecked rather than guessing, so incomplete code stays quiet.
+ */
+static CalleeResolution ResolveIndirectCallee(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
+{
+    CalleeResolution res;
+    const ExpressionTypeContext exprCtx(scope, ctx);
+    const std::string calleeType = ResolveExpressionTypeAt(site.calleeBytes, exprCtx);
+    if (calleeType.empty())
+    {
+        res.shouldCheck = false;
+        return res;
+    }
+    const std::string_view calleeText = CallSiteFacts::SliceText(ctx.request.sourceCode, site.calleeBytes);
+    CheckNonCallableVariable(NonCallableCheckRequest{calleeText, calleeType, site.calleeRange}, ctx, res);
+    return res;
+}
+
 CalleeResolution ResolveCalleeCandidates(const CallSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
+    if (site.calleeKind == CalleeKind::Indirect)
+    {
+        return ResolveIndirectCallee(site, scope, ctx);
+    }
     if (site.isMemberCall || site.calleeKind == CalleeKind::Member)
     {
         return ResolveMemberCallee(site, scope, ctx);

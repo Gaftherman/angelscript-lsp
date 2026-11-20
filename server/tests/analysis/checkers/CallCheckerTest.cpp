@@ -2419,3 +2419,84 @@ TEST_CASE("CallChecker - Reports unresolved default argument at call site when o
                                    "::" + enumVal + ") {}\nvoid main() { " + fnName + "(); }\n";
     CHECK_FALSE(HasCode(AnalyzeCallSnippet(validConst), "as-err-default-arg-unresolved"));
 }
+
+// =====================================================================================
+// Indirect callees (`callbacks[0](x)`)
+// =====================================================================================
+
+namespace
+{
+struct IndexedCalleeNames
+{
+    std::string funcdef = angel_lsp::test::GenerateRandomSymbolName("Cb");
+    std::string registry = angel_lsp::test::GenerateRandomSymbolName("Registry");
+    std::string owner = angel_lsp::test::GenerateRandomSymbolName("Owner");
+    std::string field = angel_lsp::test::GenerateRandomSymbolName("callbacks");
+
+    /** @brief A class whose field is indexed through `opIndex` and the result is called with `callArgs`. */
+    std::string Source(const std::string& indexExpr, const std::string& callArgs) const
+    {
+        return "funcdef void " + funcdef + "(" + owner + "@ o);\n" + "class " + registry + " { " + funcdef +
+               "@ opIndex(int i) { return null; } }\n" + "class " + owner + " {\n    " + registry + " " + field +
+               ";\n    void Run() {\n        " + indexExpr + "(" + callArgs + ");\n    }\n}\n";
+    }
+};
+} // namespace
+
+TEST_CASE("CallChecker - An indexed funcdef callee is resolved, not looked up by its spelling")
+{
+    const IndexedCalleeNames n;
+    const auto diags = AnalyzeCallSnippet(n.Source(n.field + "[0]", "this"));
+    CHECK_FALSE(HasCode(diags, "as-err-undefined-identifier"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Arguments of an indexed funcdef callee are validated against the funcdef")
+{
+    const IndexedCalleeNames n;
+    const auto diags = AnalyzeCallSnippet(n.Source(n.field + "[0]", ""));
+    CHECK_FALSE(HasCode(diags, "as-err-undefined-identifier"));
+    CHECK(HasCode(diags, "as-err-call-argument-count"));
+}
+
+TEST_CASE("CallChecker - An indexed result that is not callable is reported at the callee")
+{
+    const std::string numbers = angel_lsp::test::GenerateRandomSymbolName("Numbers");
+    const std::string field = angel_lsp::test::GenerateRandomSymbolName("values");
+    const std::string code = "class " + numbers + " { int opIndex(int i) { return 0; } }\n" + "class Holder {\n    " +
+                             numbers + " " + field + ";\n    void Run() {\n        " + field + "[0](1);\n    }\n}\n";
+    const auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-undefined-identifier"));
+    CHECK(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - An indexed callee on an undefined variable is still undefined")
+{
+    const std::string missing = angel_lsp::test::GenerateRandomSymbolName("missing");
+    const std::string code = "void main()\n{\n    " + missing + "[0](1);\n}\n";
+    const auto diags = AnalyzeCallSnippet(code);
+    const auto undefined = std::find_if(diags.begin(), diags.end(),
+                                        [](const Diagnostic& d) { return d.code == "as-err-undefined-identifier"; });
+    REQUIRE(undefined != diags.end());
+    CHECK(undefined->message.find(missing) != std::string::npos);
+    CHECK(undefined->message.find("[0]") == std::string::npos);
+    CHECK(undefined->range.start.line == 2);
+    CHECK(undefined->range.start.character == 4);
+    CHECK(undefined->range.end.character == 4 + missing.size());
+}
+
+TEST_CASE("CallChecker - A bad index argument is one opIndex error, not an undefined or non-callable callee")
+{
+    const IndexedCalleeNames n;
+    const std::string code = n.Source(n.field + "[\"x\"]", "this");
+    const auto diags = AnalyzeCallSnippet(code);
+
+    // The index operand is judged by the opIndex lookup alone: the callee expression is neither reported as an
+    // undefined name nor judged a second time as a non-callable result.
+    CHECK_FALSE(HasCode(diags, "as-err-undefined-identifier"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
+    REQUIRE(diags.size() == 1);
+    CHECK(diags.front().code == "as-err-call-no-matching-signature");
+    CHECK(diags.front().message.find("opIndex") != std::string::npos);
+}

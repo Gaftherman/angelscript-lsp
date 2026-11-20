@@ -127,7 +127,7 @@ static bool IsKnownCallee(std::string_view name, const CallSiteFact& call, const
         return true;
     }
 
-    char getterBuf[512];
+    utils::AccessorNameBuffer getterBuf;
     const std::string_view getterName = utils::ComposeGetterName(name, getterBuf);
     if (!FindSymbolsInScope(ctx.request.symbolTable, containers, getterName, usings).empty())
     {
@@ -214,12 +214,37 @@ static void CheckQualifiedCallee(std::string_view calleeName, bool globalQualifi
     }
 }
 
+/**
+ * @brief Reports an undefined root identifier of an indexed callee such as `missing[0](x)`.
+ *
+ * The element type of the index is judged by CallChecker; only the root name is decided here, so the
+ * diagnostic names `missing` and spans just that identifier rather than the whole callee expression.
+ */
+static void CheckIndirectCalleeRoot(const CallSiteFact& call, const NamespaceCallCheckContext& cctx,
+                                    DiagnosticContext& ctx)
+{
+    const std::string_view root = CallSiteFacts::SliceText(cctx.sourceCode, call.objectBytes);
+    if (root.empty() || IsKnownCallee(root, call, cctx, ctx))
+    {
+        return;
+    }
+    SourceRange rootRange = call.calleeRange;
+    rootRange.endLine = rootRange.startLine;
+    rootRange.endCharacter = rootRange.startCharacter + static_cast<uint32_t>(root.size());
+    ctx.EmitAtRange(rootRange, "as-err-undefined-identifier", root, DiagnosticSeverity::Error);
+}
+
 void CheckCallExpression(const CallSiteFact& call, const NamespaceCallCheckContext& cctx, DiagnosticContext& ctx)
 {
+    if (call.calleeKind == CalleeKind::Indirect)
+    {
+        CheckIndirectCalleeRoot(call, cctx, ctx);
+        return;
+    }
     const std::string compactCallee =
         utils::CompactScopedName(CallSiteFacts::SliceText(cctx.sourceCode, call.calleeBytes));
     std::string_view calleeName = compactCallee;
-    if (call.isMemberCall || calleeName.empty() || calleeName.find('.') != std::string_view::npos)
+    if (call.isMemberCall || calleeName.empty())
     {
         return;
     }

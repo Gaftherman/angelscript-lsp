@@ -189,7 +189,16 @@ struct IndexedCallArgumentRef
 };
 
 /**
- * @brief Document-owned receiver facts shared by its lexical scopes.
+ * @brief Bare declarator associated with the type reference that supplies its receiver.
+ */
+struct IndexedDefaultConstruction
+{
+    uint32_t typeByte = 0;       ///< Start byte of the type identifier shared by the declaration.
+    SourceRange declaratorRange; ///< Identifier range of the variable that is default constructed.
+};
+
+/**
+ * @brief Document-owned reference, receiver and call facts shared by its lexical scopes.
  */
 struct IndexedReferenceReceivers
 {
@@ -197,6 +206,7 @@ struct IndexedReferenceReceivers
     ankerl::unordered_dense::map<uint32_t, uint32_t> byReference;
     ankerl::unordered_dense::map<uint32_t, std::string> qualifiers;
     std::vector<IndexedCallArgumentRef> callArguments;
+    std::vector<IndexedDefaultConstruction> defaultConstructions; ///< Bare declarators ordered by type byte.
 };
 
 /**
@@ -236,6 +246,7 @@ struct Scope
     ScopeKind kind = ScopeKind::Block;
     bool isFunctionScope : 1 = false;
     bool isConstMethod : 1 = false;
+    bool alwaysImplementsDefaultConstruct : 1 = false; ///< Document-root policy from the analyzed engine profile.
     uint32_t containerSpanIndex = UINT32_MAX;
 
     std::shared_ptr<const ScopeEnclosingContext> enclosingContext;

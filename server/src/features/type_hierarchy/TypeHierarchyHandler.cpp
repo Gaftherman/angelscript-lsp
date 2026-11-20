@@ -1,7 +1,6 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 
 #include "analysis/index/RuleIndex.h"
-#include "analysis/resolution/DefinitionResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "features/common/FeatureSharedUtils.h"
 #include "utils/Constants.h"
@@ -302,88 +301,109 @@ static void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<ls
         });
 }
 
-static void FilterDeclarationsByLocation(std::string_view uri, const lsp::Position& pos,
-                                         std::vector<analysis::Symbol>& declarations)
+/** @brief Resolves an indexed owner to the declaration at its exact name span. */
+static std::optional<lsp::TypeHierarchyItem> FindOwnerItem(const TypeHierarchyPrepareRequest& request,
+                                                           const analysis::EnclosingType& owner)
 {
-    if (declarations.size() <= 1)
+    const auto candidates = request.symbolTable.FindSymbolsPtr(owner.qualifiedName);
+    if (!candidates)
     {
-        return;
+        return std::nullopt;
     }
-    for (const auto& sym : declarations)
+    const auto sameNameSpan = [&](const analysis::Symbol& sym)
     {
-        if ((sym.fileUri == uri || utils::PathToUri(sym.fileUri) == uri) &&
-            (sym.startLine == pos.line || (sym.startLine <= pos.line && sym.endLine >= pos.line)))
+        const auto& lines = request.nodeIndex.Lines();
+        const auto& range = sym.selectionRange;
+        const auto start = lines.StartOffset(request.parsedSource, range.startLine) + range.startCharacter;
+        const auto end = lines.StartOffset(request.parsedSource, range.endLine) + range.endCharacter;
+        return start == owner.nameBytes.startByte && end == owner.nameBytes.endByte;
+    };
+    const auto match =
+        std::ranges::find_if(*candidates, [&](const analysis::Symbol& sym)
+                             { return IsTypeSymbol(sym) && sym.fileUri == request.uri && sameNameSpan(sym); });
+    return match == candidates->end() ? std::nullopt : std::optional{ToItem(*match)};
+}
+
+/** @brief Resolves the selected segment before trying its full scoped spelling and short name. */
+static std::vector<analysis::Symbol> FindReferencedTypes(const TypeHierarchyPrepareRequest& request,
+                                                         std::string_view line, uint32_t column, uint32_t cursorByte)
+{
+    auto anchor = column;
+    if (anchor == line.size() || !common::IsIdentifierChar(line[anchor]))
+    {
+        if (anchor == 0 || !common::IsIdentifierChar(line[anchor - 1]))
         {
-            declarations = {sym};
-            return;
+            return {};
+        }
+        --anchor;
+    }
+    const auto anchorByte = cursorByte - (column - anchor);
+    if (request.nodeIndex.IsInsideComment(anchorByte) || request.nodeIndex.IsInsideStringLiteral(anchorByte))
+    {
+        return {};
+    }
+    const auto start = common::ExpandScopedIdentifierStart(line, anchor);
+    const auto end = common::ExpandScopedIdentifierEnd(line, anchor);
+    const auto name = line.substr(start, end - start);
+    auto declarations = FindTypeDeclarations(name, request.symbolTable);
+    if (declarations.empty())
+    {
+        const auto enclosingNamespace = request.nodeIndex.FindEnclosingNamespace(cursorByte, request.parsedSource);
+        if (!enclosingNamespace.empty())
+        {
+            declarations = FindTypeDeclarations(utils::JoinScopedName(enclosingNamespace, name), request.symbolTable);
         }
     }
+    if (declarations.empty())
+    {
+        const auto fullEnd = common::ExpandFullScopedIdentifierEnd(line, anchor);
+        if (fullEnd != end)
+        {
+            declarations = FindTypeDeclarations(line.substr(start, fullEnd - start), request.symbolTable);
+        }
+    }
+    if (declarations.empty())
+    {
+        declarations = request.symbolTable.FindTypeSymbolsByShortName(analysis::LastScopeSegment(name));
+        std::erase_if(declarations, [](const analysis::Symbol& sym) { return !IsTypeSymbol(sym); });
+    }
+    return declarations;
 }
 
 std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const TypeHierarchyPrepareRequest& request)
 {
-    if (request.sourceCode.empty())
+    const auto& lines = request.nodeIndex.Lines();
+    const auto row = request.position.line;
+    if (row >= lines.LineCount())
     {
         return std::nullopt;
     }
 
-    const std::string_view name = common::FindScopedIdentifierAtPosition(request.sourceCode, request.position);
-
-    std::vector<analysis::Symbol> declarations;
-    if (!name.empty())
+    const auto line = lines.Line(request.sourceCode, row);
+    const auto lineStart = lines.StartOffset(request.sourceCode, row);
+    const auto column = utils::LspCharToByteColumn(line, request.position.character, request.positionEncoding);
+    const auto cursorByte = static_cast<uint32_t>(lineStart + column);
+    const auto owner = request.nodeIndex.FindEnclosingType(cursorByte, request.parsedSource,
+                                                           analysis::EnclosingTypeBoundary::CrossLambda);
+    const bool onOwnerName = owner && owner->nameBytes.Contains(cursorByte);
+    if (onOwnerName)
     {
-        declarations = FindTypeDeclarations(name, request.symbolTable);
-        if (declarations.empty())
+        if (const auto item = FindOwnerItem(request, *owner))
         {
-            declarations = FindTypeDeclarations(
-                utils::JoinScopedName(
-                    analysis::FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable), name),
-                request.symbolTable);
-        }
-        if (declarations.empty())
-        {
-            std::string_view fullName =
-                common::FindFullScopedIdentifierAtPosition(request.sourceCode, request.position);
-            if (!fullName.empty() && fullName != name)
-            {
-                declarations = FindTypeDeclarations(fullName, request.symbolTable);
-            }
-        }
-        if (declarations.empty())
-        {
-            for (const auto& sym : request.symbolTable.FindTypeSymbolsByShortName(analysis::LastScopeSegment(name)))
-            {
-                if (IsTypeSymbol(sym))
-                {
-                    declarations.push_back(sym);
-                }
-            }
-        }
-        FilterDeclarationsByLocation(request.uri, request.position, declarations);
-    }
-
-    if (declarations.empty())
-    {
-        const auto enclosing = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
-        if (!enclosing.empty())
-        {
-            declarations = FindTypeDeclarations(enclosing, request.symbolTable);
-            if (declarations.empty())
-            {
-                for (const auto& sym :
-                     request.symbolTable.FindTypeSymbolsByShortName(analysis::LastScopeSegment(enclosing)))
-                {
-                    if (IsTypeSymbol(sym))
-                    {
-                        declarations.push_back(sym);
-                    }
-                }
-            }
+            return std::vector{*item};
         }
     }
 
+    const auto declarations = FindReferencedTypes(request, line, column, cursorByte);
     if (declarations.empty())
     {
+        if (owner && !onOwnerName)
+        {
+            if (const auto item = FindOwnerItem(request, *owner))
+            {
+                return std::vector{*item};
+            }
+        }
         return std::nullopt;
     }
 

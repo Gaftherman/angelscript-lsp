@@ -27,6 +27,22 @@ static bool AreSemanticTokensEditsValid(const std::vector<lsp::SemanticTokensEdi
     return true;
 }
 
+/**
+ * @brief Builds a full wire result from an immutable snapshot.
+ * @param[in] snapshot Encoded data retained by the request.
+ * @return Full token payload with a result ID if it may be used as a delta base.
+ */
+static lsp::SemanticTokens FullTokenResponse(const SemanticTokensSnapshot& snapshot)
+{
+    lsp::SemanticTokens result;
+    if (!snapshot.resultId.empty())
+    {
+        result.resultId = snapshot.resultId;
+    }
+    result.data = *snapshot.data;
+    return result;
+}
+
 lsp::requests::TextDocument_SemanticTokens_Full::Result
 Server::HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocument_SemanticTokens_Full::Params&& req)
 {
@@ -41,7 +57,7 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocume
     }
 
     utils::HighResTimer timer;
-    auto tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
+    auto tokens = FullTokenResponse(ResolveSemanticTokensSnapshot(*doc));
     const double elapsedMs = timer.ElapsedMs();
     LogInfo(fmt::format("[Semantic Tokens] Finished full in {:.2f} ms for {} ({} tokens)", elapsedMs, doc->uri,
                         tokens.data.size() / 5));
@@ -63,50 +79,23 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full_Delta(
     }
 
     utils::HighResTimer timer;
-    CachedTokensSnapshot snap;
+    const auto previous = FindSemanticTokensSnapshot(doc->uri);
+    const auto current = ResolveSemanticTokensSnapshot(*doc);
+    if (!previous || previous->resultId != req.previousResultId || previous->hasError || current.hasError ||
+        current.resultId.empty())
     {
-        std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
-        if (const auto cached = m_semanticTokensCache.find(doc->uri);
-            cached != m_semanticTokensCache.end() && cached->second.resultId == req.previousResultId)
-        {
-            snap.canDiff = true;
-            snap.prevHadError = cached->second.hasError;
-            snap.cachedVersion = cached->second.version;
-            snap.previous = std::move(cached->second.data);
-        }
+        return FullTokenResponse(current);
     }
 
-    const bool currHasError = doc->docHandle && parser::TreeHasError(doc->docHandle->tree);
-    if (!snap.canDiff || snap.prevHadError || currHasError)
-    {
-        return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
-    }
-
-    const int currentVersion = GetDocumentStore().GetVersion(doc->uri);
-    if (currentVersion >= 0 && snap.cachedVersion == currentVersion)
-    {
-        std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
-        const std::string newResultId = std::to_string(++m_semanticTokensRevision);
-        if (auto it = m_semanticTokensCache.find(doc->uri); it != m_semanticTokensCache.end())
-        {
-            it->second.resultId = newResultId;
-        }
-        lsp::SemanticTokensDelta delta;
-        delta.resultId = newResultId;
-        delta.edits = {};
-        LogInfo(fmt::format("[Semantic Tokens] Finished delta in {:.2f} ms for {} (unchanged)", timer.ElapsedMs(),
-                            doc->uri));
-        return delta;
-    }
-
-    lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
     lsp::SemanticTokensDelta delta;
-    delta.resultId = tokens.resultId;
-    delta.edits = features::ComputeSemanticTokensDelta(snap.previous, tokens.data);
-
+    delta.resultId = current.resultId;
+    if (previous->resultId != current.resultId)
+    {
+        delta.edits = features::ComputeSemanticTokensDelta(*previous->data, *current.data);
+    }
     if (!AreSemanticTokensEditsValid(delta.edits))
     {
-        return tokens;
+        return FullTokenResponse(current);
     }
     LogInfo(fmt::format("[Semantic Tokens] Finished delta in {:.2f} ms for {} ({} edits)", timer.ElapsedMs(), doc->uri,
                         delta.edits.size()));

@@ -18,8 +18,8 @@ namespace angel_lsp::analysis
  */
 struct MixinFileCacheEntry
 {
-    /// Owned mixin document text that tree and nodeIndex borrow from.
-    std::string source;
+    /// Exact source shared with diagnostics that refer to the mixin.
+    std::shared_ptr<const std::string> source;
     /// Parser that produced tree.
     std::unique_ptr<parser::AngelScriptParser> parser;
     /// Owned syntax tree.

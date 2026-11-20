@@ -3,8 +3,51 @@
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
 
+#include <optional>
+#include <utility>
+#include <vector>
+
 namespace angel_lsp
 {
+/**
+ * @brief Encodes hierarchy results and omits items whose declaration source is missing.
+ * @param[in] items Byte-column results from a hierarchy feature.
+ * @param[in] encode Encodes an item and reports whether it can be returned.
+ * @return Encoded results, or null when no items remain.
+ */
+template <typename Item, typename Encode>
+static lsp::NullOr<lsp::Array<Item>> EncodeHierarchyResult(std::optional<std::vector<Item>> items, Encode encode)
+{
+    if (!items)
+    {
+        return lsp::Null{};
+    }
+    auto output = items->begin();
+    for (auto item = items->begin(); item != items->end(); ++item)
+    {
+        if (encode(*item))
+        {
+            if (output != item)
+            {
+                *output = std::move(*item);
+            }
+            ++output;
+        }
+    }
+    items->erase(output, items->end());
+    if (items->empty())
+    {
+        return lsp::Null{};
+    }
+    return std::move(*items);
+}
+
+template <typename Item>
+static lsp::NullOr<lsp::Array<Item>> EncodeHierarchyItems(const Server& server, std::optional<std::vector<Item>> items)
+{
+    return EncodeHierarchyResult(std::move(items), [&server](Item& item) { return server.TryEncodeItemRanges(item); });
+}
+
 static lsp::requests::TextDocument_PrepareCallHierarchy::Result
 PrepareCallHierarchy(Server& server, lsp::requests::TextDocument_PrepareCallHierarchy::Params&& req)
 {
@@ -20,16 +63,7 @@ PrepareCallHierarchy(Server& server, lsp::requests::TextDocument_PrepareCallHier
 
     features::CallHierarchyPrepareRequest pr{doc->uri, *doc->text, server.GetSymbolTable(),
                                              codec::Decode(*doc->text, server.GetPositionEncoding(), req.position)};
-    auto items = features::PrepareCallHierarchy(pr);
-    if (!items.has_value() || items->empty())
-    {
-        return lsp::Null{};
-    }
-    for (auto& item : items.value())
-    {
-        server.EncodeItemRanges(item);
-    }
-    return items.value();
+    return EncodeHierarchyItems(server, features::PrepareCallHierarchy(pr));
 }
 
 static lsp::requests::CallHierarchy_IncomingCalls::Result
@@ -41,17 +75,16 @@ GetIncomingCalls(Server& server, lsp::requests::CallHierarchy_IncomingCalls::Par
     }
 
     features::CallHierarchyItemRequest ir{server.GetSymbolTable(), server.GetCallGraph(), req.item};
-    auto calls = features::GetIncomingCalls(ir);
-    if (!calls.has_value() || calls->empty())
+    const auto encode = [&server](lsp::CallHierarchyIncomingCall& call)
     {
-        return lsp::Null{};
-    }
-    for (auto& call : calls.value())
-    {
-        server.EncodeItemRanges(call.from);
-        server.EncodeRangesIn(Server::DocumentKey(call.from.uri.toString()), call.fromRanges);
-    }
-    return calls.value();
+        if (!server.TryEncodeItemRanges(call.from))
+        {
+            return false;
+        }
+        server.EncodeRangesIn(call.from.uri.toString(), call.fromRanges);
+        return true;
+    };
+    return EncodeHierarchyResult(features::GetIncomingCalls(ir), encode);
 }
 
 static lsp::requests::CallHierarchy_OutgoingCalls::Result
@@ -62,47 +95,70 @@ GetOutgoingCalls(Server& server, lsp::requests::CallHierarchy_OutgoingCalls::Par
         return lsp::Null{};
     }
 
-    const std::string callerUri = Server::DocumentKey(req.item.uri.toString());
+    const std::string callerUri = req.item.uri.toString();
 
     features::CallHierarchyItemRequest ir{server.GetSymbolTable(), server.GetCallGraph(), req.item};
-    auto calls = features::GetOutgoingCalls(ir);
-    if (!calls.has_value() || calls->empty())
+    const auto encode = [&server, &callerUri](lsp::CallHierarchyOutgoingCall& call)
     {
-        return lsp::Null{};
-    }
-    for (auto& call : calls.value())
-    {
-        server.EncodeItemRanges(call.to);
+        if (!server.TryEncodeItemRanges(call.to))
+        {
+            return false;
+        }
         server.EncodeRangesIn(callerUri, call.fromRanges);
-    }
-    return calls.value();
+        return true;
+    };
+    return EncodeHierarchyResult(features::GetOutgoingCalls(ir), encode);
 }
 
-static lsp::requests::TextDocument_PrepareTypeHierarchy::Result
-PrepareTypeHierarchy(Server& server, lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req)
+lsp::requests::TextDocument_PrepareTypeHierarchy::Result
+Server::PrepareTypeHierarchy(lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req)
 {
-    if (!server.GetConfig().features.enableTypeHierarchy)
+    if (!GetConfig().features.enableTypeHierarchy)
     {
         return lsp::Null{};
     }
-    const auto doc = server.LookupOpenDocument(req.textDocument.uri.toString());
-    if (!doc)
+    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    if (!doc || !doc->docHandle || !doc->text)
     {
         return lsp::Null{};
     }
 
-    features::TypeHierarchyPrepareRequest pr{doc->uri, *doc->text, server.GetSymbolTable(),
-                                             codec::Decode(*doc->text, server.GetPositionEncoding(), req.position)};
+    const std::string_view source = *doc->text;
+    const auto parsedSource = doc->predefinedHandle ? source : doc->docHandle->ParsedSource();
+    const auto syntax = ResolveProtocolSyntax(doc->uri, parsedSource, doc->docHandle.get()).syntax;
+    if (!syntax)
+    {
+        return lsp::Null{};
+    }
+
+    const auto encoding = GetPositionEncoding();
+    const features::TypeHierarchyPrepareRequest pr{doc->uri,      source,       parsedSource, GetSymbolTable(),
+                                                   syntax->index, req.position, encoding};
     auto items = features::PrepareTypeHierarchy(pr);
     if (!items.has_value() || items->empty())
     {
         return lsp::Null{};
     }
-    for (auto& item : items.value())
+    auto& result = items.value();
+    for (auto item = result.begin(); item != result.end();)
     {
-        server.EncodeItemRanges(item);
+        bool encoded = true;
+        if (DocumentKey(item->uri.toString()) == doc->uri)
+        {
+            codec::Encode(syntax->index.Lines(), source, encoding, item->range);
+            codec::Encode(syntax->index.Lines(), source, encoding, item->selectionRange);
+        }
+        else
+        {
+            encoded = TryEncodeItemRanges(*item);
+        }
+        item = encoded ? item + 1 : result.erase(item);
     }
-    return items.value();
+    if (result.empty())
+    {
+        return lsp::Null{};
+    }
+    return result;
 }
 
 static lsp::requests::TypeHierarchy_Supertypes::Result
@@ -114,16 +170,7 @@ GetSupertypes(Server& server, lsp::requests::TypeHierarchy_Supertypes::Params&& 
     }
 
     features::TypeHierarchyItemRequest ir{server.GetSymbolTable(), req.item};
-    auto items = features::GetSupertypes(ir);
-    if (!items.has_value() || items->empty())
-    {
-        return lsp::Null{};
-    }
-    for (auto& item : items.value())
-    {
-        server.EncodeItemRanges(item);
-    }
-    return items.value();
+    return EncodeHierarchyItems(server, features::GetSupertypes(ir));
 }
 
 static lsp::requests::TypeHierarchy_Subtypes::Result GetSubtypes(Server& server,
@@ -135,16 +182,7 @@ static lsp::requests::TypeHierarchy_Subtypes::Result GetSubtypes(Server& server,
     }
 
     features::TypeHierarchyItemRequest ir{server.GetSymbolTable(), req.item};
-    auto items = features::GetSubtypes(ir);
-    if (!items.has_value() || items->empty())
-    {
-        return lsp::Null{};
-    }
-    for (auto& item : items.value())
-    {
-        server.EncodeItemRanges(item);
-    }
-    return items.value();
+    return EncodeHierarchyItems(server, features::GetSubtypes(ir));
 }
 
 void Server::RegisterHierarchyHandlers()
@@ -163,7 +201,7 @@ void Server::RegisterHierarchyHandlers()
 
     m_messageHandler->add<lsp::requests::TextDocument_PrepareTypeHierarchy>(
         [this](lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req)
-        { return PrepareTypeHierarchy(*this, std::move(req)); });
+        { return PrepareTypeHierarchy(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TypeHierarchy_Supertypes>(
         [this](lsp::requests::TypeHierarchy_Supertypes::Params&& req) { return GetSupertypes(*this, std::move(req)); });

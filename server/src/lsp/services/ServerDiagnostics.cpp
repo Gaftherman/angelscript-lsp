@@ -7,9 +7,12 @@
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
 
+#include <map>
+#include <memory>
 #include <span>
 #include <spdlog/fmt/fmt.h>
 #include <string_view>
+#include <utility>
 
 namespace angel_lsp
 {
@@ -30,7 +33,7 @@ void Server::PublishDiagnostics(std::string_view uriStr,
     });
 }
 
-std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(std::string_view text,
+std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(std::string_view uri, std::string_view text,
                                                            std::span<const angel_lsp::analysis::Diagnostic> diagnostics,
                                                            std::span<const utils::ExcludedLineRange> excluded) const
 {
@@ -39,9 +42,53 @@ std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(std::string_view text
 
     const utils::PositionEncoding encoding = m_sessionCoordinator->GetPositionEncoding();
     // One line table for the whole batch: utils::GetLine() rescans from byte 0 for every endpoint.
-    const utils::LineIndex lineIndex = (encoding == utils::PositionEncoding::Utf8 || text.empty())
-                                           ? utils::LineIndex{}
-                                           : utils::LineIndex::Build(text);
+    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
+    std::map<std::string, std::shared_ptr<const std::string>> relatedSources;
+    std::map<std::shared_ptr<const std::string>, utils::LineIndex> relatedIndexes;
+    std::map<std::pair<const std::string*, const std::string*>, bool> matchingSources;
+    const auto encodeRelated = [&](const analysis::DiagnosticRelatedInformation& related, lsp::Range& range)
+    {
+        const auto key = DocumentKey(related.fileUri);
+        if (key == uri)
+        {
+            return (!related.sourceSnapshot || *related.sourceSnapshot == text) &&
+                   codec::TryEncode(lineIndex, text, encoding, range);
+        }
+        // A closed mixin may have been analyzed from disk after its workspace index was built.
+        // For an open target, publish only if the related range still describes the editor's text.
+        auto [target, inserted] = relatedSources.try_emplace(key);
+        if (inserted)
+        {
+            target->second = GetDocumentStore().GetTextShared(key);
+        }
+        auto source = target->second;
+        if (!source)
+        {
+            source = related.sourceSnapshot ? related.sourceSnapshot : FindRangeSource(key);
+        }
+        if (!source)
+        {
+            return false;
+        }
+        if (related.sourceSnapshot && source != related.sourceSnapshot)
+        {
+            auto [match, newPair] = matchingSources.try_emplace({related.sourceSnapshot.get(), source.get()}, false);
+            if (newPair)
+            {
+                match->second = *related.sourceSnapshot == *source;
+            }
+            if (!match->second)
+            {
+                return false;
+            }
+        }
+        auto [index, newSource] = relatedIndexes.try_emplace(source);
+        if (newSource)
+        {
+            index->second = utils::LineIndex::Build(*source);
+        }
+        return codec::TryEncode(index->second, *source, encoding, range);
+    };
 
     for (const auto& diag : diagnostics)
     {
@@ -74,15 +121,21 @@ std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(std::string_view text
             {
                 lsp::DiagnosticRelatedInformation lspRel;
                 lspRel.message = rel.message;
-                const std::string relUri = GetDocumentStore().GetClientUri(rel.fileUri);
+                const std::string relUri = GetDocumentStore().GetClientUri(DocumentKey(rel.fileUri));
                 lspRel.location.uri = lsp::DocumentUri(lsp::Uri::parse(relUri));
                 lspRel.location.range.start.line = rel.range.start.line;
                 lspRel.location.range.start.character = rel.range.start.character;
                 lspRel.location.range.end.line = rel.range.end.line;
                 lspRel.location.range.end.character = rel.range.end.character;
-                relInfos.push_back(std::move(lspRel));
+                if (encodeRelated(rel, lspRel.location.range))
+                {
+                    relInfos.push_back(std::move(lspRel));
+                }
             }
-            lspDiag.relatedInformation = std::move(relInfos);
+            if (!relInfos.empty())
+            {
+                lspDiag.relatedInformation = std::move(relInfos);
+            }
         }
 
         if (!text.empty())
@@ -195,13 +248,14 @@ void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
     const std::string outgoingUri = GetDocumentStore().GetClientUri(request.uriStr);
     params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
 
-    const auto rawText = GetDocumentStore().GetTextShared(request.uriStr);
-    const std::string& effectiveText = rawText ? *rawText : request.text;
+    const auto rawText = request.positionSource ? nullptr : GetDocumentStore().GetTextShared(request.uriStr);
+    const std::string& effectiveText =
+        request.positionSource ? *request.positionSource : (rawText ? *rawText : request.text);
 
     const auto fallback =
         request.preprocessing ? std::vector<utils::ExcludedLineRange>{} : ExcludedLineRanges(effectiveText);
     const auto& excluded = request.preprocessing ? request.preprocessing->excluded : fallback;
-    params.diagnostics = ToProtocolDiagnostics(effectiveText, request.diagnostics, excluded);
+    params.diagnostics = ToProtocolDiagnostics(request.uriStr, effectiveText, request.diagnostics, excluded);
 
     if (GetDocumentStore().IsOpen(request.uriStr))
     {

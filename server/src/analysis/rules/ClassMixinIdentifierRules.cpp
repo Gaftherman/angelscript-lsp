@@ -10,11 +10,11 @@
 #include "document/Document.h"
 #include "parser/Primitives.h"
 #include "spdlog/fmt/fmt.h"
+#include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
-#include <cstring>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -93,17 +93,10 @@ static bool HasNamespacePropertyAccessor(const AccessorLookupContext& actx, std:
 static bool HasPropertyAccessorMatch(std::string_view name, const FunctionCheckState& state,
                                      const DiagnosticContext& ctx)
 {
-    if (name.size() > 120)
-    {
-        return false;
-    }
-    char buf[128];
-    std::memcpy(buf, "get_", 4);
-    std::memcpy(buf + 4, name.data(), name.size());
-    const std::string_view getView(buf, 4 + name.size());
-
-    std::memcpy(buf, "set_", 4);
-    const std::string_view setView(buf, 4 + name.size());
+    utils::AccessorNameBuffer getBuf;
+    utils::AccessorNameBuffer setBuf;
+    const std::string_view getView = getBuf.Compose(utils::k_getterPrefix, name);
+    const std::string_view setView = setBuf.Compose(utils::k_setterPrefix, name);
 
     if (HasSelfOrHostPropertyAccessor(getView, setView, state) ||
         HasGlobalPropertyAccessor(name, getView, setView, ctx))

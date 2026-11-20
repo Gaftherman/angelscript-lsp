@@ -190,11 +190,12 @@ TEST_SUITE("analysis/index/ClassRuleFacts")
         angel_lsp::analysis::MixinFileCacheEntry entry = angel_lsp::analysis::BuildMixinFileCacheEntry(code);
         CHECK(entry.tree != nullptr);
         CHECK(entry.nodeIndex != nullptr);
-        CHECK(entry.source == code);
+        REQUIRE(entry.source);
+        CHECK(*entry.source == code);
 
         angel_lsp::analysis::MixinFileCacheEntry emptyEntry = angel_lsp::analysis::BuildMixinFileCacheEntry("");
         CHECK(emptyEntry.nodeIndex == nullptr);
         CHECK(emptyEntry.tree == nullptr);
-        CHECK(emptyEntry.source.empty());
+        CHECK_FALSE(emptyEntry.source);
     }
 }

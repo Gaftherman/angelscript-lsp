@@ -24,6 +24,8 @@
 //
 // Exit codes: 0 compiled, 1 rejected, 2 could not read the file or start the engine.
 
+#include "DumpRegistry.h"
+
 #include <angelscript.h>
 
 #include <scriptarray/scriptarray.h>
@@ -41,16 +43,15 @@
 #include <datetime/datetime.h>
 #include <weakref/weakref.h>
 
-#include "DumpRegistry.h"
-
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
-namespace
+namespace angel_lsp::oracle
 {
     struct Message
     {
@@ -91,7 +92,7 @@ namespace
         return lines;
     }
 
-    void MessageCallback(const asSMessageInfo *info, void *)
+    void MessageCallback(const asSMessageInfo *info, [[maybe_unused]] void *context)
     {
         const char *type = "INFO";
         if (info->type == asMSGTYPE_ERROR)
@@ -119,7 +120,11 @@ namespace
      * asks yes or no. The only two answers an analyzer can be asked to match are "the host takes
      * every pragma" and "the host registered nothing", and the second is already the default.
      */
-    int AcceptAnyPragma(const std::string &, CScriptBuilder &, void *) { return 0; }
+    int AcceptAnyPragma([[maybe_unused]] const std::string &pragma, [[maybe_unused]] CScriptBuilder &builder,
+                        [[maybe_unused]] void *context)
+    {
+        return 0;
+    }
 
     void ScriptPrint(const std::string &line) { std::fputs(line.c_str(), stdout); }
     void ScriptPrintLine(const std::string &line) { std::printf("%s\n", line.c_str()); }
@@ -262,7 +267,7 @@ namespace
         return contents;
     }
 
-    std::string JsonEscape(const std::string &text)
+    std::string JsonEscape(std::string_view text)
     {
         std::string out;
         out.reserve(text.size() + 8);
@@ -291,15 +296,115 @@ namespace
         return out;
     }
 
-    void PrintJson()
+    /** @brief Counts UTF-16 units in a complete UTF-8 prefix ending on a token boundary. */
+    size_t Utf16Length(std::string_view text)
+    {
+        size_t length = 0;
+        for (const unsigned char byte : text)
+        {
+            if ((byte & 0xc0) != 0x80)
+            {
+                length += byte >= 0xf0 ? 2 : 1;
+            }
+        }
+        return length;
+    }
+
+    /** @brief Verifies the reported token and excludes qualified names, members and calls. */
+    bool IsBareIdentifier(const asIScriptEngine &engine, std::string_view source, size_t offset,
+                          std::string_view name)
+    {
+        std::string_view previous;
+        bool found = false;
+        for (size_t pos = 0; pos < source.size();)
+        {
+            asUINT length = 0;
+            const auto kind = engine.ParseToken(source.data() + pos, source.size() - pos, &length);
+            if (length == 0)
+            {
+                return false;
+            }
+            if (kind != asTC_WHITESPACE && kind != asTC_COMMENT)
+            {
+                const auto token = source.substr(pos, length);
+                if (found)
+                {
+                    return token != "(" && token != "::";
+                }
+                if (pos >= offset)
+                {
+                    if (pos != offset || kind != asTC_IDENTIFIER || token != name ||
+                        previous == "." || previous == "::" || previous == "->")
+                    {
+                        return false;
+                    }
+                    found = true;
+                }
+                previous = token;
+            }
+            pos += length;
+        }
+        return found;
+    }
+
+    /**
+     * @brief Writes a normalized diagnostic identity when the SDK's point identifies a bare value.
+     *
+     * The SDK supplies a byte position and text. Other error forms have no established mapping
+     * to a server code and full span here, so they remain unclassified.
+     */
+    void PrintDiagnosticIdentity(const asIScriptEngine &engine, const Message &message)
+    {
+        constexpr std::string_view prefix = "No matching symbol '";
+        const std::string_view text = message.text;
+        if (message.type == "ERROR" && message.row > 0 && message.col > 0 &&
+            text.size() > prefix.size() + 1 && text.substr(0, prefix.size()) == prefix && text.back() == '\'')
+        {
+            const auto name = text.substr(prefix.size(), text.size() - prefix.size() - 1);
+            bool readOk = false;
+            const std::string source = ReadWholeFile(message.section, readOk);
+            size_t lineStart = 0;
+            for (int row = 1; row < message.row && lineStart != std::string::npos; ++row)
+            {
+                lineStart = source.find('\n', lineStart);
+                if (lineStart != std::string::npos)
+                {
+                    ++lineStart;
+                }
+            }
+            const size_t column = static_cast<size_t>(message.col - 1);
+            const std::string_view remaining = lineStart == std::string::npos
+                                                   ? std::string_view{}
+                                                   : std::string_view(source).substr(lineStart);
+            const auto line = remaining.substr(0, remaining.find('\n'));
+            if (readOk && column < line.size() &&
+                IsBareIdentifier(engine, source, lineStart + column, name))
+            {
+                const size_t start = Utf16Length(line.substr(0, column));
+                const size_t end = start + Utf16Length(name);
+                const int lineNumber = message.row - 1;
+                std::printf("\"code\": \"as-warn-undeclared-identifier\", "
+                            "\"range\": {\"start\": {\"line\": %d, \"character\": %zu}, "
+                            "\"end\": {\"line\": %d, \"character\": %zu}}",
+                            lineNumber, start, lineNumber, end);
+                return;
+            }
+        }
+        std::printf("\"code\": null, \"range\": null");
+    }
+
+    void PrintJson(const asIScriptEngine &engine)
     {
         std::printf("{\n  \"hasError\": %s,\n  \"messages\": [\n", g_sawError ? "true" : "false");
         for (size_t i = 0; i < g_messages.size(); ++i)
         {
             const Message &m = g_messages[i];
             const bool probeOnly = g_sourceLineCount > 0 && m.row > g_sourceLineCount;
-            std::printf("    { \"type\": \"%s\", \"row\": %d, \"col\": %d, \"probeOnly\": %s, \"message\": \"%s\" }%s\n",
-                        m.type.c_str(), m.row, m.col, probeOnly ? "true" : "false", JsonEscape(m.text).c_str(),
+            std::printf("    { \"type\": \"%s\", \"section\": \"%s\", \"row\": %d, \"col\": %d, ",
+                        m.type.c_str(), JsonEscape(m.section).c_str(), m.row, m.col);
+            PrintDiagnosticIdentity(engine, m);
+            std::printf(", \"probeOnly\": %s, \"message\": \"%s\" }%s\n",
+                        probeOnly ? "true" : "false", JsonEscape(m.text).c_str(),
                         i + 1 < g_messages.size() ? "," : "");
         }
         std::printf("  ]");
@@ -317,9 +422,8 @@ namespace
         }
         std::printf("\n}\n");
     }
-}
 
-int main(int argc, char **argv)
+int Run(int argc, char **argv)
 {
     const char *scriptPath = nullptr;
 
@@ -812,7 +916,7 @@ int main(int argc, char **argv)
         // the script was judged and rejected. Only a genuinely unreadable section is still a 2.
         if (asJson)
         {
-            PrintJson();
+            PrintJson(*engine);
         }
 
         if (g_sawError)
@@ -874,7 +978,7 @@ int main(int argc, char **argv)
 
     if (asJson)
     {
-        PrintJson();
+        PrintJson(*engine);
     }
     else
     {
@@ -893,4 +997,10 @@ int main(int argc, char **argv)
 
     engine->ShutDownAndRelease();
     return (result < 0 || g_sawError) ? 1 : 0;
+}
+} // namespace angel_lsp::oracle
+
+int main(int argc, char **argv)
+{
+    return angel_lsp::oracle::Run(argc, argv);
 }

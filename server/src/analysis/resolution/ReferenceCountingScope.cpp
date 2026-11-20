@@ -4,6 +4,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "utils/ScopedNameUtils.h"
 
+#include <algorithm>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -175,11 +176,7 @@ bool MatchesClassTypeQualifier(std::string_view qualifier, const Scope* scope, u
 
 static bool ContainsTypeSymbol(const SymbolTable& table, std::string_view container, std::string_view name)
 {
-    if (container.empty())
-    {
-        return false;
-    }
-    const auto found = table.FindMemberSymbolPtr(container, name);
+    const auto found = container.empty() ? table.FindSymbolsPtr(name) : table.FindMemberSymbolPtr(container, name);
     if (!found)
     {
         return false;
@@ -195,27 +192,87 @@ static bool ContainsTypeSymbol(const SymbolTable& table, std::string_view contai
     return false;
 }
 
-bool IsGlobalTypeShadowed(const Scope* scope, const ReferenceCollectionCriteria& criteria)
+std::string_view FindEnclosingTypeContainer(const Scope& scope, std::string_view name, const SymbolTable& table)
 {
-    if (!criteria.isTypeTarget || !scope)
+    const std::string_view enclosingClass = scope.GetEnclosingClass();
+    if (!enclosingClass.empty() && ContainsTypeSymbol(table, enclosingClass, name))
     {
-        return false;
+        return enclosingClass;
     }
-    if (ContainsTypeSymbol(criteria.symbolTable, scope->GetEnclosingClass(), criteria.targetName))
-    {
-        return true;
-    }
-    bool shadowed = false;
-    utils::ForEachEnclosingScope(scope->GetEnclosingNamespace(),
+    std::string_view container;
+    utils::ForEachEnclosingScope(scope.GetEnclosingNamespace(),
                                  [&](std::string_view ns) -> bool
                                  {
-                                     if (ContainsTypeSymbol(criteria.symbolTable, ns, criteria.targetName))
+                                     if (ContainsTypeSymbol(table, ns, name))
                                      {
-                                         shadowed = true;
+                                         container = ns;
                                          return true;
                                      }
                                      return false;
                                  });
-    return shadowed;
+    return container;
+}
+
+static bool IsTypeQualifier(const Symbol& symbol)
+{
+    return symbol.type == SymbolType::Namespace || symbol.type == SymbolType::Class ||
+           symbol.type == SymbolType::Interface;
+}
+
+static bool MatchesTypeFromQualifiedScope(std::string_view name, std::string_view qualifiedScope,
+                                          std::string_view owner, const SymbolTable& table)
+{
+    for (auto lexical = qualifiedScope; !lexical.empty(); lexical = utils::ParentScopeView(lexical))
+    {
+        if (ContainsTypeSymbol(table, lexical, name))
+        {
+            return lexical == owner;
+        }
+    }
+    return owner.empty() && ContainsTypeSymbol(table, {}, name);
+}
+
+bool MatchesWrittenTypeOwner(const LocalReference& reference, const Scope& scope, std::string_view container,
+                             const SymbolTable& table)
+{
+    const auto qualifier = GetIndexedReferenceQualifier(reference, scope);
+    if (qualifier.empty())
+    {
+        const auto owner = FindEnclosingTypeContainer(scope, reference.name, table);
+        return owner == container || (owner.empty() && IsUsingNamespaceActive(&scope, reference.startByte, container));
+    }
+
+    if (!utils::HasLeadingGlobalPrefix(qualifier))
+    {
+        for (auto lexical = scope.GetEnclosingNamespace(); !lexical.empty(); lexical = utils::ParentScopeView(lexical))
+        {
+            const auto symbols = table.FindMemberSymbolPtr(lexical, qualifier);
+            if (symbols)
+            {
+                const auto found = std::ranges::find_if(*symbols, IsTypeQualifier);
+                if (found != symbols->end())
+                {
+                    return MatchesTypeFromQualifiedScope(reference.name, found->qualifiedName, container, table);
+                }
+            }
+        }
+    }
+
+    const auto globalQualifier = utils::StripGlobalPrefix(qualifier);
+    if (!globalQualifier.empty())
+    {
+        const auto symbols = table.FindSymbolsPtr(globalQualifier);
+        if (!symbols || !std::ranges::any_of(*symbols, IsTypeQualifier))
+        {
+            return false;
+        }
+    }
+    return MatchesTypeFromQualifiedScope(reference.name, globalQualifier, container, table);
+}
+
+bool IsGlobalTypeShadowed(const Scope* scope, const ReferenceCollectionCriteria& criteria)
+{
+    return criteria.isTypeTarget && scope &&
+           !FindEnclosingTypeContainer(*scope, criteria.targetName, criteria.symbolTable).empty();
 }
 } // namespace angel_lsp::analysis

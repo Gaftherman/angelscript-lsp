@@ -70,7 +70,7 @@ static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table,
     {
         return "";
     }
-    char getterBuf[128];
+    utils::AccessorNameBuffer getterBuf;
     const std::string_view getterView = utils::ComposeGetterName(memberName, getterBuf);
 
     for (const auto& cls : GetInheritedTypeHierarchy(table, parentType))
@@ -150,7 +150,7 @@ std::string ResolveNamedReceiverType(std::string_view nodeText, const Completion
     {
         return memberHit;
     }
-    char getterBuf[128];
+    utils::AccessorNameBuffer getterBuf;
     if (const std::string_view getterView = utils::ComposeGetterName(nodeText, getterBuf); !getterView.empty())
     {
         if (std::string ret = FindFunctionReturnType(request.symbolTable, getterView); !ret.empty())

@@ -4,6 +4,7 @@
 #include "features/signature_help/SignatureHelpHandler.h"
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
+#include "utils/PositionEncoding.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 
@@ -12,10 +13,59 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace angel_lsp
 {
+
+/**
+ * @brief Encodes completion edit ranges in the snapshot used to generate them.
+ * @param[in] text Source of the completion request.
+ * @param[in] encoding Client position encoding.
+ * @param[in,out] items Completion items containing byte-column edits.
+ */
+static void EncodeCompletionEdits(std::string_view text, utils::PositionEncoding encoding,
+                                  std::vector<lsp::CompletionItem>& items)
+{
+    if (encoding == utils::PositionEncoding::Utf8)
+    {
+        return;
+    }
+
+    utils::LineIndex lineIndex;
+    const auto encode = [&](lsp::Range& range)
+    {
+        if (lineIndex.LineCount() == 0)
+        {
+            lineIndex = utils::LineIndex::Build(text);
+        }
+        codec::Encode(lineIndex, text, encoding, range);
+    };
+    for (auto& item : items)
+    {
+        if (item.textEdit)
+        {
+            if (auto* edit = std::get_if<lsp::TextEdit>(&*item.textEdit))
+            {
+                encode(edit->range);
+            }
+            else
+            {
+                auto& replacement = std::get<lsp::InsertReplaceEdit>(*item.textEdit);
+                encode(replacement.insert);
+                encode(replacement.replace);
+            }
+        }
+        if (item.additionalTextEdits)
+        {
+            for (auto& edit : *item.additionalTextEdits)
+            {
+                encode(edit.range);
+            }
+        }
+    }
+}
 
 lsp::requests::TextDocument_Completion::Result
 Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Completion::Params&& req)
@@ -34,7 +84,8 @@ Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Comple
         (doc->docHandle && doc->docHandle->tree)
             ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
             : nullptr;
-    const lsp::Position position = codec::Decode(*doc->text, m_sessionCoordinator->GetPositionEncoding(), req.position);
+    const auto encoding = GetPositionEncoding();
+    const lsp::Position position = codec::Decode(*doc->text, encoding, req.position);
     const std::string documentPath = CanonicalPathFromUri(doc->uri);
 
     analysis::completion::CompletionQuery cr{doc->uri,
@@ -61,7 +112,9 @@ Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Comple
         return results;
     };
 
-    return features::GetCompletion(cr);
+    auto items = features::GetCompletion(cr);
+    EncodeCompletionEdits(*doc->text, encoding, items);
+    return items;
 }
 
 lsp::requests::CompletionItem_Resolve::Result

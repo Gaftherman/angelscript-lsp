@@ -34,6 +34,25 @@ static bool TryReadAccess(const Symbol& sym, AccessModifier& access)
     return false;
 }
 
+/** @brief True for an enum value, which only ever resolves through its enum and never as an instance member. */
+static bool IsEnumConstant(const Symbol& sym)
+{
+    return sym.type == SymbolType::Variable && std::holds_alternative<VariableSignature>(sym.signature) &&
+           sym.GetVariable().isEnumConstant;
+}
+
+/**
+ * @brief True for a declaration that can be read or written through a receiver: a method or a field.
+ *
+ * A nested type such as `A::Inner` is registered under the same container as the members of `A`, so it
+ * must not shadow a property accessor that happens to share its spelling.
+ */
+static bool IsInstanceMemberCandidate(const Symbol& sym)
+{
+    return !IsEnumConstant(sym) && (std::holds_alternative<FunctionSignature>(sym.signature) ||
+                                    std::holds_alternative<VariableSignature>(sym.signature));
+}
+
 /**
  * @brief Checks whether property accessors (get_X/set_X) are enabled by engine configuration.
  */
@@ -63,29 +82,16 @@ static std::vector<Symbol> CollectDirectCandidates(std::string_view owner, std::
     if (candidatesPtr && !candidatesPtr->empty())
     {
         candidates.insert(candidates.end(), candidatesPtr->begin(), candidatesPtr->end());
-        const bool hasInstance = std::any_of(candidates.begin(), candidates.end(),
-                                             [](const Symbol& s)
-                                             {
-                                                 return !(s.type == SymbolType::Variable &&
-                                                          std::holds_alternative<VariableSignature>(s.signature) &&
-                                                          s.GetVariable().isEnumConstant);
-                                             });
-        if (hasInstance)
+        if (std::any_of(candidates.begin(), candidates.end(), IsInstanceMemberCandidate))
         {
-            std::stable_partition(candidates.begin(), candidates.end(),
-                                  [](const Symbol& s)
-                                  {
-                                      return !(s.type == SymbolType::Variable &&
-                                               std::holds_alternative<VariableSignature>(s.signature) &&
-                                               s.GetVariable().isEnumConstant);
-                                  });
+            std::stable_partition(candidates.begin(), candidates.end(), IsInstanceMemberCandidate);
             return candidates;
         }
     }
 
     for (const std::string_view accessorPrefix : {utils::k_getterPrefix, utils::k_setterPrefix})
     {
-        char accBuf[512];
+        utils::AccessorNameBuffer accBuf;
         const std::string_view accName = utils::ComposeAccessorName(accessorPrefix, memberName, accBuf);
         auto accSyms = accName.empty() ? nullptr : ctx.table.FindMemberSymbolPtr(owner, accName);
         if (!accSyms)
@@ -101,13 +107,7 @@ static std::vector<Symbol> CollectDirectCandidates(std::string_view owner, std::
             }
         }
     }
-    std::stable_partition(candidates.begin(), candidates.end(),
-                          [](const Symbol& s)
-                          {
-                              return !(s.type == SymbolType::Variable &&
-                                       std::holds_alternative<VariableSignature>(s.signature) &&
-                                       s.GetVariable().isEnumConstant);
-                          });
+    std::stable_partition(candidates.begin(), candidates.end(), IsInstanceMemberCandidate);
     return candidates;
 }
 
@@ -141,7 +141,7 @@ static std::vector<Symbol> CollectContainerCandidates(std::string_view owner, st
 
     for (const std::string_view accessorPrefix : {utils::k_getterPrefix, utils::k_setterPrefix})
     {
-        char accBuf[512];
+        utils::AccessorNameBuffer accBuf;
         const std::string_view accName = utils::ComposeAccessorName(accessorPrefix, memberName, accBuf);
         if (auto syms = accName.empty() ? nullptr : ctx.table.FindSymbolsPtr(accName))
         {
@@ -230,8 +230,8 @@ MemberLookupResult FindMember(std::string_view typeName, std::string_view member
 
     const auto ruleIndex = table.GetRuleIndex();
     const MemberLookupContext ctx{typeName, table, accessorKeywordRequired};
-    char getBuf[512];
-    char setBuf[512];
+    utils::AccessorNameBuffer getBuf;
+    utils::AccessorNameBuffer setBuf;
     const std::string_view getAcc = utils::ComposeAccessorName(utils::k_getterPrefix, memberName, getBuf);
     const std::string_view setAcc = utils::ComposeAccessorName(utils::k_setterPrefix, memberName, setBuf);
     for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))

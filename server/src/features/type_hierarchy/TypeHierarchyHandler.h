@@ -1,6 +1,8 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
+#include "utils/PositionEncoding.h"
 
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -16,10 +18,13 @@ namespace angel_lsp::features
  */
 struct TypeHierarchyPrepareRequest
 {
-    std::string_view uri{};
-    std::string_view sourceCode{};
-    const analysis::SymbolTable& symbolTable;
-    lsp::Position position{};
+    std::string_view uri;                     ///< Canonical URI of the cursor document.
+    std::string_view sourceCode;              ///< Client-visible text for position conversion.
+    std::string_view parsedSource;            ///< Parser input with the same line and byte offsets.
+    const analysis::SymbolTable& symbolTable; ///< Indexed workspace declarations.
+    const analysis::NodeIndex& nodeIndex;     ///< Syntax facts for the parsed source.
+    lsp::Position position;                   ///< Cursor in the client's negotiated encoding.
+    utils::PositionEncoding positionEncoding; ///< Encoding used by the cursor column.
 };
 
 /**
@@ -33,9 +38,9 @@ struct TypeHierarchyItemRequest
 };
 
 /**
- * @brief Opens a type hierarchy on the type the cursor is looking at.
- *        The identifier under the cursor when it names a class or an interface; failing that, the type
- * @return The item, or nullopt when the cursor is looking at no type at all.
+ * @brief Opens a type hierarchy for the referenced type or the innermost enclosing declaration.
+ * @param[in] request Cursor, source revision, and declaration lookup context.
+ * @return Matching items, or nullopt when the cursor resolves to no type.
  */
 [[nodiscard]] std::optional<std::vector<lsp::TypeHierarchyItem>>
 PrepareTypeHierarchy(const TypeHierarchyPrepareRequest& request);

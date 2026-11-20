@@ -169,7 +169,7 @@ void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, bool isRec
 static std::optional<Symbol> TryResolveGetterCallableFuncdef(std::string_view typeName, std::string_view memberName,
                                                              const SymbolTable& table)
 {
-    char getterBuf[512];
+    utils::AccessorNameBuffer getterBuf;
     const std::string_view getterName = utils::ComposeGetterName(memberName, getterBuf);
     if (const auto getterFound = getterName.empty() ? nullptr : table.FindMemberSymbolPtr(typeName, getterName))
     {

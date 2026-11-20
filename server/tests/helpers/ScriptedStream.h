@@ -2,6 +2,7 @@
 
 #include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <lsp/io/stream.h>
 #include <mutex>
@@ -225,7 +226,7 @@ class ScriptedStream final : public lsp::io::Stream
     mutable std::mutex m_outputMutex;
     mutable std::condition_variable m_outputCv;
     std::size_t m_readOffset = 0;
-    std::vector<ScheduledAction> m_actions;
+    std::deque<ScheduledAction> m_actions; ///< Stable under push_back: a running action may schedule more.
     std::size_t m_nextAction = 0;
 };
 } // namespace angel_lsp::test

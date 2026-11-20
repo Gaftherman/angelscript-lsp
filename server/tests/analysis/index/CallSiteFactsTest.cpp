@@ -4,6 +4,7 @@
 #include "parser/AngelScriptParser.h"
 #include "utils/ScopedNameUtils.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <doctest/doctest.h>
 #include <string>
@@ -349,6 +350,34 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         CHECK(lparams[0].isReference == true);
         CHECK(lparams[0].modifier == angel_lsp::analysis::ParameterModifier::In);
         CHECK(lparams[1].hasWrittenType == false);
+
+        ts_tree_delete(tree);
+    }
+    TEST_CASE("CallSiteFacts - A computed callee is Indirect and keeps its whole expression span")
+    {
+        angel_lsp::parser::AngelScriptParser parser;
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const std::string table = angel_lsp::test::GenerateRandomSymbolName("callbacks");
+        const std::string maker = angel_lsp::test::GenerateRandomSymbolName("make");
+        const std::string code = "void " + fnName + "()\n{\n    " + table + "[0](this);\n    " + maker + "()(1);\n}\n";
+
+        TSTree* tree = parser.Parse(code);
+        REQUIRE(tree != nullptr);
+        angel_lsp::analysis::NodeIndex index(ts_tree_root_node(tree),
+                                             angel_lsp::analysis::NodeIndexOptions{.source = code});
+        const auto facts = angel_lsp::analysis::BuildCallSiteFacts(index, code);
+
+        const auto indexed = std::find_if(facts.callSites.begin(), facts.callSites.end(), [&](const auto& site)
+                                          { return facts.TextOf(site.calleeBytes) == table + "[0]"; });
+        REQUIRE(indexed != facts.callSites.end());
+        CHECK(indexed->calleeKind == angel_lsp::analysis::CalleeKind::Indirect);
+        CHECK(indexed->isMemberCall == false);
+        CHECK(indexed->argumentCount == 1);
+
+        const auto chained = std::find_if(facts.callSites.begin(), facts.callSites.end(), [&](const auto& site)
+                                          { return facts.TextOf(site.calleeBytes) == maker + "()"; });
+        REQUIRE(chained != facts.callSites.end());
+        CHECK(chained->calleeKind == angel_lsp::analysis::CalleeKind::Indirect);
 
         ts_tree_delete(tree);
     }

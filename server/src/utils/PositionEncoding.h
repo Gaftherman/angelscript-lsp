@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -8,12 +9,13 @@ namespace angel_lsp::utils
 {
 /**
  * @brief How an LSP client counts the `character` field of a `Position`.
- *        Tree-sitter always reports columns in bytes, so every position crossing the LSP
+ * @note Parser columns are UTF-8 byte offsets.
  */
 enum class PositionEncoding
 {
     Utf8,  ///< `character` counts bytes - identical to Tree-sitter's columns, conversions are identity.
     Utf16, ///< `character` counts UTF-16 code units - the LSP default.
+    Utf32, ///< `character` counts Unicode code points.
 };
 
 /**
@@ -66,6 +68,14 @@ size_t LineStartOffset(std::string_view text, uint32_t line);
  * @return View into text spanning the line without a trailing "\r\n" or "\n", empty if past the end.
  */
 std::string_view GetLine(std::string_view text, uint32_t line);
+
+/**
+ * @brief Finds a line without building an index.
+ * @param[in] text Full UTF-8 document text.
+ * @param[in] line Zero-based line number.
+ * @return Line content without its terminator, or std::nullopt past the last line.
+ */
+[[nodiscard]] std::optional<std::string_view> FindLine(std::string_view text, uint32_t line);
 
 /**
  * @brief Converts an LSP `Position.character` into a byte column within the same line.

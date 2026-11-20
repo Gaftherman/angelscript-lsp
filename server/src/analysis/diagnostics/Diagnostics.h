@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -44,6 +45,8 @@ struct DiagnosticRelatedInformation
     DiagnosticRange range;
     std::string message;
     std::string fileUri;
+    /** @brief Exact source used for a cross-document range, when retained by the producer. */
+    std::shared_ptr<const std::string> sourceSnapshot;
 };
 
 /**
