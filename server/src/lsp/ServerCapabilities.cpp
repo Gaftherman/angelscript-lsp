@@ -5,7 +5,6 @@
 #include "utils/MultiFileLogger.h"
 
 #include <memory>
-#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <utility>
 
@@ -48,7 +47,8 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
     result.serverInfo = info;
     result.capabilities =
         BuildServerCapabilities(m_config, m_sessionCoordinator->GetPositionEncoding(), usePullDiagnostics);
-    LogInfo(fmt::format("Negotiated position encoding: {}", result.capabilities.positionEncoding->value()));
+    LogInfo(i18n::FormatMessage(m_i18n.get(), "log-negotiated-position-encoding", "Negotiated position encoding: {}",
+                                result.capabilities.positionEncoding->value()));
 
     return result;
 }

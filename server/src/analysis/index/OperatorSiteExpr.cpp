@@ -80,6 +80,12 @@ static void CollectArgumentExprNodes(TSNode argsListNode, const parser::GrammarS
     ts_tree_cursor_delete(&cursor);
 }
 
+/**
+ * @brief Appends subscript operands in their written order, skipping the receiver and delimiters.
+ * @param[in] indexNode Subscript syntax node whose direct children are scanned.
+ * @param[in] gs Grammar symbols and field identifiers for the subscript operands.
+ * @param[in,out] outNodes Operand nodes borrowed from the same syntax tree as indexNode.
+ */
 static void CollectIndexArgNodes(TSNode indexNode, const parser::GrammarSymbols& gs, std::vector<TSNode>& outNodes)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(indexNode);

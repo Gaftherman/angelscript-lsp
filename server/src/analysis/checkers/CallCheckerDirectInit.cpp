@@ -65,8 +65,7 @@ void CheckVariableDirectInitialization(const DirectInitSiteFact& init, const Ast
     std::string_view rawDeclaredType = CallSiteFacts::SliceText(request.sourceCode, init.declaredTypeBytes);
     TrimTypeWhitespace(rawDeclaredType);
     const std::string declaredType = CleanExpressionType(rawDeclaredType);
-    if (declaredType.empty() || parser::primitives::IsAutoType(declaredType) ||
-        rawDeclaredType.find('[') != std::string_view::npos)
+    if (declaredType.empty() || parser::primitives::IsAutoType(declaredType) || HasArrayBracketView(rawDeclaredType))
     {
         return;
     }

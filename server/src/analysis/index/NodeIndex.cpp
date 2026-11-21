@@ -1111,7 +1111,7 @@ void NodeIndex::Build(TSNode root, const NodeIndexOptions& options)
         return;
     }
 
-    m_hasSyntaxErrors = ts_node_has_error(root) || ts_node_is_error(root);
+    m_hasParserErrors = ts_node_has_error(root);
     m_language = options.lang ? options.lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
     m_symComment = SymbolForName("comment");
@@ -1124,7 +1124,7 @@ void NodeIndex::Build(TSNode root, const NodeIndexOptions& options)
     BuildEnclosingSameSym();
     PostProcessErrorRanges();
     PostProcessCommentRanges();
-    m_hasSyntaxErrors = m_hasSyntaxErrors || !m_errorRanges.empty();
+    m_hasSyntaxErrors = m_hasParserErrors || ts_node_is_error(root) || !m_errorRanges.empty();
 }
 
 void NodeIndex::BuildEnclosingSameSym()
@@ -1405,6 +1405,7 @@ std::span<const NodeIndex::ErrorRange> NodeIndex::ErrorRanges() const noexcept
 void NodeIndex::Clear() noexcept
 {
     m_root = TSNode{};
+    m_hasParserErrors = false;
     m_hasSyntaxErrors = false;
     m_language = nullptr;
     m_nodeCount = 0;

@@ -54,7 +54,7 @@ DeclaredType ReadDeclaredType(std::string_view raw, const DiagnosticContext& ctx
         return result;
     }
 
-    if (HasTemplateArgumentsView(raw) || raw.find('[') != std::string_view::npos)
+    if (HasTemplateArgumentsView(raw) || HasArrayBracketView(raw))
     {
         result.usable = true;
         result.isTemplateOrArray = true;

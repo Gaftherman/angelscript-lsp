@@ -329,6 +329,31 @@ TEST_SUITE("features/TypeHierarchy")
         CHECK((*itemsWidget)[0].range.start.line == 2);
     }
 
+    TEST_CASE("TypeHierarchy - Resolves a scoped type from each segment and ignores quoted or commented spellings")
+    {
+        const auto outer = test::GenerateRandomSymbolName("Outer");
+        const auto inner = test::GenerateRandomSymbolName("Inner");
+        const auto type = test::GenerateRandomSymbolName("Widget");
+        const auto scoped = outer + "::" + inner + "::" + type;
+        const auto typeLine = "    " + scoped + " value;";
+        const auto commentLine = "    // " + scoped;
+        const auto stringLine = "    consume(\"" + scoped + "\");";
+        Fixture fixture("namespace " + outer + " { namespace " + inner + " { class " + type + " {} } }\n" +
+                        "void main() {\n" + typeLine + "\n" + commentLine + "\n" + stringLine + "\n}\n");
+
+        for (const auto column :
+             {typeLine.find(outer), typeLine.find(inner), typeLine.find(type), typeLine.find(type) + type.size()})
+        {
+            const auto items = fixture.Prepare(2, static_cast<uint32_t>(column));
+            REQUIRE(items.has_value());
+            REQUIRE(items->size() == 1);
+            REQUIRE(items->front().data.has_value());
+            CHECK(items->front().data->string() == scoped);
+        }
+        CHECK_FALSE(fixture.Prepare(3, static_cast<uint32_t>(commentLine.find(type))).has_value());
+        CHECK_FALSE(fixture.Prepare(4, static_cast<uint32_t>(stringLine.find(type))).has_value());
+    }
+
     TEST_CASE("TypeHierarchy - Supertypes isolates bases of same-named types across namespaces")
     {
         Fixture fixture("namespace NS1\n"

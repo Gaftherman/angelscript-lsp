@@ -1,5 +1,6 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 
+#include "analysis/index/NamespaceUsageFacts.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "features/common/FeatureSharedUtils.h"
@@ -331,25 +332,14 @@ static std::optional<lsp::TypeHierarchyItem> FindOwnerItem(const TypeHierarchyPr
 
 /** @brief Resolves the selected segment before trying its full scoped spelling and short name. */
 static std::vector<analysis::Symbol> FindReferencedTypes(const TypeHierarchyPrepareRequest& request,
-                                                         std::string_view line, uint32_t column, uint32_t cursorByte)
+                                                         uint32_t cursorByte)
 {
-    auto anchor = column;
-    if (anchor == line.size() || !common::IsIdentifierChar(line[anchor]))
-    {
-        if (anchor == 0 || !common::IsIdentifierChar(line[anchor - 1]))
-        {
-            return {};
-        }
-        --anchor;
-    }
-    const auto anchorByte = cursorByte - (column - anchor);
-    if (request.nodeIndex.IsInsideComment(anchorByte) || request.nodeIndex.IsInsideStringLiteral(anchorByte))
+    const auto spelling = analysis::FindScopedNameAtCursor(request.nodeIndex, request.parsedSource, cursorByte);
+    if (!spelling)
     {
         return {};
     }
-    const auto start = common::ExpandScopedIdentifierStart(line, anchor);
-    const auto end = common::ExpandScopedIdentifierEnd(line, anchor);
-    const auto name = line.substr(start, end - start);
+    const auto name = spelling->throughSelection;
     auto declarations = FindTypeDeclarations(name, request.symbolTable);
     if (declarations.empty())
     {
@@ -359,13 +349,9 @@ static std::vector<analysis::Symbol> FindReferencedTypes(const TypeHierarchyPrep
             declarations = FindTypeDeclarations(name, request.symbolTable, enclosingNamespace);
         }
     }
-    if (declarations.empty())
+    if (declarations.empty() && spelling->full != name)
     {
-        const auto fullEnd = common::ExpandFullScopedIdentifierEnd(line, anchor);
-        if (fullEnd != end)
-        {
-            declarations = FindTypeDeclarations(line.substr(start, fullEnd - start), request.symbolTable);
-        }
+        declarations = FindTypeDeclarations(spelling->full, request.symbolTable);
     }
     if (declarations.empty())
     {
@@ -399,7 +385,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
         }
     }
 
-    const auto declarations = FindReferencedTypes(request, line, column, cursorByte);
+    const auto declarations = FindReferencedTypes(request, cursorByte);
     if (declarations.empty())
     {
         if (owner && !onOwnerName)

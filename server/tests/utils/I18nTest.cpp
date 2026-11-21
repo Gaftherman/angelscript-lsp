@@ -34,6 +34,26 @@ TEST_SUITE("utils/I18n")
         CHECK(I18n("es").GetMessageView("as-err-void-variable") != I18n("en").GetMessageView("as-err-void-variable"));
     }
 
+    TEST_CASE("I18n - Server logs localize without losing their format arguments")
+    {
+        const I18n english("en");
+        const I18n spanish("es");
+        const auto check = [&](std::string_view key, std::string_view argument, const auto&... args)
+        {
+            REQUIRE_FALSE(english.GetMessageView(key).empty());
+            REQUIRE_FALSE(spanish.GetMessageView(key).empty());
+            const auto en = angel_lsp::i18n::FormatMessage(&english, key, "", args...);
+            const auto es = angel_lsp::i18n::FormatMessage(&spanish, key, "", args...);
+            CHECK(en != es);
+            CHECK(en.find(argument) != std::string::npos);
+            CHECK(es.find(argument) != std::string::npos);
+        };
+        check("log-negotiated-position-encoding", "utf-16", "utf-16");
+        check("log-reanalyze-open-documents", "17", 17);
+        check("log-semantic-tokens-full", "2.50 ms", 2.5, "probe.as", 7);
+        check("log-semantic-tokens-delta", "3.25 ms", 3.25, "probe.as", 2);
+    }
+
     TEST_CASE("I18n - An unknown language falls back to English")
     {
         const std::string_view english = I18n("en").GetMessageView("as-err-void-variable");

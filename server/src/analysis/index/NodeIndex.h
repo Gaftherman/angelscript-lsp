@@ -665,7 +665,16 @@ class NodeIndex
     /// Returns the nearest function or lambda for a return, or the nearest class for a function.
     [[nodiscard]] TSNode EnclosingDeclaration(TSNode node) const noexcept;
 
-    /// Reports whether the parsed root has a syntax error anywhere in the document.
+    /**
+     * @brief Reports whether the parser marked the root as containing a syntax error.
+     * @return False for an empty index or a tree accepted without parser errors.
+     */
+    [[nodiscard]] bool HasParserErrors() const noexcept
+    {
+        return m_hasParserErrors;
+    }
+
+    /// Reports parser errors and additional recovery sites tracked by the index.
     [[nodiscard]] bool HasSyntaxErrors() const noexcept
     {
         return m_hasSyntaxErrors;
@@ -903,6 +912,7 @@ class NodeIndex
     utils::LineIndex m_lines;
     std::shared_ptr<FlowFacts> m_flowFacts;
     TSSymbol m_symComment = 0;
+    bool m_hasParserErrors = false;
     bool m_hasSyntaxErrors = false;
 };
 /**

@@ -17,6 +17,12 @@
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Computes the type of one indexed expression after the caller checks its memo entry.
+ * @param[in] node Expression fact whose kind selects the type resolution path.
+ * @param[in,out] ctx Scope, declarations, and memo state used when resolving operand types.
+ * @return Resolved expression type spelling, or an empty string when it cannot be determined.
+ */
 static std::string ComputeExprTypeUncached(const IndexedExprNode& node, ExprTypeEvalContext& ctx)
 {
     switch (node.kind)

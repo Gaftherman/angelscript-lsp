@@ -82,7 +82,7 @@ PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(std::string_view uri,
     double parseMs = parseTimer.ElapsedMs();
 
     utils::HighResTimer symTimer;
-    ReplaceSymbolsFromTree(uri, content, &tree);
+    ReplaceSymbolsFromTree({std::string(uri), content, m_i18n.get()}, &tree);
     double symMs = symTimer.ElapsedMs();
 
     utils::HighResTimer scopeTimer;

@@ -222,7 +222,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     }
 
     const auto& preprocessing = *req.preprocessing;
-    auto request = BuildAnalysisRequest(req.uriStr, req.text, &nodeIndex, preprocessing, activeTable);
+    auto request = BuildAnalysisRequest(req.uriStr, req.text, preprocessing, activeTable);
     request.scopeRoot = scopeRoot;
     request.mutableScopeRoot = scopeRoot.get();
     request.nodeIndex = &nodeIndex;

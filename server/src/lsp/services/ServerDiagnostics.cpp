@@ -266,18 +266,4 @@ void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
 
     NotifyClientDiagnostics(std::move(params));
 }
-
-void Server::PublishDiagnostics(std::string_view uriStr, std::string_view text,
-                                const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version,
-                                std::shared_ptr<const utils::PreprocessorScan> preprocessing)
-{
-    PublishDiagnostics(PublishDiagnosticsRequest{
-        .uriStr = std::string(uriStr),
-        .text = std::string(text),
-        .diagnostics = diagnostics,
-        .version = version,
-        .generation = GetDocumentStore().GetGeneration(uriStr),
-        .preprocessing = std::move(preprocessing),
-    });
-}
 } // namespace angel_lsp

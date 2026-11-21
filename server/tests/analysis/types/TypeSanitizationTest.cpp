@@ -14,6 +14,17 @@ namespace angel_lsp::analysis
 {
 TEST_SUITE("analysis/types/TypeSanitization")
 {
+    TEST_CASE("TypeSanitization - Detects written array brackets before type canonicalization")
+    {
+        const auto type = angel_lsp::test::GenerateRandomSymbolName("Element");
+        const auto container = angel_lsp::test::GenerateRandomSymbolName("Container");
+        CHECK_FALSE(HasArrayBracketView(type));
+        CHECK_FALSE(HasArrayBracketView(container + "<" + type + ">"));
+        CHECK(HasArrayBracketView(type + "[]@"));
+        CHECK(HasArrayBracketView(type + "["));
+        CHECK(HasArrayBracketView(container + "<" + type + "[ ]>"));
+    }
+
     TEST_CASE("TypeSanitization - TrailingReferenceModifierLength handles &in, &out, &inout with whitespace")
     {
         // 1. Single &

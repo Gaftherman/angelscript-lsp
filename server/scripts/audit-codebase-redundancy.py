@@ -763,17 +763,20 @@ def compute_memory_layout_audit():
 # ==============================================================================
 def check_header_doxygen(f_rel: str, sym_name: str) -> bool:
     """Checks if the function or struct declaration has Doxygen in the corresponding header."""
-    p = REPO_ROOT / f_rel.replace("/", "\\")
+    p = REPO_ROOT / f_rel
     if p.suffix == ".cpp":
         h_candidates = [
             p.with_suffix(".h"),
         ]
+        source = p.read_text(encoding="utf-8", errors="ignore")
+        includes = re.findall(r'(?m)^[ \t]*#include[ \t]+"([^"\r\n]+\.h)"', source)
+        h_candidates.extend(SERVER_SRC / header for header in includes)
         if "features/" in f_rel:
             feat_dir = p.parent
             h_candidates.extend(feat_dir.glob("*.h"))
         elif "lsp/" in f_rel:
             h_candidates.append(REPO_ROOT / "server" / "src" / "lsp" / "Server.h")
-        for h in h_candidates:
+        for h in dict.fromkeys(h_candidates):
             if h.is_file():
                 try:
                     htxt = h.read_text(encoding="utf-8", errors="ignore")
@@ -824,10 +827,9 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
                     close_pos = find_matching_brace(txt, open_pos)
                     if close_pos == -1:
                         continue
-                    match_start = m.start()
-                    if txt[match_start] == "\n":
-                        match_start += 1
-                    sl = txt[:match_start].count("\n") + 1
+                    declaration = m.group("decl")
+                    match_start = m.start("decl") + len(declaration) - len(declaration.lstrip())
+                    sl = txt.count("\n", 0, match_start) + 1
                     el = txt[:close_pos].count("\n") + 1
                     if sl <= pline <= el:
                         targets_by_file[fpath].add(sl)

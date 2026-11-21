@@ -459,13 +459,12 @@ class Server
     bool RefreshStubDefinedWords(std::string_view uriStr, std::string_view text);
     void LoadWorkspaceEngineRules(std::span<const std::string> workspaceRoots);
     analysis::SemanticAnalysisRequest
-    BuildAnalysisRequest(std::string_view uriStr, std::string_view text, const analysis::NodeIndex* nodeIndex,
-                         const utils::PreprocessorScan& preprocessing,
+    BuildAnalysisRequest(std::string_view uriStr, std::string_view text, const utils::PreprocessorScan& preprocessing,
                          const analysis::SymbolTable* customSymbolTable = nullptr) const;
     [[nodiscard]] bool IsCommitAnalysisStale(const CommitAnalysisRequest& req) const;
     bool CommitAnalysisResults(CommitAnalysisRequest req);
-    std::vector<analysis::Diagnostic> ReplaceSymbolsFromTree(std::string_view uriStr, std::string_view text,
-                                                             const parser::TreePtr* tree = nullptr,
+    std::vector<analysis::Diagnostic> ReplaceSymbolsFromTree(const analysis::SymbolCollectRequest& request,
+                                                             const parser::TreePtr* tree,
                                                              bool* outInterfaceChanged = nullptr,
                                                              const analysis::NodeIndex* index = nullptr);
     std::vector<analysis::Diagnostic> ReplaceSymbolsFromSource(std::string_view uriStr, std::string_view text,
@@ -486,15 +485,30 @@ class Server
     void PublishDiagnostics(const PublishDiagnosticsRequest& request);
     void PublishDiagnostics(std::string_view uriStr, const std::vector<analysis::Diagnostic>& diagnostics,
                             int version = -1);
-    void PublishDiagnostics(std::string_view uriStr, std::string_view text,
-                            const std::vector<analysis::Diagnostic>& diagnostics, int version = -1,
-                            std::shared_ptr<const utils::PreprocessorScan> preprocessing = {});
     std::vector<lsp::Diagnostic> ToProtocolDiagnostics(std::string_view uri, std::string_view text,
                                                        std::span<const analysis::Diagnostic> diagnostics,
                                                        std::span<const utils::ExcludedLineRange> excluded) const;
+    /** @brief Identifies the analyzed source that a pull diagnostic report must describe. */
+    struct DiagnosticReportRevision
+    {
+        /** @brief Hash of the exact preprocessed source. */
+        size_t textHash;
+        /** @brief Editor version, or a negative value for a closed document. */
+        int version;
+        /** @brief Tracked disk revision, or zero when no disk check is required. */
+        uint64_t closedRevision;
+    };
+
+    /**
+     * @brief Reuses a cached diagnostic report for the requested source revision.
+     * @param[in] uri Normalized document URI.
+     * @param[in] revision Source identity required for cache reuse.
+     * @param[in] previousResultId Client's previous report identifier.
+     * @return A full or unchanged report, or std::nullopt when the cache cannot satisfy the request.
+     */
     [[nodiscard]] std::optional<lsp::requests::TextDocument_Diagnostic::Result>
-    TryGetCachedDiagnosticReport(std::string_view uriStr, size_t currentHash, int currentVersion,
-                                 uint64_t closedRevision, const std::optional<std::string>& previousResultId);
+    TryGetCachedDiagnosticReport(std::string_view uri, const DiagnosticReportRevision& revision,
+                                 const std::optional<std::string>& previousResultId);
     [[nodiscard]] std::optional<uint64_t> ClosedDiagnosticRevision(std::string_view uriStr,
                                                                    const std::string* source) const;
     void DidSavePredefinedFile(std::string_view uriStr, std::string_view text);
@@ -557,6 +571,12 @@ class Server
     /// Resolves an exact revision on the message loop, copying the document tree when necessary.
     [[nodiscard]] SyntaxRevision ResolveProtocolSyntax(std::string_view uri, std::string_view source,
                                                        const document::Document* open);
+    /**
+     * @brief Resolves indexed syntax for an existing document parse on the message loop.
+     * @param[in] doc Retained open or preindexed document.
+     * @return Indexed parser revision, or an empty revision if the document has no parse.
+     */
+    [[nodiscard]] SyntaxRevision ResolveProtocolSyntax(const OpenDocument& doc);
     std::optional<ParseAndCollectResult> PrepareAnalysisDocument(AnalyzeDocumentRequest& req,
                                                                  analysis::SymbolTable& staging);
     std::vector<analysis::Diagnostic> RunDocumentSemantics(analysis::SemanticAnalysisRequest baseReq,

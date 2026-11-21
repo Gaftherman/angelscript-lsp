@@ -89,7 +89,7 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     }
 
     parser::TreePtr tree = parser::MakeTreePtr(m_parser->Parse(analysisText));
-    ReplaceSymbolsFromTree(req.uriStr, analysisText, &tree);
+    ReplaceSymbolsFromTree({req.uriStr, analysisText, m_i18n.get()}, &tree);
     CommitPredefinedIndex(req.uriStr, analysisText, parser::CopyTree(tree));
     GetDocumentStore().OpenDocument(
         DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version, std::move(tree), req.clientUri});
@@ -145,7 +145,8 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     const auto open = GetDocumentStore().GetDocument(uriStr);
     const auto revision = ResolveProtocolSyntax(uriStr, prepared.text, open.get());
     const auto& syntax = *revision.syntax;
-    auto diagnostics = ReplaceSymbolsFromTree(uriStr, prepared.text, &syntax.tree, nullptr, &syntax.index);
+    auto diagnostics =
+        ReplaceSymbolsFromTree({uriStr, prepared.text, m_i18n.get()}, &syntax.tree, nullptr, &syntax.index);
     const double colMs = colTimer.ElapsedMs();
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
@@ -174,7 +175,14 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
         AppendIncludeDiagnostics(uriStr, prepared.text, prepared.preprocessing->excluded, diagnostics);
     }
 
-    PublishDiagnostics(uriStr, prepared.text, diagnostics, version, prepared.preprocessing);
+    PublishDiagnostics(PublishDiagnosticsRequest{
+        .uriStr = uriStr,
+        .text = prepared.text,
+        .diagnostics = std::move(diagnostics),
+        .version = version,
+        .generation = GetDocumentStore().GetGeneration(uriStr),
+        .preprocessing = prepared.preprocessing,
+    });
 
     const double totalMs = totalTimer.ElapsedMs();
     LogInfo(fmt::format("[File Open] Finished opening document: {} in {}", uriStr, utils::FormatDuration(totalMs)));

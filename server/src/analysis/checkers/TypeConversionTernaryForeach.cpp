@@ -233,7 +233,7 @@ static bool IsInvalidScriptForeachContainer(std::string_view containerBase, std:
 {
     const SymbolTable& table = ctx.request.symbolTable;
     if (containerBase.empty() || parser::primitives::IsAutoType(containerBase) || IsVariableTypeToken(containerBase) ||
-        HasTemplateArgumentsView(containerBase) || rawContainerType.find('[') != std::string_view::npos ||
+        HasTemplateArgumentsView(containerBase) || HasArrayBracketView(rawContainerType) ||
         ctx.request.IsRegisteredSymbol(containerBase) || !HierarchyIsFullyVisible(containerBase, table))
     {
         return false;

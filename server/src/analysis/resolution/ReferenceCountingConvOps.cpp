@@ -81,6 +81,12 @@ std::optional<Symbol> FindConversionOperator(const ConversionLookupQuery& query,
     return wideningCandidate;
 }
 
+/**
+ * @brief Looks for a user-defined conversion at a written handle cast or value conversion.
+ * @param[in] site Operand fact, conversion spelling, and requested target type.
+ * @param[in,out] evalCtx Reference batch receiving the matching conversion declaration.
+ * @param[in,out] ctx Expression types and constness used to filter conversion candidates.
+ */
 static void EvaluateCastSite(const IndexedOperatorSite& site, OperatorEvalContext& evalCtx, ExprTypeEvalContext& ctx)
 {
     const std::string srcType = ResolveIndexedExprType(site.exprId, ctx);
@@ -118,6 +124,12 @@ static void EvaluateCastSite(const IndexedOperatorSite& site, OperatorEvalContex
     }
 }
 
+/**
+ * @brief Counts the iteration methods selected by a foreach statement.
+ * @param[in] site Collection expression and number of requested loop values.
+ * @param[in,out] evalCtx Operator interest and reference results for the iteration methods.
+ * @param[in,out] ctx Collection type and constness used to resolve the iterator protocol.
+ */
 static void EvaluateForeachSite(const IndexedOperatorSite& site, OperatorEvalContext& evalCtx, ExprTypeEvalContext& ctx)
 {
     if (!evalCtx.interest.hasForeach)
@@ -174,6 +186,12 @@ static void EvaluateForeachSite(const IndexedOperatorSite& site, OperatorEvalCon
     }
 }
 
+/**
+ * @brief Looks for an implicit conversion required by the indexed expression context.
+ * @param[in] site Source expression and target context, including any assignment operands.
+ * @param[in,out] evalCtx Reference batch receiving matches for implicit value or handle conversions.
+ * @param[in,out] ctx Expression lookup and enclosing return type when the target is inferred from a return statement.
+ */
 static void EvaluateImplicitConversionSite(const IndexedOperatorSite& site, OperatorEvalContext& evalCtx,
                                            ExprTypeEvalContext& ctx)
 {

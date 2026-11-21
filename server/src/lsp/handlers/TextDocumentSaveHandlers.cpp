@@ -38,7 +38,7 @@ void Server::DidSavePredefinedFile(std::string_view uriStr, std::string_view tex
     {
         ClaimPredefinedFile(uriStr, true);
         m_predefinedManager.SetDocumentText(uriStr, analysisText);
-        ReplaceSymbolsFromTree(uriStr, analysisText, &savedTree);
+        ReplaceSymbolsFromTree({uri, analysisText, m_i18n.get()}, &savedTree);
     }
     else
     {
@@ -118,6 +118,15 @@ SyntaxRevision Server::ResolveProtocolSyntax(std::string_view uri, std::string_v
                                  &m_protocolSyntax);
 }
 
+SyntaxRevision Server::ResolveProtocolSyntax(const OpenDocument& doc)
+{
+    if (!doc.docHandle || !doc.docHandle->tree)
+    {
+        return {};
+    }
+    return ResolveProtocolSyntax(doc.uri, doc.docHandle->ParsedSource(), doc.docHandle.get());
+}
+
 void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params)
 {
     std::unique_lock<std::mutex> lifecycleLock(m_lifecycleMutex);
@@ -170,7 +179,8 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     UpdateSavedDocumentCaches(uriStr, text, prepared.preprocessing->excluded);
 
     bool interfaceChanged = false;
-    auto diagnostics = ReplaceSymbolsFromTree(uriStr, prepared.text, &syntax.tree, &interfaceChanged, &syntax.index);
+    auto diagnostics =
+        ReplaceSymbolsFromTree({uriStr, prepared.text, m_i18n.get()}, &syntax.tree, &interfaceChanged, &syntax.index);
 
     const auto bindingRevision =
         savedDocument && savedDocument->text == text

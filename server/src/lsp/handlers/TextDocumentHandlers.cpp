@@ -156,28 +156,28 @@ std::optional<uint64_t> Server::ClosedDiagnosticRevision(std::string_view uriStr
 }
 
 std::optional<lsp::requests::TextDocument_Diagnostic::Result>
-Server::TryGetCachedDiagnosticReport(std::string_view uriStr, size_t currentHash, int currentVersion,
-                                     uint64_t closedRevision, const std::optional<std::string>& previousResultId)
+Server::TryGetCachedDiagnosticReport(std::string_view uri, const DiagnosticReportRevision& revision,
+                                     const std::optional<std::string>& previousResultId)
 {
     std::unique_lock closureLock(m_closureMutex, std::defer_lock);
-    if (closedRevision != 0)
+    if (revision.closedRevision != 0)
     {
         closureLock.lock();
-        if (!IsClosedRevisionCurrentLocked(uriStr, closedRevision))
+        if (!IsClosedRevisionCurrentLocked(uri, revision.closedRevision))
         {
             return std::nullopt;
         }
     }
     std::lock_guard<std::mutex> lock(m_diagnosticsPipeline->GetCacheMutexRef());
-    const auto it = m_diagnosticsPipeline->GetCacheRef().find(uriStr);
+    const auto it = m_diagnosticsPipeline->GetCacheRef().find(uri);
     if (it == m_diagnosticsPipeline->GetCacheRef().end())
     {
         return std::nullopt;
     }
 
     const bool isCurrent = it->second.configRevision == m_sessionCoordinator->GetConfigRevision() &&
-                           it->second.version == currentVersion && it->second.textHash == currentHash &&
-                           it->second.closedRevision == closedRevision;
+                           it->second.version == revision.version && it->second.textHash == revision.textHash &&
+                           it->second.closedRevision == revision.closedRevision;
     if (!isCurrent)
     {
         return std::nullopt;
@@ -228,9 +228,9 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
     if (current && closedRevision && m_parser)
     {
         auto prepared = PrepareAnalysisSource(uriStr, *current);
-        const size_t currentHash = std::hash<std::string>{}(prepared.text);
-        if (auto cached = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, *closedRevision,
-                                                       params.previousResultId))
+        const DiagnosticReportRevision revision{std::hash<std::string>{}(prepared.text), currentVersion,
+                                                *closedRevision};
+        if (auto cached = TryGetCachedDiagnosticReport(uriStr, revision, params.previousResultId))
         {
             return std::move(*cached);
         }
@@ -246,8 +246,7 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
             .preprocessing = std::move(prepared.preprocessing),
         });
 
-        if (auto fresh = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, *closedRevision,
-                                                      params.previousResultId))
+        if (auto fresh = TryGetCachedDiagnosticReport(uriStr, revision, params.previousResultId))
         {
             return std::move(*fresh);
         }

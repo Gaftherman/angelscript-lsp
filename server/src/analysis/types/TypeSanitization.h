@@ -159,6 +159,16 @@ inline constexpr char k_templateArgumentsOpen = '<';
 }
 
 /**
+ * @brief Detects bracket array syntax in a written type, including nested and incomplete forms.
+ * @param[in] type Raw type spelling before canonicalization.
+ * @return True if the spelling contains an opening array bracket.
+ */
+[[nodiscard]] constexpr bool HasArrayBracketView(std::string_view type) noexcept
+{
+    return type.find('[') != std::string_view::npos;
+}
+
+/**
  * @brief Checks if a type string starts with a leading const qualifier (e.g. "const Type" or "const Type@").
  * @param[in] type Type string view.
  * @return True if the type begins with "const " or is "const".

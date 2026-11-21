@@ -1,4 +1,5 @@
 #include "features/document_link/DocumentLinkHandler.h"
+#include "i18n/i18n.h"
 #include "lsp/Server.h"
 #include "lsp/services/ServerModuleUtils.h"
 #include "utils/IncludeResolver.h"
@@ -47,7 +48,8 @@ void Server::ScheduleOpenDocumentsForReanalysis()
 
     if (m_logger)
     {
-        LogInfo(fmt::format("Re-analysing {} open document(s) now the workspace is indexed", open.size()));
+        LogInfo(i18n::FormatMessage(m_i18n.get(), "log-reanalyze-open-documents",
+                                    "Re-analysing {} open document(s) now the workspace is indexed", open.size()));
     }
 }
 
@@ -138,7 +140,12 @@ void Server::WithdrawStaleModuleDiagnostics()
 
     for (const auto& uriStr : stale)
     {
-        PublishDiagnostics(uriStr, std::string(), {});
+        PublishDiagnostics(PublishDiagnosticsRequest{
+            .uriStr = uriStr,
+            .text = {},
+            .diagnostics = {},
+            .generation = GetDocumentStore().GetGeneration(uriStr),
+        });
         std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
         m_publishedForModules.erase(uriStr);
     }

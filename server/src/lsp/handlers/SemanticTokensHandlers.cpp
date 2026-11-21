@@ -1,15 +1,12 @@
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/NodeIndex.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "i18n/i18n.h"
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
-#include "parser/SyntaxTree.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 
-#include <chrono>
-#include <spdlog/fmt/fmt.h>
-#include <string>
 #include <vector>
 
 namespace angel_lsp
@@ -58,8 +55,9 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocume
     utils::HighResTimer timer;
     auto tokens = FullTokenResponse(ResolveSemanticTokensSnapshot(*doc));
     const double elapsedMs = timer.ElapsedMs();
-    LogInfo(fmt::format("[Semantic Tokens] Finished full in {:.2f} ms for {} ({} tokens)", elapsedMs, doc->uri,
-                        tokens.data.size() / 5));
+    LogInfo(i18n::FormatMessage(m_i18n.get(), "log-semantic-tokens-full",
+                                "[Semantic Tokens] Finished full in {:.2f} ms for {} ({} tokens)", elapsedMs, doc->uri,
+                                tokens.data.size() / 5));
     return tokens;
 }
 
@@ -96,8 +94,9 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full_Delta(
     {
         return FullTokenResponse(current);
     }
-    LogInfo(fmt::format("[Semantic Tokens] Finished delta in {:.2f} ms for {} ({} edits)", timer.ElapsedMs(), doc->uri,
-                        delta.edits.size()));
+    LogInfo(i18n::FormatMessage(m_i18n.get(), "log-semantic-tokens-delta",
+                                "[Semantic Tokens] Finished delta in {:.2f} ms for {} ({} edits)", timer.ElapsedMs(),
+                                doc->uri, delta.edits.size()));
     return delta;
 }
 
@@ -114,10 +113,7 @@ Server::HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocum
         return lsp::Null{};
     }
 
-    const auto syntax =
-        doc->docHandle && doc->docHandle->tree
-            ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
-            : nullptr;
+    const auto syntax = ResolveProtocolSyntax(*doc).syntax;
     const lsp::Range decodedRange = codec::Decode(*doc->text, GetPositionEncoding(), req.range);
     const analysis::SourceRange factsRange{decodedRange.start.line, decodedRange.start.character, decodedRange.end.line,
                                            decodedRange.end.character};

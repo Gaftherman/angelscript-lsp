@@ -42,7 +42,7 @@ TransparentStringSet Server::ComputeModuleClosureUris(std::string_view uriStr) c
 }
 
 angel_lsp::analysis::SemanticAnalysisRequest
-Server::BuildAnalysisRequest(std::string_view uriStr, std::string_view text, const analysis::NodeIndex* nodeIndex,
+Server::BuildAnalysisRequest(std::string_view uriStr, std::string_view text,
                              const utils::PreprocessorScan& preprocessing,
                              const angel_lsp::analysis::SymbolTable* customSymbolTable) const
 {
@@ -66,7 +66,6 @@ Server::BuildAnalysisRequest(std::string_view uriStr, std::string_view text, con
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     request.scopeIndex = &m_scopeIndex;
     request.sourceCode = text;
-    request.nodeIndex = nodeIndex;
 
     request.excludedLineRanges = preprocessing.excluded;
     request.unsupportedDirectives = preprocessing.unsupported;
@@ -79,12 +78,11 @@ Server::BuildAnalysisRequest(std::string_view uriStr, std::string_view text, con
 }
 
 std::vector<angel_lsp::analysis::Diagnostic>
-Server::ReplaceSymbolsFromTree(std::string_view uriStr, std::string_view text, const parser::TreePtr* tree,
+Server::ReplaceSymbolsFromTree(const analysis::SymbolCollectRequest& request, const parser::TreePtr* tree,
                                bool* outInterfaceChanged, const analysis::NodeIndex* index)
 {
     angel_lsp::analysis::SymbolTable staging;
-    const std::string uri(uriStr);
-    const analysis::SymbolCollectRequest request{uri, text, m_i18n.get()};
+    const auto& uri = request.fileUri;
     auto diagnostics = index
                            ? m_symbolCollector->CollectSymbolsWithIndex(request, *index, staging)
                            : m_symbolCollector->CollectSymbolsWithTree(request, tree ? tree->get() : nullptr, staging);
@@ -98,7 +96,7 @@ Server::ReplaceSymbolsFromTree(std::string_view uriStr, std::string_view text, c
         uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(uri);
         {
             std::lock_guard<std::mutex> lock(m_closureMutex);
-            if (const auto it = m_lastSavedInterfaceHash.find(uriStr); it != m_lastSavedInterfaceHash.end())
+            if (const auto it = m_lastSavedInterfaceHash.find(uri); it != m_lastSavedInterfaceHash.end())
             {
                 oldHash = it->second;
                 it->second = newHash;
@@ -195,8 +193,7 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
         *request.outScopeMs = scopeTimer.ElapsedMs();
     }
 
-    auto analysisReq =
-        BuildAnalysisRequest(request.uriStr, request.source.text, &request.nodeIndex, *request.source.preprocessing);
+    auto analysisReq = BuildAnalysisRequest(request.uriStr, request.source.text, *request.source.preprocessing);
     analysisReq.scopeRoot = scopeRoot;
     analysisReq.mutableScopeRoot = scopeRoot.get();
     analysisReq.nodeIndex = &request.nodeIndex;

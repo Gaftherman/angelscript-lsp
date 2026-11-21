@@ -11,6 +11,11 @@
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Finds the overload names for left-hand and right-hand receivers of a binary operator.
+ * @param[in] op Written operator spelling from the indexed expression.
+ * @return Direct and reversed overload names, or two empty views for an unmapped operator.
+ */
 static std::pair<std::string_view, std::string_view> BinaryOpMethods(std::string_view op) noexcept
 {
     static constexpr std::array<std::pair<std::string_view, std::pair<std::string_view, std::string_view>>, 12> k_map =

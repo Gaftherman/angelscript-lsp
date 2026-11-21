@@ -67,6 +67,11 @@ static OperatorTargetInterest ComputeTargetInterest(const BatchReferenceContext&
     return interest;
 }
 
+/**
+ * @brief Maps a written assignment token to the corresponding overload method.
+ * @param[in] op Spelling captured for an assignment site, including its handle marker where written.
+ * @return Overload method name, or an empty view when the token has no mapping.
+ */
 static std::string_view AssignmentOpMethod(std::string_view op) noexcept
 {
     static constexpr std::array<std::pair<std::string_view, std::string_view>, 14> k_map = {{
@@ -135,6 +140,12 @@ static void EvaluateAssignmentSite(const IndexedOperatorSite& site, OperatorEval
     }
 }
 
+/**
+ * @brief Records a unary overload use when a nonprimitive operand selects a member.
+ * @param[in] site Operator token and operand fact, including prefix or postfix placement.
+ * @param[in,out] evalCtx Reference batch receiving the use at the operator position.
+ * @param[in,out] ctx Lexical type and constness lookup for the operand.
+ */
 static void EvaluateUnarySite(const IndexedOperatorSite& site, OperatorEvalContext& evalCtx, ExprTypeEvalContext& ctx)
 {
     const std::string_view method = UnaryOpMethod(site.op, site.isPostfix);
@@ -155,6 +166,12 @@ static void EvaluateUnarySite(const IndexedOperatorSite& site, OperatorEvalConte
     }
 }
 
+/**
+ * @brief Records the subscript overload selected for the receiver and its ordered indices.
+ * @param[in] site Subscript receiver and argument fact IDs.
+ * @param[in,out] evalCtx Operator facts and reference batch receiving the use.
+ * @param[in,out] ctx Expression context used to infer argument types and receiver constness.
+ */
 static void EvaluateIndexSite(const IndexedOperatorSite& site, OperatorEvalContext& evalCtx, ExprTypeEvalContext& ctx)
 {
     const std::string objType = ResolveIndexedExprType(site.exprId, ctx);

@@ -856,6 +856,37 @@ TEST_CASE("Server - Invalidates delta cache on syntax error transition")
     CHECK(r4.find("\"resultId\":\"3\"") != std::string::npos);
 }
 
+TEST_CASE("Server - Range tokens spanning a document match full tokens")
+{
+    WorkspaceFixture fixture;
+    const auto uri = fixture.Uri("range_tokens.as");
+    const auto name = test::GenerateRandomSymbolName("TokenProbe");
+    const auto source = "void " + name + "() {}\n";
+    const std::string document = R"("textDocument":{"uri":")" + uri + R"("})";
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(DidOpenMessage(uri, source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)" + document + "}}");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/range","params":{)" + document +
+                R"(,"range":{"start":{"line":0,"character":0},"end":{"line":1,"character":0}}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+    config::ServerConfig config;
+    config.features.enableSemanticTokens = true;
+    RunScript(config, stream);
+
+    const auto full = lsp::json::parse(stream.ResponseFor(2));
+    const auto range = lsp::json::parse(stream.ResponseFor(3));
+    const auto fullData = full.object().get("result").object().get("data").array();
+    const auto rangeData = range.object().get("result").object().get("data").array();
+    REQUIRE_FALSE(fullData.empty());
+    REQUIRE(rangeData.size() == fullData.size());
+    for (size_t i = 0; i < fullData.size(); ++i)
+    {
+        CHECK(rangeData[i].integer() == fullData[i].integer());
+    }
+}
+
 TEST_CASE("Server - Delta token edits reconstruct a fresh full stream")
 {
     const std::string original = "void main() { int a = 1; }\n";

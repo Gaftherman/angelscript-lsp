@@ -42,6 +42,13 @@ static TSNode ResolveLambdaParameterListNode(TSNode node, const NodeIndex* index
     return TSNode{};
 }
 
+/**
+ * @brief Updates the current lambda parameter from one of its written syntax parts.
+ * @param[in] child Type, direction marker, reference token, or name encountered in the list.
+ * @param[in] fieldId Grammar field for this child, where available.
+ * @param[in] sourceCode Source buffer used to read type and identifier spellings.
+ * @param[in,out] current Parameter fact that accumulates the explicit type and qualifiers.
+ */
 static void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sourceCode,
                                   LambdaParamASTInfo& current)
 {

@@ -8,6 +8,7 @@
 #include "analysis/index/NodeIndex.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <doctest/doctest.h>
 #include <ostream>
@@ -16,6 +17,34 @@
 
 TEST_SUITE("analysis/index/SemanticTokenFacts")
 {
+    TEST_CASE("NodeIndex - Parser error fact follows the tree root across builds and clearing")
+    {
+        angel_lsp::parser::AngelScriptParser parser;
+        const auto name = angel_lsp::test::GenerateRandomSymbolName("TokenProbe");
+        const auto valid = angel_lsp::parser::MakeTreePtr(parser.Parse("void " + name + "() {}"));
+        const auto invalid = angel_lsp::parser::MakeTreePtr(parser.Parse("void " + name + "() { int x = \"broken; }"));
+        REQUIRE(valid != nullptr);
+        REQUIRE(invalid != nullptr);
+        REQUIRE(angel_lsp::parser::TreeHasError(invalid));
+
+        angel_lsp::analysis::NodeIndex index(angel_lsp::parser::GetRootNode(invalid));
+        CHECK(index.HasParserErrors());
+        index.Build(angel_lsp::parser::GetRootNode(valid), angel_lsp::analysis::NodeIndexOptions{});
+        CHECK_FALSE(index.HasParserErrors());
+        index.Build(angel_lsp::parser::GetRootNode(invalid), angel_lsp::analysis::NodeIndexOptions{});
+        index.Clear();
+        CHECK_FALSE(index.HasParserErrors());
+
+        const auto member = angel_lsp::test::GenerateRandomSymbolName("Member");
+        const auto incompleteClass = "class " + name + " { int " + member + ";  \n  ";
+        const auto recovered = angel_lsp::parser::MakeTreePtr(parser.Parse(incompleteClass));
+        REQUIRE(recovered != nullptr);
+        index.Build(angel_lsp::parser::GetRootNode(recovered), incompleteClass);
+        REQUIRE_FALSE(index.ImplicitCloseBraces().empty());
+        CHECK(index.HasSyntaxErrors());
+        CHECK_FALSE(index.HasParserErrors());
+    }
+
     TEST_CASE("SemanticTokenFacts - Template angle brackets flagged as template punctuation")
     {
         angel_lsp::parser::AngelScriptParser parser;

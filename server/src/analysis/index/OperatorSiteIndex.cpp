@@ -7,6 +7,12 @@
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Anchors index operator references on the opening bracket.
+ * @param[in] indexNode Indexed expression whose bracket will be reported.
+ * @param[in] gs Grammar symbols for punctuation tokens.
+ * @return Opening bracket position, or the expression start if the bracket is unavailable.
+ */
 static TSPoint FindOpenBracketPoint(TSNode indexNode, const parser::GrammarSymbols& gs) noexcept
 {
     TSPoint fallback = ts_node_start_point(indexNode);

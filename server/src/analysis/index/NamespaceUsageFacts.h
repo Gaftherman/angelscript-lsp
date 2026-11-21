@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -225,6 +226,26 @@ struct NamespaceUsageFacts
         return std::span<const EnclosingContainerFact>(enclosingContainers.data() + site.containerBegin, count);
     }
 };
+
+/** @brief Scoped name spellings available at an indexed identifier under the cursor. */
+struct ScopedNameAtCursor
+{
+    /** @brief Spelling from the first contiguous segment through the selected identifier. */
+    std::string_view throughSelection;
+    /** @brief Spelling through the final contiguous segment. */
+    std::string_view full;
+};
+
+/**
+ * @brief Finds the contiguous scoped spelling around an indexed identifier.
+ * @param[in] index Full node index for the source revision.
+ * @param[in] source Exact parsed source, which must outlive the returned views.
+ * @param[in] cursorByte Byte inside or immediately after the selected identifier.
+ * @return Prefix and full spelling, or std::nullopt when no identifier touches the cursor.
+ * @note Performs O(log I + S) work for I indexed identifiers and S contiguous segments.
+ */
+[[nodiscard]] std::optional<ScopedNameAtCursor> FindScopedNameAtCursor(const NodeIndex& index, std::string_view source,
+                                                                       uint32_t cursorByte) noexcept;
 
 /**
  * @brief Captures namespace usage, scoped references, and identifier container contexts of a document.

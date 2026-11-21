@@ -1,7 +1,8 @@
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
-#include "parser/SyntaxTree.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
@@ -68,10 +69,7 @@ SemanticTokensSnapshot Server::ResolveSemanticTokensSnapshot(const OpenDocument&
             return std::move(*cached);
         }
 
-        const auto syntax =
-            doc.docHandle && doc.docHandle->tree
-                ? ResolveProtocolSyntax(doc.uri, doc.docHandle->ParsedSource(), doc.docHandle.get()).syntax
-                : nullptr;
+        const auto syntax = ResolveProtocolSyntax(doc).syntax;
         const std::string_view text = *doc.text;
         const analysis::SemanticTokenFacts facts =
             syntax ? analysis::CollectSemanticTokenFacts(syntax->index, text) : analysis::SemanticTokenFacts{};
@@ -88,7 +86,7 @@ SemanticTokensSnapshot Server::ResolveSemanticTokensSnapshot(const OpenDocument&
 
         SemanticTokensSnapshot snapshot{{},
                                         std::make_shared<const std::vector<lsp::uint>>(std::move(tokens.data)),
-                                        syntax && parser::TreeHasError(syntax->tree),
+                                        syntax && syntax->index.HasParserErrors(),
                                         key};
         if (!cacheable)
         {

@@ -243,15 +243,9 @@ def check_git_diff(base_commit: str):
             in_func_block = False
             continue
         if line.startswith("@@"):
-            match_hunk = re.search(r"@@\s+(.*)$", line)
-            if match_hunk:
-                ctx = match_hunk.group(1).strip()
-                if "(" in ctx and ")" in ctx and not ctx.startswith(("struct ", "class ")):
-                    in_func_block = True
-                else:
-                    in_func_block = False
-            else:
-                in_func_block = False
+            # Git may truncate the function signature before its closing parenthesis.
+            context = line.split("@@", 2)[-1].strip()
+            in_func_block = "(" in context and not context.startswith(("struct ", "class "))
             continue
 
         if not line.startswith("-") or line.startswith("---"):

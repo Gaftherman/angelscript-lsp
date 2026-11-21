@@ -3593,9 +3593,9 @@
       "action": "COMPACT_RAM_LAYOUT",
       "sourceFile": "server/src/analysis/index/LValueSiteFacts.cpp",
       "deletedLineRange": "n/a",
-      "originalSymbolOrCode": "BuildLValueSiteFacts candidate collection over every identifier and expression node",
+      "originalSymbolOrCode": "BuildLValueSiteFacts candidate collection over every identifier and expression node; LValueMemberParts and both ApplyTo overloads in LValueSiteFacts.h",
       "whatItDidAndWhyInThatFile": "Stored one LValueCandidateFact of about 320 bytes for every identifier, member, index, unary, ternary, call and parenthesized node of the document.",
-      "whyChangedOrDeleted": "Only assignment, increment and decrement targets and the ternary and handle operands under them are queried by exact span; the rest was dead weight. Facts now use shared pools, packed flags and one reserve.",
+      "whyChangedOrDeleted": "Only assignment, increment and decrement targets and the ternary and handle operands under them are queried by exact span; the rest was dead weight. Facts now use shared pools, packed flags and one reserve. LValueMemberCandidateFact stores receiver spans in the shared pool; the call-site builder copies the two spans it needs directly.",
       "replacedByCanonicalFile": "server/src/analysis/index/LValueSiteFacts.cpp",
       "replacedByCanonicalSymbol": "BuildLValueSiteFacts",
       "ramOrCpuImpact": "Heap peak for a 65535 namespace document went from 291 MB to 216 MB; LValueCandidateFact 320 B to 24 B.",
@@ -3611,14 +3611,63 @@
       "action": "UNIFY_FUNCTIONS",
       "sourceFile": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
       "deletedLineRange": "n/a",
-      "originalSymbolOrCode": "HandleRequestsTextDocument_SemanticTokens_Range classifying the whole document before slicing",
+      "originalSymbolOrCode": "HandleRequestsTextDocument_SemanticTokens_Range classifying the whole document before slicing; SplitLinesView in SemanticTokensEmission.cpp and SemanticTokensInternal.h",
       "whatItDidAndWhyInThatFile": "Collected token facts, enum upgrades, reference kinds and line windows for the whole AST and then narrowed the result to the requested range.",
-      "whyChangedOrDeleted": "A range request now restricts fact collection, scope traversal and emission to the requested lines while keeping origin-relative delta encoding identical to a slice of the full result.",
+      "whyChangedOrDeleted": "A range request now restricts fact collection, scope traversal and emission to the requested lines while keeping origin-relative delta encoding identical to a slice of the full result. SplitLinesWindow keeps only the line views needed for that range.",
       "replacedByCanonicalFile": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
       "replacedByCanonicalSymbol": "GetSemanticTokens",
       "ramOrCpuImpact": "semanticTokens/range on 20000 lines went from 217 ms to 16 ms (p95).",
       "verifiedByTests": [
         "SemanticTokens range parity test against full output with a recorded seed"
+      ]
+    },
+    {
+      "id": "REF-M31-FUNCDEF-SIGNATURE-SHAPE",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionFuncdefs.cpp",
+      "deletedLineRange": "9-39",
+      "originalSymbolOrCode": "MatchesFuncdefSignature",
+      "whatItDidAndWhyInThatFile": "Compared named function candidates with a funcdef by inspecting return and parameter types and modifiers.",
+      "whyChangedOrDeleted": "The common comparison applies the same signature shape checks after normalizing array spellings and typedefs.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/TypeConversionFuncdefs.cpp",
+      "replacedByCanonicalSymbol": "SignaturesMatchShape",
+      "ramOrCpuImpact": "Still walks the parameters once per compared candidate.",
+      "verifiedByTests": [
+        "LambdaFuncdef - A named function on the right-hand side is judged as it always was"
+      ]
+    },
+    {
+      "id": "REF-M31-CALL-ARGUMENT-PARENTHESES",
+      "phase": "M31",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/index/CallSiteFactsArguments.cpp",
+      "deletedLineRange": "44-57",
+      "originalSymbolOrCode": "UnwrapParens",
+      "whatItDidAndWhyInThatFile": "Unwrapped nested parentheses before classifying the argument expression.",
+      "whyChangedOrDeleted": "The argument extractor now uses the same indexed parenthesis traversal as other first-pass expression consumers.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SyntaxOperands.h",
+      "replacedByCanonicalSymbol": "UnwrapIndexedParentheses",
+      "ramOrCpuImpact": "Walks the nested expression wrappers iteratively.",
+      "verifiedByTests": [
+        "CallSiteFacts - Arguments slicing, named arguments, and kind classification"
+      ]
+    },
+    {
+      "id": "REF-M31-CODELENS-TYPE-TARGET",
+      "phase": "M31",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensTargets.cpp",
+      "deletedLineRange": "169-192",
+      "originalSymbolOrCode": "CreateClassTarget",
+      "whatItDidAndWhyInThatFile": "Built a class reference counting target from its declaration group and namespace.",
+      "whyChangedOrDeleted": "The common type target also supports funcdefs and typedefs and records compatible containers for class-owned funcdefs.",
+      "replacedByCanonicalFile": "server/src/features/code_lens/CodeLensTargets.cpp",
+      "replacedByCanonicalSymbol": "CreateTypeTarget",
+      "ramOrCpuImpact": "Alias targets reuse the existing batch reference scan.",
+      "verifiedByTests": [
+        "CodeLens - Global and nested funcdef count only declared-type uses",
+        "CodeLens - Typedef and typedef-of-typedef keep counts separate from underlying type"
       ]
     },
     {

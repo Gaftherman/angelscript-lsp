@@ -118,7 +118,7 @@ static void CheckPrefixUnaryOperator(const UnaryPostfixSiteFact& site, const Exp
     const std::string cleanType = UnwrapTypedef(CleanBaseType(rawType), table);
     if (cleanType.empty() || parser::primitives::IsAutoType(cleanType) || IsVariableTypeToken(cleanType) ||
         IsBuiltInValueType(cleanType, ctx) || ResolvesToEnum(cleanType, table) || HasTemplateArgumentsView(cleanType) ||
-        rawType.find('[') != std::string::npos || ctx.request.IsRegisteredSymbol(cleanType) ||
+        HasArrayBracketView(rawType) || ctx.request.IsRegisteredSymbol(cleanType) ||
         !HierarchyIsFullyVisible(cleanType, table))
     {
         return;
