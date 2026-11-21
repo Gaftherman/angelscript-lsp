@@ -55,33 +55,28 @@ bool IsTypeSymbolList(std::span<const Symbol> syms) noexcept
     return false;
 }
 
-std::optional<std::string> TryQualifyIdentifier(std::string_view ident, std::string_view containerScope,
-                                                const SymbolTable& table)
+/**
+ * @brief Resolves a relative type name from the nearest enclosing container outward.
+ * @param[in] name Complete unrooted type name, possibly with namespace qualifiers.
+ * @param[in] containerScope Container in which the type name was written.
+ * @param[in] table Table containing the declared types.
+ * @return Qualified type name, or std::nullopt if no enclosing container declares it.
+ */
+static std::optional<std::string> TryQualifyTypeName(std::string_view name, std::string_view containerScope,
+                                                     const SymbolTable& table)
 {
-    if (parser::primitives::IsPrimitive(ident))
+    if (parser::primitives::IsPrimitive(name))
     {
         return std::nullopt;
     }
-    std::string candidate;
-    candidate.reserve(containerScope.size() + 2 + ident.size());
-    candidate.append(containerScope);
-    candidate.append("::");
-    candidate.append(ident);
-    if (const auto syms = table.FindSymbolsPtr(candidate))
+    for (auto scope = containerScope; !scope.empty(); scope = utils::ParentScopeView(scope))
     {
-        if (IsTypeSymbolList(*syms))
+        if (const auto syms = table.FindMemberSymbolPtr(scope, name); syms && IsTypeSymbolList(*syms))
         {
-            return candidate;
+            return utils::JoinScopedName(scope, name);
         }
     }
     return std::nullopt;
-}
-
-bool IsColonQualified(std::string_view s, size_t start, size_t end) noexcept
-{
-    const bool preceded = (start >= 2 && s[start - 1] == ':' && s[start - 2] == ':');
-    const bool followed = (end + 1 < s.size() && s[end] == ':' && s[end + 1] == ':');
-    return preceded || followed;
 }
 
 std::string QualifyTypeInContainer(std::string_view typeStr, std::string_view containerScope, const SymbolTable& table)
@@ -103,20 +98,31 @@ std::string QualifyTypeInContainer(std::string_view typeStr, std::string_view co
             continue;
         }
         const size_t start = i;
-        while (i < typeStr.size() && (isalnum(static_cast<unsigned char>(typeStr[i])) || typeStr[i] == '_'))
+        while (i < typeStr.size())
         {
-            ++i;
+            if (isalnum(static_cast<unsigned char>(typeStr[i])) || typeStr[i] == '_')
+            {
+                ++i;
+            }
+            else if (utils::HasLeadingGlobalPrefix(typeStr.substr(i)))
+            {
+                i += 2;
+            }
+            else
+            {
+                break;
+            }
         }
-        const std::string_view ident = typeStr.substr(start, i - start);
-        if (!IsColonQualified(typeStr, start, i))
+        const auto name = typeStr.substr(start, i - start);
+        if (start < 2 || !utils::HasLeadingGlobalPrefix(typeStr.substr(start - 2)))
         {
-            if (auto qualified = TryQualifyIdentifier(ident, containerScope, table))
+            if (auto qualified = TryQualifyTypeName(name, containerScope, table))
             {
                 result.append(*qualified);
                 continue;
             }
         }
-        result.append(ident);
+        result.append(name);
     }
     return result;
 }

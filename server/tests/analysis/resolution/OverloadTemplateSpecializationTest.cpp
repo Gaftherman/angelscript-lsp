@@ -157,7 +157,8 @@ TEST_SUITE("analysis/resolution/OverloadTemplateSpecialization")
 
         // Caller passes (dictionary@, array<string>) where arg 2 is an lvalue non-handle array<string>
         const std::vector<std::string> argTypes = {"dictionary@", "array<string>"};
-        const std::vector<bool> isLValue = {false, true};
+        const std::vector<ArgumentReferenceBinding> isLValue = {ArgumentReferenceBinding::RValue,
+                                                                ArgumentReferenceBinding::LValue};
 
         auto match = ResolveBestOverload(candidates, argTypes, table, isLValue);
         REQUIRE(match.bestCandidate != nullptr);
@@ -326,7 +327,8 @@ TEST_SUITE("analysis/resolution/OverloadTemplateSpecialization")
         Symbol symStr = MakeContainerOverload(fnName, "array<string>@ &out");
         const std::vector<Symbol> candidates = {symFloat, symStr};
 
-        auto match = ResolveBestOverload(candidates, {"dictionary@", "array<string>"}, table, {false, true});
+        auto match = ResolveBestOverload(candidates, {"dictionary@", "array<string>"}, table,
+                                         {ArgumentReferenceBinding::RValue, ArgumentReferenceBinding::LValue});
         REQUIRE(match.bestCandidate != nullptr);
 
         logger.Flush();

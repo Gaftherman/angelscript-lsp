@@ -122,12 +122,12 @@ TEST_CASE("SvenCoopRegression - Rvalue rejected for &out and &inout overloads")
     std::vector<analysis::Symbol> candidates = {symOut, symVal};
 
     // When argument is an L-value, both are viable, but &out is viable
-    const std::vector<bool> lvalTrue = {true};
+    const std::vector<analysis::ArgumentReferenceBinding> lvalTrue = {analysis::ArgumentReferenceBinding::LValue};
     auto resLVal = analysis::ResolveBestOverload(candidates, {"int"}, table, lvalTrue);
     CHECK(resLVal.viableCandidates.size() == 2);
 
     // When argument is an R-value, &out is heavily penalized so by-value overload wins
-    const std::vector<bool> lvalFalse = {false};
+    const std::vector<analysis::ArgumentReferenceBinding> lvalFalse = {analysis::ArgumentReferenceBinding::RValue};
     auto resRVal = analysis::ResolveBestOverload(candidates, {"int"}, table, lvalFalse);
     REQUIRE(resRVal.bestCandidate != nullptr);
     CHECK(resRVal.bestCandidate->GetFunction().parameters[0].modifier == analysis::ParameterModifier::None);

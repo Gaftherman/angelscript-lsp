@@ -154,7 +154,7 @@ bool IsArityCompatible(const ArityInfo& arity, uint32_t argCount)
 
 static std::optional<std::vector<ArgumentConversion>>
 EvaluateCandidateConversions(const FunctionSignature& sig, std::span<const std::string_view> argumentTypes,
-                             const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
+                             const SymbolTable& symbolTable, const std::vector<ArgumentReferenceBinding>& argBindings)
 {
     std::vector<ArgumentConversion> conversions;
     conversions.reserve(argumentTypes.size());
@@ -162,9 +162,9 @@ EvaluateCandidateConversions(const FunctionSignature& sig, std::span<const std::
     {
         if (i < sig.parameters.size())
         {
-            const bool isLVal = i < argIsLValue.size() ? argIsLValue[i] : true;
-            ArgumentConversion conv =
-                EvaluateArgumentConversion(argumentTypes[i], sig.parameters[i], symbolTable, isLVal);
+            const auto& param = sig.parameters[i];
+            const bool canBind = i >= argBindings.size() || CanBindMutableReference(argBindings[i], param);
+            ArgumentConversion conv = EvaluateArgumentConversion(argumentTypes[i], param, symbolTable, canBind);
             if (!conv.IsViable())
             {
                 return std::nullopt;
@@ -182,7 +182,7 @@ EvaluateCandidateConversions(const FunctionSignature& sig, std::span<const std::
 
 std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span<const std::string_view> argumentTypes,
                                                     const SymbolTable& symbolTable,
-                                                    const std::vector<bool>& argIsLValue)
+                                                    const std::vector<ArgumentReferenceBinding>& argBindings)
 {
     if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
     {
@@ -197,7 +197,7 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span
         return std::nullopt;
     }
 
-    auto conversions = EvaluateCandidateConversions(sig, argumentTypes, symbolTable, argIsLValue);
+    auto conversions = EvaluateCandidateConversions(sig, argumentTypes, symbolTable, argBindings);
     if (!conversions)
     {
         return std::nullopt;
@@ -214,7 +214,7 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span
 
 std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span<const std::string> argumentTypes,
                                                     const SymbolTable& symbolTable,
-                                                    const std::vector<bool>& argIsLValue)
+                                                    const std::vector<ArgumentReferenceBinding>& argBindings)
 {
     std::vector<std::string_view> views;
     views.reserve(argumentTypes.size());
@@ -222,7 +222,7 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span
     {
         views.emplace_back(a);
     }
-    return EvaluateCandidate(sym, views, symbolTable, argIsLValue);
+    return EvaluateCandidate(sym, views, symbolTable, argBindings);
 }
 
 bool IsStrictlyBetter(const EvaluatedCandidate& a, const EvaluatedCandidate& b)

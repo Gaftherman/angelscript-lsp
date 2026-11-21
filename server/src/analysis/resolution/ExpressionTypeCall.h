@@ -23,6 +23,13 @@ struct MemberCallResolutionRequest
 };
 
 /**
+ * @brief Removes reference decorators while preserving const on a returned handle's object.
+ * @param[in] writtenType Return type from the selected signature.
+ * @return Expression type of the returned value.
+ */
+[[nodiscard]] std::string CallResultType(std::string_view writtenType);
+
+/**
  * @brief Appends call candidates from mixins included in a class.
  * @param[in] containerName Enclosing container name.
  * @param[in] funcName Function name being called.

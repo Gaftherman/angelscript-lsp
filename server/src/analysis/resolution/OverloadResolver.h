@@ -12,6 +12,29 @@
 namespace angel_lsp::analysis
 {
 /**
+ * @brief Describes how an expression can supply storage for a reference parameter.
+ */
+enum class ArgumentReferenceBinding : uint8_t
+{
+    RValue,       ///< Cannot supply writable storage.
+    LValue,       ///< Can receive a write-back from an output parameter.
+    ReferenceCast ///< Temporary handle that can keep a mutable object alive during an inout call.
+};
+
+/**
+ * @brief Checks whether the argument can supply storage for this reference parameter.
+ * @param[in] binding Storage category of the argument expression.
+ * @param[in] param Parameter receiving the argument.
+ * @return True for an lvalue or a reference cast bound to a non-handle inout reference.
+ */
+inline bool CanBindMutableReference(ArgumentReferenceBinding binding, const ParameterInformation& param)
+{
+    return binding == ArgumentReferenceBinding::LValue ||
+           (binding == ArgumentReferenceBinding::ReferenceCast && (param.isInOutRef || param.isStandaloneRef) &&
+            !param.isOutRef && param.modifier != ParameterModifier::Out && !param.isHandle);
+}
+
+/**
  * @brief Discrete match tiers matching official AngelScript compiler conversion categories (asCC_*).
  */
 enum class MatchTier : uint8_t
@@ -301,7 +324,7 @@ class OverloadResolver
  * @param[in] argType Cleaned type of the argument expression.
  * @param[in] param Target parameter specification.
  * @param[in] symbolTable Symbol table for hierarchy and conversion lookups.
- * @param[in] argIsLValue Whether argument is an L-value.
+ * @param[in] argIsLValue Whether argument can supply mutable reference storage for the parameter.
  * @return Formal ArgumentConversion structure.
  */
 ArgumentConversion EvaluateArgumentConversion(std::string_view argType, const ParameterInformation& param,
@@ -312,7 +335,7 @@ ArgumentConversion EvaluateArgumentConversion(std::string_view argType, const Pa
  * @param argType Cleaned type of the argument expression.
  * @param param Target parameter specification.
  * @param symbolTable Symbol table for hierarchy and conversion lookups.
- * @param argIsLValue Optional flag indicating if argument is an L-value.
+ * @param argIsLValue Optional flag indicating if argument can supply mutable reference storage for the parameter.
  * @return Penalty score integer (0 = exact, >= 999 = incompatible).
  */
 int ScoreArgumentMatch(std::string_view argType, const ParameterInformation& param, const SymbolTable& symbolTable,
@@ -323,54 +346,56 @@ int ScoreArgumentMatch(std::string_view argType, const ParameterInformation& par
  * @param candidates Set of candidate function symbols.
  * @param argumentTypes Deduced argument types for each argument expression.
  * @param symbolTable Symbol table for hierarchy and conversion lookups.
- * @param argIsLValue Optional flags indicating whether each argument expression is an L-value.
+ * @param argBindings Optional reference binding classification for each argument.
  * @return OverloadMatchResult containing the best candidate and match metrics.
  */
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue = {});
+                                        const std::vector<ArgumentReferenceBinding>& argBindings = {});
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::initializer_list<std::string_view> argumentTypes,
-                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue = {});
+                                        const SymbolTable& symbolTable,
+                                        const std::vector<ArgumentReferenceBinding>& argBindings = {});
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates, std::span<const std::string> argumentTypes,
-                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue = {});
+                                        const SymbolTable& symbolTable,
+                                        const std::vector<ArgumentReferenceBinding>& argBindings = {});
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue = {});
+                                        const std::vector<ArgumentReferenceBinding>& argBindings = {});
 
 inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
                                                std::span<const std::string_view> argumentTypes,
                                                const SymbolTable& symbolTable,
-                                               const std::vector<bool>& argIsLValue = {})
+                                               const std::vector<ArgumentReferenceBinding>& argBindings = {})
 {
-    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argIsLValue);
+    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argBindings);
 }
 
 inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
                                                std::initializer_list<std::string_view> argumentTypes,
                                                const SymbolTable& symbolTable,
-                                               const std::vector<bool>& argIsLValue = {})
+                                               const std::vector<ArgumentReferenceBinding>& argBindings = {})
 {
-    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argIsLValue);
+    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argBindings);
 }
 
 inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
                                                std::span<const std::string> argumentTypes,
                                                const SymbolTable& symbolTable,
-                                               const std::vector<bool>& argIsLValue = {})
+                                               const std::vector<ArgumentReferenceBinding>& argBindings = {})
 {
-    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argIsLValue);
+    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argBindings);
 }
 
 inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
                                                const std::vector<std::string>& argumentTypes,
                                                const SymbolTable& symbolTable,
-                                               const std::vector<bool>& argIsLValue = {})
+                                               const std::vector<ArgumentReferenceBinding>& argBindings = {})
 {
-    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argIsLValue);
+    return ResolveBestOverload(std::span<const Symbol>(candidates), argumentTypes, symbolTable, argBindings);
 }
 
 /**
@@ -378,24 +403,25 @@ inline OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candid
  * @param candidates Span of candidate function symbol pointers.
  * @param argumentTypes Deduced argument types for each argument expression.
  * @param symbolTable Symbol table for hierarchy and conversion lookups.
- * @param argIsLValue Optional flags indicating whether each argument expression is an L-value.
+ * @param argBindings Optional reference binding classification for each argument.
  * @return OverloadMatchResult containing the best candidate and match metrics.
  */
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue = {});
+                                        const std::vector<ArgumentReferenceBinding>& argBindings = {});
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         std::initializer_list<std::string_view> argumentTypes,
-                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue = {});
+                                        const SymbolTable& symbolTable,
+                                        const std::vector<ArgumentReferenceBinding>& argBindings = {});
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue = {});
+                                        const std::vector<ArgumentReferenceBinding>& argBindings = {});
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue = {});
+                                        const std::vector<ArgumentReferenceBinding>& argBindings = {});
 
 /**
  * @brief Checks whether two declarations take the same parameters regardless of qualified name.

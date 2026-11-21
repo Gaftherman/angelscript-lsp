@@ -123,7 +123,7 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         CHECK(arg3.isNamed == true);
         CHECK(facts.TextOf(arg3.nameBytes) == paramName);
         CHECK(facts.TextOf(arg3.bytes) == varA);
-        CHECK(facts.TextOf(arg3.foldedBytes) == varA);
+        CHECK(facts.TextOf(arg3.operandBytes) == varA);
 
         // Arg 4: Initializer list
         const auto& arg4 = args[4];
@@ -364,7 +364,7 @@ TEST_SUITE("analysis/index/CallSiteFacts")
         const auto args0 = facts.ArgumentsOf(facts.callSites[0]);
         REQUIRE(args0.size() == 1);
         CHECK(args0[0].kind == angel_lsp::analysis::CallArgumentKind::Identifier);
-        CHECK(facts.TextOf(args0[0].foldedBytes) == argVar);
+        CHECK(facts.TextOf(args0[0].operandBytes) == argVar);
         CHECK(facts.TernaryOf(args0[0]).consequenceBytes.Empty());
         CHECK(facts.LambdaParamsOf(args0[0]).empty());
         CHECK(facts.ThisMemberName(args0[0]).empty());

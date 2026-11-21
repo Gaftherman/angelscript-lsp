@@ -210,7 +210,7 @@ static void PopulateWinner(OverloadMatchResult& result, EvaluatedCandidate cand)
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue)
+                                        const std::vector<ArgumentReferenceBinding>& argBindings)
 {
     OverloadMatchResult result;
     std::vector<EvaluatedCandidate> evaluated;
@@ -221,7 +221,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
         {
             continue;
         }
-        if (auto cand = EvaluateCandidate(*sym, argumentTypes, symbolTable, argIsLValue))
+        if (auto cand = EvaluateCandidate(*sym, argumentTypes, symbolTable, argBindings))
         {
             result.viableCandidates.push_back(sym);
             evaluated.push_back(std::move(*cand));
@@ -292,54 +292,57 @@ static std::vector<std::string_view> ToViews(std::span<const std::string> argume
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         std::initializer_list<std::string_view> argumentTypes,
-                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
+                                        const SymbolTable& symbolTable,
+                                        const std::vector<ArgumentReferenceBinding>& argBindings)
 {
     const std::vector<std::string_view> args(argumentTypes);
-    return ResolveBestOverload(candidates, std::span<const std::string_view>(args), symbolTable, argIsLValue);
+    return ResolveBestOverload(candidates, std::span<const std::string_view>(args), symbolTable, argBindings);
 }
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         std::span<const std::string> argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue)
+                                        const std::vector<ArgumentReferenceBinding>& argBindings)
 {
     const auto views = ToViews(argumentTypes);
-    return ResolveBestOverload(candidates, std::span<const std::string_view>(views), symbolTable, argIsLValue);
+    return ResolveBestOverload(candidates, std::span<const std::string_view>(views), symbolTable, argBindings);
 }
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue)
+                                        const std::vector<ArgumentReferenceBinding>& argBindings)
 {
-    return ResolveBestOverload(candidates, std::span<const std::string>(argumentTypes), symbolTable, argIsLValue);
+    return ResolveBestOverload(candidates, std::span<const std::string>(argumentTypes), symbolTable, argBindings);
 }
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::span<const std::string_view> argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue)
+                                        const std::vector<ArgumentReferenceBinding>& argBindings)
 {
-    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
+    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argBindings);
 }
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         std::initializer_list<std::string_view> argumentTypes,
-                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
+                                        const SymbolTable& symbolTable,
+                                        const std::vector<ArgumentReferenceBinding>& argBindings)
 {
     const std::vector<std::string_view> args(argumentTypes);
     return ResolveBestOverload(CandidatePtrs(candidates), std::span<const std::string_view>(args), symbolTable,
-                               argIsLValue);
+                               argBindings);
 }
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates, std::span<const std::string> argumentTypes,
-                                        const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
+                                        const SymbolTable& symbolTable,
+                                        const std::vector<ArgumentReferenceBinding>& argBindings)
 {
-    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
+    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argBindings);
 }
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
-                                        const std::vector<bool>& argIsLValue)
+                                        const std::vector<ArgumentReferenceBinding>& argBindings)
 {
-    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argIsLValue);
+    return ResolveBestOverload(CandidatePtrs(candidates), argumentTypes, symbolTable, argBindings);
 }
 
 } // namespace angel_lsp::analysis

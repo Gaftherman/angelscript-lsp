@@ -18,6 +18,18 @@
 namespace angel_lsp::analysis
 {
 
+std::string CallResultType(std::string_view writtenType)
+{
+    const auto clean = CleanExpressionTypeView(writtenType);
+    if (HasLeadingConst(writtenType) && IsHandleTypeView(clean))
+    {
+        std::string result(clean);
+        PrependConst(result);
+        return result;
+    }
+    return std::string(clean);
+}
+
 void CollectMixinCallCandidates(std::string_view containerName, std::string_view funcName,
                                 const SymbolTable& symbolTable, std::vector<Symbol>& candidates)
 {
@@ -81,7 +93,7 @@ std::string ResolveCallOverloadReturn(std::span<const Symbol> candidates, std::s
     const Symbol* chosen = match.bestCandidate ? match.bestCandidate : &candidates[0];
     if (chosen && std::holds_alternative<FunctionSignature>(chosen->signature))
     {
-        std::string ret = CleanExpressionType(chosen->GetFunction().returnType);
+        std::string ret = CallResultType(chosen->GetFunction().returnType);
         if (ret.empty() &&
             (chosen->name == chosen->containerName || LastScopeSegment(chosen->containerName) == chosen->name))
         {
@@ -89,7 +101,7 @@ std::string ResolveCallOverloadReturn(std::span<const Symbol> candidates, std::s
         }
         return ret;
     }
-    std::string ret = CleanExpressionType(candidates[0].GetFunction().returnType);
+    std::string ret = CallResultType(candidates[0].GetFunction().returnType);
     if (ret.empty() && (candidates[0].name == candidates[0].containerName ||
                         LastScopeSegment(candidates[0].containerName) == candidates[0].name))
     {
@@ -214,7 +226,7 @@ std::string ResolveCalleeFuncdefReturn(std::string_view calleeType, const Symbol
     {
         if (auto funcdef = FindFuncdefSymbol(cleanCallee, symbolTable))
         {
-            return CleanExpressionType(funcdef->GetFuncdef().returnType);
+            return CallResultType(funcdef->GetFuncdef().returnType);
         }
     }
     return std::string(calleeType);

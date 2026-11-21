@@ -13,6 +13,10 @@
 
 #include <algorithm>
 #include <doctest/doctest.h>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <spdlog/fmt/fmt.h>
 #include <string>
 #include <vector>
 
@@ -146,6 +150,73 @@ TEST_CASE("CallChecker - A method inherited from a base is found")
                              "void main() { Derived d; d.Think(1); }\n";
 
     CHECK_FALSE(Reports(code));
+}
+
+TEST_CASE("CallChecker - V117 accepted reference cast and namespace constructor repros")
+{
+    for (const auto& name : {"v117_ref_cast", "v117_namespace_constructor"})
+    {
+        CAPTURE(name);
+        const auto path =
+            std::filesystem::path(ANGELSCRIPT_PARITY_DIR) / "differential" / name / (std::string(name) + ".as");
+        std::ifstream input(path, std::ios::binary);
+        REQUIRE(input.is_open());
+        const std::string source{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+        for (const auto& diag : AnalyzeCallSnippet(source))
+        {
+            CAPTURE(diag.message);
+            CHECK(diag.severity != DiagnosticSeverity::Error);
+        }
+    }
+}
+
+TEST_CASE("CallChecker - A reference cast supplies a mutable object for an inout reference")
+{
+    const auto base = angel_lsp::test::GenerateRandomSymbolName("Base");
+    const auto derived = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const auto declarations = fmt::format(
+        "class {0} {{}} class {1} : {0} {{}} "
+        "const {0}@ Read() {{ return null; }} "
+        "void Mutate({1}&inout value) {{}} void Write({1}&out value) {{}} void WriteInt(int&out value) {{}} ",
+        base, derived);
+    const auto run = [&](std::string_view body)
+    { return AnalyzeCallSnippet(declarations + fmt::format("void Run({0}@ x, const {0}@ cx) {{ {1} }}", base, body)); };
+
+    const auto accepted = run(fmt::format("Mutate((cast<{}>(x)));", derived));
+    CHECK(std::none_of(accepted.begin(), accepted.end(),
+                       [](const Diagnostic& diag) { return diag.severity == DiagnosticSeverity::Error; }));
+    CHECK(HasCode(run(fmt::format("Write(cast<{}>(x));", derived)), "as-err-lvalue-required-for-out-param"));
+    CHECK(HasCode(run("WriteInt(42);"), "as-err-lvalue-required-for-out-param"));
+    CHECK(HasCode(run(fmt::format("Mutate(cast<const {}>(x));", derived)), "as-err-no-implicit-conversion"));
+    CHECK(HasCode(run(fmt::format("Mutate(cast<{}>(cx));", derived)), "as-err-no-implicit-conversion"));
+    CHECK(HasCode(run(fmt::format("Mutate(cast<{}>(Read()));", derived)), "as-err-no-implicit-conversion"));
+    CHECK(HasCode(run(fmt::format("Mutate(cast<{}>(cast<const {}>(x)));", derived, base)),
+                  "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - Relative method parameter types preserve their namespace identity")
+{
+    const auto outer = angel_lsp::test::GenerateRandomSymbolName("Outer");
+    const auto other = angel_lsp::test::GenerateRandomSymbolName("Other");
+    const auto shared = angel_lsp::test::GenerateRandomSymbolName("List");
+    const auto item = angel_lsp::test::GenerateRandomSymbolName("Node");
+    const auto declarations =
+        fmt::format("class Payload {{}} "
+                    "namespace {0} {{ namespace {2} {{ class {3} {{ {3}(Payload@ payload) {{}} }} }} "
+                    "class {2} {{ {2}() {{}} void Push({2}::{3}@ node) {{}} }} }} "
+                    "namespace {1} {{ namespace {2} {{ class {3} {{ {3}(Payload@ payload) {{}} }} }} }} ",
+                    outer, other, shared, item);
+    const auto run = [&](std::string_view argumentNamespace)
+    {
+        return AnalyzeCallSnippet(declarations + fmt::format("namespace {0}::Client {{ void Run() {{ {0}::{1} list; "
+                                                             "list.Push(::{2}::{1}::{3}(@Payload())); }} }}",
+                                                             outer, shared, argumentNamespace, item));
+    };
+
+    const auto accepted = run(outer);
+    CHECK(std::none_of(accepted.begin(), accepted.end(),
+                       [](const Diagnostic& diag) { return diag.severity == DiagnosticSeverity::Error; }));
+    CHECK(HasCode(run(other), "as-err-no-implicit-conversion"));
 }
 
 TEST_CASE("CallChecker - A qualified call is judged wherever it was declared")

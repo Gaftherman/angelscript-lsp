@@ -158,7 +158,7 @@ static void ValidateResolvedCall(const OverloadMatchResult& match, const CallOve
         RecordBoundCall(selected, req.site, ctx);
     }
     CheckOmittedDefaultArguments(selected, req.args.argTypes.size(), req.site, ctx);
-    ValidateOutArguments(selected, req.arguments, req.scope, ctx);
+    ValidateOutArguments(selected, req.arguments, req.args.argBindings, ctx);
     if (req.matchingArity.size() > 1 && req.initFacts)
     {
         CheckInitializerListArgs(req.arguments, req.args, selected.GetFunction(), *req.initFacts, req.scope, ctx);
@@ -190,7 +190,7 @@ void CheckCallOverloads(const CallOverloadCheckRequest& request, DiagnosticConte
     }
 
     OverloadMatchResult match = ResolveBestOverload(request.matchingArity, request.args.argTypes,
-                                                    ctx.request.symbolTable, request.args.argIsLValue);
+                                                    ctx.request.symbolTable, request.args.argBindings);
     if (match.isAmbiguous && request.args.allArgsResolved)
     {
         const std::string_view prioritySig =

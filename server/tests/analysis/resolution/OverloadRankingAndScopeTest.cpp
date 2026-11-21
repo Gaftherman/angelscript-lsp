@@ -115,19 +115,19 @@ TEST_SUITE("analysis/resolution/OverloadRankingAndScope")
         const std::vector<Symbol> candidates = {candInt, candStr};
 
         // Call with array<int> (lvalue)
-        auto matchInt = ResolveBestOverload(candidates, {"array<int>"}, table, {true});
+        auto matchInt = ResolveBestOverload(candidates, {"array<int>"}, table, {ArgumentReferenceBinding::LValue});
         REQUIRE(matchInt.bestCandidate != nullptr);
         CHECK_FALSE(matchInt.isAmbiguous);
         CHECK(matchInt.bestCandidate->GetFunction().parameters[0].typeName == "array<int>& out");
 
         // Call with array<string> (lvalue)
-        auto matchStr = ResolveBestOverload(candidates, {"array<string>"}, table, {true});
+        auto matchStr = ResolveBestOverload(candidates, {"array<string>"}, table, {ArgumentReferenceBinding::LValue});
         REQUIRE(matchStr.bestCandidate != nullptr);
         CHECK_FALSE(matchStr.isAmbiguous);
         CHECK(matchStr.bestCandidate->GetFunction().parameters[0].typeName == "array<string>& out");
 
         // Call with array<float>: incompatible with both instantiations
-        auto matchFloat = ResolveBestOverload(candidates, {"array<float>"}, table, {true});
+        auto matchFloat = ResolveBestOverload(candidates, {"array<float>"}, table, {ArgumentReferenceBinding::LValue});
         CHECK(matchFloat.bestCandidate == nullptr);
         CHECK(matchFloat.viableCandidates.empty());
     }
@@ -147,7 +147,8 @@ TEST_SUITE("analysis/resolution/OverloadRankingAndScope")
         // Candidate 1 has (Exact, StandardConv)
         // Candidate 2 has (StandardConv, Exact)
         // Neither dominates: must be ambiguous and bestCandidate MUST be nullptr
-        auto match = ResolveBestOverload(candidates, {"int", "int"}, table, {false, false});
+        auto match = ResolveBestOverload(candidates, {"int", "int"}, table,
+                                         {ArgumentReferenceBinding::RValue, ArgumentReferenceBinding::RValue});
         CHECK(match.isAmbiguous);
         CHECK(match.bestCandidate == nullptr);
         CHECK(match.viableCandidates.size() == 2);

@@ -5,6 +5,7 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
+#include "analysis/resolution/OverloadResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
 
 #include <optional>
@@ -20,7 +21,7 @@ struct CallResolutionContext
 {
     std::vector<std::string> argTypes;
     std::vector<std::string> argNames;
-    std::vector<bool> argIsLValue;
+    std::vector<ArgumentReferenceBinding> argBindings;
     bool allArgsResolved = true;
 };
 

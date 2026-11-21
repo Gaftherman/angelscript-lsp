@@ -1,5 +1,7 @@
 #include "analysis/checkers/CallCheckerCommon.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/TypeSanitization.h"
 #include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
@@ -63,6 +65,17 @@ std::vector<Symbol> FindMethodCandidates(std::string_view typeName, std::string_
             if (!overriddenLower)
             {
                 candidates.push_back(sym);
+            }
+        }
+    }
+    for (auto& candidate : candidates)
+    {
+        for (auto& param : candidate.GetFunction().parameters)
+        {
+            if (HasScopeQualifier(param.typeName))
+            {
+                param.typeName =
+                    QualifyTypeInContainer(param.typeName, EnclosingNamespaceView(candidate, table), table);
             }
         }
     }

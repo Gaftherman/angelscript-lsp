@@ -66,15 +66,15 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
  * @param[in] sym Candidate function symbol.
  * @param[in] argumentTypes Deduced argument types.
  * @param[in] symbolTable Symbol table.
- * @param[in] argIsLValue L-value flags.
+ * @param[in] argBindings Reference binding classification for each argument.
  * @return EvaluatedCandidate if viable, otherwise std::nullopt.
  */
 std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span<const std::string_view> argumentTypes,
                                                     const SymbolTable& symbolTable,
-                                                    const std::vector<bool>& argIsLValue);
+                                                    const std::vector<ArgumentReferenceBinding>& argBindings);
 std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, std::span<const std::string> argumentTypes,
                                                     const SymbolTable& symbolTable,
-                                                    const std::vector<bool>& argIsLValue);
+                                                    const std::vector<ArgumentReferenceBinding>& argBindings);
 
 /**
  * @brief Checks if two function symbols declare the identical signature (name, params, return).

@@ -36,7 +36,8 @@ enum class CallArgumentKind : uint8_t
     Member,          ///< Member access expression.
     Lambda,          ///< Lambda expression (`function(...) { ... }`).
     InitializerList, ///< Initializer list expression (`{ ... }`).
-    Ternary          ///< Ternary conditional expression (`cond ? a : b`).
+    Ternary,         ///< Ternary conditional expression (`cond ? a : b`).
+    ReferenceCast    ///< Explicit handle cast (`cast<T>(expr)`).
 };
 
 /**
@@ -69,7 +70,7 @@ struct CallArgumentFact
     IndexedByteRange bytes;                               ///< Byte span of the argument expression.
     SourceRange range;                                    ///< Line and column span used for diagnostics.
     IndexedByteRange nameBytes;                           ///< Byte span of parameter name if named; empty otherwise.
-    IndexedByteRange foldedBytes;                         ///< Byte span of unwrapped identifier if any.
+    IndexedByteRange operandBytes;                        ///< Unwrapped identifier or innermost reference cast operand.
     uint32_t detailIndex = 0;                             ///< Pool index into ternary, lambda, or member pools.
     uint16_t detailCount = 0;                             ///< Number of pool entries owned by this argument.
     CallArgumentKind kind = CallArgumentKind::Expression; ///< Syntactic classification of the argument.
@@ -80,6 +81,7 @@ struct CallArgumentFact
     bool isNumericLiteral : 1 = false;                    ///< True if argument expression is a numeric literal.
     bool hasLambdaParameterList : 1 = false;              ///< True when a lambda argument spells a parameter list.
     bool isThisMemberAccess : 1 = false;                  ///< True if argument is `this.<member>`.
+    bool hasConstCastTarget : 1 = false; ///< True if any cast in the reference cast chain names a const target.
 };
 
 /**

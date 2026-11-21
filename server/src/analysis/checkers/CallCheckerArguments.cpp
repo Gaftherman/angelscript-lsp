@@ -91,10 +91,10 @@ static bool CheckArgIsLValue(const CallArgumentFact& arg, const Scope* scope, co
         }
         return IsAssignableLValueSymbol(text, scope, table, arg.bytes.startByte);
     }
-    const std::string_view foldedName = CallSiteFacts::SliceText(sourceCode, arg.foldedBytes);
-    if (!foldedName.empty())
+    if (arg.kind == CallArgumentKind::Identifier)
     {
-        return IsAssignableLValueSymbol(foldedName, scope, table, arg.foldedBytes.startByte);
+        const auto name = CallSiteFacts::SliceText(sourceCode, arg.operandBytes);
+        return IsAssignableLValueSymbol(name, scope, table, arg.operandBytes.startByte);
     }
     if (arg.kind == CallArgumentKind::Member)
     {
@@ -113,7 +113,7 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
     CallResolutionContext result;
     const size_t argCount = arguments.size();
     result.argTypes.reserve(argCount);
-    result.argIsLValue.reserve(argCount);
+    result.argBindings.reserve(argCount);
     result.argNames.reserve(argCount);
 
     const ExpressionTypeContext exprCtx =
@@ -125,7 +125,10 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
     for (const auto& arg : arguments)
     {
         result.argNames.emplace_back(CallSiteFacts::SliceText(ctx.request.sourceCode, arg.nameBytes));
-        result.argIsLValue.push_back(CheckArgIsLValue(arg, scope, ctx.request.symbolTable, ctx.request.sourceCode));
+        const bool isRefCast = arg.kind == CallArgumentKind::ReferenceCast;
+        const bool isLValue =
+            !isRefCast && CheckArgIsLValue(arg, scope, ctx.request.symbolTable, ctx.request.sourceCode);
+        result.argBindings.push_back(isLValue ? ArgumentReferenceBinding::LValue : ArgumentReferenceBinding::RValue);
 
         std::string_view trimmedArg = CallSiteFacts::SliceText(ctx.request.sourceCode, arg.bytes);
         TrimTypeWhitespace(trimmedArg);
@@ -179,6 +182,20 @@ CallResolutionContext ResolveCallArguments(std::span<const CallArgumentFact> arg
                  IsObjectOperandConst(arg.bytes, ctx.request.sourceCode, scope, ctx.request.symbolTable))
         {
             PrependConst(argType);
+        }
+        if (isRefCast && !argType.empty())
+        {
+            const bool isConst =
+                arg.hasConstCastTarget || HasConstModifier(ResolveExpressionType(arg.operandBytes, exprCtx)) ||
+                IsObjectOperandConst(arg.operandBytes, ctx.request.sourceCode, scope, ctx.request.symbolTable);
+            if (isConst && !HasConstModifier(argType))
+            {
+                PrependConst(argType);
+            }
+            if (!HasConstModifier(argType) && !IsPrimitiveTypeName(argType))
+            {
+                result.argBindings.back() = ArgumentReferenceBinding::ReferenceCast;
+            }
         }
         result.argTypes.push_back(std::move(argType));
     }
@@ -246,8 +263,8 @@ void CheckInitializerListArgs(std::span<const CallArgumentFact> arguments, const
     }
 }
 
-void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentFact> arguments, const Scope* scope,
-                          DiagnosticContext& ctx)
+void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentFact> arguments,
+                          std::span<const ArgumentReferenceBinding> bindings, DiagnosticContext& ctx)
 {
     const auto& fn = candidate.GetFunction();
     for (size_t i = 0; i < arguments.size() && i < fn.parameters.size(); ++i)
@@ -266,7 +283,7 @@ void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentF
             continue;
         }
 
-        if (!CheckArgIsLValue(arguments[i], scope, ctx.request.symbolTable, ctx.request.sourceCode))
+        if (!CanBindMutableReference(bindings[i], param))
         {
             ctx.EmitAtRange(arguments[i].range, "as-err-lvalue-required-for-out-param");
         }

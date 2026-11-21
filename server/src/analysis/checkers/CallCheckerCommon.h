@@ -329,14 +329,14 @@ struct OverloadFailureReportRequest
 void ReportOverloadResolutionFailure(const OverloadFailureReportRequest& req, DiagnosticContext& ctx);
 
 /**
- * @brief Validates that arguments passed to &out parameters are assignable L-values.
+ * @brief Validates storage requirements of mutable reference parameters.
  * @param[in] candidate Chosen function overload.
  * @param[in] arguments Sliced argument facts.
- * @param[in] scope Lexical scope at call site.
+ * @param[in] bindings Storage category of each argument.
  * @param[in,out] ctx Diagnostic context.
  */
-void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentFact> arguments, const Scope* scope,
-                          DiagnosticContext& ctx);
+void ValidateOutArguments(const Symbol& candidate, std::span<const CallArgumentFact> arguments,
+                          std::span<const ArgumentReferenceBinding> bindings, DiagnosticContext& ctx);
 
 /**
  * @brief Validates positional omitted default arguments on a selected call candidate.

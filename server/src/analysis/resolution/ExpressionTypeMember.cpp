@@ -1,6 +1,7 @@
 #include "analysis/resolution/ExpressionTypeMember.h"
 
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ExpressionTypeCall.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
@@ -198,9 +199,9 @@ std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates, std
                 ret = SubstituteTypeParam(ret, "T", templateInfo.templateArgs[0]);
             }
         }
-        return CleanExpressionType(ret);
+        return CallResultType(ret);
     }
-    return CleanExpressionType(candidates[0].GetFunction().returnType);
+    return CallResultType(candidates[0].GetFunction().returnType);
 }
 
 std::string ResolveCandidateMethodReturn(std::span<const Symbol> candidates, const std::vector<std::string>& argTypes,

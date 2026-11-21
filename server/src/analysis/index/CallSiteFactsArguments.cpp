@@ -184,7 +184,21 @@ CallArgumentFact ReadCallArgument(TSNode exprNode, TSNode nameNode, const NodeIn
     else if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
     {
         fact.kind = CallArgumentKind::Identifier;
-        fact.foldedBytes = BytesOf(unwrapped);
+        fact.operandBytes = BytesOf(unwrapped);
+    }
+    else if (sym == gs.symCastExpression)
+    {
+        fact.kind = CallArgumentKind::ReferenceCast;
+        TSNode operand = unwrapped;
+        while (!ts_node_is_null(operand) && ts_node_symbol(operand) == gs.symCastExpression)
+        {
+            const SyntaxOperands cast(operand, &index);
+            const TSNode target = cast.Field(gs.fieldType);
+            fact.hasConstCastTarget |=
+                !ts_node_is_null(target) && IsConstTypeView(parser::NodeText(target, facts.source));
+            operand = UnwrapIndexedParentheses(cast.Field(gs.fieldValue), &index);
+        }
+        fact.operandBytes = BytesOf(operand);
     }
     else if (sym == gs.symNullLiteral || sym == gs.symNumberLiteral || sym == gs.symStringLiteral ||
              sym == gs.tokTrue || sym == gs.tokFalse)
