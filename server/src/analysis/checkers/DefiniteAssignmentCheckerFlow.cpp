@@ -253,26 +253,27 @@ void DefiniteAssignmentVisitor::StepLeaf(const DefiniteAssignmentStmtRecord& rec
     case DefiniteAssignmentStmtKind::VariableDeclaration:
     {
         const auto declarators = m_facts.DeclaratorsOf(rec);
-        const auto reads = m_facts.ReadsOf(rec);
+        auto reads = m_facts.ReadsOf(rec);
+        auto calls = m_facts.CallsOf(rec);
         for (const auto& decl : declarators)
         {
             if (decl.hasInitializer)
             {
-                for (const auto& read : reads)
+                while (!calls.empty() && decl.bytes.Contains(calls.front().bytes.startByte))
                 {
-                    if (read.bytes.startByte >= decl.bytes.startByte && read.bytes.endByte <= decl.bytes.endByte)
+                    // A call's out arguments can initialize locals only after reads preceding the call.
+                    while (!reads.empty() && reads.front().bytes.endByte <= calls.front().bytes.startByte)
                     {
-                        if (m_trackedLocals.contains(read.name) && !state.assignedVars.contains(read.name))
-                        {
-                            const uint64_t locationKey = (static_cast<uint64_t>(read.range.startLine) << 32) |
-                                                         static_cast<uint64_t>(read.range.startCharacter);
-                            if (m_reportedReads.insert(locationKey).second)
-                            {
-                                m_ctx.EmitAtRange(read.range, "as-warn-uninitialized-variable-read", read.name,
-                                                  DiagnosticSeverity::Warning);
-                            }
-                        }
+                        CheckRead(reads.front().name, reads.front().range, state);
+                        reads = reads.subspan(1);
                     }
+                    ProcessCall(calls.front(), state);
+                    calls = calls.subspan(1);
+                }
+                while (!reads.empty() && decl.bytes.Contains(reads.front().bytes.startByte))
+                {
+                    CheckRead(reads.front().name, reads.front().range, state);
+                    reads = reads.subspan(1);
                 }
                 state.assignedVars.insert(decl.name);
             }

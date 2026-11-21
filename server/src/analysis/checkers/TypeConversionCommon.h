@@ -178,7 +178,7 @@ bool DeclaresAnyCastOperator(std::string_view typeName, const SymbolTable& table
  * @param[in] toType Destination type name.
  * @param[in] table Symbol table to query.
  * @param[in] implicitOnly When true, checks only opImplConv and opImplCast.
- * @return True if conversion operator exists; false otherwise.
+ * @return True if a matching operator returns the target or writes it through a wildcard out parameter.
  */
 bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, const SymbolTable& table,
                           bool implicitOnly);

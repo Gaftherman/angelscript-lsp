@@ -4,6 +4,23 @@
   "description": "Active burn-down queue tracking pending functions and structs to be unified or deleted until 0 remaining.",
   "entries": [
     {
+      "id": "REF-V120-DIAGNOSTIC-FALSE-POSITIVES",
+      "phase": "S5",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionCore.cpp",
+      "deletedLineRange": "125-160",
+      "originalSymbolOrCode": "CanConvertClasses opAssign search",
+      "whatItDidAndWhyInThatFile": "Matched assignment overloads only while evaluating class conversions.",
+      "whyChangedOrDeleted": "Reuse assignment overload matching for initializer elements. Also share read diagnostics through DefiniteAssignmentVisitor::CheckRead across declaration initializers, statements and call arguments.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/TypeConversionCore.cpp",
+      "replacedByCanonicalSymbol": "HasMatchingAssignmentOverload",
+      "ramOrCpuImpact": "Only elements that fail ordinary conversion get an additional assignment overload lookup. Declaration flow consumes the ordered read and call facts once.",
+      "verifiedByTests": [
+        "InitializerList - array elements can use implicit assignment overloads",
+        "DefiniteAssignmentChecker - An initializer call assigns out arguments in source order"
+      ]
+    },
+    {
       "id": "REF-S5-C06-WORKSPACE-EDIT-ENCODING",
       "phase": "S5",
       "action": "UNIFY_FUNCTIONS",

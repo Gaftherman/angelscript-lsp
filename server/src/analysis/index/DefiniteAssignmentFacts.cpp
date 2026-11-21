@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <tree_sitter/api.h>
 #include <vector>
@@ -190,7 +191,18 @@ static void CollectDeclarators(TSNode declNode, const NodeIndex& index, std::str
                 {BytesOf(child), RangeOf(child), RangeOf(!ts_node_is_null(nameNode) ? nameNode : child),
                  parser::NodeText(nameNode, source), hasInit, isPrimitive, (isPrimitive && !hasInit)});
             if (hasInit)
+            {
+                const auto firstRead = facts.reads.size();
+                const auto firstCall = facts.calls.size();
                 ExtractExpressions(initNode, index, source, facts);
+                if (facts.calls.size() != firstCall)
+                {
+                    std::ranges::sort(std::span{facts.reads}.subspan(firstRead), {},
+                                      [](const auto& read) { return read.bytes.startByte; });
+                    std::ranges::sort(std::span{facts.calls}.subspan(firstCall), {},
+                                      [](const auto& call) { return call.bytes.startByte; });
+                }
+            }
             return true;
         });
 }

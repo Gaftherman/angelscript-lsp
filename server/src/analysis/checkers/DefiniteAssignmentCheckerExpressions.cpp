@@ -7,6 +7,21 @@
 namespace angel_lsp::analysis
 {
 
+void DefiniteAssignmentVisitor::CheckRead(std::string_view name, const SourceRange& range,
+                                          const DefiniteAssignmentState& state)
+{
+    if (!m_trackedLocals.contains(name) || state.assignedVars.contains(name))
+    {
+        return;
+    }
+    const uint64_t locationKey =
+        (static_cast<uint64_t>(range.startLine) << 32) | static_cast<uint64_t>(range.startCharacter);
+    if (m_reportedReads.insert(locationKey).second)
+    {
+        m_ctx.EmitAtRange(range, "as-warn-uninitialized-variable-read", name, DiagnosticSeverity::Warning);
+    }
+}
+
 void DefiniteAssignmentVisitor::EvaluateStatementExpressions(const DefiniteAssignmentStmtRecord& rec,
                                                              DefiniteAssignmentState& state)
 {
@@ -19,16 +34,7 @@ void DefiniteAssignmentVisitor::EvaluateStatementExpressions(const DefiniteAssig
     const auto reads = m_facts.ReadsOf(rec);
     for (const auto& read : reads)
     {
-        if (m_trackedLocals.contains(read.name) && !state.assignedVars.contains(read.name))
-        {
-            const uint64_t locationKey =
-                (static_cast<uint64_t>(read.range.startLine) << 32) | static_cast<uint64_t>(read.range.startCharacter);
-            if (m_reportedReads.insert(locationKey).second)
-            {
-                m_ctx.EmitAtRange(read.range, "as-warn-uninitialized-variable-read", read.name,
-                                  DiagnosticSeverity::Warning);
-            }
-        }
+        CheckRead(read.name, read.range, state);
     }
 
     const auto assigns = m_facts.AssignmentsOf(rec);

@@ -77,6 +77,15 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
 bool CanConvertImplicitly(std::string_view fromType, std::string_view toType, const DiagnosticContext& ctx);
 
 /**
+ * @brief Checks whether an assignment overload can initialize a destination value from the source.
+ * @param[in] from Source expression type.
+ * @param[in] to Destination type, including any template arguments.
+ * @param[in] ctx Diagnostic context used for symbol lookup and argument conversion.
+ * @return True for a non-handle destination with a non-deleted, non-explicit opAssign callable with the source.
+ */
+bool CanAssignImplicitly(std::string_view from, std::string_view to, const DiagnosticContext& ctx);
+
+/**
  * @brief Evaluates whether a type satisfies boolean truthiness in control flow conditions.
  *        In AngelScript, conditions (if, while, for, do-while, ternary) accept:
  * @param typeName Type name to evaluate.

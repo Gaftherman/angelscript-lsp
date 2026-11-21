@@ -472,6 +472,31 @@ TEST_CASE("InitializerList - a correct list argument stays silent")
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
 }
 
+TEST_CASE("InitializerList - array elements can use implicit assignment overloads")
+{
+    const auto print = angel_lsp::test::GenerateRandomSymbolName("Print");
+    const auto args = angel_lsp::test::GenerateRandomSymbolName("args");
+    const auto test = angel_lsp::test::GenerateRandomSymbolName("Test");
+    const auto f = angel_lsp::test::GenerateRandomSymbolName("floatValue");
+    const auto i = angel_lsp::test::GenerateRandomSymbolName("intValue");
+    const auto u = angel_lsp::test::GenerateRandomSymbolName("uintValue");
+    const std::string stringStub = "class string {\n"
+                                   "    string& opAssign(double);\n"
+                                   "    string& opAssign(int64);\n"
+                                   "    string& opAssign(uint64);\n"
+                                   "    string& opAssign(bool);\n"
+                                   "}\n";
+    const auto accepted =
+        DiagnoseAll(stringStub + "void " + print + "(array<string>@ " + args + ") {}\nvoid " + test + "(float " + f +
+                    ", int " + i + ", uint " + u + ") { " + print + "({" + f + ", " + i + ", " + u + "}); }");
+    CHECK_FALSE(HasAnyCode(accepted, "as-err-no-implicit-conversion"));
+
+    const auto foo = angel_lsp::test::GenerateRandomSymbolName("Foo");
+    const auto rejected =
+        DiagnoseAll("class " + foo + " {}\nvoid " + test + "() { array<" + foo + "> " + args + " = {1}; }");
+    CHECK(HasAnyCode(rejected, "as-err-no-implicit-conversion"));
+}
+
 TEST_CASE("InitializerList - an overloaded call leaves its list alone")
 {
     // Which parameter the list is built against is the overload's answer, and with two candidates

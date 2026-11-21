@@ -127,6 +127,14 @@ class DefiniteAssignmentVisitor
     void EvaluateStatementExpressions(const DefiniteAssignmentStmtRecord& rec, DefiniteAssignmentState& state);
 
     /**
+     * @brief Reports a read of a tracked local that has no definite assignment on this path.
+     * @param[in] name Name of the local being read.
+     * @param[in] range Source range used to identify and report the read.
+     * @param[in] state Assignment state when the read occurs.
+     */
+    void CheckRead(std::string_view name, const SourceRange& range, const DefiniteAssignmentState& state);
+
+    /**
      * @brief Collects candidate function symbols matching the callee of a call expression.
      * @param[in] call Call fact containing callee and receiver details.
      * @param[out] candidates Output vector populated with viable function symbols.

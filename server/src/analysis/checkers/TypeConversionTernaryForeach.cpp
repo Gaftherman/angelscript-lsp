@@ -20,6 +20,10 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 
 static bool AreTernaryBranchesIncompatible(std::string_view clean1, std::string_view clean2, DiagnosticContext& ctx)
 {
+    if (IsSameType(clean1, clean2))
+    {
+        return false;
+    }
     if ((parser::primitives::IsNullType(clean1) && IsHandleTypeView(clean2)) ||
         (parser::primitives::IsNullType(clean2) && IsHandleTypeView(clean1)))
     {

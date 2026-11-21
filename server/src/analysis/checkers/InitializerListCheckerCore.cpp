@@ -125,7 +125,7 @@ void CheckElementValue(const InitializerListElementFact& element, std::string_vi
         return;
     }
 
-    if (!CanConvertImplicitly(actual, wanted, ctx))
+    if (!CanConvertImplicitly(actual, wanted, ctx) && !CanAssignImplicitly(actual, wanted, ctx))
     {
         ctx.EmitAtRange(element.range, "as-err-no-implicit-conversion", StripDecorations(actual),
                         StripDecorations(wanted));

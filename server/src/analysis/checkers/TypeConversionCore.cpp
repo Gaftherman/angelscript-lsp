@@ -106,6 +106,53 @@ bool CanConvertEnumTarget(std::string_view from, std::string_view to, const Symb
     return false;
 }
 
+static auto MakeImplicitConversionMatcher(std::string_view from, std::string_view to, const DiagnosticContext& ctx,
+                                          const ConversionState& state)
+{
+    auto binding =
+        HasTemplateArgumentsView(to) ? BindTemplateArguments(to, ctx.request.symbolTable) : TemplateBinding{};
+    return [from, binding = std::move(binding), &ctx, &state](const Symbol& sym)
+    {
+        const auto& signature = sym.GetFunction();
+        if (signature.modifiers.isExplicit || signature.modifiers.isDelete ||
+            !AcceptsSingleArgument(signature.parameters))
+        {
+            return false;
+        }
+        ConversionState nextState{state.depth + 1, state.visitedEdges};
+        const auto& parameter = signature.parameters.front();
+        const auto paramType =
+            binding.usable ? SubstituteTemplateParameters(parameter.typeName, binding) : parameter.typeName;
+        return TypeConversionEvaluator::IsConvertible(
+            from, NormalizeType(paramType, ctx.request.GetEffectiveArrayTypeName()), ctx, nextState);
+    };
+}
+
+static bool HasMatchingAssignmentOverload(std::string_view to, const SymbolTable& table, const auto& matches)
+{
+    bool found = false;
+    ForEachMethod(to, "opAssign", table,
+                  [&](const Symbol& sym)
+                  {
+                      found = matches(sym);
+                      return found;
+                  });
+    return found;
+}
+
+bool CanAssignImplicitly(std::string_view from, std::string_view to, const DiagnosticContext& ctx)
+{
+    if (IsHandleTypeView(to))
+    {
+        return false;
+    }
+    const auto cleanFrom = StripTrailingDecorationsView(StripLeadingConst(from));
+    const auto cleanTo = StripTrailingDecorationsView(StripLeadingConst(to));
+    const ConversionState state;
+    return HasMatchingAssignmentOverload(cleanTo, ctx.request.symbolTable,
+                                         MakeImplicitConversionMatcher(cleanFrom, cleanTo, ctx, state));
+}
+
 bool CanConvertClasses(std::string_view from, std::string_view to, const DiagnosticContext& ctx, ConversionState& state)
 {
     const SymbolTable& table = ctx.request.symbolTable;
@@ -122,44 +169,15 @@ bool CanConvertClasses(std::string_view from, std::string_view to, const Diagnos
         return true;
     }
 
-    TemplateBinding binding;
-    if (HasTemplateArgumentsView(to))
-    {
-        binding = BindTemplateArguments(to, table);
-    }
-
+    const auto acceptsFrom = MakeImplicitConversionMatcher(from, to, ctx, state);
     bool convertible = false;
-    const auto acceptsFrom = [&](const Symbol& sym)
-    {
-        if (sym.GetFunction().modifiers.isExplicit || sym.GetFunction().modifiers.isDelete)
-        {
-            return false;
-        }
-        const auto& parameters = sym.GetFunction().parameters;
-        if (AcceptsSingleArgument(parameters))
-        {
-            ConversionState nextState{state.depth + 1, state.visitedEdges};
-            std::string paramType = parameters[0].typeName;
-            if (binding.usable)
-            {
-                paramType = SubstituteTemplateParameters(paramType, binding);
-            }
-            paramType = NormalizeType(paramType, ctx.request.GetEffectiveArrayTypeName());
-            if (TypeConversionEvaluator::IsConvertible(from, paramType, ctx, nextState))
-            {
-                convertible = true;
-                return true;
-            }
-        }
-        return false;
-    };
-
-    ForEachConstructor(to, table, acceptsFrom);
-    if (!convertible)
-    {
-        ForEachMethod(to, "opAssign", table, acceptsFrom);
-    }
-    return convertible;
+    ForEachConstructor(to, table,
+                       [&](const Symbol& sym)
+                       {
+                           convertible = acceptsFrom(sym);
+                           return convertible;
+                       });
+    return convertible || HasMatchingAssignmentOverload(to, table, acceptsFrom);
 }
 
 bool CanConvertUserTypes(std::string_view from, std::string_view to, const DiagnosticContext& ctx,

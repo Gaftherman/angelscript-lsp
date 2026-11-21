@@ -84,6 +84,18 @@ bool MatchesVerdict(const std::vector<Diagnostic>& diagnostics, const std::strin
 
 TEST_SUITE("analysis/checkers/TernaryConversion")
 {
+    TEST_CASE("TernaryConversion - Two void branches are compatible")
+    {
+        const auto reload = angel_lsp::test::GenerateRandomSymbolName("Reload");
+        const auto test = angel_lsp::test::GenerateRandomSymbolName("Test");
+        const auto condition = angel_lsp::test::GenerateRandomSymbolName("condition");
+        const std::string prefix = "void " + reload + "() {}\nvoid " + test + "(bool " + condition + ") { " +
+                                   condition + " ? " + reload + "() : ";
+
+        CHECK_FALSE(HasConversionDiagnostic(AnalyzeCode(prefix + reload + "(); }")));
+        CHECK(HasConversionDiagnostic(AnalyzeCode(prefix + "1; }")));
+    }
+
     TEST_CASE("TernaryConversion - Handle consequence and handle alternative of same type")
     {
         const std::string classSymbol = angel_lsp::test::GenerateRandomSymbolName("Widget");

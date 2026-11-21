@@ -203,11 +203,15 @@ bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, co
     const bool toIsNumeric = IsNumericPrimitive(toType);
     const auto matches = [&](const Symbol& sym)
     {
-        if (!sym.GetFunction().parameters.empty())
+        const auto& signature = sym.GetFunction();
+        const auto& parameters = signature.parameters;
+        if (!parameters.empty())
         {
-            return false;
+            found = parameters.size() == 1 && IsVariableTypeToken(parameters.front().typeName) &&
+                    (parameters.front().modifier == ParameterModifier::Out || parameters.front().isOutRef);
+            return found;
         }
-        auto ret = sym.GetFunction().returnType;
+        auto ret = signature.returnType;
         if (binding.usable)
         {
             ret = SubstituteTemplateParameters(ret, binding);

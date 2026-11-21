@@ -144,18 +144,9 @@ void DefiniteAssignmentVisitor::ProcessCall(const DefiniteAssignmentCallFact& ca
                 state.assignedVars.insert(arg.name);
             }
         }
-        else
+        else if (arg.isSimpleIdentifier)
         {
-            if (arg.isSimpleIdentifier && m_trackedLocals.contains(arg.name) && !state.assignedVars.contains(arg.name))
-            {
-                const uint64_t locationKey = (static_cast<uint64_t>(arg.range.startLine) << 32) |
-                                             static_cast<uint64_t>(arg.range.startCharacter);
-                if (m_reportedReads.insert(locationKey).second)
-                {
-                    m_ctx.EmitAtRange(arg.range, "as-warn-uninitialized-variable-read", arg.name,
-                                      DiagnosticSeverity::Warning);
-                }
-            }
+            CheckRead(arg.name, arg.range, state);
         }
     }
 }

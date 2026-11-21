@@ -35,6 +35,26 @@ bool HasCodeOnLine(const std::vector<analysis::Diagnostic>& diags, std::string_v
 
 TEST_SUITE("analysis/checkers/AssignmentConversion")
 {
+    TEST_CASE("AssignmentConversion - A wildcard out conversion supports explicit construction")
+    {
+        const auto valueType = GenerateRandomSymbolName("DictionaryValue");
+        const auto dictionaryType = GenerateRandomSymbolName("Dictionary");
+        const auto targetType = GenerateRandomSymbolName("EHandle");
+        const auto test = GenerateRandomSymbolName("Test");
+        const auto dictionary = GenerateRandomSymbolName("dictionary");
+        const auto result = GenerateRandomSymbolName("result");
+        const std::string body = "class " + dictionaryType + " { " + valueType +
+                                 "& opIndex(const string &in); }\nclass " + targetType + " {}\nvoid " + test + "(" +
+                                 dictionaryType + "@ " + dictionary + ") { " + targetType + " " + result + " = " +
+                                 targetType + "(" + dictionary + "[\"k\"]); }";
+        const std::string prefix = "class " + valueType + " { void opConv(";
+        const auto accepted = AnalyzeScriptWithStandardProfile(prefix + "?&out); }\n" + body);
+        CHECK_FALSE(HasCode(accepted, diagnostics::codes::NoExplicitConversion));
+
+        const auto rejected = AnalyzeScriptWithStandardProfile(prefix + "int&out); }\n" + body);
+        CHECK(HasCode(rejected, diagnostics::codes::NoExplicitConversion));
+    }
+
     TEST_CASE("AssignmentConversion - Property setter matrix validates RHS via set_ overloads")
     {
         const std::string voidFn = GenerateRandomSymbolName();

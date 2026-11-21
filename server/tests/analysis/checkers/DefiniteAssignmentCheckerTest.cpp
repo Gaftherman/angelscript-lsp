@@ -70,6 +70,27 @@ static bool MatchesVerdict(const std::vector<Diagnostic>& diagnostics, const std
 
 TEST_SUITE("DefiniteAssignment")
 {
+    TEST_CASE("DefiniteAssignmentChecker - An initializer call assigns out arguments in source order")
+    {
+        const auto dictionary = angel_lsp::test::GenerateRandomSymbolName("Dictionary");
+        const auto test = angel_lsp::test::GenerateRandomSymbolName("Test");
+        const auto receiver = angel_lsp::test::GenerateRandomSymbolName("receiver");
+        const auto value = angel_lsp::test::GenerateRandomSymbolName("value");
+        const auto key = angel_lsp::test::GenerateRandomSymbolName("key");
+        const auto ok = angel_lsp::test::GenerateRandomSymbolName("ok");
+        const auto earlier = angel_lsp::test::GenerateRandomSymbolName("earlier");
+        const std::string start = "class " + dictionary + " { bool get(const string &in " + key + ", float &out " +
+                                  value + ") { " + value + " = 1.0f; return true; } }\nvoid " + test + "(" +
+                                  dictionary + "@ " + receiver + ") {\nfloat " + value + ";\n";
+        const std::string call = receiver + ".get(\"k\", " + value + ")";
+        const std::string after = ";\nif (" + value + " > 0 && " + ok + ") {}\n}";
+
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(start + "bool " + ok + " = " + call + after)));
+        CHECK(HasUninitializedRead(AnalyzeCode(start + "bool " + ok + " = " + value + " > 0 && " + call + after)));
+        CHECK(HasUninitializedRead(
+            AnalyzeCode(start + "bool " + earlier + " = " + value + " > 0, " + ok + " = " + call + after)));
+    }
+
     TEST_CASE("DefiniteAssignmentChecker - Direct Uninitialized Read")
     {
         std::string badCode = "void Print(int v) { }\n"
