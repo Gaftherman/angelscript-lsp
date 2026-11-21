@@ -1,4 +1,5 @@
 #include "analysis/checkers/UndefinedIdentifierCheckerCommon.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "parser/Keywords.h"
@@ -14,6 +15,16 @@ static bool IsScopedIdentifierPrefix(const LocalReference& ref) noexcept
 {
     return ref.isScopedIdentifier && ref.startByte == ref.receiverStartByte && ref.endByte == ref.receiverEndByte &&
            ref.endByte < ref.qualifierEndByte;
+}
+
+/**
+ * @brief Checks whether a reference has no explicit scope qualifier.
+ * @param[in] ref Indexed reference whose enclosing scoped identifier may wrap a single name.
+ * @return True when the reference has no scoped identifier wrapper or fills its entire span.
+ */
+static bool IsUnqualifiedReference(const LocalReference& ref) noexcept
+{
+    return !ref.isScopedIdentifier || (ref.startByte == ref.qualifierStartByte && ref.endByte == ref.qualifierEndByte);
 }
 
 static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& ctx)
@@ -114,8 +125,33 @@ static bool IsReferenceInSyntaxErrorOrMetadata(const LocalReference& ref, const 
     return false;
 }
 
+/**
+ * @brief Finds the method receiver available to unqualified references in a scope.
+ * @param[in] scope Scope whose references will be checked.
+ * @param[in] ctx Active diagnostics settings.
+ * @return Qualified class name, or an empty view when the warning or receiver is unavailable.
+ */
+static std::string_view ImplicitReceiver(const Scope& scope, const DiagnosticContext& ctx)
+{
+    const auto* settings = ctx.request.diagnostics;
+    if (!settings || !settings->reportMissingClassAccessor || scope.GetEnclosingClass().empty() ||
+        scope.GetCaller().empty())
+    {
+        return {};
+    }
+    for (const Scope* enclosing = &scope; enclosing; enclosing = enclosing->parent)
+    {
+        if (enclosing->kind == ScopeKind::Closure)
+        {
+            return {};
+        }
+    }
+    return scope.GetEnclosingClass();
+}
+
 static void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& uCtx)
 {
+    const auto receiver = ImplicitReceiver(*scope, uCtx.ctx);
     for (const auto& ref : scope->references)
     {
         if (ShouldIgnoreReference(ref, uCtx.ctx) || IsReferenceInMixin(ref, uCtx.mixinRanges))
@@ -123,7 +159,24 @@ static void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierCo
             continue;
         }
 
-        const LocalDefinition* resolved = ResolveInScopeAt(scope, ref.name, ref.startByte);
+        const Scope* declaration = nullptr;
+        const LocalDefinition* resolved =
+            ResolveInScopeAt(scope, ref.name, ref.startByte, receiver.empty() ? nullptr : &declaration);
+        if (!receiver.empty() && IsUnqualifiedReference(ref) &&
+            !IsReferenceInSyntaxErrorOrMetadata(ref, uCtx.ctx.request.nodeIndex))
+        {
+            const bool ownField = resolved && declaration && declaration->kind == ScopeKind::Class &&
+                                  resolved->kind == LocalDefinitionKind::Field;
+            const bool outsideClass =
+                declaration && (declaration->kind == ScopeKind::Global || declaration->kind == ScopeKind::Namespace);
+            if (ownField || ((!resolved || outsideClass) && IsAccessibleInstanceProperty(receiver, ref.name, uCtx.ctx)))
+            {
+                uCtx.ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
+                                     diagnostics::codes::ImplicitMemberAccess, {ref.name, ref.name},
+                                     DiagnosticSeverity::Warning);
+                continue;
+            }
+        }
         if (CheckEnumScopeDiagnostic(ref, resolved, uCtx))
         {
             continue;

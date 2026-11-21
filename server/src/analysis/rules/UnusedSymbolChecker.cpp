@@ -9,6 +9,8 @@
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
+#include "utils/IncludeResolver.h"
+#include "utils/PathGlob.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/StringPool.h"
 #include "utils/Utils.h"
@@ -59,6 +61,24 @@ static config::UnusedSymbolRules ResolveEffectiveRules(const SemanticAnalysisReq
         }
     }
     return rules;
+}
+
+/**
+ * @brief Checks configured exclusions against the declaring file's workspace-relative path.
+ * @param[in] request Current file, normalized workspace roots and diagnostic settings.
+ * @return True when the file has a containing workspace root and matches an exclusion.
+ */
+static bool ExcludesUnusedDeclarations(const SemanticAnalysisRequest& request)
+{
+    if (!request.diagnostics || request.diagnostics->ignoredUnusedPathGlobs.empty() || request.workspaceRoots.empty() ||
+        !request.fileUri.starts_with("file://"))
+    {
+        return false;
+    }
+    const auto path = utils::IncludeResolver::NormalizePath(utils::UriToPath(request.fileUri));
+    const auto relative = utils::RelativeToWorkspaceRoot(path, request.workspaceRoots);
+    return relative && std::ranges::any_of(request.diagnostics->ignoredUnusedPathGlobs,
+                                           [&](const utils::PathGlob& glob) { return glob.Matches(*relative); });
 }
 
 /**
@@ -114,6 +134,14 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
     }
 
     config::UnusedSymbolRules rules = ResolveEffectiveRules(request);
+    if ((rules.checkMembers || rules.checkGlobals || rules.checkFunctions || rules.checkClasses) &&
+        ExcludesUnusedDeclarations(request))
+    {
+        rules.checkMembers = false;
+        rules.checkGlobals = false;
+        rules.checkFunctions = false;
+        rules.checkClasses = false;
+    }
     utils::StringPool pool;
 
     ankerl::unordered_dense::set<uint64_t> defLocs;

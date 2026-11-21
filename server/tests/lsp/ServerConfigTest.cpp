@@ -1,5 +1,7 @@
 #include "config/ServerConfig.h"
 
+#include "helpers/TestUtils.h"
+
 #include <doctest/doctest.h>
 #include <string>
 #include <vector>
@@ -37,6 +39,21 @@ struct ArgvHelper
 
 TEST_SUITE("lsp/ServerConfig")
 {
+    TEST_CASE("ServerConfig - Loads unused path globs and the implicit member warning")
+    {
+        const auto dir = angel_lsp::test::GenerateRandomSymbolName("generated");
+        ArgvHelper args{"angel_lsp", "--ignored-unused-path=" + dir + "/**", "--ignored-unused-path", "*.generated.as",
+                        "--report-missing-class-accessor"};
+        auto config = FromArgs(args.argc(), args.data());
+        CHECK(config.diagnostics.reportMissingClassAccessor);
+        REQUIRE(config.diagnostics.ignoredUnusedPathGlobs.size() == 2);
+        CHECK(config.diagnostics.ignoredUnusedPathGlobs[0].Matches(dir + "/nested/source.as"));
+        CHECK(config.diagnostics.ignoredUnusedPathGlobs[1].Matches("nested/source.generated.as"));
+        CHECK_FALSE(config.diagnostics.SetIgnoredUnusedPaths({dir + "/**", "*.generated.as", ""}));
+        CHECK(config.diagnostics.SetIgnoredUnusedPaths({}));
+        CHECK(config.diagnostics.ignoredUnusedPathGlobs.empty());
+    }
+
     TEST_CASE("ServerConfig - Default values when no arguments provided")
     {
         SUBCASE("Null argv or zero argc")

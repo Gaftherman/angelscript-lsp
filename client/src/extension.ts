@@ -1162,6 +1162,14 @@ export function buildServerArgs(): string[] {
             args.push(`--ignored-unused-function-regex=${pattern.trim()}`);
         }
     }
+    for (const pattern of config.get<string[]>('diagnostics.ignoredUnusedPaths', [])) {
+        if (typeof pattern === 'string' && pattern.length > 0) {
+            args.push(`--ignored-unused-path=${pattern}`);
+        }
+    }
+    if (config.get<boolean>('diagnostics.reportMissingClassAccessor', false)) {
+        args.push('--report-missing-class-accessor');
+    }
     const reportHandleComparison = config.get<number>('diagnostics.reportHandleComparisonEquality', 1);
     if (reportHandleComparison === 0) {
         args.push('--no-report-handle-comparison-equality');
@@ -1810,6 +1818,8 @@ export async function activate(context: ExtensionContext) {
                                    !arg.startsWith('--module=') &&
                                    !arg.startsWith('--module-folder=') &&
                                    !arg.startsWith('--rules-file=') &&
+                                   !arg.startsWith('--ignored-unused-path=') &&
+                                   arg !== '--report-missing-class-accessor' &&
                                    !arg.startsWith('--inlay-hints-') &&
                                    !arg.startsWith('--disable-inlay-hints-'));
 
@@ -2201,6 +2211,8 @@ async function applyLocalStateChanges(): Promise<void> {
                            !arg.startsWith('--module=') &&
                            !arg.startsWith('--module-folder=') &&
                            !arg.startsWith('--rules-file=') &&
+                           !arg.startsWith('--ignored-unused-path=') &&
+                           arg !== '--report-missing-class-accessor' &&
                            !arg.startsWith('--inlay-hints-') &&
                            !arg.startsWith('--disable-inlay-hints-'));
 

@@ -1,6 +1,5 @@
 {
   "analysis/completion/CompletionSnippets.cpp": 2,
-  "analysis/diagnostics/DiagnosticSuppression.cpp": 2,
   "analysis/documentation/DoxygenTagRender.cpp": 1,
   "analysis/index/SemanticTokenCaptureRules.cpp": 1,
   "analysis/resolution/ReferenceCountingExprType.cpp": 1,

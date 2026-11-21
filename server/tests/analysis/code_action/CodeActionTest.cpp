@@ -1,3 +1,4 @@
+#include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
@@ -47,15 +48,131 @@ struct TestEnvironment
     }
 
     std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
-                                                            lsp::CodeActionContext context = lsp::CodeActionContext{})
+                                                            lsp::CodeActionContext context = lsp::CodeActionContext{},
+                                                            const config::ServerConfig* config = nullptr)
     {
         angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
         CodeActionRequest req{uri, sourceCode, range, context, symbolTable, scopeIndex};
         req.nodeIndex = &codeActionIndex.index;
+        const auto facts = BuildParameterRefFacts(codeActionIndex.index, sourceCode);
+        req.parameterRefFacts = &facts;
+        req.config = config;
         return GetCodeActions(req);
     }
 };
 } // namespace
+
+TEST_CASE("CodeActionHandler - E144 edits only the reference direction")
+{
+    const auto fn = test::GenerateRandomSymbolName("update");
+    const auto param = test::GenerateRandomSymbolName("value");
+    const auto check = [&](std::string_view declaration, std::string_view written, bool allowsOutput,
+                           const config::ServerConfig* config)
+    {
+        std::string source = "void " + fn + "(";
+        const auto start = static_cast<uint32_t>(source.size());
+        source.append(declaration).append(param).append(") {}");
+        const auto editStart = static_cast<uint32_t>(source.find('&') + 1);
+        const lsp::Range location{{0, start}, {0, editStart}};
+        lsp::Diagnostic diagnostic;
+        diagnostic.range = location;
+        diagnostic.code = lsp::String("E144");
+        diagnostic.message = lsp::String("E144");
+        lsp::CodeActionContext context;
+        context.diagnostics.push_back(std::move(diagnostic));
+        TestEnvironment env(source);
+        const auto actions = env.CodeActions(location, std::move(context), config);
+        size_t directions = 0;
+        if (actions)
+        {
+            for (const auto& action : *actions)
+            {
+                const bool input = action.title.find("'&in'") != std::string::npos;
+                if (!input && action.title.find("'&out'") == std::string::npos)
+                {
+                    continue;
+                }
+                ++directions;
+                REQUIRE(action.edit);
+                REQUIRE(action.edit->changes);
+                REQUIRE(action.edit->changes->contains(lsp::DocumentUri::parse(env.uri)));
+                const auto& edits = action.edit->changes->begin()->second;
+                REQUIRE(edits.size() == 1);
+                CHECK(edits.front().range.start.character == editStart);
+                CHECK(edits.front().range.end.character == editStart + written.size());
+                std::string expected = input ? "in" : "out";
+                if (written.empty() && source[editStart] != ' ')
+                {
+                    expected += ' ';
+                }
+                CHECK(edits.front().newText == expected);
+            }
+        }
+        CHECK(directions == (config ? 0u : (allowsOutput ? 2u : 1u)));
+    };
+    check("int &", "", true, nullptr);
+    check("int &inout ", "inout", true, nullptr);
+    check("const float &inout ", "inout", false, nullptr);
+    config::ServerConfig config;
+    config.engine.allowUnsafeReferences = true;
+    check("int &", "", false, &config);
+}
+
+TEST_CASE("CodeActionHandler - One explained suppression covers distinct codes on a line")
+{
+    const auto name = test::GenerateRandomSymbolName("value");
+    std::string trailingComment;
+    SUBCASE("bare line")
+    {
+    }
+    SUBCASE("existing line comment")
+    {
+        trailingComment = " // existing comment";
+    }
+    const auto source = "int " + name + ";" + trailingComment + "\n";
+    TestEnvironment env(source);
+    lsp::CodeActionContext context;
+    for (const std::string_view code : {"W103", "as-warn-unused-variable", "W116", "W104"})
+    {
+        lsp::Diagnostic diagnostic;
+        const uint32_t line = code == "W104" ? 1u : 0u;
+        diagnostic.range = {{line, 0}, {line, 1}};
+        diagnostic.code = std::string(code);
+        diagnostic.message = std::string(code);
+        context.diagnostics.push_back(std::move(diagnostic));
+    }
+    const auto actions = env.CodeActions({{0, 0}, {1, 0}}, std::move(context));
+    REQUIRE(actions);
+    size_t count = 0;
+    for (const auto& action : *actions)
+    {
+        if (action.title != "Disable W103, W116 for this line")
+        {
+            continue;
+        }
+        ++count;
+        REQUIRE(action.edit);
+        REQUIRE(action.edit->changes);
+        REQUIRE(action.diagnostics);
+        CHECK(action.diagnostics->size() == 3);
+        REQUIRE(action.edit->changes->contains(lsp::DocumentUri::parse(env.uri)));
+        const auto& edits = action.edit->changes->begin()->second;
+        REQUIRE(edits.size() == 1);
+        const auto expected = trailingComment.empty() ? " // disable-line W103, W116 -- explain why"
+                                                      : "/* disable-line W103, W116 -- explain why */ ";
+        CHECK(edits.front().newText == expected);
+        auto edited = source;
+        edited.insert(edits.front().range.start.character, edits.front().newText);
+        TestEnvironment editedEnv(edited);
+        const test::NodeIndexFixture editedIndex(editedEnv.tree);
+        const auto suppressions = ParseDiagnosticSuppressions(edited, &editedIndex.index);
+        CHECK(suppressions.IsSuppressed("W103", 0));
+        CHECK(suppressions.IsSuppressed("W116", 0));
+        CHECK_FALSE(suppressions.IsSuppressed("W104", 0));
+        CHECK_FALSE(suppressions.IsSuppressed("W116", 1));
+    }
+    CHECK(count == 1);
+}
 
 TEST_CASE("CodeActionHandler - Remove Unused Local Variable (Single Declaration)")
 {

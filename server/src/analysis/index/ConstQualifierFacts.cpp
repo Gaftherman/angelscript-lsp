@@ -3,8 +3,12 @@
 #include "analysis/index/CodeActionFactsInternal.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Primitives.h"
 
+#include <algorithm>
+#include <iterator>
 #include <tree_sitter/api.h>
+#include <tuple>
 
 namespace angel_lsp::analysis
 {
@@ -210,6 +214,58 @@ std::optional<IndexedConstHandleSite> FindConstHandleSite(const NodeIndex& index
         IndexedByteRange{ts_node_start_byte(typeNode), ts_node_end_byte(typeNode)},
         IndexedSourcePoint{insertPt.row, insertPt.column},
     };
+}
+
+ParameterRefFacts BuildParameterRefFacts(const NodeIndex& index, std::string_view source)
+{
+    const auto point = [](TSPoint p) { return IndexedSourcePoint{p.row, p.column}; };
+    const auto& grammar = parser::GetGrammarSymbols();
+    ParameterRefFacts result;
+    for (const TSNode parameter : index.Nodes(grammar.symParameter))
+    {
+        if (ts_node_is_null(parameter))
+        {
+            continue;
+        }
+        const TSNode amp = parser::FindChildWithSymbol(parameter, grammar.tokAmp);
+        const TSNode direction = parser::GetChildByField(parameter, grammar.fieldDirection);
+        const bool bare = ts_node_is_null(direction);
+        if (ts_node_is_null(amp) || (!bare && ts_node_symbol(direction) != grammar.tokInout))
+        {
+            continue;
+        }
+
+        const TSNode type = parser::GetChildByField(parameter, grammar.fieldParamType);
+        const TSNode defaultValue = parser::GetChildByField(parameter, grammar.fieldDefaultValue);
+        const TSNode name = parser::GetChildByField(parameter, grammar.fieldName);
+        const bool isConst =
+            !ts_node_is_null(type) && !ts_node_is_null(parser::FindChildWithSymbol(type, grammar.tokConst));
+        const bool hasDefault =
+            !ts_node_is_null(defaultValue) && !parser::primitives::IsVoidType(parser::NodeText(defaultValue, source));
+        const TSPoint editEnd = ts_node_end_point(bare ? amp : direction);
+        result.sites.push_back(IndexedParameterRefSite{
+            .start = point(ts_node_start_point(parameter)),
+            .end = point(ts_node_end_point(parameter)),
+            .editStart = point(bare ? editEnd : ts_node_start_point(direction)),
+            .editEnd = point(editEnd),
+            .needsSeparator = bare && !ts_node_is_null(name) && ts_node_start_byte(name) == ts_node_end_byte(amp),
+            .allowsOutput = !isConst && !hasDefault,
+        });
+    }
+    return result;
+}
+
+const IndexedParameterRefSite* ParameterRefFacts::FindAt(uint32_t line, uint32_t column) const noexcept
+{
+    const auto position = std::tie(line, column);
+    const auto past = std::partition_point(sites.begin(), sites.end(), [&](const IndexedParameterRefSite& site)
+                                           { return std::tie(site.start.line, site.start.character) <= position; });
+    if (past == sites.begin())
+    {
+        return nullptr;
+    }
+    const auto& site = *std::prev(past);
+    return position < std::tie(site.end.line, site.end.character) ? &site : nullptr;
 }
 
 } // namespace angel_lsp::analysis

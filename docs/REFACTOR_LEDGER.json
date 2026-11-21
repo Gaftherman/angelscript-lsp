@@ -3934,6 +3934,108 @@
         "Server - Semantic tokens follow dependency and configuration revisions",
         "Server - Answers a semantic token delta against the payload it last sent"
       ]
+    },
+    {
+      "id": "REF-L01-INSTANCE-COMPLETION",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/completion/CompletionMembers.cpp",
+      "deletedLineRange": "200-219",
+      "originalSymbolOrCode": "PopulateMembersForType",
+      "whatItDidAndWhyInThatFile": "Read the general container index for receiver completion and accepted entries sharing its container name.",
+      "whyChangedOrDeleted": "Use the same class-specific member index as enclosing-class completion and filter shared symbol keys by container kind.",
+      "replacedByCanonicalFile": "server/src/analysis/index/RuleIndex.cpp",
+      "replacedByCanonicalSymbol": "ClassMembers",
+      "ramOrCpuImpact": "Queries the class member bucket and filters only its candidate symbols.",
+      "verifiedByTests": [
+        "Completion - Instance completion excludes a same-named namespace"
+      ]
+    },
+    {
+      "id": "REF-L14-REFERENCE-DIRECTION",
+      "phase": "S5",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/index/ConstQualifierFacts.cpp",
+      "deletedLineRange": "213-215",
+      "originalSymbolOrCode": "Code-action source coordinates",
+      "whatItDidAndWhyInThatFile": "The existing first-pass code-action queries did not expose parameter reference edit coordinates.",
+      "whyChangedOrDeleted": "Extract reference spans, spacing and output eligibility with the syntax revision so E144 fixes can reuse them.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ConstQualifierFacts.cpp",
+      "replacedByCanonicalSymbol": "BuildParameterRefFacts",
+      "ramOrCpuImpact": "Stores one compact edit record per bare or inout parameter and uses binary search by position.",
+      "verifiedByTests": [
+        "CodeActionHandler - E144 edits only the reference direction",
+        "ParameterRefFacts - Finds bare and inout edits in source order"
+      ]
+    },
+    {
+      "id": "REF-L15-UNUSED-PATH-GLOBS",
+      "phase": "S5",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+      "deletedLineRange": "114-116",
+      "originalSymbolOrCode": "CheckUnusedSymbols",
+      "whatItDidAndWhyInThatFile": "Computed effective unused-declaration rules for each file using engine and diagnostic settings.",
+      "whyChangedOrDeleted": "Use a shared path matcher to apply workspace-relative exclusions consistently from startup and live settings.",
+      "replacedByCanonicalFile": "server/src/utils/PathGlob.cpp",
+      "replacedByCanonicalSymbol": "RelativeToWorkspaceRoot",
+      "ramOrCpuImpact": "Compiles patterns on configuration change and matches only when declaration warnings are active and a root contains the file.",
+      "verifiedByTests": [
+        "PathGlob - Workspace-relative glob boundaries and directory depth",
+        "UnusedSymbolChecker - Path exclusions suppress declarations and keep unused locals",
+        "Server - Unused path exclusions follow startup and live configuration",
+        "ServerConfig - Loads unused path globs and the implicit member warning"
+      ]
+    },
+    {
+      "id": "REF-L16-SUPPRESSION-CODES",
+      "phase": "S5",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/diagnostics/DiagnosticSuppression.cpp",
+      "deletedLineRange": "15-327",
+      "originalSymbolOrCode": "k_codeAliases EqualsCaseInsensitive GetDiagnosticAlias GetCanonicalDiagnosticCode NormalizeDiagnosticSelector GetDiagnosticGroup GetDiagnosticCategory FormatDiagnosticDisplayCode",
+      "whatItDidAndWhyInThatFile": "Resolved diagnostic aliases and groups in the same file that parsed suppression comments.",
+      "whyChangedOrDeleted": "Separate the selector registry from comment parsing so explanation text is handled by the parser and grouped actions can use the same registry.",
+      "replacedByCanonicalFile": "server/src/analysis/diagnostics/DiagnosticSuppressionCodes.cpp",
+      "replacedByCanonicalSymbol": "GetCanonicalDiagnosticCode",
+      "ramOrCpuImpact": "Preserves the existing registry lookup and stops tokenizing the comment at the explanation delimiter.",
+      "verifiedByTests": [
+        "DiagnosticSuppression - Explanations stop selector parsing",
+        "CodeActionHandler - One explained suppression covers distinct codes on a line"
+      ]
+    },
+    {
+      "id": "REF-L17-IMPLICIT-MEMBER-ACCESS",
+      "phase": "S5",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/checkers/UndefinedIdentifierCheckerScope.cpp",
+      "deletedLineRange": "117-158",
+      "originalSymbolOrCode": "CheckScopeReferences",
+      "whatItDidAndWhyInThatFile": "Validated unqualified references against lexical and enclosing declarations.",
+      "whyChangedOrDeleted": "Resolve visible fields and properties before outer symbols when the optional explicit receiver warning is enabled.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/UndefinedIdentifierCheckerLookup.cpp",
+      "replacedByCanonicalSymbol": "IsAccessibleInstanceProperty",
+      "ramOrCpuImpact": "Only warning-enabled method scopes run the additional indexed member lookup.",
+      "verifiedByTests": [
+        "Implicit member access - Follows instance visibility and lexical precedence",
+        "ServerConfig - Loads unused path globs and the implicit member warning"
+      ]
+    },
+    {
+      "id": "REF-LFIX1-IMPLICIT-MEMBER-QUALIFICATION",
+      "phase": "S5",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/checkers/UndefinedIdentifierCheckerScope.cpp",
+      "deletedLineRange": "155-156",
+      "originalSymbolOrCode": "CheckScopeReferences",
+      "whatItDidAndWhyInThatFile": "Used the scoped identifier node flag to exclude explicitly qualified references from W123.",
+      "whyChangedOrDeleted": "A bare name also has a scoped identifier node. Compare its indexed span with the name span to detect explicit qualification.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/UndefinedIdentifierCheckerScope.cpp",
+      "replacedByCanonicalSymbol": "IsUnqualifiedReference",
+      "ramOrCpuImpact": "Uses at most two byte comparisons per warning candidate and adds no indexed storage.",
+      "verifiedByTests": [
+        "Implicit member access - Follows instance visibility and lexical precedence"
+      ]
     }
   ]
 }

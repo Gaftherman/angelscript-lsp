@@ -221,6 +221,7 @@ inline constexpr std::string_view UnusedGlobalVariable = "as-warn-unused-global-
 inline constexpr std::string_view UnusedFunction = "as-warn-unused-function";
 inline constexpr std::string_view UnusedMethod = "as-warn-unused-method";
 inline constexpr std::string_view UnusedClass = "as-warn-unused-class";
+inline constexpr std::string_view ImplicitMemberAccess = "as-warn-implicit-member-access";
 inline constexpr std::string_view ShadowGlobal = "as-warn-shadow-global";
 inline constexpr std::string_view BaseNotFound = "as-err-base-not-found";
 inline constexpr std::string_view InvalidReferenceReturn = "as-err-invalid-reference-return";

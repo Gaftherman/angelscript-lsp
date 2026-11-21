@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/EngineRuleConfig.h"
+#include "utils/PathGlob.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/TransparentHash.h"
 
@@ -391,6 +392,16 @@ struct DiagnosticsConfig
      */
     std::vector<std::string> ignoredUnusedFunctionPatterns;
 
+    std::vector<std::string> ignoredUnusedPaths;         ///< Workspace-relative patterns from settings.
+    std::vector<utils::PathGlob> ignoredUnusedPathGlobs; ///< Compiled form maintained by SetIgnoredUnusedPaths.
+
+    /**
+     * @brief Updates the path patterns and compiles them for subsequent analysis.
+     * @param[in] paths Workspace-relative patterns. Empty strings are ignored.
+     * @return True when the exclusion list changes.
+     */
+    bool SetIgnoredUnusedPaths(std::vector<std::string> paths);
+
     /**
      * @brief Ignore unused global variables initialized with a call or constructor (default: false).
      */
@@ -405,6 +416,8 @@ struct DiagnosticsConfig
      * @brief True when reportUnusedClasses was explicitly set via CLI or workspace configuration.
      */
     bool reportUnusedClassesExplicit = false;
+
+    bool reportMissingClassAccessor = false; ///< Warn on fields and properties accessed without an explicit receiver.
 
     /**
      * @brief Warn on unused class members (fields & methods) (default: false).

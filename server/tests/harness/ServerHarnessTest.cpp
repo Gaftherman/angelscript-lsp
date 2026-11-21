@@ -1818,6 +1818,54 @@ TEST_CASE("Server - Semantic tokens follow dependency and configuration revision
     }
 }
 
+TEST_CASE("Server - Unused path exclusions follow startup and live configuration")
+{
+    WorkspaceFixture fixture;
+    const auto folder = test::GenerateRandomSymbolName("generated");
+    const auto file = folder + "/" + test::GenerateRandomSymbolName("script") + ".as";
+    const auto function = test::GenerateRandomSymbolName("unusedFunction");
+    const auto local = test::GenerateRandomSymbolName("unusedLocal");
+    const auto source = "void " + function + "() { int " + local + " = 1; }\n";
+    fixture.Write(file, source);
+    const auto uri = fixture.Uri(file);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeForPull(InitializeWithProgress(fixture.RootUri(), true)));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+    stream.Push(DidOpenMessage(uri, source));
+    const auto pull = [&](int id)
+    {
+        stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(id) +
+                    R"(,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" + uri + R"("}}})");
+    };
+    pull(2);
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"diagnostics":{"ignoredUnusedPaths":[]}}}}})");
+    pull(3);
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"diagnostics":{"ignoredUnusedPaths":[")" +
+                folder + R"(/**"]}}}}})");
+    pull(4);
+    stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+
+    config::ServerConfig config;
+    config.features.enablePredefinedLoader = false;
+    config.features.enablePullDiagnostics = true;
+    config.diagnostics.reportUnusedFunctions = true;
+    config.diagnostics.reportUnusedFunctionsExplicit = true;
+    config.diagnostics.SetIgnoredUnusedPaths({folder + "/**"});
+    RunScript(config, stream);
+
+    for (const int id : {2, 3, 4})
+    {
+        CAPTURE(id);
+        const auto response = stream.ResponseFor(id);
+        CHECK(response.find("as-warn-unused-variable") != std::string::npos);
+        CHECK((response.find("as-warn-unused-function") != std::string::npos) == (id == 3));
+    }
+}
+
 TEST_CASE("ServerHarness - Reports workspace scan progress when the client supports it")
 {
     WorkspaceFixture fixture;

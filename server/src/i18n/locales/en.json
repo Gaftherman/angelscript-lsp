@@ -17,6 +17,8 @@
   "action-implement-interface": "Implement missing interface methods for '{}'",
   "action-init-local-variable": "Initialize local '{}' variable for '{}'",
   "action-remove-primitive-handle": "Remove '@' - primitive type cannot have a handle",
+  "action-reference-direction-in": "Use '&in' as the reference direction",
+  "action-reference-direction-out": "Use '&out' as the reference direction",
   "action-remove-unused-variable": "Remove unused variable '{}'",
   "action-sort-and-clean-includes": "Sort and Clean #include Directives",
   "action-suppress-file": "Disable {} for entire file",
@@ -218,6 +220,7 @@
   "as-warn-undeclared-identifier": "Undeclared identifier '{}'.",
   "as-warn-uninitialized-variable-read": "Local variable '{}' is used before it is initialized.",
   "as-warn-unreachable-code": "Unreachable code.",
+  "as-warn-implicit-member-access": "'{}' is an instance member. Write 'this.{}' to make the access explicit.",
   "as-warn-unsupported-directive": "CScriptBuilder does not recognise '#{}', so it is left in the source and the compiler rejects it. If the host patched its copy of the add-on to support it, say so with the matching angelscript.preprocessor setting.",
   "as-warn-unused-class": "Class '{}' is never used.",
   "as-warn-unused-field": "Member variable '{}' is never used.",
@@ -288,5 +291,6 @@
   "mcp-tool-signature-help": "Returns the signature help shown at a zero-based line and character inside a call.",
   "mcp-tool-definition": "Returns where the symbol at a zero-based line and character is defined.",
   "mcp-tool-document-symbols": "Returns the symbol outline of a document.",
+  "suppression-explanation-placeholder": "explain why",
   "warn-invalid-no-handle-type": "Ignoring invalid angelscript.engine.noHandleTypes entry '{}': expected a non-empty identifier or scoped name."
 }

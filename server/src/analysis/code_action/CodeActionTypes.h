@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/ConstQualifierFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/Symbol.h"
@@ -102,6 +103,7 @@ struct CodeActionQuery
     std::span<const std::string> allowedRoots;             ///< Allowed include roots for organize-imports.
     const config::ServerConfig* config = nullptr;          ///< Active server configuration; null uses defaults.
     const i18n::I18n* i18n = nullptr;                      ///< Translation context for localized action titles.
+    const ParameterRefFacts* parameterRefFacts = nullptr;  ///< Borrowed reference edits for the syntax revision.
 };
 
 } // namespace angel_lsp::analysis::code_action

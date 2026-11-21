@@ -1,6 +1,8 @@
 #include "analysis/checkers/UndefinedIdentifierCheckerCommon.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/mediator/SemanticMediator.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/PropertyAndDelegateResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
 
@@ -121,6 +123,56 @@ bool IsEnclosingScopeMember(uint32_t byteOffset, std::string_view refName, std::
     }
 
     return false;
+}
+
+bool IsAccessibleInstanceProperty(std::string_view className, std::string_view name, const DiagnosticContext& ctx)
+{
+    const auto& request = ctx.request;
+    const SemanticMediator mediator(request.symbolTable, request.scopeRoot.get(), request.nodeIndex,
+                                    request.sourceCode);
+    const auto& table = mediator.GetSymbolTable();
+    const auto visible = [&](const Symbol& symbol, AccessModifier access)
+    {
+        return access != AccessModifier::Private ||
+               utils::AreEquivalentGlobalOrScopedNames(className, symbol.containerName) ||
+               request.TreatsPrivateAsProtected() || IsMixinClass(symbol.containerName, table);
+    };
+    const auto& index = request.GetRuleIndex();
+    bool hasAccessor = false;
+    for (const auto& owner : GetInheritedTypeHierarchy(className, table))
+    {
+        const auto& members = index.ClassMembers(owner);
+        const auto& accessors =
+            request.RequiresAccessorKeyword() ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
+        hasAccessor = hasAccessor || accessors.contains(name);
+        const auto symbols = table.FindMemberSymbolPtr(owner, name);
+        if (!symbols)
+        {
+            continue;
+        }
+        for (const auto& symbol : *symbols)
+        {
+            if ((symbol.containerKind != ContainerKind::Class && symbol.containerKind != ContainerKind::Interface) ||
+                (symbol.type != SymbolType::Variable && symbol.type != SymbolType::Property) ||
+                !std::holds_alternative<VariableSignature>(symbol.signature) || symbol.GetVariable().isEnumConstant)
+            {
+                continue;
+            }
+            return visible(symbol, symbol.GetVariable().modifiers.access);
+        }
+    }
+    if (!hasAccessor || !request.ScriptAccessorsAreProperties())
+    {
+        return false;
+    }
+    const auto accessors = FindPropertyAccessors(className, name, table, request.RequiresAccessorKeyword());
+    return std::ranges::any_of(accessors,
+                               [&](const Symbol& symbol)
+                               {
+                                   return (symbol.containerKind == ContainerKind::Class ||
+                                           symbol.containerKind == ContainerKind::Interface) &&
+                                          visible(symbol, symbol.GetFunction().modifiers.access);
+                               });
 }
 
 static bool HasEnumConstant(const std::vector<Symbol>* symbols)

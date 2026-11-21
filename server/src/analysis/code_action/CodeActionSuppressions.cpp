@@ -6,10 +6,14 @@
 #include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace angel_lsp::analysis::code_action
 {
@@ -19,23 +23,72 @@ namespace angel_lsp::analysis::code_action
  * @param[in] query Incoming code action query context.
  * @param[in] diagIndex Target diagnostic index to suppress.
  * @param[in] aliasOrCode Diagnostic code or human-readable alias.
+ * @param[in] explained Whether to include the localized explanation prompt.
  * @return Constructed line suppression CodeActionEntry.
  */
 static CodeActionEntry MakeLineSuppressionEntry(const CodeActionQuery& query, uint32_t diagIndex,
-                                                std::string_view aliasOrCode)
+                                                std::string_view aliasOrCode, bool explained = false)
 {
     const auto& diag = query.diagnostics[diagIndex];
     const uint32_t line = diag.range.startLine;
     const std::string_view lineStr = utils::GetLine(query.sourceCode, line);
-    const uint32_t col = static_cast<uint32_t>(lineStr.size());
+    uint32_t col = static_cast<uint32_t>(lineStr.size());
+    bool useBlockComment = false;
+    if (explained && query.nodeIndex)
+    {
+        const auto comments = query.nodeIndex->CommentRanges();
+        auto comment = std::ranges::lower_bound(comments, line, {}, &NodeIndex::CommentRange::startLine);
+        for (; comment != comments.end() && comment->startLine == line; ++comment)
+        {
+            if (comment->startColumn < col && lineStr.substr(comment->startColumn).starts_with("//"))
+            {
+                col = comment->startColumn;
+                useBlockComment = true;
+                break;
+            }
+        }
+    }
 
-    CodeActionTextEdit edit{analysis::SourceRange{line, col, line, col},
-                            " // disable-line " + std::string(aliasOrCode)};
+    std::string comment = useBlockComment ? "/* disable-line " : " // disable-line ";
+    comment += aliasOrCode;
+    if (explained)
+    {
+        comment += ' ';
+        comment += k_diagnosticExplanationDelimiter;
+        comment += ' ';
+        comment += i18n::FormatMessage(query.i18n, "suppression-explanation-placeholder", "explain why");
+    }
+    if (useBlockComment)
+    {
+        comment += " */ ";
+    }
+    CodeActionTextEdit edit{analysis::SourceRange{line, col, line, col}, std::move(comment)};
 
     std::string title =
         i18n::FormatMessage(query.i18n, "action-suppress-line", "Disable {} for this line", aliasOrCode);
 
     return MakeQuickFixEntry(QuickFixEntryOptions{std::move(title), diagIndex, {std::move(edit)}, false});
+}
+
+/**
+ * @brief Resolves a diagnostic code that is valid in a generated suppression.
+ * @param[in] code Code or alias supplied by the editor.
+ * @return The display code if registered, or an empty view.
+ */
+static std::string_view FindSuppressionCode(std::string_view code)
+{
+    if (code.empty())
+    {
+        return {};
+    }
+    const auto canonical = GetCanonicalDiagnosticCode(code);
+    if (const auto alias = GetDiagnosticAlias(canonical); !alias.empty())
+    {
+        return alias;
+    }
+    static const i18n::I18n english;
+    const bool diagnostic = canonical.starts_with("as-err-") || !GetDiagnosticCategory(canonical).empty();
+    return diagnostic && !english.GetMessageView(canonical).empty() ? canonical : std::string_view{};
 }
 
 /**
@@ -102,16 +155,22 @@ void TryAddDiagnosticSuppressionFixes(const CodeActionQuery& query, std::vector<
 
     std::unordered_set<std::string_view> seenCodes;
     std::unordered_set<std::string_view> seenGroups;
+    std::map<uint32_t, std::vector<uint32_t>> byLine;
+    std::vector<std::string_view> codes(query.diagnostics.size());
     for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
         const auto rawCode = query.diagnostics[i].code;
-        if (rawCode.empty() || !seenCodes.insert(rawCode).second)
+        const auto displayCode = FindSuppressionCode(rawCode);
+        if (displayCode.empty())
         {
             continue;
         }
-
-        const std::string_view alias = analysis::GetDiagnosticAlias(rawCode);
-        const std::string_view displayCode = alias.empty() ? rawCode : alias;
+        codes[i] = displayCode;
+        byLine[query.diagnostics[i].range.startLine].push_back(i);
+        if (!seenCodes.insert(displayCode).second)
+        {
+            continue;
+        }
 
         entries.push_back(MakeLineSuppressionEntry(query, i, displayCode));
         entries.push_back(MakeRangeSuppressionEntry(query, i, displayCode));
@@ -120,6 +179,30 @@ void TryAddDiagnosticSuppressionFixes(const CodeActionQuery& query, std::vector<
         if (!group.empty() && seenGroups.insert(group).second)
         {
             entries.push_back(MakeFileSuppressionEntry(query, i, group));
+        }
+    }
+    for (auto& line : byLine)
+    {
+        auto& indices = line.second;
+        if (indices.size() < 2)
+        {
+            continue;
+        }
+        std::unordered_set<std::string_view> distinct;
+        std::string labels;
+        for (const auto i : indices)
+        {
+            if (distinct.insert(codes[i]).second)
+            {
+                labels += labels.empty() ? "" : ", ";
+                labels += codes[i];
+            }
+        }
+        if (distinct.size() > 1)
+        {
+            auto action = MakeLineSuppressionEntry(query, indices.front(), labels, true);
+            action.diagnosticIndices = std::move(indices);
+            entries.push_back(std::move(action));
         }
     }
 }

@@ -16,6 +16,7 @@ std::vector<CodeActionEntry> CollectCodeActionEntries(const CodeActionQuery& que
     TryAddConstQualifierActions(query, entries);
     TryAddUndefinedIdentifierSuggestions(query, entries);
     TryAddHandleOnPrimitiveFix(query, entries);
+    TryAddReferenceDirectionFixes(query, entries);
     TryAddUnresolvedIncludeSuggestions(query, entries);
     TryAddAccessorPropertyKeywordFix(query, entries);
     TryAddBoolConversionFix(query, entries);

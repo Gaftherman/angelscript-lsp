@@ -3038,3 +3038,34 @@ TEST_CASE("Completion - A bare label colon after an identifier offers nothing")
     TestEnvironment env(code);
     CHECK(env.CompleteAt(3, static_cast<uint32_t>(head.size())).empty());
 }
+
+TEST_CASE("Completion - Instance completion excludes a same-named namespace")
+{
+    const auto owner = test::GenerateRandomSymbolName("Shared");
+    const auto field = test::GenerateRandomSymbolName("field");
+    const auto method = test::GenerateRandomSymbolName("method");
+    const auto namespaceFunction = test::GenerateRandomSymbolName("namespaceFunction");
+    const auto instance = test::GenerateRandomSymbolName("instance");
+
+    const auto complete =
+        [&](const std::string& inMethod, const std::string& outsideMethod, uint32_t line, uint32_t column)
+    {
+        const std::string code = "class " + owner + " {\n    int " + field + ";\n    void " + method + "() {\n" +
+                                 inMethod + "\n    }\n}\nnamespace " + owner + " {\n    void " + namespaceFunction +
+                                 "() {} void " + field + "() {}\n}\nvoid main() {\n    " + owner + " " + instance +
+                                 ";\n" + outsideMethod + "\n}\n";
+        TestEnvironment env(code);
+        return env.CompleteAt(line, column);
+    };
+
+    const auto checkInstance = [&](const auto& items)
+    {
+        CHECK(HasItem(items, field));
+        CHECK(!HasItem(items, namespaceFunction));
+        CHECK(FindItemOfKind(items, field, lsp::CompletionItemKind::Function) == nullptr);
+    };
+    checkInstance(complete("this.", "", 3, 5));
+    checkInstance(complete("", instance + ".", 11, static_cast<uint32_t>(instance.size() + 1)));
+    const auto scoped = complete("", owner + "::", 11, static_cast<uint32_t>(owner.size() + 2));
+    CHECK(HasItem(scoped, namespaceFunction));
+}

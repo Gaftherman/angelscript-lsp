@@ -17,6 +17,8 @@
   "action-implement-interface": "Implementar métodos de interfaz faltantes para '{}'",
   "action-init-local-variable": "Inicializar variable local '{}' para '{}'",
   "action-remove-primitive-handle": "Eliminar '@' - un tipo primitivo no admite manejador",
+  "action-reference-direction-in": "Usar '&in' como dirección de la referencia",
+  "action-reference-direction-out": "Usar '&out' como dirección de la referencia",
   "action-remove-unused-variable": "Eliminar variable no utilizada '{}'",
   "action-sort-and-clean-includes": "Ordenar y limpiar directivas #include",
   "action-suppress-file": "Deshabilitar {} para todo el archivo",
@@ -218,6 +220,7 @@
   "as-warn-undeclared-identifier": "Identificador no declarado '{}'.",
   "as-warn-uninitialized-variable-read": "La variable local '{}' se usa antes de ser inicializada.",
   "as-warn-unreachable-code": "Código inalcanzable.",
+  "as-warn-implicit-member-access": "'{}' es un miembro de la instancia. Escribe 'this.{}' para hacer explícito el acceso.",
   "as-warn-unsupported-directive": "CScriptBuilder no reconoce '#{}', así que se queda en el código y el compilador lo rechaza. Si el host parcheó su copia del add-on para soportarlo, indícalo con la opción angelscript.preprocessor correspondiente.",
   "as-warn-unused-class": "La clase '{}' nunca se usa.",
   "as-warn-unused-field": "La variable miembro '{}' nunca se usa.",
@@ -288,5 +291,6 @@
   "mcp-tool-signature-help": "Devuelve la ayuda de firma mostrada en una línea y carácter base cero dentro de una llamada.",
   "mcp-tool-definition": "Devuelve dónde está definido el símbolo en una línea y carácter base cero.",
   "mcp-tool-document-symbols": "Devuelve el esquema de símbolos de un documento.",
+  "suppression-explanation-placeholder": "explica por qué",
   "warn-invalid-no-handle-type": "Ignorando entrada inválida '{}' en angelscript.engine.noHandleTypes: se esperaba un identificador o nombre calificado no vacío."
 }

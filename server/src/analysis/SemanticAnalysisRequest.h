@@ -19,6 +19,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -94,6 +95,7 @@ struct SemanticAnalysisRequest
      */
     const config::DiagnosticsConfig* diagnostics = nullptr;
     const config::EngineRuleConfig* engineRules = nullptr;
+    std::vector<std::string> workspaceRoots; ///< Normalized roots for workspace-relative diagnostic settings.
 
     /**
      * @brief Optional cancellation flag to abort long-running semantic passes early.

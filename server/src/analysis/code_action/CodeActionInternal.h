@@ -202,6 +202,13 @@ void TryAddUndefinedIdentifierSuggestions(const CodeActionQuery& query, std::vec
 void TryAddHandleOnPrimitiveFix(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries);
 
 /**
+ * @brief Offers legal reference directions for parameters diagnosed with E144.
+ * @param[in] query Diagnostics and parameter facts from the current document.
+ * @param[in,out] entries Existing code actions to append fixes to.
+ */
+void TryAddReferenceDirectionFixes(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries);
+
+/**
  * @brief Generates quick-fix entries suggesting corrections for unresolved include directives.
  * @param query Incoming code action query context.
  * @param entries Destination vector for generated code action entries.

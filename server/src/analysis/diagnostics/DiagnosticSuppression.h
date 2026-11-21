@@ -20,7 +20,7 @@ namespace angel_lsp::analysis
 /**
  * @brief Returns the canonical diagnostic code for a numeric alias or string code.
  * @param[in] aliasOrCode Numeric alias (e.g. "W156", "w156") or canonical code.
- * @return Canonical code if recognized, or empty view.
+ * @return Canonical code if recognized, or the supplied spelling otherwise.
  */
 [[nodiscard]] std::string_view GetCanonicalDiagnosticCode(std::string_view aliasOrCode) noexcept;
 
@@ -93,8 +93,11 @@ class DiagnosticSuppressionMap
     std::vector<DiagnosticSuppression> m_suppressions;
 };
 
+/** @brief Separates suppression selectors from the free-text explanation that follows. */
+inline constexpr std::string_view k_diagnosticExplanationDelimiter = "--";
+
 /**
- * @brief Parses diagnostic suppressions (// disable <CODE>, // enable <CODE>, etc.) from source code.
+ * @brief Parses suppression directives with one or more selectors and an optional explanation.
  * @param[in] sourceCode Script source text; must outlive the returned map.
  * @param[in] nodeIndex Optional first-pass index whose comment ranges replace the line-by-line text scan.
  * @return DiagnosticSuppressionMap populated with active line ranges.

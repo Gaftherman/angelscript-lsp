@@ -132,6 +132,7 @@ bool UpdateDiagnosticsConfiguration(Server& server, const lsp::LSPObject& sectio
     applyBool("reportAccessorDisabled", config.diagnostics.reportAccessorDisabled);
     applyBool("reportBoolConversion", config.diagnostics.reportBoolConversion);
     applyBool("reportMissingFuncdef", config.diagnostics.reportMissingFuncdef);
+    applyBool("reportMissingClassAccessor", config.diagnostics.reportMissingClassAccessor);
     applyBool("reportIntegerDivision", config.diagnostics.reportIntegerDivision);
     applyBool("reportPossibleNullDereference", config.diagnostics.reportPossibleNullDereference);
     applyBool("reportAllNullDereferences", config.diagnostics.reportAllNullDereferences);
@@ -153,6 +154,11 @@ bool UpdateDiagnosticsConfiguration(Server& server, const lsp::LSPObject& sectio
     }
 
     if (UpdateUnusedFunctionExclusions(section, diagObj, config.diagnostics))
+    {
+        diagnosticsChanged = true;
+    }
+    if (auto paths = FindSectionStringArray(section, diagObj, "ignoredUnusedPaths", "diagnostics");
+        paths && config.diagnostics.SetIgnoredUnusedPaths(std::move(*paths)))
     {
         diagnosticsChanged = true;
     }

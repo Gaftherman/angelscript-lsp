@@ -22,7 +22,7 @@ SERVER = Path(__file__).resolve().parent.parent
 I18N = SERVER / 'src' / 'i18n' / 'i18n.cpp'
 ENGLISH_CATALOG = I18N.parent / 'locales' / 'en.json'
 CODES_HEADER = SERVER / 'src' / 'analysis' / 'diagnostics' / 'DiagnosticCodes.h'
-SUPPRESSION_TABLE = SERVER / 'src' / 'analysis' / 'diagnostics' / 'DiagnosticSuppression.cpp'
+SUPPRESSION_TABLE = SERVER / 'src' / 'analysis' / 'diagnostics' / 'DiagnosticSuppressionCodes.cpp'
 
 # Kept in step with the block at the top of i18n.cpp, which carries the reasoning.
 DELIBERATELY_NEVER_EMITTED = {

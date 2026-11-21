@@ -599,6 +599,8 @@ static constexpr DiagnosticFlagMapping kDiagFlags[] = {
     {"--report-unused-globals", "--no-report-unused-globals", &DiagnosticsConfig::reportUnusedGlobalVariables},
     {"--report-unused-classes", "--no-report-unused-classes", &DiagnosticsConfig::reportUnusedClasses},
     {"--report-unused-members", "--no-report-unused-members", &DiagnosticsConfig::reportUnusedMembers},
+    {"--report-missing-class-accessor", "--no-report-missing-class-accessor",
+     &DiagnosticsConfig::reportMissingClassAccessor},
     {"--ignore-unused-globals-with-call-initializer", "--no-ignore-unused-globals-with-call-initializer",
      &DiagnosticsConfig::ignoreUnusedGlobalsWithCallInitializer},
 };
@@ -620,6 +622,24 @@ static int ParseHandleComparisonSeverity(ArgParseContext& ctx)
         return 0;
     }
     return 1;
+}
+
+bool DiagnosticsConfig::SetIgnoredUnusedPaths(std::vector<std::string> paths)
+{
+    std::erase_if(paths, [](std::string_view path) { return path.empty(); });
+    if (paths == ignoredUnusedPaths)
+    {
+        return false;
+    }
+    std::vector<utils::PathGlob> globs;
+    globs.reserve(paths.size());
+    for (const auto& path : paths)
+    {
+        globs.emplace_back(path);
+    }
+    ignoredUnusedPaths = std::move(paths);
+    ignoredUnusedPathGlobs = std::move(globs);
+    return true;
 }
 
 static bool TryParseUnusedFunctionExclusion(ServerConfig& config, ArgParseContext& ctx)
@@ -1136,6 +1156,7 @@ ServerConfig FromArgs(int argc, char** argv)
     }
 
     bool sawExclude = false;
+    std::vector<std::string> ignoredUnusedPaths;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -1161,12 +1182,22 @@ ServerConfig FromArgs(int argc, char** argv)
         }
 
         ArgParseContext ctx{i, argc, argv, key, inlineVal};
+        if (key == "--ignored-unused-path")
+        {
+            std::string_view value;
+            if (ctx.GetStringValue(value))
+            {
+                ignoredUnusedPaths.emplace_back(value);
+            }
+            continue;
+        }
         if (TryParseArg(config, ctx) || TryParseArgExtended(config, ctx, sawExclude))
         {
             continue;
         }
     }
 
+    config.diagnostics.SetIgnoredUnusedPaths(std::move(ignoredUnusedPaths));
     return config;
 }
 

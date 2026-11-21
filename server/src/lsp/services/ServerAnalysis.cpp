@@ -199,6 +199,10 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
     analysisReq.nodeIndex = &request.nodeIndex;
     analysisReq.callBindingRevision = request.callBindingRevision;
     analysisReq.mixinCache = &m_serverMixinCache;
+    if (!m_config.diagnostics.ignoredUnusedPathGlobs.empty())
+    {
+        analysisReq.workspaceRoots = m_workspaceStore->GetWorkspaceRoots();
+    }
 
     utils::HighResTimer checkTimer;
     auto diagnostics = m_semanticAnalyzer->Analyze(analysisReq);
@@ -233,6 +237,10 @@ std::vector<analysis::Diagnostic> Server::RunDocumentSemantics(angel_lsp::analys
     }
     baseReq.diagnostics = &diagnosticConfig;
     baseReq.engineProperties = &engineProperties;
+    if (!diagnosticConfig.ignoredUnusedPathGlobs.empty())
+    {
+        baseReq.workspaceRoots = m_workspaceStore->GetWorkspaceRoots();
+    }
 
     analysis::MixinFileCache inlineCache;
     baseReq.mixinCache = fromScheduler ? &m_workerMixinCache : &inlineCache;

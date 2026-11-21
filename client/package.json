@@ -995,6 +995,11 @@
             "default": false,
             "markdownDescription": "%config.diagnostics.reportUnusedClasses.description%"
           },
+          "angelscript.diagnostics.reportMissingClassAccessor": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.diagnostics.reportMissingClassAccessor.description%"
+          },
           "angelscript.diagnostics.reportUnusedMembers": {
             "type": "boolean",
             "default": false,
@@ -1015,6 +1020,14 @@
             },
             "default": [],
             "markdownDescription": "%config.diagnostics.ignoredUnusedFunctionPatterns.description%"
+          },
+          "angelscript.diagnostics.ignoredUnusedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.diagnostics.ignoredUnusedPaths.description%"
           },
           "angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer": {
             "type": "boolean",

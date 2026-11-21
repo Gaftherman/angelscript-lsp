@@ -20,6 +20,33 @@
 
 TEST_SUITE("analysis/index/CodeActionFacts")
 {
+    TEST_CASE("ParameterRefFacts - Finds bare and inout edits in source order")
+    {
+        const auto function = angel_lsp::test::GenerateRandomSymbolName("fn");
+        const auto name = angel_lsp::test::GenerateRandomSymbolName("value");
+        const auto other = angel_lsp::test::GenerateRandomSymbolName("other");
+        const auto fixed = angel_lsp::test::GenerateRandomSymbolName("fixed");
+        const auto code =
+            "void " + function + "(int &" + name + ",\n int &inout " + other + " = 0, int &in " + fixed + ") {}";
+        angel_lsp::parser::AngelScriptParser parser;
+        const auto tree = angel_lsp::parser::MakeTreePtr(parser.Parse(code));
+        const angel_lsp::test::NodeIndexFixture fixture(tree.get());
+        const auto facts = angel_lsp::analysis::BuildParameterRefFacts(fixture.index, code);
+        REQUIRE(facts.sites.size() == 2);
+        CHECK(facts.FindAt(0, 0) == nullptr);
+        const auto* bare = facts.FindAt(0, static_cast<uint32_t>(code.find("int &")));
+        REQUIRE(bare);
+        CHECK(bare->needsSeparator);
+        CHECK(bare->allowsOutput);
+        CHECK(bare->editStart.character == bare->editEnd.character);
+        const auto* inout = facts.FindAt(1, 1);
+        REQUIRE(inout);
+        CHECK_FALSE(inout->needsSeparator);
+        CHECK_FALSE(inout->allowsOutput);
+        CHECK(inout->editEnd.character - inout->editStart.character == 5);
+        CHECK(facts.FindAt(1, static_cast<uint32_t>(code.find("int &in " + fixed) - code.find('\n') - 1)) == nullptr);
+    }
+
     TEST_CASE("CodeActionFacts - node span at point")
     {
         angel_lsp::parser::AngelScriptParser parser;

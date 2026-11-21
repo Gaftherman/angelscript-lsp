@@ -106,6 +106,7 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
         m_symbolTable, m_scopeIndex, utils::IncludeSearchScope{.allowedRoots = allowedRoots},     &m_config,
         m_i18n.get()};
     car.nodeIndex = syntax ? &syntax->index : nullptr;
+    car.parameterRefFacts = syntax ? &syntax->parameterRefFacts : nullptr;
     auto actions = features::GetCodeActions(car);
     if (actions.has_value())
     {

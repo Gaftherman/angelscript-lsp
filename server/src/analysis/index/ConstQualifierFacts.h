@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -91,5 +92,38 @@ struct IndexedConstHandleSite
  */
 [[nodiscard]] std::optional<IndexedConstHandleSite> FindConstHandleSite(const NodeIndex& index, uint32_t line,
                                                                         uint32_t column);
+
+/** @brief Source coordinates and eligibility for editing one parameter's reference direction. */
+struct IndexedParameterRefSite
+{
+    IndexedSourcePoint start;     ///< Inclusive start of the parameter.
+    IndexedSourcePoint end;       ///< Exclusive end of the parameter.
+    IndexedSourcePoint editStart; ///< Direction start, or the end of a bare ampersand.
+    IndexedSourcePoint editEnd;   ///< Direction end, or the same point as editStart.
+    bool needsSeparator = false;  ///< An insertion touches the following parameter name.
+    bool allowsOutput = false;    ///< The parameter can legally use an output direction.
+};
+
+/** @brief Reference-direction edit sites in source order for one syntax revision. */
+struct ParameterRefFacts
+{
+    std::vector<IndexedParameterRefSite> sites; ///< Parameters with a bare or inout reference.
+
+    /**
+     * @brief Finds a reference-direction edit site in logarithmic time.
+     * @param[in] line Zero-based line of the diagnostic start.
+     * @param[in] column Zero-based byte column of the diagnostic start.
+     * @return The enclosing site, or nullptr if the position is outside the indexed parameters.
+     */
+    [[nodiscard]] const IndexedParameterRefSite* FindAt(uint32_t line, uint32_t column) const noexcept;
+};
+
+/**
+ * @brief Extracts editable reference directions from the ordered parameter nodes.
+ * @param[in] index Index of the current syntax revision.
+ * @param[in] source Source text for recognizing the special void default.
+ * @return AST-free reference facts in source order.
+ */
+[[nodiscard]] ParameterRefFacts BuildParameterRefFacts(const NodeIndex& index, std::string_view source);
 
 } // namespace angel_lsp::analysis

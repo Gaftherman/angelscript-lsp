@@ -177,10 +177,9 @@ static void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, std::stri
 }
 
 /**
- * @brief Collects all member symbols for a container type.
- * @param[in] typeName Container type name.
- * @param[in] binding Template binding information.
- * @param[in] templateArgs Explicit template arguments.
+ * @brief Collects instance members for a class or interface.
+ * @param[in] typeName Qualified name of the receiver type.
+ * @param[in] tCtx Template bindings and the current member prefix.
  * @param[in,out] collector Completion collector context.
  */
 static void PopulateMembersForType(std::string_view typeName, const MemberTemplateContext& tCtx,
@@ -191,7 +190,7 @@ static void PopulateMembersForType(std::string_view typeName, const MemberTempla
     {
         return;
     }
-    const auto& members = ruleIndex->Members(typeName);
+    const auto& members = ruleIndex->ClassMembers(typeName);
     for (const auto& key : members.memberKeys)
     {
         const auto symbols = collector.request.symbolTable.FindSymbolsPtr(key);
@@ -201,7 +200,9 @@ static void PopulateMembersForType(std::string_view typeName, const MemberTempla
         }
         for (const auto& sym : *symbols)
         {
-            if (sym.type == analysis::SymbolType::CallReference)
+            if (sym.type == analysis::SymbolType::CallReference ||
+                (sym.containerKind != analysis::ContainerKind::Class &&
+                 sym.containerKind != analysis::ContainerKind::Interface))
             {
                 continue;
             }

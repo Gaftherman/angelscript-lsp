@@ -10,9 +10,12 @@
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "utils/IncludeResolver.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <doctest/doctest.h>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -99,6 +102,54 @@ std::vector<Diagnostic> AnalyzeSnippetWithPredefined(const std::string& code,
 
 TEST_SUITE("analysis/checkers/UnusedSymbolChecker")
 {
+    TEST_CASE("UnusedSymbolChecker - Path exclusions suppress declarations and keep unused locals")
+    {
+        const auto folder = angel_lsp::test::GenerateRandomSymbolName("generated");
+        const auto field = angel_lsp::test::GenerateRandomSymbolName("field");
+        const auto global = angel_lsp::test::GenerateRandomSymbolName("global");
+        const auto function = angel_lsp::test::GenerateRandomSymbolName("function");
+        const auto method = angel_lsp::test::GenerateRandomSymbolName("method");
+        const auto deadClass = angel_lsp::test::GenerateRandomSymbolName("deadClass");
+        const auto usedClass = angel_lsp::test::GenerateRandomSymbolName("usedClass");
+        const auto local = angel_lsp::test::GenerateRandomSymbolName("local");
+        const auto code = "int " + global + ";\nclass " + deadClass + " {}\nclass " + usedClass + " { int " + field +
+                          "; void " + method + "() {} }\nvoid " + function + "() { int " + local + "; " + usedClass +
+                          " obj; }\n";
+        const auto root = angel_lsp::utils::IncludeResolver::NormalizePath(
+            std::filesystem::temp_directory_path() / angel_lsp::test::GenerateRandomSymbolName("workspace"));
+        const auto uri = angel_lsp::utils::PathToUri(root + "/" + folder + "/sub/script.as");
+        AngelScriptParser parser;
+        SymbolTable table;
+        SymbolCollector collector(nullptr);
+        LocalScopeCollector scopes(nullptr);
+        collector.CollectSymbols({uri, code}, parser, table);
+        const auto tree = angel_lsp::parser::MakeTreePtr(parser.Parse(code));
+        const NodeIndex index(ts_tree_root_node(tree.get()), NodeIndexOptions{.source = code});
+        const angel_lsp::i18n::I18n i18n;
+        angel_lsp::config::DiagnosticsConfig config;
+        config.reportUnusedMembers = config.reportUnusedGlobalVariables = true;
+        config.reportUnusedFunctions = config.reportUnusedClasses = true;
+        SemanticAnalysisRequest request{table, uri, ".as.predefined", &i18n};
+        request.scopeRoot = scopes.CollectScopes(code, parser);
+        request.nodeIndex = &index;
+        request.sourceCode = code;
+        request.diagnostics = &config;
+        request.workspaceRoots = {root};
+        SemanticAnalyzer analyzer(nullptr);
+        const auto baseline = analyzer.Analyze(request);
+        CHECK(config.SetIgnoredUnusedPaths({folder + "/**"}));
+        const auto filtered = analyzer.Analyze(request);
+        for (const auto& [warning, name] :
+             {std::pair{codes::UnusedField, field}, std::pair{codes::UnusedGlobalVariable, global},
+              std::pair{codes::UnusedFunction, function}, std::pair{codes::UnusedMethod, method},
+              std::pair{codes::UnusedClass, deadClass}})
+        {
+            CHECK(HasDiag(baseline, warning, name));
+            CHECK_FALSE(HasDiag(filtered, warning, name));
+        }
+        CHECK(HasDiag(filtered, codes::UnusedVariable, local));
+    }
+
     TEST_CASE("UnusedSymbolChecker - local variables in function and mixin method")
     {
         const std::string unusedLocal = angel_lsp::test::GenerateRandomSymbolName("locVar");
@@ -1017,4 +1068,63 @@ TEST_SUITE("analysis/checkers/UnusedSymbolChecker")
         CHECK(HasDiag(diagsExplicit, codes::UnusedClass, deadClass));
         CHECK(HasDiag(diagsExplicit, codes::UnusedClass, weaponClass));
     }
+}
+
+TEST_CASE("Implicit member access - Follows instance visibility and lexical precedence")
+{
+    const auto base = angel_lsp::test::GenerateRandomSymbolName("Base");
+    const auto derived = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const auto name = angel_lsp::test::GenerateRandomSymbolName("member");
+    const auto method = angel_lsp::test::GenerateRandomSymbolName("run");
+    const auto sink = angel_lsp::test::GenerateRandomSymbolName("sink");
+    const auto global = "int " + name + " = 1;\n";
+    const auto read = "int " + sink + " = " + name + ";";
+    const auto classes = [&](std::string_view access, std::string_view body)
+    {
+        std::string code = "class " + base + " { ";
+        code.append(access)
+            .append("int ")
+            .append(name)
+            .append("; }\nclass ")
+            .append(derived)
+            .append(" : ")
+            .append(base)
+            .append(" { void ")
+            .append(method)
+            .append("() { ")
+            .append(body)
+            .append(" } }");
+        return code;
+    };
+    angel_lsp::config::DiagnosticsConfig config;
+    const auto check = [&](const std::string& source, size_t expected)
+    {
+        const auto diagnostics = AnalyzeSnippet(source, nullptr, "file:///test.as", &config);
+        size_t count = 0;
+        for (const auto& diagnostic : diagnostics)
+        {
+            if (diagnostic.code == codes::ImplicitMemberAccess)
+            {
+                ++count;
+                CHECK(diagnostic.severity == DiagnosticSeverity::Warning);
+                CHECK(diagnostic.message.find("this." + name) != std::string::npos);
+            }
+        }
+        CHECK(count == expected);
+    };
+
+    check(classes("", read), 0);
+    config.reportMissingClassAccessor = true;
+    check(global + classes("", read), 1);
+    const auto enumName = angel_lsp::test::GenerateRandomSymbolName("Enum");
+    check("enum " + enumName + " { " + name + " }\n" + classes("", read), 1);
+    check(global + classes("private ", read), 0);
+    check(classes("", "int " + name + " = 0; " + read), 0);
+    check(global + classes("", "int " + sink + " = this." + name + ";"), 0);
+    check(global + classes("", "int " + sink + " = ::" + name + ";"), 0);
+    check(classes("", "auto " + sink + " = function() { return " + name + "; };"), 0);
+    check("class " + derived + " { private int " + name + "; void " + method + "() { " + read + " } }", 1);
+    check("class " + derived + " { int get_" + name + "() const property { return 0; } void " + method + "() { " +
+              read + " } }",
+          1);
 }

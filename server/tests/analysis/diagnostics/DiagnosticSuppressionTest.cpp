@@ -14,6 +14,28 @@ using namespace angel_lsp::diagnostics;
 
 TEST_SUITE("analysis/diagnostics/DiagnosticSuppression")
 {
+    TEST_CASE("DiagnosticSuppression - Explanations stop selector parsing")
+    {
+        const auto name = angel_lsp::test::GenerateRandomSymbolName("value");
+        const std::string source =
+            "/* disable w103, W116 -- all W104 */\nint " + name + ";\n// enable W103 -- W116\nint " + name + ";\n";
+        const auto check = [](const DiagnosticSuppressionMap& map)
+        {
+            CHECK(map.IsSuppressed(codes::UnusedVariable, 1));
+            CHECK(map.IsSuppressed(codes::UnusedField, 1));
+            CHECK_FALSE(map.IsSuppressed(codes::ShadowGlobal, 1));
+            CHECK_FALSE(map.IsSuppressed(codes::UnusedVariable, 3));
+            CHECK(map.IsSuppressed(codes::UnusedField, 3));
+        };
+        angel_lsp::parser::AngelScriptParser parser;
+        const auto tree = angel_lsp::parser::MakeTreePtr(parser.Parse(source));
+        const angel_lsp::test::NodeIndexFixture fixture(tree.get());
+        check(ParseDiagnosticSuppressions(source, &fixture.index));
+        const std::string lineComments =
+            "// disable w103, W116 -- all W104\nint " + name + ";\n// enable W103 -- W116\nint " + name + ";\n";
+        check(ParseDiagnosticSuppressions(lineComments));
+    }
+
     TEST_CASE("DiagnosticSuppression - Alias lookup parity")
     {
         CHECK(GetDiagnosticAlias(codes::ListPatternUnknown) == "W156");

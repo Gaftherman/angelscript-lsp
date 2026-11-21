@@ -34,6 +34,15 @@ bool IsEnclosingScopeMember(uint32_t byteOffset, std::string_view refName, std::
                             const DiagnosticContext& ctx);
 
 /**
+ * @brief Checks whether a member name can be qualified with the current instance.
+ * @param[in] className Qualified name of the current instance type.
+ * @param[in] name Unqualified reference spelling.
+ * @param[in] ctx Active symbol and engine configuration.
+ * @return True for a visible field, virtual property or enabled property accessor.
+ */
+bool IsAccessibleInstanceProperty(std::string_view className, std::string_view name, const DiagnosticContext& ctx);
+
+/**
  * @brief Checks whether an enum value can be named without qualification at a source position.
  * @param[in] byteOffset Byte offset of the reference node in source code.
  * @param[in] valueName Enum value name being inspected.
