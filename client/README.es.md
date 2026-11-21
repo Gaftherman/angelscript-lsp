@@ -2,10 +2,10 @@
 
 **[English](README.md)** | **[Español](README.es.md)**
 
-[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Gaftherman.angelscript-gaftherman.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
-[![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Gaftherman.angelscript-gaftherman.svg?color=success)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
+[![Marketplace](https://vsmarketplacebadges.dev/version-short/Gaftherman.angelscript-gaftherman.svg)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
+[![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/Gaftherman.angelscript-gaftherman.svg)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/Gaftherman)
+[![XERJ Corpus Hub contributor](https://img.shields.io/badge/XERJ%20Corpus%20Hub-contributor-1f6feb)](https://hub.xerj.org/contributors/Gaftherman)
 
 Angelscript agrega autocompletado, documentación al pasar el cursor, detección de errores y navegación de código para archivos AngelScript (`.as`) en VS Code.
 
@@ -51,8 +51,8 @@ Cada juego configura AngelScript con sus propias reglas de sintaxis, como permit
 
 ## Documentación
 
-- [Guía detallada](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/guide.es.md) — ejemplos de espacio de trabajo, archivos predefinidos, opciones del motor, comandos y catálogo completo de ajustes.
-- [Guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/rules.es.md) — cómo escribir archivos `*.angelscript.rules.json`.
+- [Guía detallada](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/GUIDE.es.md) — ejemplos de espacio de trabajo, archivos predefinidos, opciones del motor, comandos y catálogo completo de ajustes.
+- [Guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) — cómo escribir archivos `*.angelscript.rules.json`.
 - [CHANGELOG.md](CHANGELOG.md) — historial de versiones y cambios.
 
 ## Compilar desde el código fuente

@@ -1,18 +1,18 @@
 # Angelscript Detailed Guide
 
-**[English](guide.md)** | **[Español](guide.es.md)** | **[README](../README.md)**
+[English](GUIDE.md) | [Español](GUIDE.es.md) | [README](../README.md)
 
-This guide covers workspace configuration, predefined API files, engine rules, engine dialect options, commands, and every extension setting.
+Start with a workspace example that matches how your game loads scripts. Then use the settings below to tell VS Code about the game’s API and language rules.
 
 ## Workspace Setup Examples
 
-Create or edit `.vscode/settings.json` inside `${workspaceFolder}` to match how your game organizes scripts.
+Put the example in `.vscode/settings.json` under `${workspaceFolder}`. In `angelscript.modules`, use `folder` for every script under a directory or `entry` for one script and the files it reaches through `#include`.
 
-When `angelscript.modules` is set, the editor groups scripts into separate build units called modules. That stops unrelated scripts in the same folder from colliding or hiding errors in `shared` types.
+Module boundaries let the editor check whether an `external shared` declaration has a matching definition in another module.
 
 ### Example A: Sven Co-op (Folder Module)
 
-Use this when every script inside a map folder belongs to one module.
+If all scripts under `maps/hcas` build together, give that folder a module name.
 
 ```jsonc
 {
@@ -39,7 +39,7 @@ Use this when every script inside a map folder belongs to one module.
 
 ### Example B: Sven Co-op (Entry Script Module)
 
-Use this when your game compiles a script tree starting from a single registration file.
+If your game starts from `ins2_register.as`, use that file as the entry point. Its includes join the same module.
 
 ```jsonc
 {
@@ -59,7 +59,7 @@ Use this when your game compiles a script tree starting from a single registrati
 
 ### Example C: Generic Game Engine
 
-Use this for a standalone game or custom engine with its own include folder and API file.
+If your engine keeps shared includes and API declarations in separate directories, give each directory or file its own path in the settings.
 
 ```jsonc
 {
@@ -80,73 +80,74 @@ Use this for a standalone game or custom engine with its own include folder and 
 
 ## Predefined Game API Files (`.as.predefined`)
 
-An `.as.predefined` file is a file that lists what the game gives to scripts (often called a stub). Your game registers classes, functions, enums, global variables, and `#define` flags in C++, and scripts call them at runtime. Listing them in a stub lets autocomplete, hover, and type checks understand your game's API.
+Add an `.as.predefined` stub to describe the API your host registers in C++. The editor can then suggest the host’s classes and functions, show their signatures on hover, and check how you use them.
 
 ### How stubs are loaded
 
-- **Automatic scan**: Any file ending in `.as.predefined` inside `${workspaceFolder}` is detected automatically.
-- **Pick one stub**: If you have more than one stub in your workspace, set `angelscript.predefined.active` to the file you want. When left empty, the editor loads the first file it finds.
-- **Merge all stubs**: Set `angelscript.predefined.active` to `"all"` to load every discovered stub together.
-- **External stubs**: Use `angelscript.predefinedFiles` when the stub lives outside `${workspaceFolder}`, or use path variables such as `${userHome}` and `${env:NAME}`.
-- **Interactive switcher**: Click **AngelScript IntelliSense** in the status bar, or run **Select Predefined Stub** or **Select Predefined Stubs** from the Command Palette.
+- The workspace scan looks for files with the `angelscript.predefinedExtension` suffix, which defaults to `.as.predefined`.
+- Set `angelscript.predefined.active` to the stub you want. Leave it empty to use the first one in path order, or set it to `"all"` to load every stub the scan finds.
+- List stubs you always want to load in `angelscript.predefinedFiles`. They can live outside `${workspaceFolder}`. Paths can use `${userHome}` and `${env:NAME}`.
+- Run **Select Predefined Stub** or **Select Predefined Stubs** from the Command Palette. You can also open the actions menu from the **AngelScript IntelliSense** language status item.
 
-For Sven Co-op 5.26+, a maintained stub is included in this repository at [predefined/sven.as.predefined](../predefined/sven.as.predefined). You can follow the same format for any other game such as Trackmania Nations Forever or OpenSiv3D.
+For a Sven Co-op 5.26 example, open [predefined/sven.as.predefined](../predefined/sven.as.predefined).
 
 ## Engine Rules (`*.angelscript.rules.json`)
 
-Games often call functions such as `MapInit` or instantiate entity classes from C++ without calling them from another `.as` file. A `*.angelscript.rules.json` file tells the editor about those entry points, links delegate properties such as `BaseClass` to native stub types, and adds team or engine safety checks.
+If your engine calls `MapInit` from C++, add it to the engine rules to clear the unused-function warning. You can also use rules to link `BaseClass` to a native class in a stub or flag calls and declarations that break your host’s rules.
 
-- **Automatic loading**: Place a `*.angelscript.rules.json` file in `${workspaceFolder}` or next to your active `.as.predefined` file.
-- **Explicit path**: Set `angelscript.rulesFile` in `.vscode/settings.json` to point to a specific rules file.
-- **Generate a template**: Run **Configure Host Rules & Predefined API...** from the Command Palette.
+- Put `angelscript.rules.json` at the workspace root for automatic discovery. The server also looks for `*.angelscript.rules.json` files beside stubs and at the root.
+- Set `angelscript.rulesFile` in `.vscode/settings.json` to choose a specific file.
+- To generate a starter file, run **Configure Host Rules & Predefined API...** in the Command Palette and choose the starter rules option.
 
-For field-by-field examples and editor behavior, see the [Engine Rules Guide](rules.md) and the reference Sven Co-op rules at [predefined/sven.angelscript.rules.json](../predefined/sven.angelscript.rules.json).
+For examples of each field, see the [Engine Rules Guide](RULES.md) and [predefined/sven.angelscript.rules.json](../predefined/sven.angelscript.rules.json).
 
 ## Engine Options and What Changes in the Editor
 
-Each game configures AngelScript with its own language rules. The settings below mirror those engine flags (`asEP_*`) and preprocessor behaviors.
+Match these settings to the `asEP_*` flags and preprocessor behavior your host uses. The defaults below are the extension’s defaults.
 
 ### Language and Syntax Options (`angelscript.engine.*`)
 
 | Setting | Default | What changes in the editor |
 | :--- | :--- | :--- |
-| `angelscript.engine.allowUnsafeReferences` | `false` | When `false`, parameters like `int &x` show an error asking for `&in` or `&out`. When `true`, plain `&` is accepted on primitive and value types. |
-| `angelscript.engine.privatePropAsProtected` | `false` | When `false`, reading a parent class's `private` member from a child class reports an access error. When `true`, child classes can access it and see it in autocomplete. |
-| `angelscript.engine.disallowGlobalVars` | `false` | When `true`, any variable declared outside a function or class is flagged as an error. When `false`, global variables are allowed. |
-| `angelscript.engine.propertyAccessorMode` | `2` | With `2`, any `get_X()` or `set_X(v)` method acts as property `X` in autocomplete and type checks. With `3`, only methods marked with `property` work as properties, and others report an unknown member error. |
-| `angelscript.engine.allowMultilineStrings` | `false` | When `false`, line breaks inside `"..."` strings show an error and require `"""..."""`. When `true`, multi-line `"..."` strings are accepted. |
-| `angelscript.engine.boolConversionMode` | `0` | With `0`, using a class in `if (obj)` reports an error even if it defines a `bool` conversion. With `1`, classes with `opImplConv` or `opConv` returning `bool` are accepted in conditions. |
-| `angelscript.engine.useCharacterLiterals` | `0` | With `0`, `'A'` is treated as a `string`, so assigning `'A'` to `int` shows a type error. With `1`, `'A'` is treated as an integer character code. |
-| `angelscript.engine.disallowValueAssignForRef` | `false` | When `true`, `a = b` on a handle-capable class shows an error and requires handle assignment `@a = @b`. When `false`, `a = b` resolves against `opAssign`. |
-| `angelscript.engine.alterSyntaxNamedArgs` | `0` | With `0`, named arguments must use `name: value` and `name = value` is an error. With `1`, `name = value` shows a warning. With `2`, both forms are accepted without warnings. |
-| `angelscript.engine.disableIntegerDivision` | `false` | When `false`, `1 / 2` stays an integer type. When `true`, `int / int` produces a floating-point type, so assigning it to an `int` triggers a conversion diagnostic. |
-| `angelscript.engine.disallowEmptyListElements` | `false` | When `true`, empty slots in `{1, , 3}` show an error. When `false`, empty slots in initializer lists are allowed. |
-| `angelscript.engine.foreachSupport` | `true` | When `true`, `foreach` loops parse and infer the loop variable type. When `false`, every `foreach` loop shows an unsupported feature error. |
-| `angelscript.engine.requireEnumScope` | `false` | When `true`, enum values like `Red` must be written as `Color::Red`, bare names report an error, and autocomplete inserts the enum prefix. When `false`, bare enum names are accepted. |
-| `angelscript.engine.alwaysImplDefaultConstruct` | `false` | When `false`, adding a constructor like `Item(int id)` hides the zero-argument constructor so `Item x;` shows an error unless `Item()` is written. When `true`, `Item x;` is always accepted. |
-| `angelscript.engine.allowUnicodeIdentifiers` | `false` | When `false`, non-ASCII letters in variable or function names show syntax errors. When `true`, UTF-8 letters are accepted in identifiers. |
-| `angelscript.engine.ignoreDuplicateSharedIntf` | `false` | When `false`, repeating the same `shared interface` across files reports a duplicate declaration error. When `true`, identical definitions are merged without error. |
-| `angelscript.engine.compilerWarnings` | `1` | `0` hides compiler warnings, `1` shows them as warning squiggles, and `2` turns every compiler warning into a red error. |
-| `angelscript.engine.noHandleTypes` | `[]` | Value type names (e.g. `["string", "datetime"]`) that disallow object handles (`@`), reporting `as-err-handle-on-no-handle-type` (`E261`). Merged (set union) with `noHandleTypes` in `angelscript.rules.json`. |
+| `angelscript.engine.allowUnsafeReferences` | `false` | Set this to `true` if your host accepts plain `&` for primitive and value parameters such as `int &x`. Otherwise, use a direction such as `&in` or `&out`. |
+| `angelscript.engine.privatePropAsProtected` | `false` | With `true`, a derived class can access a base class’s `private` members. |
+| `angelscript.engine.disallowGlobalVars` | `false` | With `true`, the editor flags declarations of global variables. |
+| `angelscript.engine.propertyAccessorMode` | `2` | With `2`, `get_X()` and `set_X(v)` can expose `obj.X`. With `3`, declare the accessors with `property` to use `obj.X`. |
+| `angelscript.engine.allowMultilineStrings` | `false` | With `true`, a regular double-quoted string may span lines. With `false`, use triple quotes (`"""..."""`) for a multiline string. |
+| `angelscript.engine.boolConversionMode` | `0` | With `1`, `if (obj)` can use a class’s `opImplConv` or `opConv` to `bool`. With `0`, use an explicit conversion. |
+| `angelscript.engine.useCharacterLiterals` | `0` | With `0`, `'A'` is a string and assigning it to `int` raises a type error. With `1`, it is an integer character code. |
+| `angelscript.engine.disallowValueAssignForRef` | `false` | With `true`, the editor flags value assignment (`a = b`) on reference types. Use handle assignment (`@a = @b`) where you mean to rebind the handle. |
+| `angelscript.engine.alterSyntaxNamedArgs` | `0` | `name: value` works in all modes. For `name = value`, `0` reports an error, `1` reports a warning, and `2` accepts it. |
+| `angelscript.engine.disableIntegerDivision` | `false` | With `false`, `1 / 2` has an integer type. With `true`, the editor treats division of two integers as a floating-point expression. |
+| `angelscript.engine.disallowEmptyListElements` | `false` | With `true`, the editor flags the empty slot in `{1, , 3}`. |
+| `angelscript.engine.foreachSupport` | `true` | With `false`, the editor flags `foreach` as unsupported. |
+| `angelscript.engine.requireEnumScope` | `false` | With `true`, write `Color::Red`. The editor flags an unqualified `Red`. |
+| `angelscript.engine.alwaysImplDefaultConstruct` | `false` | With `true`, a class with `Item(int id)` also gets an implicit zero-argument constructor. With `false`, add `Item()` explicitly if you want to write `Item x;`. |
+| `angelscript.engine.allowUnicodeIdentifiers` | `false` | With `true`, the editor accepts non-ASCII letters in identifiers. |
+| `angelscript.engine.ignoreDuplicateSharedIntf` | `false` | With `true`, identical `shared interface` declarations can appear in multiple files without a duplicate declaration error. |
+| `angelscript.engine.compilerWarnings` | `1` | `0` hides compiler warnings, `1` shows them as warnings, and `2` shows them as errors. |
+| `angelscript.engine.noHandleTypes` | `[]` | List types that your host registers without handle support, such as `["string", "datetime"]`. The editor reports `as-err-handle-on-no-handle-type` (`E261`) for handles to the listed types. Entries are combined with `noHandleTypes` from `angelscript.rules.json`. |
 
 ### Preprocessor and Metadata Options
 
 | Setting | Default | What changes in the editor |
 | :--- | :--- | :--- |
-| `angelscript.preprocessor.elseSupport` | `false` | When `false`, `#else` is ignored and lines after a false `#if` stay dimmed and skipped until `#endif`. When `true`, `#else` flips to the active branch when `#if` is false. |
-| `angelscript.preprocessor.elifSupport` | `false` | When `true`, `#elif` chains are evaluated and only the first matching branch stays active instead of dimmed. |
-| `angelscript.preprocessor.ifdefSupport` | `false` | When `false`, `#ifdef` and `#ifndef` show syntax errors. When `true`, they toggle active and dimmed blocks using `angelscript.define` and stub `#define` lines. |
-| `angelscript.preprocessor.defineInScripts` | `false` | When `false`, `#define WORD` inside `.as` scripts shows a syntax error. When `true`, script `#define` lines are accepted and turn on matching `#if` blocks. |
-| `angelscript.preprocessor.pragmaMode` | `"accept"` | Controls `#pragma` diagnostics: `"accept"` reports nothing, `"hint"` shows a hint, and `"error"` flags `#pragma` as an error. |
-| `angelscript.metadata.enabled` | `false` | When `true`, `[...]` metadata blocks before classes, interfaces, functions, and variables parse without syntax errors. |
+| `angelscript.preprocessor.elseSupport` | `false` | With `true`, `#else` can become the active branch when `#if` is false. With `false`, a false `#if` still excludes lines through `#endif`. |
+| `angelscript.preprocessor.elifSupport` | `false` | With `true`, the first matching branch in a chain with `#elif` is the one the editor analyzes. |
+| `angelscript.preprocessor.ifdefSupport` | `false` | With `true`, `#ifdef` and `#ifndef` select branches using defined words from sources such as `angelscript.define` and stub `#define` lines. |
+| `angelscript.preprocessor.defineInScripts` | `false` | With `true`, a `#define WORD` in an active part of a script can affect later `#if` checks. |
+| `angelscript.preprocessor.pragmaMode` | `"accept"` | For `#pragma`, `"accept"` is silent, `"hint"` shows a hint, and `"error"` reports an error. |
+| `angelscript.metadata.enabled` | `false` | With `true`, the editor accepts `[...]` metadata blocks before classes, interfaces, functions, and variables. |
 
 ## Formatting and `.clang-format`
 
-Use `angelscript.format.*` settings for quick style changes such as brace placement and spacing. If your workspace or a parent folder contains a `.clang-format`, `_clang-format`, or `.as-clang-format` file, the formatter reads it automatically and applies those rules instead. Supported options include `BasedOnStyle` presets, `Language: AngelScript` or `Cpp` sections, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks`, `ReflowComments`, and `// clang-format off` / `// clang-format on`.
+Set brace placement and spacing with `angelscript.format.*`. When you format a file, the formatter looks in its directory and walks up through parent folders for `.clang-format`, `_clang-format`, or `.as-clang-format`. The supported options it finds override the corresponding editor settings.
+
+You can use `BasedOnStyle`, `Language: AngelScript` or `Cpp` sections, `SpaceBeforeParens`, `PointerAlignment`, and `AllowShortBlocksOnASingleLine`. To leave a region alone, surround it with `// clang-format off` and `// clang-format on`.
 
 ## Path Variables
 
-Path settings accept these variables:
+You can use these variables in settings that accept paths, such as `angelscript.searchDirectories`.
 
 | Variable | Expands to |
 | :--- | :--- |
@@ -157,35 +158,32 @@ Path settings accept these variables:
 
 ## Contributed Commands
 
-Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`) or right-click files and folders in the Explorer:
+Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`). The Explorer also has commands for setting up modules and formatting stubs.
 
 | Command | Title | What it does |
 | :--- | :--- | :--- |
-| `angelscript.configureHostEnvironment` | **AngelScript: Configure Host Rules & Predefined API...** | Creates a rules template for your workspace. |
-| `angelscript.ignoreUnusedSymbol` | **AngelScript: Ignore Unused Symbol (Mark as Entry Point / Callback)** | Quick fix that adds a symbol to your rules exemptions. |
-| `angelscript.selectPredefined` | **AngelScript: Select Predefined Stub** | Switches the active `.as.predefined` file. |
-| `angelscript.selectStubs` | **AngelScript: Select Predefined Stubs** | Picks and merges multiple `.as.predefined` files. |
-| `angelscript.rescanWorkspace` | **AngelScript: Rescan Workspace** | Re-indexes all scripts and stubs in the workspace. |
-| `angelscript.statusMenu` | **AngelScript: AngelScript Status Menu** | Opens the status menu with active module and stub actions. |
-| `angelscript.switchActiveModule` | **AngelScript: Switch Active Module** | Switches which module is active in the editor. |
-| `angelscript.showServerLog` | **AngelScript: Show Server Log** | Opens the language server output channel. |
-| `angelscript.openLogsFolder` | **AngelScript: Open Logs Folder** | Opens the folder containing server log files. |
-| `angelscript.restartServer` | **AngelScript: Restart Server** | Restarts the language server process. |
-| `angelscript.setModuleEntryPoint` | **Set as Module Entry Point** | Explorer context menu on `.as` files to set a module entry point. |
-| `angelscript.setModuleFolder` | **Set as Module Folder** | Explorer context menu on folders to assign folder module ownership. |
-| `angelscript.formatPredefinedStub` | **Format Predefined Stub** | Explorer context menu on `.predefined` files to format API headers. |
-| `angelscript.clearLocalState` | **Clear Local Session Overrides** | Clears choices saved in local workspace session state. |
+| `angelscript.configureHostEnvironment` | AngelScript: Configure Host Rules & Predefined API... | Opens the setup menu for stubs and engine rules. |
+| `angelscript.ignoreUnusedSymbol` | AngelScript: Ignore Unused Symbol (Mark as Entry Point / Callback) | Adds the selected function or callback to the engine rules so it stops showing as unused. |
+| `angelscript.selectPredefined` | AngelScript: Select Predefined Stub | Picks the active stub. |
+| `angelscript.selectStubs` | AngelScript: Select Predefined Stubs | Picks several stubs to load together. |
+| `angelscript.rescanWorkspace` | AngelScript: Rescan Workspace | Scans the workspace again for scripts and stubs. |
+| `angelscript.statusMenu` | AngelScript: AngelScript Status Menu | Opens the menu for module and stub actions. |
+| `angelscript.switchActiveModule` | AngelScript: Switch Active Module | Chooses which module is active. |
+| `angelscript.showServerLog` | AngelScript: Show Server Log | Shows the language server output in VS Code. |
+| `angelscript.openLogsFolder` | AngelScript: Open Logs Folder | Opens the folder that contains the server logs. |
+| `angelscript.restartServer` | AngelScript: Restart Server | Restarts the language server. |
+| `angelscript.setModuleEntryPoint` | Set as Module Entry Point | Right-click an `.as` file to make it a module entry point. |
+| `angelscript.setModuleFolder` | Set as Module Folder | Right-click a folder to assign its scripts to a module. |
+| `angelscript.formatPredefinedStub` | Format Predefined Stub | Right-click a `.predefined` file to format its declarations. |
+| `angelscript.clearLocalState` | Clear Local Session Overrides | Clears the local module and stub choices and restores the workspace settings. |
 
 ## Debugger
 
-The extension includes a VS Code debugger (`type: "angelscript"`) with breakpoint validation, call stack view, and local variable inspection. You can connect over `dap`, `asdbg`, or `cdebugger` using `angelscript.debug.defaultProtocol` and `angelscript.debug.defaultPort` (default `9002`).
+Use `type: "angelscript"` in your VS Code debug configuration to set breakpoints and inspect the call stack and local variables. Choose `dap`, `asdbg`, or `cdebugger` with `angelscript.debug.defaultProtocol`. Set `angelscript.debug.defaultPort` to match your runtime. The default is `9002`.
 
 ## Building from Source
 
-Prerequisites:
-- C++20 compiler: MSVC 2022 on Windows, GCC 13+ or Clang 16+ on Linux or macOS.
-- CMake 3.22+ and Ninja (recommended).
-- Node.js 18+ and `npm` for the VS Code client.
+You’ll need a C++20 compiler and CMake 3.22 or later for the server. The client build uses Node.js and `npm`. Run these commands from the repository root.
 
 ```bash
 cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
@@ -363,4 +361,4 @@ cd client && npm install && npm run compile
 
 ---
 
-See also: [README](../README.md) | [Engine Rules Guide](rules.md) | [CHANGELOG.md](../CHANGELOG.md)
+[README](../README.md) | [Engine Rules Guide](RULES.md) | [CHANGELOG.md](../CHANGELOG.md)

@@ -4,27 +4,67 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-21
+
 ### Added
-- `angelscript_oracle --no-mixin-probe` skips the synthetic mixin subclasses, and its JSON marks messages that come from them with `probeOnly`.
-- Differential corpus (`server/tests/parity/differential`) replayed against the MCP bridge by `DifferentialCorpusTest`, and `server/scripts/differential-validate.py`, which lets the real compiler confirm each case before the server is compared with it.
-- `angel_lsp --mcp [--mcp-root <dir>]` serves an MCP bridge over stdio. Tools: `open_document`, `apply_edit`, `replace_document`, `diagnostics`, `hover`, `completion`, `signature_help`, `definition`, `document_symbols`; they drive an in-process language server like an editor would.
+
+- Run `angel_lsp --mcp [--mcp-root <dir>]` to serve an MCP bridge over stdio. It exposes `open_document`, `apply_edit`, `replace_document`, `diagnostics`, `hover`, `completion`, `signature_help`, `definition`, and `document_symbols` through an in-process language server.
+- Added a differential parity corpus in `server/tests/parity/differential`. `DifferentialCorpusTest` replays it through the MCP bridge, and `server/scripts/differential-validate.py` checks each case against the AngelScript compiler oracle before comparing server results.
+- Added `angelscript_oracle --no-mixin-probe` to skip synthetic mixin subclasses. Oracle JSON marks diagnostics from those subclasses with `probeOnly`.
+- Diagnostic disable pragmas accept multiple codes and an explanation, as in `// disable W103, W116 -- generated declarations` (#5).
+- Added `&in` and `&out` quick fixes for E144 on primitive `&inout` parameters (#10).
+- Added `angelscript.diagnostics.ignoredUnusedPaths` to suppress unused declaration warnings (W116–W120) in files matching workspace-relative globs (#11).
+- Added the opt-in `angelscript.diagnostics.reportMissingClassAccessor` setting. It reports W123 when a method accesses a field or property of the enclosing class without `this.` (#13).
+- Completion suggests qualifiers such as `explicit`, `const`, `final`, and `override` after constructor and method signatures where they apply.
+- Added support for AngelScript's variable type token (`?`), including qualified forms such as `?&in` in predefined signatures.
+- Report unresolved default argument expressions at call sites that rely on them (E262).
+- Report handles applied to host value types listed in `noHandleTypes` (E261). Configure the list in `angelscript.rules.json` or via `angelscript.engine.noHandleTypes`.
+- Pinpoint missing tokens in syntax diagnostics, including a ternary's `:`, a control header's closing `)`, and a missing `catch` after `try`.
+- Added `OperatorSiteIndex` to track operator uses for reference counts and conversion checks.
+
+### Changed
+
+- Split VS Code tests into a default `unit` run (`npm test`) and an opt-in `perf` run (`npm run test:perf`). The Mocha timeout now accommodates the first settings write after startup.
+- Moved the 300 MB peak-memory stress test into its own CTest entry (`angel_lsp_stress_memory`) so it measures its own process peak on Linux and macOS.
+- Reorganized analysis and LSP code into domain sublayers. Features consume indexed syntax facts through shared analysis services.
+- Consolidated duplicate structures and helpers across indexing, resolution, and feature handlers.
+- Recorded structural changes in the refactor ledger and strengthened checks for layer boundaries, AST traversal, and ledger coverage.
 
 ### Fixed
-- Completion no longer offers global symbols declared in workspace files the document does not `#include`, after `X::`, in a base-class list, or at the top level. `::Name` now offers only global symbols, not locals.
-- Member access on a local whose type is declared in the enclosing namespace (`namespace N { class S {} void f() { S s; s.x; } }`) is now checked: unknown members and private access are reported.
-- `A::missing()` is reported as an undefined identifier when `A` is a namespace that declares no `missing`.
-- MCP bridge: `diagnostics` retries only when the server answers ServerCancelled, tools on a document that was never opened fail at once, `completion` is ordered by `sortText` and reports `truncated`, `open_document` reads the file when `text` is null, and `initialize` answers with a protocol version the bridge supports.
+
+- Instance completion now finds class members when a namespace shares the class name (#12).
+- Completion filters globals from workspace files outside the document's include scope after `X::`, in base-class lists, and at the top level. A leading `::` restricts suggestions to global symbols.
+- Member access on locals of types declared in the enclosing namespace now reports unknown members and private access.
+- Report an undefined identifier for `A::missing()` when namespace `A` has no such function.
+- Fixed class reference counts in CodeLens and kept the counters on the class declaration line after edits. The server sends `workspace/codeLens/refresh` after committed analysis updates the index when supported and answers stale requests with `ContentModified` (#16).
+- CodeLens counts uses of typedefs, funcdefs, and resolved operator overloads.
+- Accept ternary expressions with two `void` branches.
+- Allow initializer-list elements to use non-explicit `opAssign` overloads, including numeric elements in an `array<string>` initializer.
+- Recognize `opConv(?&out)` and `opCast(?&out)` as conversions to the requested type.
+- Treat an `out` argument passed by a call in a variable initializer as assigned after the call.
+- Allow `cast<T>(expr)` to bind to a mutable object reference parameter where AngelScript permits it.
+- Resolve namespace-relative method parameter types in their declaring namespace, including when a class and namespace share a name.
+- Type-check indexed expressions in variable initializers. Initializing an `int` with an `array<Item@>` element reports `as-err-no-implicit-conversion`.
+- Accept `==` and `!=` comparisons between a handle and `null`.
+- Fix definition, hover, and signature help for inherited members and accessor calls.
+- Clear stale diagnostics when files outside configured modules are closed and resolve sibling includes during initial module scans.
+- The MCP bridge retries diagnostics only on `ServerCancelled`, rejects requests that require an open document when it is unopened, sorts completion by `sortText` and reports `truncated`, reads from disk when `open_document` receives null text, and returns a supported protocol version during initialization.
 
 ### Removed
 
-- Built-in engine profiles: the `engineProfile` setting key (now ignored if present), the `--engine-profile`/`--profile` server flags and the embedded profile stubs. Predefined API stubs on disk (`.as.predefined`) are the only source of engine types.
-- Virtual Mixin Documents: the synthetic `angelscript-virtual://` documents, the `angelscript.viewMixinExpansion`, `angelscript.peekMixinInline` and `angelscript.openPhysicalSource` commands, the `angelscript.enableVirtualMixinDocuments` and `angelscript.codeLens.showMixinExpansion` settings, the matching `--enable-virtual-mixin-documents` and `--codelens-mixin-expansion` server flags, and the `angelscript/virtualDocumentContent` request. Mixin members are still resolved in their host class through the normal symbol table.
+- Removed built-in engine profiles, including embedded profile stubs and the `--engine-profile` and `--profile` flags. The `engineProfile` setting is ignored. Use on-disk `.as.predefined` stubs for engine types.
+- Removed synthetic `angelscript-virtual://` mixin documents, the `angelscript.viewMixinExpansion`, `angelscript.peekMixinInline`, and `angelscript.openPhysicalSource` commands, the `angelscript.enableVirtualMixinDocuments` and `angelscript.codeLens.showMixinExpansion` settings, the `--enable-virtual-mixin-documents` and `--codelens-mixin-expansion` flags, and the `angelscript/virtualDocumentContent` request. Mixin members still resolve in their host class.
 
-### Fixed
+### Performance
 
-- Index expressions such as `items[0]` are now type-checked when they initialise a variable: `int x = items[0];` over an `array<Item@>` reports `as-err-no-implicit-conversion`, matching the AngelScript compiler.
-- `vscode-test` runs are split into `unit` (default `npm test`) and `perf` (`npm run test:perf`), and the first settings write no longer trips mocha's 2 s default.
-- The 300 MB peak-memory ceiling test (`Massive Workspace Stress`) now runs as its own `ctest` entry (`angel_lsp_stress_memory`), so it measures only its own process instead of the RSS accumulated by the rest of the suite on Linux and macOS.
+- Reduced `IndexedSyntaxNode` to 24 bytes, trimmed excess capacity after indexing, and compacted frequently used analysis structs and indexed facts. Removed `ParameterInformation::rawText`.
+- Indexed enclosing class spans, cached repeated semantic token requests, and reduced work in semantic token generation, lvalue analysis, and inlay hints.
+- Reused exact syntax revisions for pull diagnostics on the owning thread and prioritized open documents within the syntax cache budget.
+- Trimmed free heap memory after analysis bursts on Windows and glibc systems and limited the number of glibc heap arenas.
+- Added process memory telemetry on macOS.
+
+---
+**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.1.7...v1.2.0
 
 ## [1.1.7] - 2026-10-31
 

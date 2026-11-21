@@ -5,7 +5,7 @@ This script acts as the Single Source of Truth generator for settings documentat
   1. Reads all declared settings, types, and defaults directly from client/package.json.
   2. Resolves localized descriptions from client/package.nls.json (English) and client/package.nls.es.json (Spanish).
   3. Outputs formatted Markdown tables for any category or the entire catalog.
-  4. With --update, automatically syncs the tables into docs/guide.md and docs/guide.es.md between:
+  4. With --update, automatically syncs the tables into docs/GUIDE.md and docs/GUIDE.es.md between:
      <!-- SETTINGS_CATALOG_START --> ... <!-- SETTINGS_CATALOG_END -->
   5. With --check, asserts that the documentation matches package.json and NLS tables (for CI / check-quality.py).
 """
@@ -26,8 +26,8 @@ MANIFEST_PATH = CLIENT_DIR / "package.json"
 NLS_EN_PATH = CLIENT_DIR / "package.nls.json"
 NLS_ES_PATH = CLIENT_DIR / "package.nls.es.json"
 
-GUIDE_EN = REPO_ROOT / "docs" / "guide.md"
-GUIDE_ES = REPO_ROOT / "docs" / "guide.es.md"
+GUIDE_EN = REPO_ROOT / "docs" / "GUIDE.md"
+GUIDE_ES = REPO_ROOT / "docs" / "GUIDE.es.md"
 
 CATALOG_START_MARKER = "<!-- SETTINGS_CATALOG_START -->"
 CATALOG_END_MARKER = "<!-- SETTINGS_CATALOG_END -->"
@@ -200,8 +200,8 @@ def main():
     )
     parser.add_argument("--locale", choices=["en", "es"], default="en", help="Language for output (en or es)")
     parser.add_argument("--category", type=str, default="", help="Specific category to print (e.g. inlayHints, workspace, engine, or empty for all)")
-    parser.add_argument("--update", action="store_true", help="Update docs/guide.md and docs/guide.es.md in-place")
-    parser.add_argument("--check", action="store_true", help="Check that docs/guide.md and docs/guide.es.md match package.json")
+    parser.add_argument("--update", action="store_true", help="Update docs/GUIDE.md and docs/GUIDE.es.md in-place")
+    parser.add_argument("--check", action="store_true", help="Check that docs/GUIDE.md and docs/GUIDE.es.md match package.json")
 
     args = parser.parse_args()
 
@@ -215,8 +215,8 @@ def main():
     if args.update:
         updated_en = inject_catalog_into_readme(GUIDE_EN, catalog_en)
         updated_es = inject_catalog_into_readme(GUIDE_ES, catalog_es)
-        print(f"Updated docs/guide.md (EN): {updated_en}")
-        print(f"Updated docs/guide.es.md (ES): {updated_es}")
+        print(f"Updated docs/GUIDE.md (EN): {updated_en}")
+        print(f"Updated docs/GUIDE.es.md (ES): {updated_es}")
         return 0
 
     if args.check:
@@ -225,9 +225,9 @@ def main():
         if not ok_en or not ok_es:
             print("[FAILED] Guide settings catalogs are out of date with client/package.json.")
             if not ok_en:
-                print("  - docs/guide.md does not match generated English catalog or markers missing.")
+                print("  - docs/GUIDE.md does not match generated English catalog or markers missing.")
             if not ok_es:
-                print("  - docs/guide.es.md does not match generated Spanish catalog or markers missing.")
+                print("  - docs/GUIDE.es.md does not match generated Spanish catalog or markers missing.")
             print("Run 'python server/scripts/sync-readme-settings.py --update' to re-synchronize.")
             return 1
         print("[PASSED] Guide settings catalogs are completely synchronized with package.json.")

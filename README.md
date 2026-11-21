@@ -2,10 +2,10 @@
 
 **[English](README.md)** | **[Español](docs/README.es.md)**
 
-[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Gaftherman.angelscript-gaftherman.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
-[![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Gaftherman.angelscript-gaftherman.svg?color=success)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
+[![Marketplace](https://vsmarketplacebadges.dev/version-short/Gaftherman.angelscript-gaftherman.svg)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
+[![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/Gaftherman.angelscript-gaftherman.svg)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/Gaftherman/badge.svg)](https://hub.xerj.org/contributors/Gaftherman)
+[![XERJ Corpus Hub contributor](https://img.shields.io/badge/XERJ%20Corpus%20Hub-contributor-1f6feb)](https://hub.xerj.org/contributors/Gaftherman)
 
 Angelscript adds autocomplete, hover documentation, error checks, and code navigation for AngelScript (`.as`) files in VS Code.
 
@@ -51,8 +51,8 @@ Each game configures AngelScript with its own language rules, such as whether `f
 
 ## Documentation
 
-- [Detailed Guide](docs/guide.md) — workspace examples, predefined files, engine options, commands, and full settings catalog.
-- [Engine Rules Guide](docs/rules.md) — how to write `*.angelscript.rules.json` files.
+- [Detailed Guide](docs/GUIDE.md) — workspace examples, predefined files, engine options, commands, and full settings catalog.
+- [Engine Rules Guide](docs/RULES.md) — how to write `*.angelscript.rules.json` files.
 - [CHANGELOG.md](CHANGELOG.md) — release history and changes.
 
 ## Building from source

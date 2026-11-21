@@ -1,18 +1,18 @@
 # Guía detallada de Angelscript
 
-**[English](guide.md)** | **[Español](guide.es.md)** | **[README](README.es.md)**
+[English](GUIDE.md) | [Español](GUIDE.es.md) | [README](README.es.md)
 
-Esta guía explica la configuración del espacio de trabajo, los archivos de API predefinidos, las reglas del motor, las opciones de dialecto, los comandos y todas las configuraciones de la extensión.
+Empieza por el ejemplo que más se parezca a cómo tu juego carga los scripts. Después ajusta la API y las reglas del lenguaje que verá VS Code.
 
 ## Ejemplos de configuración del espacio de trabajo
 
-Crea o edita `.vscode/settings.json` dentro de `${workspaceFolder}` según cómo organice los scripts tu juego.
+Pon el ejemplo en `.vscode/settings.json`, dentro de `${workspaceFolder}`. En `angelscript.modules`, usa `folder` para agrupar todo lo que hay bajo una carpeta o `entry` para partir de un script y seguir sus `#include`.
 
-Cuando `angelscript.modules` está definido, el editor agrupa los scripts en unidades de compilación llamadas módulos. Así evita que scripts sin relación en la misma carpeta choquen entre sí u oculten errores en tipos `shared`.
+Con los módulos definidos, el editor puede comprobar si una declaración `external shared` tiene su definición en otro módulo.
 
 ### Ejemplo A: Sven Co-op (módulo por carpeta)
 
-Usa esta opción cuando todos los scripts dentro de la carpeta de un mapa pertenecen a un mismo módulo.
+Si todos los scripts de `maps/hcas` se compilan juntos, asigna un módulo a esa carpeta.
 
 ```jsonc
 {
@@ -39,7 +39,7 @@ Usa esta opción cuando todos los scripts dentro de la carpeta de un mapa perten
 
 ### Ejemplo B: Sven Co-op (módulo por script de entrada)
 
-Usa esta opción cuando tu juego compila los scripts a partir de un único archivo principal de registro.
+Si tu juego empieza por `ins2_register.as`, pon ese archivo como punto de entrada. Los scripts que incluye quedan en el mismo módulo.
 
 ```jsonc
 {
@@ -59,7 +59,7 @@ Usa esta opción cuando tu juego compila los scripts a partir de un único archi
 
 ### Ejemplo C: Motor genérico o proyecto independiente
 
-Usa esta opción en juegos o motores propios con carpetas de inclusión y archivos de API personalizados.
+Si tu motor guarda los archivos de inclusión y las declaraciones de la API en carpetas distintas, indica cada ruta por separado.
 
 ```jsonc
 {
@@ -80,73 +80,74 @@ Usa esta opción en juegos o motores propios con carpetas de inclusión y archiv
 
 ## Archivos de API predefinidos (`.as.predefined`)
 
-Un archivo `.as.predefined` es un archivo que lista lo que el juego ofrece a los scripts (conocido como stub). El juego registra clases, funciones, enumeraciones, variables globales y palabras `#define` desde C++, y los scripts los usan al ejecutarse. Declararlos en un stub permite que el autocompletado, el hover y la revisión de tipos reconozcan la API del juego.
+Declara en un stub `.as.predefined` la API que tu juego registra desde C++. Así el editor puede sugerir las clases y funciones del juego, mostrar sus firmas en el hover y revisar cómo las usas.
 
 ### Cómo se cargan los stubs
 
-- **Búsqueda automática**: Todo archivo terminado en `.as.predefined` dentro de `${workspaceFolder}` se detecta automáticamente.
-- **Elegir un stub**: Si hay varios en el proyecto, indica el archivo activo en `angelscript.predefined.active`. Si queda vacío, el editor carga el primero que encuentra.
-- **Combinar todos**: Asigna `"all"` a `angelscript.predefined.active` para cargar juntos todos los stubs encontrados.
-- **Archivos externos**: Usa `angelscript.predefinedFiles` cuando el archivo esté fuera de `${workspaceFolder}`, o utiliza variables como `${userHome}` y `${env:NOMBRE}`.
-- **Selector interactivo**: Haz clic en **AngelScript IntelliSense** en la barra de estado, o ejecuta **Seleccionar stub predefinido** o **Seleccionar stubs predefinidos** desde la Paleta de comandos.
+- La búsqueda en el workspace usa el sufijo de `angelscript.predefinedExtension`. El valor inicial es `.as.predefined`.
+- Elige un stub con `angelscript.predefined.active`. Si lo dejas vacío, se carga el primero por orden de ruta. Con `"all"`, se cargan todos los que se encontraron.
+- Agrega a `angelscript.predefinedFiles` los stubs que quieras cargar siempre. Pueden estar fuera de `${workspaceFolder}` y sus rutas pueden usar `${userHome}` o `${env:NOMBRE}`.
+- Si prefieres elegirlos desde VS Code, busca **Seleccionar stub predefinido** o **Seleccionar stubs predefinidos** en la paleta de comandos. También puedes abrir el menú de acciones desde el indicador de estado **AngelScript IntelliSense**.
 
-Para Sven Co-op 5.26+, este repositorio incluye un stub mantenido en [predefined/sven.as.predefined](../predefined/sven.as.predefined). Puedes usar el mismo formato para otros juegos como Trackmania Nations Forever u OpenSiv3D.
+Puedes tomar como ejemplo el stub de Sven Co-op 5.26 en [predefined/sven.as.predefined](../predefined/sven.as.predefined).
 
 ## Reglas del motor (`*.angelscript.rules.json`)
 
-Muchos juegos llaman funciones como `MapInit` o crean clases de entidad desde C++ sin invocarlas desde otro archivo `.as`. Un archivo `*.angelscript.rules.json` indica al editor cuáles son esos puntos de entrada, conecta propiedades delegadas como `BaseClass` con las clases nativas del stub y añade reglas de seguridad para tu equipo o motor.
+Si el motor llama a `MapInit` desde C++, agrégalo a las reglas para que el editor deje de marcarlo como función sin usar. Las reglas también sirven para asociar `BaseClass` con una clase nativa del stub o señalar llamadas y declaraciones que tu motor restringe.
 
-- **Carga automática**: Coloca un archivo `*.angelscript.rules.json` en `${workspaceFolder}` o junto a tu archivo `.as.predefined` activo.
-- **Ruta explícita**: Define `angelscript.rulesFile` en `.vscode/settings.json` para apuntar a un archivo concreto.
-- **Crear plantilla**: Ejecuta **Configurar reglas del motor y API predefinida...** desde la Paleta de comandos.
+- Guarda `angelscript.rules.json` en la raíz del workspace para que se cargue automáticamente. El servidor también busca archivos `*.angelscript.rules.json` junto a los stubs y en la raíz.
+- Para elegir un archivo concreto, indica su ruta con `angelscript.rulesFile` en `.vscode/settings.json`.
+- Para crear un archivo inicial, abre **Configurar reglas del motor y API predefinida...** desde la paleta de comandos y elige la opción para crear las reglas.
 
-Para ver ejemplos campo por campo y lo que cambia en el editor, consulta la [Guía de reglas del motor](rules.es.md) y las reglas de referencia para Sven Co-op en [predefined/sven.angelscript.rules.json](../predefined/sven.angelscript.rules.json).
+Consulta los ejemplos de la [Guía de reglas del motor](RULES.es.md) y el archivo [predefined/sven.angelscript.rules.json](../predefined/sven.angelscript.rules.json).
 
 ## Opciones del motor y qué cambia en el editor
 
-Cada juego configura AngelScript con sus propias reglas. Los ajustes siguientes reflejan esas banderas del motor (`asEP_*`) y las opciones del preprocesador.
+Usa los mismos valores que tu motor usa para las opciones `asEP_*` y el preprocesador. Los valores de las tablas son los que trae la extensión.
 
 ### Opciones de lenguaje y sintaxis (`angelscript.engine.*`)
 
 | Configuración | Por defecto | Qué cambia en el editor |
 | :--- | :--- | :--- |
-| `angelscript.engine.allowUnsafeReferences` | `false` | Con `false`, parámetros como `int &x` muestran un error pidiendo `&in` o `&out`. Con `true`, se acepta `&` sin calificador en tipos primitivos y por valor. |
-| `angelscript.engine.privatePropAsProtected` | `false` | Con `false`, leer un miembro `private` de la clase padre desde una clase hija marca un error de acceso. Con `true`, las clases hijas pueden usarlo y aparece en el autocompletado. |
-| `angelscript.engine.disallowGlobalVars` | `false` | Con `true`, cualquier variable declarada fuera de una función o clase marca error. Con `false`, las variables globales están permitidas. |
-| `angelscript.engine.propertyAccessorMode` | `2` | Con `2`, cualquier método `get_X()` o `set_X(v)` funciona como propiedad `X` en autocompletado y tipos. Con `3`, solo cuentan los métodos con `property` y los demás marcan error de miembro desconocido. |
-| `angelscript.engine.allowMultilineStrings` | `false` | Con `false`, los saltos de línea dentro de `"..."` marcan error y exigen usar `"""..."""`. Con `true`, se aceptan cadenas `"..."` en varias líneas. |
-| `angelscript.engine.boolConversionMode` | `0` | Con `0`, usar una clase en `if (obj)` marca error aunque defina una conversión a `bool`. Con `1`, las clases con `opImplConv` u `opConv` a `bool` se aceptan en condiciones. |
-| `angelscript.engine.useCharacterLiterals` | `0` | Con `0`, `'A'` se toma como `string`, así que asignarlo a `int` marca error de tipo. Con `1`, `'A'` se interpreta como código numérico entero. |
-| `angelscript.engine.disallowValueAssignForRef` | `false` | Con `true`, escribir `a = b` en clases de referencia marca error y pide asignación de handle `@a = @b`. Con `false`, `a = b` busca `opAssign`. |
-| `angelscript.engine.alterSyntaxNamedArgs` | `0` | Con `0`, los argumentos con nombre exigen `nombre: valor` y `nombre = valor` marca error. Con `1`, `nombre = valor` muestra advertencia. Con `2`, ambas formas se aceptan sin avisos. |
-| `angelscript.engine.disableIntegerDivision` | `false` | Con `false`, `1 / 2` conserva tipo entero. Con `true`, dividir enteros produce un decimal flotante y asignarlo a `int` activa la comprobación de conversión. |
-| `angelscript.engine.disallowEmptyListElements` | `false` | Con `true`, dejar huecos como `{1, , 3}` marca error. Con `false`, se permiten elementos vacíos en listas de inicialización. |
-| `angelscript.engine.foreachSupport` | `true` | Con `true`, los bucles `foreach` se analizan y deducen el tipo de la variable. Con `false`, cualquier `foreach` marca un error de función no compatible. |
-| `angelscript.engine.requireEnumScope` | `false` | Con `true`, los valores de enum deben escribirse con prefijo como `Color::Red`, los nombres sueltos marcan error y el autocompletado añade el prefijo. Con `false`, se aceptan nombres directos. |
-| `angelscript.engine.alwaysImplDefaultConstruct` | `false` | Con `false`, definir un constructor como `Item(int id)` oculta el constructor vacío y `Item x;` marca error salvo que escribas `Item()`. Con `true`, `Item x;` siempre se acepta. |
-| `angelscript.engine.allowUnicodeIdentifiers` | `false` | Con `false`, letras no ASCII en nombres de variables o funciones marcan error de sintaxis. Con `true`, se aceptan identificadores UTF-8. |
-| `angelscript.engine.ignoreDuplicateSharedIntf` | `false` | Con `false`, repetir una `shared interface` en varios archivos marca error de declaración duplicada. Con `true`, las definiciones idénticas se unifican sin error. |
-| `angelscript.engine.compilerWarnings` | `1` | `0` oculta las advertencias del compilador, `1` las muestra como subrayados amarillos y `2` las convierte en errores rojos. |
-| `angelscript.engine.noHandleTypes` | `[]` | Nombres de tipos por valor (p. ej. `["string", "datetime"]`) que no admiten handles de objeto (`@`), reportando `as-err-handle-on-no-handle-type` (`E261`). Se combina (unión de conjuntos) con `noHandleTypes` en `angelscript.rules.json`. |
+| `angelscript.engine.allowUnsafeReferences` | `false` | Ponlo en `true` si tu motor acepta `&` sin dirección en parámetros de tipos primitivos o por valor, como `int &x`. Con `false`, indica una dirección como `&in` o `&out`. |
+| `angelscript.engine.privatePropAsProtected` | `false` | Con `true`, una clase derivada puede acceder a miembros `private` de su clase base. |
+| `angelscript.engine.disallowGlobalVars` | `false` | Con `true`, el editor marca las declaraciones de variables globales. |
+| `angelscript.engine.propertyAccessorMode` | `2` | Con `2`, puedes usar `obj.X` si hay un `get_X()` o `set_X(v)`. Con `3`, agrega `property` al accesor para usar `obj.X`. |
+| `angelscript.engine.allowMultilineStrings` | `false` | Con `true`, las cadenas entre comillas dobles pueden ocupar varias líneas. Con `false`, usa comillas triples (`"""..."""`) para una cadena multilínea. |
+| `angelscript.engine.boolConversionMode` | `0` | Con `1`, `if (obj)` puede usar el `opImplConv` u `opConv` a `bool` de la clase. Con `0`, escribe la conversión de forma explícita. |
+| `angelscript.engine.useCharacterLiterals` | `0` | Con `0`, `'A'` es una cadena y asignarla a `int` da un error de tipo. Con `1`, se interpreta como el código numérico del carácter. |
+| `angelscript.engine.disallowValueAssignForRef` | `false` | Con `true`, el editor marca `a = b` si el objeto es de un tipo por referencia. Para reasignar el handle, escribe `@a = @b`. |
+| `angelscript.engine.alterSyntaxNamedArgs` | `0` | `name: value` funciona en los tres modos. Para `name = value`, `0` muestra un error, `1` da un aviso y `2` lo acepta. |
+| `angelscript.engine.disableIntegerDivision` | `false` | Con `false`, `1 / 2` tiene tipo entero. Con `true`, el editor trata la división entre enteros como una expresión de punto flotante. |
+| `angelscript.engine.disallowEmptyListElements` | `false` | Con `true`, el editor marca el hueco de `{1, , 3}`. |
+| `angelscript.engine.foreachSupport` | `true` | Con `false`, el editor marca `foreach` como una instrucción que el motor no admite. |
+| `angelscript.engine.requireEnumScope` | `false` | Con `true`, escribe `Color::Red`. El editor marca `Red` si aparece sin el nombre del enum. |
+| `angelscript.engine.alwaysImplDefaultConstruct` | `false` | Con `true`, una clase con `Item(int id)` recibe también un constructor implícito sin argumentos. Con `false`, declara `Item()` si quieres escribir `Item x;`. |
+| `angelscript.engine.allowUnicodeIdentifiers` | `false` | Con `true`, el editor acepta letras fuera de ASCII en los identificadores. |
+| `angelscript.engine.ignoreDuplicateSharedIntf` | `false` | Con `true`, puedes repetir una declaración idéntica de `shared interface` en varios archivos sin que el editor marque un duplicado. |
+| `angelscript.engine.compilerWarnings` | `1` | `0` oculta los avisos del compilador, `1` los muestra como advertencias y `2` los muestra como errores. |
+| `angelscript.engine.noHandleTypes` | `[]` | Incluye los tipos que tu motor registra sin soporte para handles, como `["string", "datetime"]`. Un handle a cualquiera de esos tipos produce `as-err-handle-on-no-handle-type` (`E261`). La lista se combina con `noHandleTypes` de `angelscript.rules.json`. |
 
 ### Opciones de preprocesador y metadatos
 
 | Configuración | Por defecto | Qué cambia en el editor |
 | :--- | :--- | :--- |
-| `angelscript.preprocessor.elseSupport` | `false` | Con `false`, `#else` se ignora y todo bloque tras un `#if` falso sigue atenuado y omitido hasta `#endif`. Con `true`, la rama `#else` pasa a estar activa cuando `#if` es falso. |
-| `angelscript.preprocessor.elifSupport` | `false` | Con `true`, las cadenas `#elif` se evalúan y la primera rama coincidente se analiza en lugar de quedar atenuada. |
-| `angelscript.preprocessor.ifdefSupport` | `false` | Con `false`, `#ifdef` y `#ifndef` marcan errores de sintaxis. Con `true`, activan o atenúan bloques según `angelscript.define` y los `#define` del stub. |
-| `angelscript.preprocessor.defineInScripts` | `false` | Con `false`, `#define PALABRA` dentro de archivos `.as` marca error de sintaxis. Con `true`, los `#define` en scripts activan los bloques `#if` correspondientes. |
-| `angelscript.preprocessor.pragmaMode` | `"accept"` | Controla cómo se reporta `#pragma`: `"accept"` no muestra avisos, `"hint"` muestra una sugerencia y `"error"` lo marca como error. |
-| `angelscript.metadata.enabled` | `false` | Con `true`, los bloques de metadatos `[...]` antes de clases, interfaces, funciones y variables se aceptan sin error de sintaxis. |
+| `angelscript.preprocessor.elseSupport` | `false` | Con `true`, `#else` puede activar la otra rama si `#if` es falso. Con `false`, un `#if` falso excluye todo hasta `#endif`. |
+| `angelscript.preprocessor.elifSupport` | `false` | Con `true`, el editor analiza la primera rama que coincida en una cadena con `#elif`. |
+| `angelscript.preprocessor.ifdefSupport` | `false` | Con `true`, `#ifdef` y `#ifndef` eligen ramas según las palabras definidas, por ejemplo con `angelscript.define` o un `#define` del stub. |
+| `angelscript.preprocessor.defineInScripts` | `false` | Con `true`, un `#define WORD` en una parte activa del script puede cambiar qué ramas de `#if` se analizan más adelante. |
+| `angelscript.preprocessor.pragmaMode` | `"accept"` | Para `#pragma`, `"accept"` no muestra ningún diagnóstico, `"hint"` da una sugerencia y `"error"` marca un error. |
+| `angelscript.metadata.enabled` | `false` | Con `true`, el editor acepta bloques de metadatos `[...]` antes de clases, interfaces, funciones y variables. |
 
 ## Formato y `.clang-format`
 
-Usa las opciones `angelscript.format.*` para ajustes rápidos como el estilo de llaves o espacios. Si tu espacio de trabajo o una carpeta superior contiene `.clang-format`, `_clang-format` o `.as-clang-format`, el formateador lo carga automáticamente y usa sus reglas. Incluye soporte para presets `BasedOnStyle`, secciones `Language: AngelScript` o `Cpp`, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks`, `ReflowComments` y comentarios `// clang-format off` / `// clang-format on`.
+Ajusta las llaves y los espacios con `angelscript.format.*`. Al formatear, el editor busca `.clang-format`, `_clang-format` o `.as-clang-format` en la carpeta del archivo y en las carpetas superiores. Si encuentra opciones compatibles, las aplica por encima de los ajustes equivalentes del editor.
+
+Puedes usar `BasedOnStyle`, secciones `Language: AngelScript` o `Cpp`, y opciones como `SpaceBeforeParens`, `PointerAlignment` y `AllowShortBlocksOnASingleLine`. Si quieres conservar el formato de un bloque, rodéalo con `// clang-format off` y `// clang-format on`.
 
 ## Variables de ruta
 
-Las opciones de ruta aceptan estas variables:
+Puedes usar estas variables en ajustes que reciben rutas, como `angelscript.searchDirectories`.
 
 | Variable | Significado |
 | :--- | :--- |
@@ -157,35 +158,32 @@ Las opciones de ruta aceptan estas variables:
 
 ## Comandos disponibles
 
-Abre la Paleta de comandos (`Ctrl+Shift+P` o `Cmd+Shift+P`) o haz clic derecho en archivos y carpetas del Explorador:
+Abre la paleta de comandos (`Ctrl+Shift+P` o `Cmd+Shift+P`). En el Explorador también hay comandos para configurar módulos y dar formato a los stubs.
 
 | Comando | Título | Qué hace |
 | :--- | :--- | :--- |
-| `angelscript.configureHostEnvironment` | **AngelScript: Configurar reglas del motor y API predefinida...** | Crea una plantilla de reglas para tu proyecto. |
-| `angelscript.ignoreUnusedSymbol` | **AngelScript: Ignorar símbolo no usado (marcar como punto de entrada / callback)** | Corrección rápida que añade el símbolo a las exenciones de tus reglas. |
-| `angelscript.selectPredefined` | **AngelScript: Seleccionar stub predefinido** | Cambia el archivo `.as.predefined` activo. |
-| `angelscript.selectStubs` | **AngelScript: Seleccionar stubs predefinidos** | Selecciona y combina varios archivos `.as.predefined`. |
-| `angelscript.rescanWorkspace` | **AngelScript: Volver a examinar el espacio de trabajo** | Reindexa todos los scripts y stubs del proyecto. |
-| `angelscript.statusMenu` | **AngelScript: Menu de estado de AngelScript** | Abre el menú con el módulo activo, stub y acciones rápidas. |
-| `angelscript.switchActiveModule` | **AngelScript: Cambiar módulo activo** | Cambia el módulo activo analizado en el editor. |
-| `angelscript.showServerLog` | **AngelScript: Mostrar registro del servidor** | Muestra el canal de salida del servidor de lenguaje. |
-| `angelscript.openLogsFolder` | **AngelScript: Abrir carpeta de registros** | Abre la carpeta donde se guardan los registros del servidor. |
-| `angelscript.restartServer` | **AngelScript: Reiniciar servidor** | Reinicia el proceso del servidor de lenguaje. |
-| `angelscript.setModuleEntryPoint` | **Definir como punto de entrada del módulo** | Menú contextual en archivos `.as` para fijar el archivo de entrada de un módulo. |
-| `angelscript.setModuleFolder` | **Definir como carpeta del módulo** | Menú contextual en carpetas para asignar pertenencia de un módulo. |
-| `angelscript.formatPredefinedStub` | **Formatear stub predefinido** | Menú contextual en archivos `.predefined` para dar formato a las declaraciones. |
-| `angelscript.clearLocalState` | **Limpiar anulaciones de sesión local** | Borra elecciones guardadas en el estado local del espacio de trabajo. |
+| `angelscript.configureHostEnvironment` | AngelScript: Configurar reglas del motor y API predefinida... | Abre el menú para configurar los stubs o las reglas del motor. |
+| `angelscript.ignoreUnusedSymbol` | AngelScript: Ignorar símbolo no usado (marcar como punto de entrada / callback) | Agrega la función o el callback a las reglas para que deje de aparecer como símbolo sin usar. |
+| `angelscript.selectPredefined` | AngelScript: Seleccionar stub predefinido | Elige el stub activo. |
+| `angelscript.selectStubs` | AngelScript: Seleccionar stubs predefinidos | Selecciona varios stubs para cargarlos juntos. |
+| `angelscript.rescanWorkspace` | AngelScript: Volver a examinar el espacio de trabajo | Vuelve a buscar los scripts y stubs del workspace. |
+| `angelscript.statusMenu` | AngelScript: Menu de estado de AngelScript | Abre el menú de acciones para módulos y stubs. |
+| `angelscript.switchActiveModule` | AngelScript: Cambiar módulo activo | Elige el módulo activo. |
+| `angelscript.showServerLog` | AngelScript: Mostrar registro del servidor | Muestra la salida del servidor de lenguaje en VS Code. |
+| `angelscript.openLogsFolder` | AngelScript: Abrir carpeta de registros | Abre la carpeta de registros del servidor. |
+| `angelscript.restartServer` | AngelScript: Reiniciar servidor | Reinicia el servidor de lenguaje. |
+| `angelscript.setModuleEntryPoint` | Definir como punto de entrada del módulo | Haz clic derecho en un archivo `.as` para usarlo como punto de entrada de un módulo. |
+| `angelscript.setModuleFolder` | Definir como carpeta del módulo | Haz clic derecho en una carpeta para asignar sus scripts a un módulo. |
+| `angelscript.formatPredefinedStub` | Formatear stub predefinido | Haz clic derecho en un archivo `.predefined` para formatear sus declaraciones. |
+| `angelscript.clearLocalState` | Limpiar anulaciones de sesión local | Borra las selecciones locales de módulos y stubs y recupera los ajustes del workspace. |
 
 ## Depurador
 
-La extensión incluye un depurador para VS Code (`type: "angelscript"`) con validación de puntos de interrupción, pila de llamadas e inspección de variables locales. Puedes conectarte por `dap`, `asdbg` o `cdebugger` mediante `angelscript.debug.defaultProtocol` y `angelscript.debug.defaultPort` (puerto `9002` por defecto).
+Usa `type: "angelscript"` en la configuración de depuración de VS Code para poner puntos de interrupción y revisar la pila de llamadas y las variables locales. Elige `dap`, `asdbg` o `cdebugger` con `angelscript.debug.defaultProtocol` y ajusta `angelscript.debug.defaultPort` al puerto del motor. El valor inicial es `9002`.
 
 ## Compilar desde el código fuente
 
-Requisitos previos:
-- Compilador C++20: MSVC 2022 en Windows, GCC 13+ o Clang 16+ en Linux o macOS.
-- CMake 3.22+ y Ninja (recomendado).
-- Node.js 18+ y `npm` para el cliente de VS Code.
+Para compilar el servidor necesitas un compilador C++20 y CMake 3.22 o posterior. Para el cliente necesitas Node.js y `npm`. Ejecuta estos comandos desde la raíz del repositorio.
 
 ```bash
 cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
@@ -363,4 +361,4 @@ cd client && npm install && npm run compile
 
 ---
 
-Ver también: [README](README.es.md) | [Guía de reglas del motor](rules.es.md) | [CHANGELOG.md](../CHANGELOG.md)
+[README](README.es.md) | [Guía de reglas del motor](RULES.es.md) | [CHANGELOG.md](../CHANGELOG.md)
