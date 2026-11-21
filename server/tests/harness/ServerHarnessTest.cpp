@@ -102,6 +102,12 @@ void WaitForCount(test::ScriptedStream& stream, const std::string& needle, size_
     stream.WaitForCount(needle, times);
 }
 
+/** @brief Queues a barrier until the startup workspace scan has finished. */
+void WaitForStartupWorkspaceScan(test::ScriptedStream& stream)
+{
+    stream.PushAction([&stream]() { WaitForCount(stream, "Startup phase 'workspace scan (total)'", 1); });
+}
+
 /** @brief Drives a Server through a scripted message sequence and returns everything it wrote. */
 std::string RunScript(const config::ServerConfig& config, test::ScriptedStream& stream)
 {
@@ -2425,6 +2431,7 @@ TEST_CASE("Server - Pull diagnostics return findings without publishing a second
     test::ScriptedStream stream;
     stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    WaitForStartupWorkspaceScan(stream);
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
     // The analyzer debounces for 200ms on its own thread and the cache is filled by the publish
@@ -2649,6 +2656,7 @@ TEST_CASE("Server - A second pull of an unedited document is answered unchanged"
         test::ScriptedStream stream;
         stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
         stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        WaitForStartupWorkspaceScan(stream);
         stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
         stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
@@ -2731,6 +2739,7 @@ TEST_CASE("Server - workspace/diagnostic reports the documents already analysed"
     test::ScriptedStream stream;
     stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    WaitForStartupWorkspaceScan(stream);
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
@@ -3868,6 +3877,7 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
     test::ScriptedStream stream;
     stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    WaitForStartupWorkspaceScan(stream);
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), broken));
 
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
@@ -4070,6 +4080,7 @@ TEST_CASE("Server - A client that pulls diagnostics is not also sent them")
                 R"("workspaceFolders":[{"uri":")" +
                 fixture.RootUri() + R"(","name":"fixture"}]}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    WaitForStartupWorkspaceScan(stream);
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
@@ -4133,6 +4144,7 @@ TEST_CASE("Server - A pulling client receives an empty report when clean on stri
                 R"("workspaceFolders":[{"uri":")" +
                 fixture.RootUri() + R"(","name":"fixture"}]}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    WaitForStartupWorkspaceScan(stream);
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), brokenSource));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
@@ -4181,6 +4193,7 @@ TEST_CASE("Server - A pulling client receives an empty report when clean on here
                 R"("workspaceFolders":[{"uri":")" +
                 fixture.RootUri() + R"(","name":"fixture"}]}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    WaitForStartupWorkspaceScan(stream);
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), brokenSource));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
@@ -8209,6 +8222,7 @@ TEST_CASE("Server - Pull diagnostics recovers to zero errors when unclosed strin
                 R"("workspaceFolders":[{"uri":")" +
                 fixture.RootUri() + R"(","name":"fixture"}]}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    WaitForStartupWorkspaceScan(stream);
     stream.Push(DidOpenMessage(fixture.Uri(fileName), brokenSource));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri(fileName) + R"("}}})");
