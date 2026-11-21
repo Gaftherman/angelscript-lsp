@@ -295,7 +295,12 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
     {
         ReanalyseOpenDocuments();
     }
-    UpdateFeatureConfiguration(*this, *section);
+    {
+        // Both analysis and module publications read the code lens feature setting.
+        std::lock_guard lifecycleLock(m_lifecycleMutex);
+        std::lock_guard closureLock(m_closureMutex);
+        UpdateFeatureConfiguration(*this, *section);
+    }
 
     bool shouldRescan = false;
     shouldRescan = UpdateModulesConfiguration(*this, *section) || shouldRescan;

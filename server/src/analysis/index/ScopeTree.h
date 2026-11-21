@@ -483,6 +483,13 @@ class ScopeIndex
     /// Retires the published occurrences while keeping the last lexical scope available for editing features.
     void InvalidateDocumentOccurrences(const std::string& fileUri);
 
+    /**
+     * @brief Checks whether a document's occurrences can be used for revision-sensitive requests.
+     * @param[in] fileUri URI key for the document.
+     * @return False after invalidation and true once replaced or if no invalidation was recorded.
+     */
+    [[nodiscard]] bool AreDocumentOccurrencesCurrent(std::string_view fileUri) const;
+
     [[nodiscard]] std::shared_ptr<const Scope>
     GetOccurrenceRoot(const std::string& fileUri, const std::optional<std::string>& module = std::nullopt) const;
     [[nodiscard]] std::shared_ptr<const Scope>

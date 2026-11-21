@@ -11,6 +11,7 @@
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
+#include <latch>
 #include <string>
 #include <thread>
 
@@ -2520,6 +2521,111 @@ TEST_CASE("Server - Pull diagnostics client receives workspace/diagnostic/refres
     RunScript(serverConfig, stream);
 
     CHECK(stream.OutputContains("workspace/diagnostic/refresh"));
+}
+
+TEST_CASE("Server - Code lenses follow the committed revision and refresh only with client support")
+{
+    bool refreshSupported = false;
+    bool codeLensEnabled = true;
+    SUBCASE("Client advertises refresh")
+    {
+        refreshSupported = true;
+    }
+    SUBCASE("Client omits refresh support")
+    {
+    }
+    SUBCASE("Code lenses are disabled")
+    {
+        refreshSupported = true;
+        codeLensEnabled = false;
+    }
+
+    WorkspaceFixture fixture;
+    const std::string file = test::GenerateRandomSymbolName("LensFile") + ".as";
+    const std::string type = test::GenerateRandomSymbolName("LensClass");
+    const std::string first = test::GenerateRandomSymbolName("First");
+    const std::string second = test::GenerateRandomSymbolName("Second");
+    const std::string firstDependency = test::GenerateRandomSymbolName("FirstDependency");
+    const std::string secondDependency = test::GenerateRandomSymbolName("SecondDependency");
+    fixture.Write(firstDependency + ".as", "void " + firstDependency + "() {}\n");
+    fixture.Write(secondDependency + ".as", "void " + secondDependency + "() {}\n");
+    const std::string source = "#include \"" + firstDependency + ".as\"\n#include \"" + secondDependency +
+                               ".as\"\nclass " + type + " {\n    " + type + "@ " + first + "() { return this; }\n    " +
+                               type + "@ " + second + "() { return this; }\n}\n";
+    fixture.Write(file, source);
+    const std::string uri = fixture.Uri(file);
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enablePredefinedLoader = false;
+    serverConfig.features.enableCodeLens = codeLensEnabled;
+    serverConfig.features.codeLensShowOnFunctions = false;
+    constexpr auto refreshMethod = "workspace/codeLens/refresh";
+    size_t moduleRefreshes = 0;
+    test::ScriptedStream stream;
+    std::latch allowCommit(1);
+    Server server(serverConfig, stream);
+    server.SetOnBeforeCommitHook(
+        [&](std::string_view changedUri, int version, [[maybe_unused]] uint64_t generation)
+        {
+            if (version == 2 && changedUri == Server::DocumentKey(uri))
+            {
+                allowCommit.wait();
+            }
+        });
+
+    std::string initialize = InitializeWithProgress(fixture.RootUri(), true);
+    if (refreshSupported)
+    {
+        constexpr std::string_view capabilities = R"("capabilities":{)";
+        initialize.insert(initialize.find(capabilities) + capabilities.size(),
+                          R"("workspace":{"codeLens":{"refreshSupport":true}},)");
+    }
+    const auto requestLenses = [&stream, &uri](int id)
+    {
+        stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(id) +
+                    R"(,"method":"textDocument/codeLens","params":{"textDocument":{"uri":")" + uri + R"("}}})");
+    };
+    stream.Push(initialize);
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "now the workspace is indexed", 1); });
+    stream.Push(DidOpenMessage(uri, source));
+    requestLenses(2);
+    stream.PushAction([&]() { moduleRefreshes = stream.CountInOutput(refreshMethod); });
+    stream.Push(DidChangeMessage(uri, 2, "\n\n" + source));
+    requestLenses(3);
+    stream.PushAction(
+        [&]()
+        {
+            allowCommit.count_down();
+            server.DrainQueue();
+        });
+    requestLenses(4);
+    stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+    server.Run();
+
+    CHECK(moduleRefreshes == (refreshSupported && codeLensEnabled ? 1u : 0u));
+    CHECK(stream.CountInOutput(refreshMethod) == (refreshSupported && codeLensEnabled ? 2u : 0u));
+    if (!codeLensEnabled)
+    {
+        CHECK(stream.ResponseFor(3).find(R"("result":null)") != std::string::npos);
+        return;
+    }
+
+    const auto stale = lsp::json::parse(stream.ResponseFor(3));
+    CHECK(stale.object().get("error").object().get("code").integer() == lsp::MessageError::ContentModified);
+
+    const auto checkClassLens = [&stream](int id, int line)
+    {
+        const auto reply = lsp::json::parse(stream.ResponseFor(id));
+        const auto& lenses = reply.object().get("result").array();
+        REQUIRE(lenses.size() == 1);
+        const auto& lens = lenses.front().object();
+        const auto& start = lens.get("range").object().get("start").object();
+        CHECK(start.get("line").integer() == line);
+        CHECK(lens.get("command").object().get("title").string() == "2 references");
+    };
+    checkClassLens(2, 2);
+    checkClassLens(4, 4);
 }
 
 TEST_CASE("Server - A second pull of an unedited document is answered unchanged")

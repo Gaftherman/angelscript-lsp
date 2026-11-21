@@ -1167,6 +1167,23 @@ TEST_SUITE("features/References")
         CHECK(rows(std::nullopt).empty());
     }
 
+    TEST_CASE("ScopeIndex - Marks occurrences current again when a scope is published")
+    {
+        ScopeIndex index;
+        const std::string uri = "file:///" + angel_lsp::test::GenerateRandomSymbolName("Occurrences") + ".as";
+        index.InvalidateDocumentOccurrences(uri);
+        CHECK_FALSE(index.AreDocumentOccurrencesCurrent(uri));
+
+        index.SetScopeTree(uri, std::make_shared<const Scope>());
+        CHECK(index.AreDocumentOccurrencesCurrent(uri));
+
+        index.InvalidateDocumentOccurrences(uri);
+        CHECK_FALSE(index.AreDocumentOccurrencesCurrent(uri));
+
+        index.SetScopeTree(uri, std::make_shared<const Scope>());
+        CHECK(index.AreDocumentOccurrencesCurrent(uri));
+    }
+
     TEST_CASE("ReferencesHandler - Scoped Class Member References Across Hierarchy")
     {
         MultiFileTestEnv env;

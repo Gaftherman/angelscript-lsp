@@ -4,6 +4,23 @@
   "description": "Active burn-down queue tracking pending functions and structs to be unified or deleted until 0 remaining.",
   "entries": [
     {
+      "id": "REF-V121-CODELENS-REFRESH",
+      "phase": "S5",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/lsp/services/ServerDiagnostics.cpp",
+      "deletedLineRange": "217-223",
+      "originalSymbolOrCode": "NotifyClientDiagnostics workspace refresh dispatch",
+      "whatItDidAndWhyInThatFile": "Sent a parameterless workspace diagnostics refresh under the message-handler lock.",
+      "whyChangedOrDeleted": "Share the refresh dispatch with analysis and module index publications. Reject code lens requests while the requested document's occurrences are invalidated.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerDiagnostics.cpp",
+      "replacedByCanonicalSymbol": "SendWorkspaceRefresh",
+      "ramOrCpuImpact": "Adds a shared-lock URI lookup per code lens request and coalesces refreshes for closed analysis and module index batches.",
+      "verifiedByTests": [
+        "ScopeIndex - Marks occurrences current again when a scope is published",
+        "Server - Code lenses follow the committed revision and refresh only with client support"
+      ]
+    },
+    {
       "id": "REF-V120-DIAGNOSTIC-FALSE-POSITIVES",
       "phase": "S5",
       "action": "EXTRACT_UTILITY",

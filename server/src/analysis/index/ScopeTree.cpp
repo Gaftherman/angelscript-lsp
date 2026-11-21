@@ -398,11 +398,16 @@ void ScopeIndex::ClearDocument(std::string_view fileUri)
 void ScopeIndex::InvalidateDocumentOccurrences(const std::string& fileUri)
 {
     std::unique_lock lock(m_mutex);
-    if (const auto entry = m_roots.find(fileUri); entry != m_roots.end())
-    {
-        RemoveCallUses(entry->first, entry->second);
-        entry->second.occurrencesCurrent = false;
-    }
+    const auto entry = m_roots.try_emplace(fileUri).first;
+    RemoveCallUses(entry->first, entry->second);
+    entry->second.occurrencesCurrent = false;
+}
+
+bool ScopeIndex::AreDocumentOccurrencesCurrent(std::string_view fileUri) const
+{
+    std::shared_lock lock(m_mutex);
+    const auto entry = m_roots.find(fileUri);
+    return entry == m_roots.end() || entry->second.occurrencesCurrent;
 }
 
 std::shared_ptr<const Scope> ScopeIndex::GetRoot(const std::string& fileUri) const

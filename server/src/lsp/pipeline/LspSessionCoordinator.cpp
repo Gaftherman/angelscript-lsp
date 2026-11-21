@@ -179,6 +179,16 @@ bool LspSessionCoordinator::GetClientSupportsDiagnosticRefresh() const noexcept
     return m_clientSupportsDiagnosticRefresh;
 }
 
+void LspSessionCoordinator::SetClientSupportsCodeLensRefresh(bool refresh) noexcept
+{
+    m_clientSupportsCodeLensRefresh = refresh;
+}
+
+bool LspSessionCoordinator::GetClientSupportsCodeLensRefresh() const noexcept
+{
+    return m_clientSupportsCodeLensRefresh;
+}
+
 bool LspSessionCoordinator::ProcessMessageStep(lsp::MessageHandler& handler)
 {
     try

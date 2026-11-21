@@ -205,6 +205,24 @@ void Server::CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
     m_diagnosticsPipeline->CacheDiagnosticsSnapshot(request.uriStr, std::move(snapshot));
 }
 
+void Server::SendWorkspaceRefresh(std::string_view method)
+{
+    std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
+    if (m_messageHandler)
+    {
+        m_messageHandler->sendRequest(
+            method, std::nullopt, [](lsp::json::Value&&) {}, [](const lsp::ResponseError&) {});
+    }
+}
+
+void Server::NotifyCodeLensRefresh(bool isBatchQueued)
+{
+    if (!isBatchQueued && m_sessionCoordinator->GetClientSupportsCodeLensRefresh() && m_config.features.enableCodeLens)
+    {
+        SendWorkspaceRefresh("workspace/codeLens/refresh");
+    }
+}
+
 void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDiagnostics::Params params)
 {
     if (m_sessionCoordinator->GetClientPullsDiagnostics())
@@ -214,13 +232,7 @@ void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDia
         const bool isBatchQueued = m_diagnosticsPipeline->HasQueuedWork() && !isDocOpen;
         if (m_sessionCoordinator->GetClientSupportsDiagnosticRefresh() && !isBatchQueued)
         {
-            std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
-            if (m_messageHandler)
-            {
-                m_messageHandler->sendRequest(
-                    "workspace/diagnostic/refresh", std::nullopt, [](lsp::json::Value&&) {},
-                    [](const lsp::ResponseError&) {});
-            }
+            SendWorkspaceRefresh("workspace/diagnostic/refresh");
         }
         return;
     }

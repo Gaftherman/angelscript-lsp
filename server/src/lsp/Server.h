@@ -482,6 +482,17 @@ class Server
     void CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
                                   const std::vector<lsp::Diagnostic>& protocolDiagnostics);
     void NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDiagnostics::Params params);
+    /**
+     * @brief Sends a parameterless workspace refresh request to the client.
+     * @param[in] method LSP method name for the refresh.
+     */
+    void SendWorkspaceRefresh(std::string_view method);
+    /**
+     * @brief Refreshes code lenses after an index publication if the client and settings allow it.
+     * @param[in] isBatchQueued True if another publication is expected to refresh the batch.
+     * @note Call under the lifecycle or closure mutex to read the feature setting.
+     */
+    void NotifyCodeLensRefresh(bool isBatchQueued);
     void PublishDiagnostics(const PublishDiagnosticsRequest& request);
     void PublishDiagnostics(std::string_view uriStr, const std::vector<analysis::Diagnostic>& diagnostics,
                             int version = -1);
@@ -547,8 +558,16 @@ class Server
     TransparentStringSet ComputeModuleClosureUris(std::string_view uriStr) const;
     size_t IndexModuleClosure(std::string_view openUriStr, SyntaxRevisionCache* syntaxCache = nullptr);
     void ReleaseModuleClosure(std::string_view openUriStr);
-    void IndexClosureFile(std::string_view path, parser::AngelScriptParser& parser,
-                          SyntaxRevisionCache* syntaxCache = nullptr);
+    /**
+     * @brief Indexes a closed module member if its file revision is still current.
+     * @param[in] path Path to the module member.
+     * @param[in,out] parser Parser owned by the indexing thread.
+     * @param[in,out] syntaxCache Optional cache owned by the indexing thread.
+     * @param[in] isBatchQueued True when the caller will refresh after publishing the batch.
+     * @return True if symbols and occurrences were published.
+     */
+    bool IndexClosureFile(std::string_view path, parser::AngelScriptParser& parser,
+                          SyntaxRevisionCache* syntaxCache = nullptr, bool isBatchQueued = false);
     void ReindexTrackedClosureFile(std::string_view path, angel_lsp::parser::AngelScriptParser& parser);
     void WithdrawClosedSnapshot(std::string_view uriStr);
     void PurgeClosureFile(std::string_view uriStr);

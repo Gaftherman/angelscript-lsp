@@ -182,6 +182,8 @@ struct CommitAnalysisRequest
     std::string text;
     uint64_t closedRevision = 0;
     std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
+    /** @brief Indicates a diagnostic publication that did not finish semantic indexing. */
+    bool syntaxOnly = false;
 };
 
 /**

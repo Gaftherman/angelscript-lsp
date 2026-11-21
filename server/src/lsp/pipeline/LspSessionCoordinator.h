@@ -212,6 +212,18 @@ class LspSessionCoordinator
     [[nodiscard]] bool GetClientSupportsDiagnosticRefresh() const noexcept;
 
     /**
+     * @brief Records whether the client accepts workspace/codeLens/refresh.
+     * @param[in] refresh True if the client advertised refresh support.
+     */
+    void SetClientSupportsCodeLensRefresh(bool refresh) noexcept;
+
+    /**
+     * @brief Checks whether the client accepts workspace/codeLens/refresh.
+     * @return True if the client advertised refresh support.
+     */
+    [[nodiscard]] bool GetClientSupportsCodeLensRefresh() const noexcept;
+
+    /**
      * @brief Direct mutable reference to position encoding for Server delegation.
      */
     [[nodiscard]] utils::PositionEncoding& PositionEncodingRef() noexcept
@@ -277,6 +289,7 @@ class LspSessionCoordinator
     bool m_clientSupportsMarkdown{false};
     bool m_clientPullsDiagnostics{false};
     bool m_clientSupportsDiagnosticRefresh{false};
+    bool m_clientSupportsCodeLensRefresh{false};
     bool m_workDoneProgressSupport{false};
 };
 

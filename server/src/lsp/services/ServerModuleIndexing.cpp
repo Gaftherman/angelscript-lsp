@@ -17,8 +17,11 @@
 
 namespace angel_lsp
 {
-void Server::IndexClosureFile(std::string_view path, angel_lsp::parser::AngelScriptParser& parser,
-                              SyntaxRevisionCache* syntaxCache)
+/** @brief Closure files are indexed in a batch whose caller refreshes code lenses once afterwards. */
+static constexpr bool k_batchQueued = true;
+
+bool Server::IndexClosureFile(std::string_view path, angel_lsp::parser::AngelScriptParser& parser,
+                              SyntaxRevisionCache* syntaxCache, bool isBatchQueued)
 {
     const std::string uriStr = UriFromPath(path);
     uint64_t revision;
@@ -26,11 +29,14 @@ void Server::IndexClosureFile(std::string_view path, angel_lsp::parser::AngelScr
         std::lock_guard lock(m_closureMutex);
         if (GetDocumentStore().IsOpen(uriStr))
         {
-            return;
+            return false;
         }
         revision = ++m_nextClosedRevision;
         m_closureDocuments[uriStr] = {nullptr, revision};
-        m_scopeIndex.InvalidateDocumentOccurrences(uriStr);
+        if (m_scopeIndex.GetRoot(uriStr))
+        {
+            m_scopeIndex.InvalidateDocumentOccurrences(uriStr);
+        }
     }
 
     std::ifstream file(std::filesystem::path(path), std::ios::binary);
@@ -42,7 +48,7 @@ void Server::IndexClosureFile(std::string_view path, angel_lsp::parser::AngelScr
         {
             m_closureDocuments.erase(uriStr);
         }
-        return;
+        return false;
     }
 
     auto prepared = PrepareAnalysisSource(uriStr, content);
@@ -60,7 +66,7 @@ void Server::IndexClosureFile(std::string_view path, angel_lsp::parser::AngelScr
     std::lock_guard lock(m_closureMutex);
     if (!IsClosedRevisionCurrentLocked(uriStr, revision) || GetDocumentStore().IsOpen(uriStr))
     {
-        return;
+        return false;
     }
     m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
     auto& closed = m_closureDocuments[uriStr];
@@ -77,10 +83,13 @@ void Server::IndexClosureFile(std::string_view path, angel_lsp::parser::AngelScr
     m_callGraph.SetDocumentCalls(uriStr, std::move(calls));
     m_indexedUriByPath[std::string(path)] = uriStr;
     m_lastSavedInterfaceHash[uriStr] = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
+    NotifyCodeLensRefresh(isBatchQueued);
+    return true;
 }
 
 void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser)
 {
+    bool indexChanged = false;
     for (const auto& view : m_modules)
     {
         for (const auto& path : view.memberPaths)
@@ -107,11 +116,16 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
                 continue;
             }
 
-            IndexClosureFile(path, parser);
+            indexChanged |= IndexClosureFile(path, parser, nullptr, k_batchQueued);
         }
     }
     m_symbolTable.EnsureRuleIndex();
     SyncModuleIndexSymbols();
+    if (indexChanged)
+    {
+        std::lock_guard lock(m_closureMutex);
+        NotifyCodeLensRefresh(false);
+    }
 }
 
 size_t Server::IndexModuleClosure(std::string_view openUriStr, SyntaxRevisionCache* syntaxCache)
@@ -141,6 +155,7 @@ size_t Server::IndexModuleClosure(std::string_view openUriStr, SyntaxRevisionCac
 
     std::vector<std::string> indexed;
     size_t newlyIndexed = 0;
+    bool indexChanged = false;
     angel_lsp::parser::AngelScriptParser closureParser(m_logger.get());
     const std::vector<std::string> closure = ComputeModuleClosure(openPath);
 
@@ -169,7 +184,7 @@ size_t Server::IndexModuleClosure(std::string_view openUriStr, SyntaxRevisionCac
 
         if (!alreadyIndexed)
         {
-            IndexClosureFile(path, closureParser, syntaxCache);
+            indexChanged |= IndexClosureFile(path, closureParser, syntaxCache, k_batchQueued);
             ++newlyIndexed;
         }
 
@@ -186,6 +201,10 @@ size_t Server::IndexModuleClosure(std::string_view openUriStr, SyntaxRevisionCac
         if (GetDocumentStore().IsOpen(openUriStr) || !m_closureDocuments.contains(openUriStr))
         {
             m_openDocumentClosures[std::string(openUriStr)] = std::move(indexed);
+        }
+        if (indexChanged)
+        {
+            NotifyCodeLensRefresh(false);
         }
     }
     return newlyIndexed;

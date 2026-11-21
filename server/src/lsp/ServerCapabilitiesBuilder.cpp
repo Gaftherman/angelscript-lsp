@@ -46,6 +46,11 @@ void NegotiateClientCapabilities(LspSessionCoordinator& sessionCoordinator, cons
         capabilities.workspace->diagnostics->refreshSupport.has_value() &&
         capabilities.workspace->diagnostics->refreshSupport.value());
 
+    sessionCoordinator.SetClientSupportsCodeLensRefresh(capabilities.workspace.has_value() &&
+                                                        capabilities.workspace->codeLens.has_value() &&
+                                                        capabilities.workspace->codeLens->refreshSupport.has_value() &&
+                                                        capabilities.workspace->codeLens->refreshSupport.value());
+
     if (capabilities.textDocument.has_value() && capabilities.textDocument->completion.has_value() &&
         capabilities.textDocument->completion->completionItem.has_value() &&
         capabilities.textDocument->completion->completionItem->snippetSupport.has_value())

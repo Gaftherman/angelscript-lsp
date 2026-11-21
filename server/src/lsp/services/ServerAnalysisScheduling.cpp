@@ -182,6 +182,11 @@ bool Server::CommitAnalysisResults(CommitAnalysisRequest req)
         return false;
     }
 
+    const bool occurrencesWereCurrent = m_scopeIndex.AreDocumentOccurrencesCurrent(req.uriStr);
+    // A syntax-only commit leaves the old symbols in place, so keep any pending invalidation.
+    const bool clearsScope = !req.scopeRoot && (!req.syntaxOnly || occurrencesWereCurrent);
+    const bool indexChanged =
+        req.staging || req.scopeRoot || (clearsScope && (!occurrencesWereCurrent || m_scopeIndex.GetRoot(req.uriStr)));
     if (req.staging)
     {
         m_symbolTable.ReplaceDocumentSymbols(req.uriStr, std::move(*req.staging));
@@ -192,7 +197,7 @@ bool Server::CommitAnalysisResults(CommitAnalysisRequest req)
     {
         m_scopeIndex.SetScopeTree(req.uriStr, std::move(req.scopeRoot));
     }
-    else
+    else if (clearsScope)
     {
         m_scopeIndex.ClearDocument(req.uriStr);
     }
@@ -205,6 +210,12 @@ bool Server::CommitAnalysisResults(CommitAnalysisRequest req)
         {
             closed.indexedSyntax.reset();
         }
+    }
+
+    if (indexChanged)
+    {
+        const bool isBatchQueued = m_diagnosticsPipeline->HasQueuedWork() && !GetDocumentStore().IsOpen(req.uriStr);
+        NotifyCodeLensRefresh(isBatchQueued);
     }
 
     PublishDiagnostics(PublishDiagnosticsRequest{
@@ -231,6 +242,7 @@ void Server::CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vec
                            .diagnostics = std::move(diags),
                            .text = req.text,
                            .closedRevision = req.closedRevision,
-                           .preprocessing = req.preprocessing});
+                           .preprocessing = req.preprocessing,
+                           .syntaxOnly = true});
 }
 } // namespace angel_lsp

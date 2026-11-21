@@ -1,6 +1,7 @@
 #include "features/code_action/CodeActionHandler.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "features/rename/RenameHandler.h"
+#include "i18n/i18n.h"
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
 
@@ -154,6 +155,12 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
     if (!doc)
     {
         return lsp::Null{};
+    }
+    if (!m_scopeIndex.AreDocumentOccurrencesCurrent(doc->uri))
+    {
+        throw lsp::RequestError(lsp::MessageError::ContentModified,
+                                i18n::FormatMessage(m_i18n.get(), "code-lens-content-modified",
+                                                    "Code lenses are being updated for this document."));
     }
 
     const std::string clientUri = req.textDocument.uri.toString();

@@ -278,6 +278,7 @@
   "note-expected-rparen-before-brace": "Se esperaba ')' antes de '{{'",
   "note-expected-semicolon-before": "Se esperaba ';' antes de '{}'",
   "note-in-mixin-member": "En el mixin '{}': Miembro '{}'",
+  "code-lens-content-modified": "Se están actualizando los CodeLens de este documento.",
   "log-negotiated-position-encoding": "Codificación de posiciones negociada: {}",
   "log-reanalyze-open-documents": "Se vuelven a analizar {} documento(s) abierto(s) tras indexar el espacio de trabajo",
   "log-semantic-tokens-full": "[Tokens semánticos] Cálculo completo en {:.2f} ms para {} ({} tokens)",
