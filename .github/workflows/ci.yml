@@ -69,7 +69,7 @@ jobs:
           submodules: recursive
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.11
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
       - name: Restore sccache Cache
         uses: actions/cache@v4
@@ -81,7 +81,7 @@ jobs:
 
       - name: Set up MSVC Developer Prompt (Windows)
         if: matrix.os == 'windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: ${{ matrix.msvc_arch }}
 
@@ -157,7 +157,7 @@ jobs:
           submodules: recursive
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.11
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
       - name: Restore sccache Cache
         uses: actions/cache@v4
