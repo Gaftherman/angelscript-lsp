@@ -27,6 +27,21 @@ Angelscript agrega autocompletado, documentación al pasar el cursor, detección
 | Ayuda de firma | Los nombres y tipos de parámetros siguen visibles mientras completas una llamada. | ![Ayuda de firma](../client/images/signature-help.png) |
 | Esquema | El panel Esquema muestra cada espacio de nombres, clase, campo y método del archivo. | ![Panel de esquema](../client/images/outline.png) |
 
+| Función | Estado |
+| :--- | :--- |
+| Autocompletado | ✅ |
+| Información al pasar el cursor | ✅ |
+| Ayuda de firma | ✅ |
+| Definición, declaración y definición de tipo | ✅ |
+| Referencias | ✅ |
+| Renombrado | ✅ |
+| Símbolos del documento y del espacio de trabajo | ✅ |
+| Tokens semánticos | ✅ |
+| Pistas en línea | ✅ |
+| Acciones de código | ✅ |
+| Formato del documento y de la selección | ✅ |
+| Diagnósticos enviados por el servidor y bajo demanda | ✅ |
+
 ## Indica qué ofrece tu juego
 
 Tu motor expone clases, funciones y variables globales que no están escritas dentro de tus scripts `.as`. Puedes declararlas en un archivo `.as.predefined`, que es un archivo que lista lo que el juego ofrece a los scripts (conocido como stub). Con ese archivo en `${workspaceFolder}`, el autocompletado y el hover reconocen la API del juego sin falsos errores.
@@ -51,7 +66,8 @@ Cada juego configura AngelScript con sus propias reglas de sintaxis, como permit
 
 ## Documentación
 
-- [Guía detallada](GUIDE.es.md) — ejemplos de espacio de trabajo, archivos predefinidos, opciones del motor, comandos y catálogo completo de ajustes.
+- [Guía detallada](GUIDE.es.md) — ejemplos de espacio de trabajo, archivos predefinidos, opciones del motor y comandos.
+- [Guía de configuración](CONFIGURATION.es.md) — ajustes y ejemplos para editores.
 - [Guía de reglas del motor](RULES.es.md) — cómo escribir archivos `*.angelscript.rules.json`.
 - [CHANGELOG.md](../CHANGELOG.md) — historial de versiones y cambios.
 

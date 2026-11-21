@@ -214,7 +214,7 @@ Use one ledger entry per orchestration job with an ID like `REF-P20-ISOLATION-ID
 1. **Version Sections.** Every released tag must have an exact version section in `CHANGELOG.md`. Mirror it to `client/CHANGELOG.md` with `server/scripts/sync-changelogs.py`.
 2. **Release Bodies.** Use `server/scripts/extract-release-notes.py` to publish the exact detailed Markdown entry, preserving the git comparison link. Never use a blank release body or a generic commit summary. Keep `--generate-notes` as a fallback only. Sync historical releases with `server/scripts/sync-github-releases.py`.
 3. **Privacy.** Never commit or publish personal email addresses, local usernames, or machine-specific paths in changelogs, fixtures, or code. Use generic paths or randomized fixtures such as `angel_lsp::test::GenerateRandomSymbolName()`. See §12.6.
-4. **Canonical Docs.** Use `AGENTS.md`, `docs/REFACTOR_LEDGER.json`, `docs/GUIDE*.md`, `docs/RULES*.md`, and `CHANGELOG.md`. Keep structural refactoring records in the ledger (§9.6). Keep temporary logs, scratch scripts, and ad hoc configuration out of the root.
+4. **Canonical Docs.** Use `AGENTS.md`, `docs/REFACTOR_LEDGER.json`, `docs/GUIDE*.md`, `docs/CONFIGURATION*.md`, `docs/RULES*.md`, and `CHANGELOG.md`. Keep structural refactoring records in the ledger (§9.6). Keep temporary logs, scratch scripts, and ad hoc configuration out of the root.
 
 ### 11.5. Repository Layout
 

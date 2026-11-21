@@ -27,6 +27,21 @@ Angelscript adds autocomplete, hover documentation, error checks, and code navig
 | Signature help | Parameter names and types stay visible while you fill in a function call. | ![Signature help](images/signature-help.png) |
 | Outline | The Outline panel lists every namespace, class, field, and method in the file. | ![Outline panel](images/outline.png) |
 
+| Feature | Status |
+| :--- | :--- |
+| Completion | ✅ |
+| Hover | ✅ |
+| Signature help | ✅ |
+| Definition, declaration, and type definition | ✅ |
+| References | ✅ |
+| Rename | ✅ |
+| Document and workspace symbols | ✅ |
+| Semantic tokens | ✅ |
+| Inlay hints | ✅ |
+| Code actions | ✅ |
+| Document and range formatting | ✅ |
+| Push and pull diagnostics | ✅ |
+
 ## Tell it what your game offers
 
 Your engine adds built-in classes, functions, and globals that are not defined in your `.as` scripts. You can list them in an `.as.predefined` file, which is a file that lists what the game gives to scripts (often called a stub). With that file in `${workspaceFolder}`, autocomplete and hover recognize your game's API without false errors.
@@ -51,7 +66,8 @@ Each game configures AngelScript with its own language rules, such as whether `f
 
 ## Documentation
 
-- [Detailed Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/GUIDE.md) — workspace examples, predefined files, engine options, commands, and full settings catalog.
+- [Detailed Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/GUIDE.md) — workspace examples, predefined files, engine options, and commands.
+- [Configuration Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/CONFIGURATION.md) — settings and editor examples.
 - [Engine Rules Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.md) — how to write `*.angelscript.rules.json` files.
 - [CHANGELOG.md](CHANGELOG.md) — release history and changes.
 
