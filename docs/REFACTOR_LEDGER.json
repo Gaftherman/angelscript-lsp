@@ -4070,6 +4070,24 @@
       "verifiedByTests": [
         "Implicit member access - Follows instance visibility and lexical precedence"
       ]
+    },
+    {
+      "id": "REF-SONAR-GATE-FIXES",
+      "phase": "S5",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/parser/DoxygenSyntax.h",
+      "deletedLineRange": "146-190",
+      "originalSymbolOrCode": "DoxygenNodeView::IsNull, StartByte, EndByte",
+      "whatItDidAndWhyInThatFile": "Each accessor repeated the null and bounds guard before indexing the fact table.",
+      "whyChangedOrDeleted": "Centralize the guard in one pointer lookup so every access is checked at the point of use. The same job removed four redundant identical-branch conditionals in the call and conversion checkers and Doxygen tag rendering without changing results.",
+      "replacedByCanonicalFile": "server/src/parser/DoxygenSyntax.h",
+      "replacedByCanonicalSymbol": "GetNode",
+      "ramOrCpuImpact": "No change: the helper is inline and the view layout is unchanged.",
+      "verifiedByTests": [
+        "Doxygen syntax facts",
+        "Type conversion",
+        "Call checker"
+      ]
     }
   ]
 }

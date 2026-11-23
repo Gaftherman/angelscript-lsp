@@ -295,11 +295,7 @@ bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_v
         return true;
     }
 
-    if (AreIncompatibleTemplateTypes(uFrom, uTo))
-    {
-        return false;
-    }
-
+    static_cast<void>(AreIncompatibleTemplateTypes(uFrom, uTo));
     return false;
 }
 

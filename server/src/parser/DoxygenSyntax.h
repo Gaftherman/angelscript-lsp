@@ -107,6 +107,19 @@ class DoxygenNodeView
      */
     std::string_view m_source;
 
+    /**
+     * @brief Looks up the immutable syntax fact referenced by this view.
+     * @return Pointer to the fact, or nullptr if the facts table or node is absent.
+     */
+    [[nodiscard]] const DoxygenNodeFact* GetNode() const noexcept
+    {
+        if (m_facts == nullptr || m_index >= m_facts->nodes.size())
+        {
+            return nullptr;
+        }
+        return &m_facts->nodes[m_index];
+    }
+
   public:
     /**
      * @brief Constructs an uninitialized, null node view.
@@ -145,7 +158,7 @@ class DoxygenNodeView
      */
     [[nodiscard]] bool IsNull() const noexcept
     {
-        return m_facts == nullptr || m_index >= m_facts->nodes.size();
+        return GetNode() == nullptr;
     }
 
     /**
@@ -167,11 +180,8 @@ class DoxygenNodeView
      */
     [[nodiscard]] uint32_t StartByte() const noexcept
     {
-        if (IsNull())
-        {
-            return 0;
-        }
-        return m_facts->nodes[m_index].startByte;
+        const auto* node = GetNode();
+        return node != nullptr ? node->startByte : 0;
     }
 
     /**
@@ -180,11 +190,8 @@ class DoxygenNodeView
      */
     [[nodiscard]] uint32_t EndByte() const noexcept
     {
-        if (IsNull())
-        {
-            return 0;
-        }
-        return m_facts->nodes[m_index].endByte;
+        const auto* node = GetNode();
+        return node != nullptr ? node->endByte : 0;
     }
 
     /**

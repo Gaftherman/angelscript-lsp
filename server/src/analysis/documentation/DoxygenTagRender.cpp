@@ -235,7 +235,8 @@ static std::string ProcessCodeBlock(parser::DoxygenNodeView blockNode)
 /**
  * @brief Normalizes storageclass bracketed parameter direction text.
  * @param[in] rawSc Raw storage class string view containing bracketed direction.
- * @return Normalized direction string ("in", "out", "in,out"), or empty string if invalid.
+ * @return Lowercase bracket contents with spaces and tabs removed and "inout" normalized to "in,out",
+ *         or an empty string if the brackets are missing or out of order.
  */
 static std::string NormalizeParamDirection(std::string_view rawSc)
 {
@@ -259,10 +260,6 @@ static std::string NormalizeParamDirection(std::string_view rawSc)
     if (compact == "inout" || compact == "in,out")
     {
         return "in,out";
-    }
-    if (compact == "in" || compact == "out")
-    {
-        return compact;
     }
     return compact;
 }

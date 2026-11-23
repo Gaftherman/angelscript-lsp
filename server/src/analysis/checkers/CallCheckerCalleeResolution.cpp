@@ -107,9 +107,9 @@ static bool ResolveScopedCallee(const CallSiteFact& site, const Scope* scope, Di
     FilterScopedCandidatesByCallerContext(res.candidates, insideTarget);
 
     res.candidatesAreFreeFunctions = true;
-    if (!res.candidates.empty() || CheckScopedNonCallableVariable(site, ctx, res))
+    if (res.candidates.empty())
     {
-        return true;
+        CheckScopedNonCallableVariable(site, ctx, res);
     }
     return true;
 }
@@ -247,11 +247,10 @@ static CalleeResolution ResolveIdentifierCallee(const CallSiteFact& site, const 
                                     ctx.request.symbolTable,    ctx.request.GetRuleIndex(),
                                     ctx.request.moduleFileUris, ctx.request.nodeIndex};
     res.candidates = FindFreeCandidates(calleeText, freeCtx);
-    if (!res.candidates.empty() || CheckGlobalNonCallableVariable(site, ctx, res))
+    if (res.candidates.empty())
     {
-        return res;
+        CheckGlobalNonCallableVariable(site, ctx, res);
     }
-
     return res;
 }
 
