@@ -220,7 +220,7 @@ Use one ledger entry per orchestration job with an ID like `REF-P20-ISOLATION-ID
 
 | Location | Contents |
 | --- | --- |
-| Root | Engineering manual, README, changelog, license, and shared Git and Clang configuration |
+| Root | Engineering manual, README, changelog, license, shared Git and Clang configuration, and SonarCloud settings (`.sonarcloud.properties` for Automatic Analysis, `sonar-project.properties` for a CI scanner; keep them aligned; tests, fixtures and `server/scripts/` are excluded from analysis) |
 | `client/` | VS Code extension, tests, and packaging |
 | `server/` | C++ server, tests, and quality tools in `server/scripts/`, including `run-harness.ps1`. AST rules live in `server/rules/ast-grep/` with configuration in `server/rules/sgconfig.yml`. |
 | `docs/` | Guides, rules, Spanish repository README, and refactor ledger |
