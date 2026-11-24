@@ -1,0 +1,14 @@
+{
+  "name": "engine-hover",
+  "file": "MedkitPlugin.as",
+  "initialLine": 49,
+  "zoomIn": 1,
+  "wholeLineMargin": 16,
+  "steps": [
+    { "action": "wait", "ms": 2450 },
+    { "action": "moveCursor", "toToken": "ServerPrint", "lineIncludes": "g_EngineFuncs.ServerPrint(", "duration": 850 },
+    { "action": "ensureHover", "expect": ["void CEngineFuncs::ServerPrint(const string &in message)", "Writes a message to the server console.", "Text to print, including any trailing newline."], "above": true, "fullyVisible": true },
+    { "action": "hold", "ms": 3000 },
+    { "action": "moveCursor", "x": 1110, "y": 420, "duration": 450 }
+  ]
+}

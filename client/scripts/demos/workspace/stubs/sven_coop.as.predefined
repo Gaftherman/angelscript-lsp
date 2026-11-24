@@ -35,6 +35,10 @@ class CScheduler {
 }
 
 class CEngineFuncs {
+    /**
+     * @brief Writes a message to the server console.
+     * @param[in] message Text to print, including any trailing newline.
+     */
     void ServerPrint(const string& in message);
     void ClientPrint(CBasePlayer@ player, const string& in text);
 }

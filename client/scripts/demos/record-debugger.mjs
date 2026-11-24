@@ -190,6 +190,7 @@ export async function runDebuggerSteps({ win, animClick, animMoveMouse, press, f
   const frames = stack.locator('.stack-frame');
   const variables = win.locator('.debug-variables .expression');
   const total = variables.filter({ hasText: /\btotal\b/ }).locator('.value');
+  const prefix = variables.filter({ hasText: /\bprefix\b/ }).locator('.value');
   const waitVisible = locator => locator.waitFor({ timeout: 5000 });
   const waitHidden = locator => locator.waitFor({ state: 'hidden', timeout: 5000 });
   const waitForCaller = async (index, line) => {
@@ -213,11 +214,11 @@ export async function runDebuggerSteps({ win, animClick, animMoveMouse, press, f
   };
   const elapsed = () => (Date.now() - firstActionTime) / 1000;
 
-  await win.waitForTimeout(2600);
+  await win.waitForTimeout(1800);
   await animClick(await gutterPoint());
   await waitVisible(breakpoint);
   await animMoveMouse({ x: 1140, y: 420 });
-  await win.waitForTimeout(1500);
+  await win.waitForTimeout(1250);
 
   await pressAndReveal('F5', async () => {
     await waitVisible(highlight);
@@ -226,7 +227,7 @@ export async function runDebuggerSteps({ win, animClick, animMoveMouse, press, f
   });
   const stopStart = elapsed();
   console.log('Debugger attached and paused at addBonus with total = 7.');
-  await win.waitForTimeout(3400);
+  await win.waitForTimeout(2700);
 
   await pressAndReveal('F10', async () => {
     await waitVisible(highlight);
@@ -234,16 +235,27 @@ export async function runDebuggerSteps({ win, animClick, animMoveMouse, press, f
     await waitForCaller(0, /^22:/);
   });
   console.log('Step Over updated total to 9.');
-  await win.waitForTimeout(3400);
+  await win.waitForTimeout(2700);
 
   await pressAndReveal('F11', async () => {
     await waitVisible(highlight);
     await waitVisible(frames.first().getByText(/formatProgress\(/));
-    await waitVisible(variables.filter({ hasText: /\bprefix\b/ }).locator('.value'));
+    await waitVisible(frames.first().locator('.line-number').filter({ hasText: /^8:/ }));
+    await waitVisible(prefix);
     await waitForCaller(1, /^22:/);
   });
   console.log('Step Into added the formatProgress stack frame.');
-  await win.waitForTimeout(3500);
+  await win.waitForTimeout(1750);
+
+  await pressAndReveal('F10', async () => {
+    await waitVisible(highlight);
+    await waitVisible(frames.first().getByText(/formatProgress\(/));
+    await waitVisible(frames.first().locator('.line-number').filter({ hasText: /^9:/ }));
+    await waitVisible(prefix.filter({ hasText: /^\s*"Total: "\s*$/ }));
+    await waitForCaller(1, /^22:/);
+  });
+  console.log('Step Over initialized prefix to "Total: ".');
+  await win.waitForTimeout(2750);
   const stopEnd = elapsed();
 
   // Remove the breakpoint before continuing, since Tick calls showProgress again.
@@ -257,7 +269,7 @@ export async function runDebuggerSteps({ win, animClick, animMoveMouse, press, f
     await waitHidden(variables.first());
     await waitVisible(win.locator('.part.sidebar').getByText('Running', { exact: true }));
   });
-  await win.waitForTimeout(2200);
+  await win.waitForTimeout(2000);
   return { stopStart, stopEnd };
 }
 
