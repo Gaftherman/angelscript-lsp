@@ -9,7 +9,7 @@
 
 Angelscript añade compatibilidad con archivos `.as` en VS Code.
 
-AngelScript es un lenguaje de scripting que usan motores de juegos como Sven Co-op para ejecutar código de plugins y mods, y la extensión muestra documentación al pasar el cursor, ofrece autocompletado y marca errores mientras escribes.
+Los juegos y las aplicaciones que integran AngelScript lo usan para ejecutar código de plugins y mods. La extensión muestra documentación al pasar el cursor, ofrece autocompletado y marca errores mientras escribes.
 
 El servidor de lenguaje, escrito en C++20, usa Tree-Sitter para analizar los scripts e indexar sus símbolos.
 
@@ -45,117 +45,101 @@ La extensión no ejecuta scripts. Los scripts de AngelScript se ejecutan dentro 
 
 ### Información al pasar el cursor
 
-Consulta la firma y la documentación de un símbolo.
-
 <p align="center"><img src="../client/images/hover.gif" alt="Información al pasar el cursor" width="720"></p>
+<p align="center"><em>Consulta la firma y la documentación de un símbolo.</em></p>
 
 ### Autocompletado
 
-Escribe después de un punto para ver los miembros disponibles.
-
 <p align="center"><img src="../client/images/autocomplete.gif" alt="Autocompletado" width="720"></p>
+<p align="center"><em>Escribe después de un punto para ver los miembros disponibles.</em></p>
 
 ### Ayuda de firma
 
-Consulta qué parámetro estás completando mientras escribes una llamada.
-
 <p align="center"><img src="../client/images/signature-help.gif" alt="Ayuda de firma" width="720"></p>
+<p align="center"><em>Consulta qué parámetro estás completando mientras escribes una llamada.</em></p>
 
 ### Diagnósticos
 
-Ve avisos en el editor, como los de variables sin usar.
-
 <p align="center"><img src="../client/images/diagnostics.gif" alt="Diagnósticos" width="720"></p>
+<p align="center"><em>Ve avisos en el editor, como los de variables sin usar.</em></p>
 
 ### Ir a la definición
 
-Salta desde un nombre hasta su definición.
-
 <p align="center"><img src="../client/images/go-to-definition.gif" alt="Ir a la definición" width="720"></p>
+<p align="center"><em>Salta desde un nombre hasta su definición.</em></p>
 
 ### Buscar todas las referencias
 
-Consulta dónde se usa un símbolo.
-
 <p align="center"><img src="../client/images/find-references.gif" alt="Buscar todas las referencias" width="720"></p>
+<p align="center"><em>Consulta dónde se usa un símbolo.</em></p>
 
 ### Cambiar nombre
 
-Cambia el nombre de un símbolo del script y actualiza sus usos.
-
 <p align="center"><img src="../client/images/rename.gif" alt="Cambiar nombre" width="720"></p>
+<p align="center"><em>Cambia el nombre de un símbolo del script y actualiza sus usos.</em></p>
 
 ### Acciones de código
 
-Abre la bombilla para ver correcciones y refactorizaciones.
-
 <p align="center"><img src="../client/images/code-actions.gif" alt="Acciones de código" width="720"></p>
+<p align="center"><em>Abre la bombilla para ver correcciones y refactorizaciones.</em></p>
 
 ### Formato
 
-Da formato a todo el script o solo a las líneas seleccionadas.
-
 <p align="center"><img src="../client/images/formatting.gif" alt="Formato" width="720"></p>
+<p align="center"><em>Da formato a todo el script o solo a las líneas seleccionadas.</em></p>
 
 ### Pistas en línea
 
-Ve los nombres de los parámetros junto a los argumentos de una llamada.
-
 <p align="center"><img src="../client/images/inlay-hints.gif" alt="Pistas en línea" width="720"></p>
+<p align="center"><em>Ve los nombres de los parámetros junto a los argumentos de una llamada.</em></p>
 
 ### CodeLens
 
-Ve cuántas referencias hay encima de una declaración.
-
 <p align="center"><img src="../client/images/code-lens.gif" alt="CodeLens" width="720"></p>
+<p align="center"><em>Ve cuántas referencias hay encima de una declaración.</em></p>
 
 ### Esquema
 
-Explora las clases, funciones y demás símbolos del script abierto.
-
 <p align="center"><img src="../client/images/outline.gif" alt="Esquema" width="720"></p>
+<p align="center"><em>Explora las clases, funciones y demás símbolos del script abierto.</em></p>
 
 ### Resaltado semántico
 
-Distingue los parámetros y los campos por sus colores.
-
 <p align="center"><img src="../client/images/semantic-highlighting.gif" alt="Resaltado semántico" width="720"></p>
+<p align="center"><em>Distingue los parámetros y los campos por sus colores.</em></p>
 
 ### API del host
 
-Obtén sugerencias para los tipos y funciones que declara tu stub.
-
 <p align="center"><img src="../client/images/predefined-api.gif" alt="API del host" width="720"></p>
+<p align="center"><em>Obtén sugerencias para los tipos y funciones que declara tu stub.</em></p>
 
 ### Reglas del motor
 
-Ve en el editor los avisos de las comprobaciones de tu equipo.
-
 <p align="center"><img src="../client/images/engine-rules.gif" alt="Reglas del motor" width="720"></p>
+<p align="center"><em>Ve en el editor los avisos de las comprobaciones de tu equipo.</em></p>
 
 ### Opciones del motor
 
-Adapta las comprobaciones a las opciones de lenguaje de tu motor.
-
 <p align="center"><img src="../client/images/engine-options.gif" alt="Opciones del motor" width="720"></p>
+<p align="center"><em>Adapta las comprobaciones a las opciones de lenguaje de tu motor.</em></p>
 
 <details>
 <summary>Funciones LSP compatibles</summary>
 
-| Función | Estado |
-| :--- | :--- |
-| Autocompletado | ✅ |
-| Información al pasar el cursor | ✅ |
-| Ayuda de firma | ✅ |
-| Definición, declaración y definición de tipo | ✅ |
-| Referencias | ✅ |
-| Renombrado | ✅ |
-| Símbolos del documento y del espacio de trabajo | ✅ |
-| Tokens semánticos | ✅ |
-| Pistas en línea | ✅ |
-| Acciones de código | ✅ |
-| Formato del documento y de la selección | ✅ |
-| Diagnósticos enviados por el servidor y bajo demanda | ✅ |
+| Categoría | Función | Qué hace |
+| :--- | :--- | :--- |
+| ✏️ Edición | Autocompletado | Sugiere símbolos y miembros mientras escribes. |
+|  | Información al pasar el cursor | Muestra firmas y documentación al pasar el cursor. |
+|  | Ayuda de firma | Muestra la firma y resalta el parámetro activo. |
+|  | Renombrado | Renombra un símbolo y actualiza sus usos. |
+|  | Pistas en línea | Muestra nombres de parámetros y tipos inferidos. |
+|  | Acciones de código | Ofrece correcciones rápidas y refactorizaciones. |
+|  | Formato del documento y de la selección | Formatea el script completo o las líneas seleccionadas. |
+| 🧭 Navegación | Definición, declaración y definición de tipo | Abre declaraciones, definiciones o definiciones de tipo. |
+|  | Referencias | Encuentra dónde se usa un símbolo. |
+|  | Símbolos del documento y del espacio de trabajo | Enumera símbolos del archivo o espacio de trabajo. |
+| 🔎 Análisis | Tokens semánticos | Resalta los símbolos según su función. |
+|  | Diagnósticos enviados por el servidor y bajo demanda | Notifica errores y avisos automáticamente o bajo demanda. |
 
 </details>
 

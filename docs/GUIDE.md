@@ -25,19 +25,19 @@ Open `my-project` in VS Code and put `int main() { return 42; }` in `main.as`. H
 
 Put the engine example that matches your project in `.vscode/settings.json` under `${workspaceFolder}`. In `angelscript.modules`, use `folder` for every script under a directory or `entry` for one script and the files it reaches through `#include`. Module boundaries let the editor check whether an `external shared` declaration has a matching definition in another module.
 
-### Example A: Sven Co-op (Folder Module)
+### Example A: Game plugin folder (folder module)
 
-If all scripts under `maps/hcas` build together, give that folder a module name.
+If all scripts under `maps/items` build together, give that folder a module name.
 
 ```text
-└── 📁svencoop-scripts
+└── 📁my-game-scripts
     ├── 📁.vscode
     │   └── 📄settings.json
     └── 📁maps
-        ├── 📁hcas
-        │   ├── 📄hcas_main.as
-        │   └── 📄hcas_items.as
-        └── 📄sven.as.predefined
+        ├── 📁items
+        │   ├── 📄main.as
+        │   └── 📄inventory.as
+        └── 📄game.as.predefined
 ```
 
 ```jsonc
@@ -46,26 +46,26 @@ If all scripts under `maps/hcas` build together, give that folder a module name.
   "angelscript.searchDirectories": ["${workspaceFolder}/maps"],
   "angelscript.modules": [
     {
-      "name": "HCAS",
-      "folder": "${workspaceFolder}/maps/hcas"
+      "name": "Items",
+      "folder": "${workspaceFolder}/maps/items"
     }
   ],
-  "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
+  "angelscript.predefined.active": "${workspaceFolder}/maps/game.as.predefined"
 }
 ```
 
-### Example B: Sven Co-op (Entry Script Module)
+### Example B: Game plugin folder (entry script module)
 
-If your game starts from `ins2_register.as`, use that file as the entry point. Its includes join the same module.
+If your game starts from `register.as`, use that file as the entry point. Its includes join the same module.
 
 ```text
-└── 📁svencoop-scripts
+└── 📁my-game-scripts
     ├── 📁.vscode
     │   └── 📄settings.json
     └── 📁maps
-        ├── 📁ins2
-        │   └── 📄ins2_register.as
-        └── 📄sven.as.predefined
+        ├── 📁events
+        │   └── 📄register.as
+        └── 📄game.as.predefined
 ```
 
 ```jsonc
@@ -75,10 +75,10 @@ If your game starts from `ins2_register.as`, use that file as the entry point. I
   "angelscript.modules": [
     {
       "name": "MapInit",
-      "entry": "${workspaceFolder}/maps/ins2/ins2_register.as"
+      "entry": "${workspaceFolder}/maps/events/register.as"
     }
   ],
-  "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
+  "angelscript.predefined.active": "${workspaceFolder}/maps/game.as.predefined"
 }
 ```
 
@@ -123,8 +123,6 @@ Add `game.as.predefined` beside `main.as` and put `int HostScore();` in it. In `
 - An empty `angelscript.predefined.active` selects the first discovered stub in path order. Use `"all"` to load every discovered stub.
 - Run **Select Predefined Stub** or **Select Predefined Stubs** from the Command Palette. You can also open the actions menu from the **AngelScript IntelliSense** language status item.
 
-For a Sven Co-op 5.26 example, open [predefined/sven.as.predefined](../predefined/sven.as.predefined).
-
 ## Engine Rules (`angelscript.rules.json`)
 
 If your engine calls `MapInit` from C++, add it to the engine rules to clear the unused-function warning. You can also use rules to link `BaseClass` to a native class in a stub or flag calls and declarations that break your host’s rules.
@@ -135,7 +133,9 @@ Use editor settings to match your host and a rules file to share settings and cu
 
 To generate a starter file, run **Configure Host Rules & Predefined API...** in the Command Palette and choose the starter rules option.
 
-For examples of each field, see the [Engine Rules Guide](RULES.md) and [predefined/sven.angelscript.rules.json](../predefined/sven.angelscript.rules.json).
+For examples of each field, see the [Engine Rules Guide](RULES.md).
+
+For a real-world Sven Co-op example, see `predefined/sven.as.predefined` and `predefined/sven.angelscript.rules.json`.
 
 ## Engine Options and What Changes in the Editor
 

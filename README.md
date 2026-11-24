@@ -9,7 +9,7 @@
 
 Angelscript adds support for `.as` files to VS Code.
 
-AngelScript is a scripting language that game engines such as Sven Co-op use to run plugin and mod code, and the extension shows documentation on hover, suggests completions, and flags errors as you edit.
+Games and applications that embed AngelScript use it to run plugin and mod code. The extension shows documentation on hover, suggests completions, and flags errors as you edit.
 
 The C++20 language server uses Tree-Sitter to parse scripts and index their symbols.
 
@@ -45,117 +45,101 @@ The extension does not run scripts. AngelScript scripts run inside a host applic
 
 ### Hover
 
-See a symbol's signature and documentation.
-
 <p align="center"><img src="client/images/hover.gif" alt="Hover" width="720"></p>
+<p align="center"><em>See a symbol's signature and documentation.</em></p>
 
 ### Autocomplete
 
-Type after a dot to see matching members.
-
 <p align="center"><img src="client/images/autocomplete.gif" alt="Autocomplete" width="720"></p>
+<p align="center"><em>Type after a dot to see matching members.</em></p>
 
 ### Signature help
 
-See which parameter you are filling in as you type a call.
-
 <p align="center"><img src="client/images/signature-help.gif" alt="Signature help" width="720"></p>
+<p align="center"><em>See which parameter you are filling in as you type a call.</em></p>
 
 ### Diagnostics
 
-See warnings such as unused variables in the editor.
-
 <p align="center"><img src="client/images/diagnostics.gif" alt="Diagnostics" width="720"></p>
+<p align="center"><em>See warnings such as unused variables in the editor.</em></p>
 
 ### Go to Definition
 
-Jump from a name to its definition.
-
 <p align="center"><img src="client/images/go-to-definition.gif" alt="Go to Definition" width="720"></p>
+<p align="center"><em>Jump from a name to its definition.</em></p>
 
 ### Find All References
 
-List the places where a symbol is used.
-
 <p align="center"><img src="client/images/find-references.gif" alt="Find All References" width="720"></p>
+<p align="center"><em>List the places where a symbol is used.</em></p>
 
 ### Rename
 
-Change a script symbol's name and update its uses.
-
 <p align="center"><img src="client/images/rename.gif" alt="Rename" width="720"></p>
+<p align="center"><em>Change a script symbol's name and update its uses.</em></p>
 
 ### Code actions
 
-Open the lightbulb to see fixes and refactorings.
-
 <p align="center"><img src="client/images/code-actions.gif" alt="Code actions" width="720"></p>
+<p align="center"><em>Open the lightbulb to see fixes and refactorings.</em></p>
 
 ### Formatting
 
-Format the whole script or just the selected lines.
-
 <p align="center"><img src="client/images/formatting.gif" alt="Formatting" width="720"></p>
+<p align="center"><em>Format the whole script or just the selected lines.</em></p>
 
 ### Inlay hints
 
-See parameter names beside call arguments.
-
 <p align="center"><img src="client/images/inlay-hints.gif" alt="Inlay hints" width="720"></p>
+<p align="center"><em>See parameter names beside call arguments.</em></p>
 
 ### Code lens
 
-See the reference count above a declaration.
-
 <p align="center"><img src="client/images/code-lens.gif" alt="Code lens" width="720"></p>
+<p align="center"><em>See the reference count above a declaration.</em></p>
 
 ### Outline
 
-Browse the current script's classes, functions, and other symbols.
-
 <p align="center"><img src="client/images/outline.gif" alt="Outline" width="720"></p>
+<p align="center"><em>Browse the current script's classes, functions, and other symbols.</em></p>
 
 ### Semantic highlighting
 
-See parameters and fields colored by what they represent.
-
 <p align="center"><img src="client/images/semantic-highlighting.gif" alt="Semantic highlighting" width="720"></p>
+<p align="center"><em>See parameters and fields colored by what they represent.</em></p>
 
 ### Host API
 
-Get completion for the types and functions declared in your stub.
-
 <p align="center"><img src="client/images/predefined-api.gif" alt="Host API" width="720"></p>
+<p align="center"><em>Get completion for the types and functions declared in your stub.</em></p>
 
 ### Engine rules
 
-See your team's custom checks in the editor.
-
 <p align="center"><img src="client/images/engine-rules.gif" alt="Engine rules" width="720"></p>
+<p align="center"><em>See your team's custom checks in the editor.</em></p>
 
 ### Engine options
 
-Match the checks to the language options your host uses.
-
 <p align="center"><img src="client/images/engine-options.gif" alt="Engine options" width="720"></p>
+<p align="center"><em>Match the checks to the language options your host uses.</em></p>
 
 <details>
 <summary>Supported LSP features</summary>
 
-| Feature | Status |
-| :--- | :--- |
-| Completion | ✅ |
-| Hover | ✅ |
-| Signature help | ✅ |
-| Definition, declaration, and type definition | ✅ |
-| References | ✅ |
-| Rename | ✅ |
-| Document and workspace symbols | ✅ |
-| Semantic tokens | ✅ |
-| Inlay hints | ✅ |
-| Code actions | ✅ |
-| Document and range formatting | ✅ |
-| Push and pull diagnostics | ✅ |
+| Category | Feature | What it does |
+| :--- | :--- | :--- |
+| ✏️ Editing | Completion | Suggests symbols and members as you type. |
+|  | Hover | Shows signatures and documentation on hover. |
+|  | Signature help | Shows signatures and highlights the active parameter. |
+|  | Rename | Renames a symbol and updates its uses. |
+|  | Inlay hints | Shows inline parameter names and inferred types. |
+|  | Code actions | Offers quick fixes and refactorings. |
+|  | Document and range formatting | Formats the entire script or selected lines. |
+| 🧭 Navigation | Definition, declaration, and type definition | Jumps to declarations, definitions, or type definitions. |
+|  | References | Finds where a symbol is used. |
+|  | Document and workspace symbols | Lists symbols in a file or workspace. |
+| 🔎 Analysis | Semantic tokens | Highlights symbols by their role in code. |
+|  | Push and pull diagnostics | Reports issues automatically or on request. |
 
 </details>
 
