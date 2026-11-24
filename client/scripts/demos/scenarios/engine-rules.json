@@ -1,12 +1,28 @@
 {
   "name": "engine-rules",
   "file": "DiagnosticsDemo.as",
-  "initialLine": 1,
   "zoomIn": 1,
+  "wholeLineMargin": 8,
+  "setup": {
+    "action": "splitRight",
+    "tab": ".angelscript.rules.json",
+    "storageRulesOnly": true
+  },
+  "editorSettings": {
+    "editor.codeLens": false,
+    "editor.inlayHints.enabled": "off",
+    "[json]": {
+      "editor.fontSize": 15,
+      "editor.lineHeight": 24,
+      "editor.lineNumbers": "off",
+      "editor.folding": false,
+      "editor.wordWrap": "on"
+    }
+  },
   "steps": [
     { "action": "wait", "ms": 1150 },
     { "action": "moveCursor", "toToken": "m_targetPlayer", "lineIncludes": "private CBasePlayer@", "duration": 720 },
-    { "action": "ensureHover", "expect": "can dangle" },
+    { "action": "ensureHover", "expect": ["W113", "can dangle", "EHandle"], "fullyVisible": true },
     { "action": "hold", "ms": 3450 }
   ]
 }

@@ -3,6 +3,7 @@
   "file": "CodeActionsDemo.as",
   "initialLine": 1,
   "zoomIn": 1,
+  "actionMenuFontSize": 23,
   "editorSettings": {
     "editor.codeLens": false,
     "editor.lineHeight": 27,
@@ -18,17 +19,23 @@
       "action": "cycleCodeActions",
       "toToken": "healthReading",
       "lineIncludes": "float healthReading",
+      "menuHoldMs": 1000,
+      "resultHoldMs": 1200,
       "picks": [
         { "title": "Remove unused variable 'healthReading'", "removes": "float healthReading" },
         { "title": "Disable W103 for this line", "shows": ["// disable-line W103"] },
         { "title": "Disable W103 with // disable ... // enable", "shows": ["// disable W103", "// enable W103"] },
         { "title": "Disable W103 for entire file", "shows": ["// disable W103"] },
         { "title": "Disable unused for entire file", "shows": ["// disable unused"] },
-        { "title": "Add 'const' qualifier to method", "shows": ["void Sample(CBasePlayer@ target) const"] },
+        {
+          "title": "Add const to variable",
+          "target": { "toToken": "multiplier", "lineIncludes": "float multiplier = 0.5f;" },
+          "shows": ["void Sample(CBasePlayer@ target) const", "const float multiplier = 0.5f;"]
+        },
         {
           "title": "Extract Variable",
           "target": { "toToken": "GetHealth", "lineIncludes": "float healthReading" },
-          "shows": ["float health = target.GetHealth();", "float healthReading = health * 0.5f;"]
+          "shows": ["float health = target.GetHealth();", "float healthReading = health * multiplier;"]
         },
         {
           "title": "Generate Getter",

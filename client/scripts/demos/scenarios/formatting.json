@@ -8,7 +8,7 @@
     { "action": "moveCursor", "x": 580, "y": 240, "duration": 500 },
     { "action": "click" },
     { "action": "wait", "ms": 400 },
-    { "action": "showKeys", "keys": "Shift+Alt+F", "leadMs": 800 },
+    { "action": "showKeys", "keys": "Shift+Alt+F" },
     { "action": "press", "key": "Shift+Alt+f" },
     { "action": "wait", "ms": 1000 },
     { "action": "moveCursor", "x": 620, "y": 320, "duration": 600 },
