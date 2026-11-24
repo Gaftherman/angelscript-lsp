@@ -1,0 +1,18 @@
+{
+  "name": "code-actions",
+  "file": "DiagnosticsDemo.as",
+  "initialLine": 1,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 400 },
+    { "action": "moveCursor", "toToken": "healthName", "duration": 650 },
+    { "action": "click" },
+    { "action": "wait", "ms": 300 },
+    { "action": "press", "key": "Control+." },
+    { "action": "wait", "ms": 900 },
+    { "action": "moveCursor", "x": 420, "y": 350, "duration": 500 },
+    { "action": "hold", "ms": 3000 }
+  ]
+}

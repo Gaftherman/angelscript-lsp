@@ -1,0 +1,16 @@
+{
+  "name": "semantic-highlighting",
+  "file": "MedkitPlugin.as",
+  "initialLine": 21,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 400 },
+    { "action": "moveCursor", "toToken": "Dispense", "duration": 400 },
+    { "action": "moveCursor", "toToken": "CBasePlayer", "duration": 400 },
+    { "action": "moveCursor", "toToken": "player", "duration": 400 },
+    { "action": "moveCursor", "x": 750, "y": 180, "duration": 500 },
+    { "action": "hold", "ms": 2500 }
+  ]
+}

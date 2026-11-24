@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
+  "name": "Demo Safety Rules",
+  "engineProperties": {
+    "propertyAccessorMode": 2,
+    "requireEnumScope": false
+  },
+  "storageRules": [
+    {
+      "id": "unsafe-entity-handle",
+      "inheritsFrom": "CBaseEntity",
+      "typeRegex": "CBase.*",
+      "handleOnly": true,
+      "disallowInMembers": true,
+      "suggestReplacement": "EHandle",
+      "message": "Entity handle '{}' in member field can dangle; store 'EHandle' instead.",
+      "severity": "warning"
+    }
+  ]
+}

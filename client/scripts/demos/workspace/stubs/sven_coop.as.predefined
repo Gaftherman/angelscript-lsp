@@ -1,0 +1,43 @@
+/* Sven Co-op Core API Stubs */
+
+class Vector {
+    float x;
+    float y;
+    float z;
+    Vector();
+    Vector(float inX, float inY, float inZ);
+    float Length() const;
+    void Normalize();
+}
+
+class CBaseEntity {
+    Vector GetOrigin() const;
+    void SetOrigin(const Vector& in vec);
+    bool IsAlive() const;
+}
+
+class CBasePlayer : CBaseEntity {
+    string GetPlayerName() const;
+    void GiveAmmo(int amount, const string& in ammoType);
+    void SetHealth(float health);
+    float GetHealth() const;
+}
+
+class EHandle {
+    EHandle();
+    EHandle(CBaseEntity@ entity);
+    bool IsValid() const;
+    CBaseEntity@ GetEntity() const;
+}
+
+class CScheduler {
+    void SetTimeout(const string& in funcName, float delay);
+}
+
+class CEngineFuncs {
+    void ServerPrint(const string& in message);
+    void ClientPrint(CBasePlayer@ player, const string& in text);
+}
+
+CEngineFuncs g_EngineFuncs;
+CScheduler g_Scheduler;

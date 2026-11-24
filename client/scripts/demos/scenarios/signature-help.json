@@ -1,0 +1,21 @@
+{
+  "name": "signature-help",
+  "file": "DiagnosticsDemo.as",
+  "initialLine": 1,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 400 },
+    { "action": "moveCursor", "toToken": "healthName", "duration": 600 },
+    { "action": "click" },
+    { "action": "press", "key": "End" },
+    { "action": "press", "key": "Enter" },
+    { "action": "wait", "ms": 300 },
+    { "action": "type", "text": "target.GiveAmmo(", "delay": 75 },
+    { "action": "wait", "ms": 1000 },
+    { "action": "type", "text": "50, ", "delay": 80 },
+    { "action": "wait", "ms": 1000 },
+    { "action": "hold", "ms": 2000 }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "name": "engine-options",
+  "file": "MedkitPlugin.as",
+  "initialLine": 45,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    {
+      "action": "wait",
+      "ms": 600
+    },
+    {
+      "action": "clickTab",
+      "tab": "settings.json"
+    },
+    {
+      "action": "wait",
+      "ms": 400
+    },
+    {
+      "action": "goto",
+      "target": "2:1"
+    },
+    {
+      "action": "press",
+      "key": "End"
+    },
+    {
+      "action": "press",
+      "key": "Backspace"
+    },
+    {
+      "action": "press",
+      "key": "Backspace"
+    },
+    {
+      "action": "press",
+      "key": "Backspace"
+    },
+    {
+      "action": "press",
+      "key": "Backspace"
+    },
+    {
+      "action": "press",
+      "key": "Backspace"
+    },
+    {
+      "action": "press",
+      "key": "Backspace"
+    },
+    {
+      "action": "type",
+      "text": "true,",
+      "delay": 60
+    },
+    {
+      "action": "wait",
+      "ms": 1500
+    },
+    {
+      "action": "wait",
+      "ms": 300
+    },
+    {
+      "action": "press",
+      "key": "Control+s"
+    },
+    {
+      "action": "wait",
+      "ms": 500
+    },
+    {
+      "action": "clickTab",
+      "tab": "MedkitPlugin.as"
+    },
+    {
+      "action": "wait",
+      "ms": 800
+    },
+    {
+      "action": "goto",
+      "target": "1:1"
+    },
+    {
+      "action": "goto",
+      "target": "45:1"
+    },
+    {
+      "action": "wait",
+      "ms": 300
+    },
+    {
+      "action": "moveCursor",
+      "toToken": "g_MainStation",
+      "duration": 500
+    },
+    {
+      "action": "ensureHover"
+    },
+    {
+      "action": "hold",
+      "ms": 2600
+    }
+  ],
+  "preLine": 1
+}

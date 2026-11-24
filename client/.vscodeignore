@@ -30,3 +30,6 @@ bin/**/*.pdb
 
 
 
+
+# README media is referenced by absolute raw.githubusercontent.com URLs, so it does not ship in the .vsix.
+images/**

@@ -1,0 +1,18 @@
+{
+  "name": "find-references",
+  "file": "MedkitPlugin.as",
+  "initialLine": 1,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 500 },
+    { "action": "moveCursor", "toToken": "m_charges", "duration": 650 },
+    { "action": "click" },
+    { "action": "wait", "ms": 400 },
+    { "action": "press", "key": "Shift+F12" },
+    { "action": "wait", "ms": 1300 },
+    { "action": "moveCursor", "x": 800, "y": 300, "duration": 600 },
+    { "action": "hold", "ms": 2800 }
+  ]
+}
