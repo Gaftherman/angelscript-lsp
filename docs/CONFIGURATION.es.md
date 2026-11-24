@@ -281,7 +281,7 @@ Usa `engine.*` para hacer coincidir los ajustes de lenguaje del anfitrión. Comp
 | `angelscript.debug.enableBreakpointLocations` | `true` | Habilitar la verificación semántica de ubicaciones de puntos de interrupción mediante el servidor AngelLSP antes de vincularlos. |
 | `angelscript.debug.defaultPort` | `9002` | Puerto TCP predeterminado para conectar al servidor de depuración en tiempo de ejecución de AngelScript (predeterminado: 9002). |
 | `angelscript.debug.defaultProtocol` | `"dap"` | Protocolo predeterminado para depuración de AngelScript ('dap' para Protocolo de Adaptador de Depuración, 'asdbg' para socket binario o 'cdebugger' para socket de comandos de texto). |
-| `angelscript.runner.path` | `""` | Ruta absoluta al ejecutable del runner de AngelScript. Déjala vacía para buscar `angelscript-cli` en `PATH`. |
+| `angelscript.runner.path` | `""` | Ruta absoluta al ejecutable de AngelScript. Deja el ajuste vacío para buscar `angelscript`, `asc` o `angelscript-cli` en `PATH`. |
 <!-- CONFIG_DEBUG_END -->
 
 Selecciona el protocolo y el puerto que usa tu entorno de ejecución. Para una configuración de depuración concreta, puedes indicar `protocol` y `port` en `.vscode/launch.json`.

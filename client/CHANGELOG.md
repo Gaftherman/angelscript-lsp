@@ -6,6 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Changed
+
+- Runner discovery also finds `angelscript` and `asc` on `PATH` and continues to support `angelscript-cli`.
+
 ## [1.2.3] - 2026-11-24
 
 ### Added
