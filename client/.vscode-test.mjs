@@ -29,7 +29,7 @@ export default defineConfig([
 	{
 		...base,
 		label: 'unit',
-		files: ['out/test/extension.test.js', 'out/test/runnerResolver.test.js'],
+		files: ['out/test/extension.test.js', 'out/test/runnerResolver.test.js', 'out/test/issueReport.test.js'],
 		mocha: { timeout: 20_000 },
 	},
 	{

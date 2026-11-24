@@ -35,6 +35,8 @@
   "This stub is already formatted.": "This stub is already formatted.",
   "Formatted \"{0}\". Save it to keep the change.": "Formatted \"{0}\". Save it to keep the change.",
   "The edit that formats this stub was rejected.": "The edit that formats this stub was rejected.",
+  "Report Issue": "Report Issue",
+  "The language server is not working as expected.": "The language server is not working as expected.",
   "Open Logs Folder": "Open Logs Folder",
   "No workspace folder is currently open.": "No workspace folder is currently open.",
   "Disabled diagnostic \"{0}\" in workspace settings.": "Disabled diagnostic \"{0}\" in workspace settings.",

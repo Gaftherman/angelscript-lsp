@@ -205,6 +205,11 @@
         "category": "%command.openLogsFolder.category%"
       },
       {
+        "command": "angelscript.reportIssue",
+        "title": "%command.reportIssue.title%",
+        "category": "%command.reportIssue.category%"
+      },
+      {
         "command": "angelscript.restartServer",
         "title": "%command.restartServer.title%",
         "category": "%command.restartServer.category%"

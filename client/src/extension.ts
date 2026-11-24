@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import {
-    ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
+    ExtensionContext, window, workspace, env, commands, version, OutputChannel, ExtensionMode,
     Disposable, RelativePattern, ConfigurationTarget, QuickPickItem, QuickPickItemKind, Uri, l10n,
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit,
     Position, Location,
@@ -16,6 +16,9 @@ import {
 import {
     AngelScriptEvaluatableExpressionProvider
 } from './debug/angelscriptEvaluatableExpression';
+import {
+    LOG_TAIL_LINES, Redaction, anonymizeSnippet, buildIssueReport, buildIssueUrl, tailLines
+} from './issueReport';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
     LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler
@@ -120,6 +123,15 @@ const RESTART_COMMAND = 'angelscript.restartServer';
 
 /** @brief Command that opens the folder containing the disk logs. */
 const OPEN_LOGS_FOLDER_COMMAND = 'angelscript.openLogsFolder';
+
+/** @brief Command that opens a bug report with versions, the log and an anonymized sample already filled in. */
+const REPORT_ISSUE_COMMAND = 'angelscript.reportIssue';
+
+/** @brief Address of the repository's new-issue page, used when the editor has no issue reporter. */
+const NEW_ISSUE_URL = 'https://github.com/Gaftherman/angelscript-lsp/issues/new';
+
+/** @brief The last failure shown to the user, so Report Issue can describe it. */
+let lastFailure: { summary: string; detail?: string } | undefined;
 
 /** @brief Command that prompts the user to select an active predefined API stub or merge all. */
 const SELECT_PREDEFINED_COMMAND = 'angelscript.selectPredefined';
@@ -462,19 +474,23 @@ function reportFailure(summary: string, detail?: string, isCrash = false): void 
     if (detail) {
         lspOutputChannel.appendLine(detail);
     }
+    lastFailure = { summary, detail };
 
     setStatus('failed', summary);
 
     const restartAction = l10n.t('Restart Server');
     const openLogsAction = l10n.t('Open Logs Folder');
+    const reportAction = l10n.t('Report Issue');
     const showLog = showLogAction();
 
     const actions = isCrash
-        ? [restartAction, openLogsAction, showLog]
-        : [showLog];
+        ? [restartAction, openLogsAction, reportAction, showLog]
+        : [reportAction, showLog];
 
     void window.showErrorMessage(`AngelScript: ${summary}`, ...actions).then(choice => {
-        if (choice === restartAction) {
+        if (choice === reportAction) {
+            void commands.executeCommand(REPORT_ISSUE_COMMAND);
+        } else if (choice === restartAction) {
             void commands.executeCommand(RESTART_COMMAND);
         } else if (choice === openLogsAction) {
             void commands.executeCommand(OPEN_LOGS_FOLDER_COMMAND);
@@ -533,6 +549,86 @@ async function openLogsFolder(): Promise<void> {
         await commands.executeCommand('revealFileInOS', targetUri);
     } catch {
         await env.openExternal(targetUri);
+    }
+}
+
+/** @brief Tail of the newest disk log in the open workspace folders, or empty when there is none. */
+function readNewestLogTail(): string {
+    let newest: { file: string; time: number } | undefined;
+    for (const folder of workspace.workspaceFolders ?? []) {
+        const lspDir = path.join(folder.uri.fsPath, '.vscode', 'lsp');
+        try {
+            for (const dir of fs.readdirSync(lspDir, { withFileTypes: true })) {
+                if (!dir.isDirectory() || !dir.name.startsWith('logs-')) {
+                    continue;
+                }
+                for (const name of fs.readdirSync(path.join(lspDir, dir.name))) {
+                    const file = path.join(lspDir, dir.name, name);
+                    const time = fs.statSync(file).mtimeMs;
+                    if (!newest || time > newest.time) {
+                        newest = { file, time };
+                    }
+                }
+            }
+        } catch {
+            // No log folder in this workspace folder.
+        }
+    }
+    if (!newest) {
+        return '';
+    }
+    try {
+        const size = fs.statSync(newest.file).size;
+        const length = Math.min(size, 64 * 1024);
+        const buffer = Buffer.alloc(length);
+        const handle = fs.openSync(newest.file, 'r');
+        try {
+            fs.readSync(handle, buffer, 0, length, size - length);
+        } finally {
+            fs.closeSync(handle);
+        }
+        return tailLines(buffer.toString('utf8'), LOG_TAIL_LINES);
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * @brief Opens a bug report that already carries what a maintainer needs and nothing private.
+ *
+ * Paths, the user name and email addresses are replaced, and the code near the cursor is rewritten
+ * with generic names. The VS Code issue reporter shows the whole text for review before anything is sent.
+ *
+ * @param context The extension context, for the extension id and version.
+ */
+async function reportIssue(context: ExtensionContext): Promise<void> {
+    const redactions: Redaction[] = [
+        ...(workspace.workspaceFolders ?? []).map(f => ({ value: f.uri.fsPath, placeholder: '<workspace>' })),
+        { value: os.homedir(), placeholder: '~' },
+        { value: os.userInfo().username, placeholder: '<user>' }
+    ];
+    const editor = window.activeTextEditor;
+    const snippet = editor && editor.document.languageId === 'angelscript'
+        ? anonymizeSnippet(editor.document.getText(), editor.selection.active.line)
+        : undefined;
+    const failure = lastFailure ?? { summary: l10n.t('The language server is not working as expected.') };
+    const report = buildIssueReport({
+        extensionVersion: String(context.extension.packageJSON?.version ?? 'unknown'),
+        vscodeVersion: `${env.appName} ${version}`,
+        platform: `${process.platform} ${process.arch}`,
+        summary: failure.detail ? `${failure.summary}\n\n${failure.detail}` : failure.summary,
+        logTail: readNewestLogTail(),
+        snippet,
+        redactions
+    });
+    try {
+        await commands.executeCommand('workbench.action.openIssueReporter', {
+            extensionId: context.extension.id,
+            issueTitle: report.title,
+            issueBody: report.body
+        });
+    } catch {
+        await env.openExternal(Uri.parse(buildIssueUrl(NEW_ISSUE_URL, report)));
     }
 }
 
@@ -1613,6 +1709,9 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand(OPEN_LOGS_FOLDER_COMMAND, () => openLogsFolder()));
+
+        context.subscriptions.push(
+            commands.registerCommand(REPORT_ISSUE_COMMAND, () => reportIssue(context)));
 
         context.subscriptions.push(
             commands.registerCommand(RESTART_COMMAND, () => restartClient(context, 'Restart requested from the command palette.')));
