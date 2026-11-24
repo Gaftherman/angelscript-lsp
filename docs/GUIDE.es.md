@@ -4,11 +4,17 @@
 
 Empieza por el ejemplo que más se parezca a cómo tu juego carga los scripts. Después ajusta la API y las reglas del lenguaje que verá VS Code.
 
+> **Palabras que verás**
+>
+> - El **host** es el juego o programa que ejecuta tus scripts.
+> - La **API** son los nombres que ofrece el host. Un **stub** los enumera en un archivo como `game.as.predefined`.
+> - Un **módulo con script de entrada** reúne un script inicial, como `main.as`, y todos los archivos a los que llega por `#include`.
+> - Una **inclusión** es una directiva como `#include "helper.as"` que incorpora otro archivo al módulo.
+> - Un **diagnóstico** es un mensaje del editor, como un aviso sobre una variable sin usar.
+
 ## Ejemplos de configuración del espacio de trabajo
 
-Pon el ejemplo en `.vscode/settings.json`, dentro de `${workspaceFolder}`. En `angelscript.modules`, usa `folder` para agrupar todo lo que hay bajo una carpeta o `entry` para partir de un script y seguir sus `#include`.
-
-Con los módulos definidos, el editor puede comprobar si una declaración `external shared` tiene su definición en otro módulo.
+Pon el ejemplo en `.vscode/settings.json`, dentro de `${workspaceFolder}`. En `angelscript.modules`, usa `folder` para agrupar todo lo que hay bajo una carpeta o `entry` para partir de un script y seguir sus `#include`. Con los módulos definidos, el editor puede comprobar si una declaración `external shared` tiene su definición en otro módulo.
 
 ### Ejemplo A: Sven Co-op (módulo por carpeta)
 
@@ -16,23 +22,14 @@ Si todos los scripts de `maps/hcas` se compilan juntos, asigna un módulo a esa 
 
 ```jsonc
 {
-  // Permite inclusiones sin extensión (por ejemplo, #include "helper" encuentra helper.as)
   "angelscript.include.implicitExtension": true,
-
-  // Carpeta adicional para buscar rutas #include
-  "angelscript.searchDirectories": [
-    "${workspaceFolder}/maps"
-  ],
-
-  // Todos los scripts bajo maps/hcas pertenecen al módulo HCAS
+  "angelscript.searchDirectories": ["${workspaceFolder}/maps"],
   "angelscript.modules": [
     {
       "name": "HCAS",
       "folder": "${workspaceFolder}/maps/hcas"
     }
   ],
-
-  // Archivo activo con la API predefinida del juego
   "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
 }
 ```
@@ -44,9 +41,7 @@ Si tu juego empieza por `ins2_register.as`, pon ese archivo como punto de entrad
 ```jsonc
 {
   "angelscript.include.implicitExtension": true,
-  "angelscript.searchDirectories": [
-    "${workspaceFolder}/maps"
-  ],
+  "angelscript.searchDirectories": ["${workspaceFolder}/maps"],
   "angelscript.modules": [
     {
       "name": "MapInit",
@@ -63,24 +58,20 @@ Si tu motor guarda los archivos de inclusión y las declaraciones de la API en c
 
 ```jsonc
 {
-  "angelscript.searchDirectories": [
-    "${workspaceFolder}/scripts/include"
-  ],
+  "angelscript.searchDirectories": ["${workspaceFolder}/scripts/include"],
   "angelscript.modules": [
     {
       "name": "GameCore",
       "folder": "${workspaceFolder}/scripts/game"
     }
   ],
-  "angelscript.predefinedFiles": [
-    "${workspaceFolder}/scripts/api/engine.as.predefined"
-  ]
+  "angelscript.predefinedFiles": ["${workspaceFolder}/scripts/api/engine.as.predefined"]
 }
 ```
 
 ## Archivos de API predefinidos (`.as.predefined`)
 
-Declara en un stub `.as.predefined` la API que tu juego registra desde C++. Así el editor puede sugerir las clases y funciones del juego, mostrar sus firmas en el hover y revisar cómo las usas.
+Declara en un stub `.as.predefined` la API que tu juego registra desde C++. Así el editor puede sugerir las clases y funciones del juego, mostrar sus firmas al pasar el cursor y revisar cómo las usas. Si tu host ofrece la función de Sven Co-op `float RandomFloat(float low, float high);`, añade esa declaración a `game.as.predefined` y prueba `RandomFloat(0.0f, 1.0f)` en un script.
 
 ### Cómo se cargan los stubs
 
@@ -95,9 +86,11 @@ Puedes tomar como ejemplo el stub de Sven Co-op 5.26 en [predefined/sven.as.pred
 
 Si el motor llama a `MapInit` desde C++, agrégalo a las reglas para que el editor deje de marcarlo como función sin usar. Las reglas también sirven para asociar `BaseClass` con una clase nativa del stub o señalar llamadas y declaraciones que tu motor restringe.
 
-- Guarda `angelscript.rules.json` en la raíz del workspace para que se cargue automáticamente. El servidor también busca archivos `*.angelscript.rules.json` junto a los stubs y en la raíz.
-- Para elegir un archivo concreto, indica su ruta con `angelscript.rulesFile` en `.vscode/settings.json`.
-- Para crear un archivo inicial, abre **Configurar reglas del motor y API predefinida...** desde la paleta de comandos y elige la opción para crear las reglas.
+El servidor carga un solo archivo de reglas. Primero busca el archivo indicado por `angelscript.rulesFile`. Si no existe, busca `angelscript.rules.json` en una raíz del espacio de trabajo, luego junto al stub activo, después junto a los demás stubs conocidos, y por último un `*.angelscript.rules.json` en una raíz. Junto a `game.as.predefined` prueba `game.angelscript.rules.json` antes de elegir la primera coincidencia del patrón por orden de ruta.
+
+Ajusta el editor a tu host y usa un archivo de reglas para compartir opciones y comprobaciones. Los valores de `engineProperties` del archivo cargado tienen prioridad. Por ejemplo, `"requireEnumScope": true` en el archivo prevalece sobre `false` en el editor. El servidor combina ambas listas de `noHandleTypes`.
+
+Para crear un archivo inicial, abre **Configurar reglas del motor y API predefinida...** desde la paleta de comandos y elige la opción para crear las reglas.
 
 Consulta los ejemplos de la [Guía de reglas del motor](RULES.es.md) y el archivo [predefined/sven.angelscript.rules.json](../predefined/sven.angelscript.rules.json).
 
@@ -141,9 +134,48 @@ Usa los mismos valores que tu motor usa para las opciones `asEP_*` y el preproce
 
 ## Formato y `.clang-format`
 
-Ajusta las llaves y los espacios con `angelscript.format.*`. Al formatear, el editor busca `.clang-format`, `_clang-format` o `.as-clang-format` en la carpeta del archivo y en las carpetas superiores. Si encuentra opciones compatibles, las aplica por encima de los ajustes equivalentes del editor.
+Usa **Dar formato al documento** para todo el script o **Dar formato a la selección** para las líneas seleccionadas, por ejemplo, las de una función. Si activas el formato al guardar manualmente o al escribir, se busca el estilo de la misma forma. **Formatear stub predefinido** usa su propio formateador y agrupa las declaraciones por espacio de nombres.
 
-Puedes usar `BasedOnStyle`, secciones `Language: AngelScript` o `Cpp`, y opciones como `SpaceBeforeParens`, `PointerAlignment` y `AllowShortBlocksOnASingleLine`. Si quieres conservar el formato de un bloque, rodéalo con `// clang-format off` y `// clang-format on`.
+Si el archivo existe, la búsqueda empieza en su carpeta y sube hasta la raíz del sistema de archivos. En cada carpeta prueba `.clang-format`, `_clang-format` y después `.as-clang-format`. Por ejemplo, para un script en `scripts/`, se elige `scripts/_clang-format` antes que un `.clang-format` en la raíz del proyecto. La búsqueda termina en el primer archivo normal que se pueda abrir.
+
+Si la ruta no existe o no se carga un estilo, se usan las opciones de sangría y espacios del editor junto con `angelscript.format.*`. Al guardar manualmente, el formato parte de cuatro espacios. El estilo de llaves predeterminado, `allman`, pone la llave de apertura en su propia línea si el cuerpo de la función tiene contenido.
+
+Separa las secciones de idioma con `---`. Se elige primero `Language: AngelScript`, después `Language: Cpp` y por último la sección sin idioma. Cada sección de idioma hereda los ajustes sin etiqueta que aparecen antes. Pon un estilo base como `BasedOnStyle: Google` antes de tus propios ajustes.
+
+| Claves | Ejemplo |
+| :--- | :--- |
+| `IndentWidth`, `UseTab`, `NamespaceIndentation`, `BreakBeforeBraces` | `IndentWidth: 2` con `UseTab: Never` aplica una sangría de dos espacios. |
+| `SpaceBeforeParens`, `SpacesInParentheses`, `PointerAlignment`, `ReferenceAlignment` | `SpaceBeforeParens: Always` deja la llamada como `draw (x)`. |
+| `AllowShortBlocksOnASingleLine`, `MaxEmptyLinesToKeep` | `Empty` conserva un bloque vacío que ya está en una sola línea. `MaxEmptyLinesToKeep: 1` limita las líneas en blanco consecutivas al formatear todo el script. |
+
+El formateador ignora `ColumnLimit`, `TabWidth`, las subclaves de `BraceWrapping` y opciones como `AllowShortFunctionsOnASingleLine`. Por ejemplo, con `ColumnLimit: 80` las líneas largas quedan sin dividir.
+
+Pon `// clang-format off` y `// clang-format on` en líneas propias para delimitar un bloque. Si falta el `on`, la pausa dura hasta el final del archivo. Las tabulaciones, las líneas en blanco y los espacios al final pueden cambiar dentro del bloque. Pon `DisableFormat: true` en el estilo elegido para omitir el formato de todo el archivo.
+
+## Funciones de uso diario
+
+Pon estos ajustes en `.vscode/settings.json`. Consulta la [guía de configuración](CONFIGURATION.es.md).
+
+- **Cambiar nombre**. Usa **Cambiar nombre de símbolo** sobre `spawn` para actualizar su declaración y sus usos en los scripts indexados. Los nombres del host declarados solo en un stub, como `RandomFloat`, son de solo lectura.
+  Pon `angelscript.features.rename` en `false` para desactivar la función.
+- **Referencias**. Haz clic derecho en `spawn` y elige **Buscar todas las referencias** para ver dónde se usa.
+  Pon `angelscript.features.references` en `false` para desactivar la función.
+- **Acciones de código**. Abre la bombilla para ver acciones como **Eliminar variable no utilizada** en una variable local sin usar o **Extraer variable** en una expresión apta.
+  Pon `angelscript.features.codeAction` en `false` para ocultar estas acciones.
+- **Ayuda de firma**. Escribe `draw(` para ver los nombres y tipos de los parámetros. En `draw(10,`, la coma puede resaltar el parámetro siguiente.
+  Pon `angelscript.features.signatureHelp` en `false` para ocultar la ayuda.
+- **CodeLens**. Haz clic en `2 referencias` encima de `spawn` para ver sus usos si las referencias están activadas. Las interfaces y sus métodos pueden mostrar etiquetas con el número de implementaciones.
+  Pon `angelscript.features.codeLens` en `false` para ocultar los recuentos. `angelscript.codeLens.showOnEnums` controla los recuentos en miembros como `Red` en `enum Color { Red }`.
+- **Pistas en línea**. Ve los nombres de los parámetros junto a los argumentos. Si `draw` declara el parámetro `int x`, la llamada `draw(10)` puede mostrar `x:` junto a `10`.
+  Pon `angelscript.features.inlayHints` en `false` para ocultar las etiquetas.
+- **Resaltado semántico**. Distingue los parámetros y los campos por su color según el papel que cumplen.
+  Pon `angelscript.features.semanticTokens` en `false` para quedarte con el resaltado habitual de la gramática.
+- **Diagnósticos**. Lee el código junto al mensaje en **Problemas** o al pasar el cursor sobre el subrayado. Para una variable local sin usar, pon `"angelscript.diagnosticSeverity": {"W103": "hint"}`. También puedes usar el código largo `as-warn-unused-variable`.
+  Para desactivar una comprobación concreta, pon su ajuste en `false`, por ejemplo, `angelscript.diagnostics.reportPossibleNullDereference`.
+
+El servidor envía los diagnósticos de forma automática. En el modo bajo demanda, el editor los solicita. Inicia el servidor con `--enable-pull-diagnostics` si tu cliente admite este modo.
+
+**Ir a la definición** e **Ir a la declaración** usan la misma búsqueda. **Ir a la definición de tipo** lleva al tipo, como `Player` para una variable de ese tipo. Un moniker es un identificador del proyecto que el servidor devuelve al editor, como `Game::spawn`.
 
 ## Variables de ruta
 
@@ -179,17 +211,41 @@ Abre la paleta de comandos (`Ctrl+Shift+P` o `Cmd+Shift+P`). En el Explorador ta
 
 ## Depurador
 
-Usa `type: "angelscript"` en la configuración de depuración de VS Code para poner puntos de interrupción y revisar la pila de llamadas y las variables locales. Elige `dap`, `asdbg` o `cdebugger` con `angelscript.debug.defaultProtocol` y ajusta `angelscript.debug.defaultPort` al puerto del motor. El valor inicial es `9002`.
+Pon el ejemplo en `.vscode/launch.json` y elige una configuración en **Ejecutar y depurar**. Para conectarte a un proceso, inicia un juego o host con [asdebugger](https://github.com/Gaftherman/asdebugger) escuchando en `127.0.0.1:9002`. Si eliges iniciar el juego, VS Code ejecuta el programa configurado e intenta conectarse al puerto de escucha. Tu host ejecuta los scripts y atiende las solicitudes de depuración. El servidor de lenguaje puede comprobar dónde poner puntos de interrupción.
+
+| Campo | Valor |
+| :--- | :--- |
+| `type`, `request` | Usa `"angelscript"` y elige `"attach"` o `"launch"`. |
+| `host`, `port`, `protocol` | Usa la dirección DAP de tu host, por ejemplo, `127.0.0.1` y el puerto `9002`, con `"dap"` sobre TCP. Si omites el puerto, se usa `angelscript.debug.defaultPort`. |
+| `executable`, `args`, `cwd` | Para iniciar el juego, indica el ejecutable del host, los argumentos que necesite y su carpeta de trabajo. |
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Conectar al juego", "type": "angelscript", "request": "attach",
+      "host": "127.0.0.1", "port": 9002, "protocol": "dap"
+    },
+    {
+      "name": "Iniciar y depurar el juego", "type": "angelscript", "request": "launch",
+      "executable": "${workspaceFolder}/bin/game.exe",
+      "args": [], "cwd": "${workspaceFolder}",
+      "host": "127.0.0.1", "port": 9002, "protocol": "dap"
+    }
+  ]
+}
+```
 
 ## Compilar desde el código fuente
 
-Para compilar el servidor necesitas un compilador C++20 y CMake 3.22 o posterior. Para el cliente necesitas Node.js y `npm`. Ejecuta estos comandos desde la raíz del repositorio.
+Para compilar el servidor necesitas un compilador C++20 y CMake 3.22 o posterior. El cliente usa Node.js y `npm`. El paso de empaquetado genera `client/dist/extension.js`, que es el archivo que carga VS Code. Ejecuta estos comandos desde la raíz del repositorio.
 
 ```bash
 cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
 cmake --build server/build --config Release
 ctest --test-dir server/build -C Release --output-on-failure
-cd client && npm install && npm run compile
+cd client && npm install && npm run compile && npm run bundle
 ```
 
 Consulta la [guía de configuración](CONFIGURATION.es.md) para ver todos los ajustes y ejemplos para editores.
