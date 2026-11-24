@@ -95,6 +95,8 @@ class LocalScopeCollector
         uint32_t endByte = 0;
         uint32_t ownNameStartByte = constants::InvalidByteOffset;
         uint32_t ownNameEndByte = 0;
+        /** @brief Bytes after the parameter list and before the opening brace. */
+        IndexedByteRange signatureBodyGap{};
     };
 
   private:

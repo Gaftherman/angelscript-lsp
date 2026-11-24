@@ -84,6 +84,37 @@ void CollectUnscopedSymbols(const CompletionQuery& request, const analysis::Scop
     CollectKeywords(collector);
 }
 
+/**
+ * @brief Uses current syntax to reject callable scopes whose published positions predate an edit.
+ * @param[in] scope Innermost scope from the last published lexical tree.
+ * @param[in] request Completion query for the current document text and syntax.
+ * @return The enclosing scope when current syntax excludes the stale function scope, otherwise the input scope.
+ */
+static const Scope* ReconcileStaleCallableScope(const Scope* scope, const CompletionQuery& request)
+{
+    if (!request.nodeIndex)
+    {
+        return scope;
+    }
+
+    const Scope* functionScope = scope;
+    while (functionScope && functionScope->kind != ScopeKind::Function)
+    {
+        functionScope = functionScope->parent;
+    }
+    if (!functionScope)
+    {
+        return scope;
+    }
+
+    const auto& lines = request.nodeIndex->Lines();
+    const uint32_t line = request.position.line;
+    const size_t start = lines.LineCount() > 0 ? lines.StartOffset(request.sourceCode, line)
+                                               : utils::LineStartOffset(request.sourceCode, line);
+    const auto cursorByte = static_cast<uint32_t>(start + request.position.character);
+    return IsOutsideCallableInCurrentSyntax(*request.nodeIndex, cursorByte) ? functionScope->parent : scope;
+}
+
 std::vector<CompletionEntry> CollectCompletionEntries(const CompletionQuery& request)
 {
     std::string prefix = GetLinePrefix(request.sourceCode, request.position.line, request.position.character);
@@ -131,9 +162,18 @@ std::vector<CompletionEntry> CollectCompletionEntries(const CompletionQuery& req
         return items;
     }
 
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    auto rootScope = request.scopeIndex.GetOccurrenceRoot(request.uri);
+    const bool hasCurrentScope = static_cast<bool>(rootScope);
+    if (!hasCurrentScope)
+    {
+        rootScope = request.scopeIndex.GetRoot(request.uri);
+    }
     const analysis::Scope* innermostScope =
         rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
+    if (!hasCurrentScope)
+    {
+        innermostScope = ReconcileStaleCallableScope(innermostScope, request);
+    }
 
     if (TryCompleteMemberAccess(prefix, innermostScope, collector))
     {
