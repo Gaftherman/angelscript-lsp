@@ -4,6 +4,10 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+### Added
+
+- Added the `angelscript.runner.path` setting so a `launch` configuration with `program` can run scripts through an external AngelScript runner found on your PATH.
+
 ## [1.2.2] - 2026-11-24
 
 ### Changed

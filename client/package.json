@@ -1270,6 +1270,12 @@
             ],
             "default": "dap",
             "markdownDescription": "%config.debug.defaultProtocol.description%"
+          },
+          "angelscript.runner.path": {
+            "type": "string",
+            "default": "",
+            "scope": "machine-overridable",
+            "markdownDescription": "%config.runner.path.description%"
           }
         }
       }

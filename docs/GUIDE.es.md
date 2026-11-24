@@ -221,6 +221,8 @@ Abre la paleta de comandos (`Ctrl+Shift+P` o `Cmd+Shift+P`). En el Explorador ta
 Con el depurador de VS Code puedes usar puntos de interrupción, ver la pila de llamadas e inspeccionar variables mientras tu aplicación ejecuta los scripts.
 El [proyecto de ejemplo del depurador](https://github.com/Gaftherman/angelscript-debugger-example) muestra cómo configurar la aplicación y realizar una sesión de depuración completa.
 
+Para ejecutar un script sin un juego, instala el [runner de línea de comandos de AngelScript](https://github.com/Gaftherman/angelscript-cli) y configura `angelscript.runner.path` o añade el runner a tu `PATH`.
+
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Ejecución paso a paso de AngelScript en VS Code" width="720"></p>
 <p align="center"><em>Ejecuta un script de AngelScript paso a paso en VS Code.</em></p>
 
