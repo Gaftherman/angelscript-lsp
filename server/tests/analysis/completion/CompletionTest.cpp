@@ -1375,6 +1375,61 @@ TEST_CASE("Completion - Trailing dot in function declaration returns no member i
     CHECK(items.empty());
 }
 
+TEST_CASE("Completion - Method parameter members are visible in the signature and body")
+{
+    const auto receiverType = test::GenerateRandomSymbolName("Receiver");
+    const auto member = test::GenerateRandomSymbolName("member");
+    const auto ownerType = test::GenerateRandomSymbolName("Owner");
+    const auto method = test::GenerateRandomSymbolName("Run");
+    const auto parameter = test::GenerateRandomSymbolName("parameter");
+    const auto defaultedParameter = test::GenerateRandomSymbolName("defaulted");
+    const std::string receiver = parameter + ".";
+    const std::string signature = "class " + receiverType + " { int " + member + "; }\nclass " + ownerType +
+                                  " {\n    void " + method + "(" + receiverType + "@ " + parameter;
+
+    const auto usePreviousScopes = [&](TestEnvironment& env)
+    {
+        TestEnvironment previous(signature + ")\n    {\n\n    }\n}\n");
+        auto root = previous.scopeIndex.GetRoot(previous.uri);
+        REQUIRE(root);
+        env.scopeIndex.SetScopeTree(env.uri, root);
+        env.scopeIndex.InvalidateDocumentOccurrences(env.uri);
+    };
+
+    SUBCASE("Between the parameter list and body")
+    {
+        TestEnvironment env(signature + ")\n    " + receiver + "\n    {}\n}\n");
+        const auto column = static_cast<uint32_t>(4 + receiver.size());
+        CHECK(env.CompleteAt(3, column).empty());
+        usePreviousScopes(env);
+        CHECK(env.CompleteAt(3, column).empty());
+    }
+    SUBCASE("After the method body inside the class")
+    {
+        TestEnvironment env(signature + ")\n    {}\n    " + receiver + "\n}\n");
+        const auto column = static_cast<uint32_t>(4 + receiver.size());
+        CHECK_FALSE(HasItem(env.CompleteAt(3, 6), parameter));
+        CHECK(env.CompleteAt(4, column).empty());
+        usePreviousScopes(env);
+        CHECK_FALSE(HasItem(env.CompleteAt(3, 6), parameter));
+        CHECK(env.CompleteAt(4, column).empty());
+    }
+    SUBCASE("Inside the method body")
+    {
+        TestEnvironment env(signature + ")\n    {\n        " + receiver + "\n    }\n}\n");
+        const auto column = static_cast<uint32_t>(8 + receiver.size());
+        CHECK(HasItem(env.CompleteAt(4, column), member));
+        usePreviousScopes(env);
+        CHECK(HasItem(env.CompleteAt(4, column), member));
+    }
+    SUBCASE("Inside a default argument")
+    {
+        const std::string defaultPrefix = "        int " + defaultedParameter + " = " + receiver;
+        TestEnvironment env(signature + ",\n" + defaultPrefix + member + ")\n    {}\n}\n");
+        CHECK(HasItem(env.CompleteAt(3, static_cast<uint32_t>(defaultPrefix.size())), member));
+    }
+}
+
 TEST_CASE("Completion - Chained method access returning object resolves members")
 {
     const std::string innerClass = test::GenerateRandomSymbolName("InnerNode");

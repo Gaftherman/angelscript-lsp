@@ -493,9 +493,48 @@ static bool CheckMethodIsConst(TSNode funcNode, const parser::GrammarSymbols& gs
     return isConst;
 }
 
+/**
+ * @brief Indexes the gap between a function's parameter list and body and the end of a closed body.
+ * @param[in,out] openScope Scope under construction, with byte bounds for assigning captures.
+ * @param[in] node Function declaration carrying the parameter list and body fields.
+ * @param[in] gs Cached grammar symbols for the fields and closing brace.
+ * @param[out] context Shared scope context that stores the gap for positional lookup.
+ */
+static void SetFunctionScopeBounds(LocalScopeCollector::OpenScope& openScope, TSNode node,
+                                   const parser::GrammarSymbols& gs, ScopeEnclosingContext& context)
+{
+    const TSNode parameters = parser::GetChildByField(node, gs.fieldParameters);
+    const TSNode body = parser::GetChildByField(node, gs.fieldBody);
+    context.signatureBodyGap = {};
+    if (ts_node_is_null(parameters) || ts_node_is_null(body))
+    {
+        return;
+    }
+
+    const TSPoint signatureEnd = ts_node_end_point(parameters);
+    const TSPoint bodyStart = ts_node_start_point(body);
+    context.signatureBodyGap = {signatureEnd.row, signatureEnd.column, bodyStart.row, bodyStart.column};
+    openScope.signatureBodyGap = {ts_node_end_byte(parameters), ts_node_start_byte(body)};
+
+    const uint32_t childCount = ts_node_child_count(body);
+    const TSNode last = childCount > 0 ? ts_node_child(body, childCount - 1) : TSNode{};
+    if (!ts_node_is_null(last) && ts_node_symbol(last) == gs.tokCloseBrace && !ts_node_is_missing(last))
+    {
+        const TSPoint bodyEnd = ts_node_end_point(last);
+        openScope.endByte = ts_node_end_byte(last);
+        openScope.scope->endLine = bodyEnd.row;
+        openScope.scope->endCharacter = bodyEnd.column;
+        openScope.scope->endIsExclusive = true;
+    }
+}
+
 static void UpdateFuncScopeContext(LocalScopeCollector::OpenScope& openScope, TSNode node,
                                    const parser::GrammarSymbols& gs, std::string_view sourceCode)
 {
+    auto newCtx = std::make_shared<ScopeEnclosingContext>(
+        openScope.scope->enclosingContext ? *openScope.scope->enclosingContext : ScopeEnclosingContext{});
+    SetFunctionScopeBounds(openScope, node, gs, *newCtx);
+
     TSNode ownNameNode = parser::GetChildByField(node, gs.fieldName);
     if (!ts_node_is_null(ownNameNode))
     {
@@ -506,14 +545,12 @@ static void UpdateFuncScopeContext(LocalScopeCollector::OpenScope& openScope, TS
         std::string_view parentPrefix = !openScope.scope->GetEnclosingClass().empty()
                                             ? openScope.scope->GetEnclosingClass()
                                             : openScope.scope->GetEnclosingNamespace();
-        auto newCtx = std::make_shared<ScopeEnclosingContext>(
-            openScope.scope->enclosingContext ? *openScope.scope->enclosingContext : ScopeEnclosingContext{});
         newCtx->caller = utils::JoinScopedName(parentPrefix, fnName);
         TSNode retNode = parser::GetChildByField(node, gs.fieldReturnType);
         newCtx->returnType =
             !ts_node_is_null(retNode) ? std::string(parser::NodeText(retNode, sourceCode)) : std::string{};
-        openScope.scope->enclosingContext = std::move(newCtx);
     }
+    openScope.scope->enclosingContext = std::move(newCtx);
     openScope.scope->isConstMethod = CheckMethodIsConst(node, gs);
 }
 
@@ -1162,6 +1199,13 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
             stack.pop_back();
         }
 
+        const bool inFunctionGap = !stack.empty() && stack.back().signatureBodyGap.Contains(startByte);
+        // Keep recovered references in the enclosing scope and ignore declarations recovered in the gap.
+        if (inFunctionGap && (capture.kind == CaptureKind::Scope || capture.kind == CaptureKind::Definition))
+        {
+            continue;
+        }
+
         if (capture.kind == CaptureKind::Scope)
         {
             const bool hadRoot = root != nullptr;
@@ -1181,17 +1225,22 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
             continue;
         }
 
+        Scope* current = inFunctionGap ? stack.back().scope->parent : stack.back().scope;
+        if (!current)
+        {
+            continue;
+        }
         if (capture.kind == CaptureKind::Definition)
         {
             ProcessDefinitionCapture(capture, stack, sourceCode);
         }
         else if (capture.kind == CaptureKind::Reference)
         {
-            ProcessReferenceCapture(capture, stack.back().scope, sourceCode, docCtx);
+            ProcessReferenceCapture(capture, current, sourceCode, docCtx);
         }
         else if (capture.kind == CaptureKind::StringCallRef)
         {
-            ProcessStringCallRefCapture(capture, stack.back().scope, sourceCode);
+            ProcessStringCallRefCapture(capture, current, sourceCode);
         }
     }
 
@@ -1646,13 +1695,10 @@ static Scope* FindInnermostScopeMut(Scope* root, uint32_t line, uint32_t charact
         return nullptr;
     for (auto& child : root->children)
     {
-        if (line > child->startLine || (line == child->startLine && character >= child->startCharacter))
+        if (ScopeContains(*child, line, character))
         {
-            if (line < child->endLine || (line == child->endLine && character <= child->endCharacter))
-            {
-                Scope* inner = FindInnermostScopeMut(child.get(), line, character);
-                return inner ? inner : child.get();
-            }
+            Scope* inner = FindInnermostScopeMut(child.get(), line, character);
+            return inner ? inner : child.get();
         }
     }
     return root;

@@ -226,8 +226,8 @@ namespace angel_lsp::parser::queries
 (class_body) @local.scope
 (interface_body) @local.scope
 
-; Functions scope their parameters together with the body,
-; so the whole declaration is the scope (as in the C grammar).
+; Anchor callable scopes on their declarations so the parameter definitions
+; are shared by the signature and body. The collector indexes the function gap.
 (func_declaration) @local.scope
 (lambda_expression) @local.scope
 

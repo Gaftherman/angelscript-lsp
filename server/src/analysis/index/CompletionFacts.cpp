@@ -127,6 +127,26 @@ std::optional<IndexedByteRange> FindMemberReceiverRange(const NodeIndex& index, 
     return IndexedByteRange{ts_node_start_byte(receiver), ts_node_end_byte(receiver)};
 }
 
+bool IsOutsideCallableInCurrentSyntax(const NodeIndex& index, uint32_t cursorByte) noexcept
+{
+    const TSNode callable = index.FindEnclosingCallable(cursorByte);
+    if (ts_node_is_null(callable))
+    {
+        return index.FindInnermostClassSpan(cursorByte) != nullptr;
+    }
+
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(callable) != gs.symFuncDeclaration)
+    {
+        return false;
+    }
+
+    const TSNode parameters = parser::GetChildByField(callable, gs.fieldParameters);
+    const TSNode body = parser::GetChildByField(callable, gs.fieldBody);
+    return !ts_node_is_null(parameters) && !ts_node_is_null(body) && ts_node_end_byte(parameters) <= cursorByte &&
+           cursorByte < ts_node_start_byte(body);
+}
+
 bool IsInClassBodyOutsideCallable(const NodeIndex& index, uint32_t line, uint32_t column)
 {
     const TSNode rootNode = index.Root();

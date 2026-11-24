@@ -24,6 +24,15 @@ namespace angel_lsp::analysis
 FindMemberReceiverRange(const NodeIndex& index, std::string_view sourceCode, uint32_t dotByteOffset);
 
 /**
+ * @brief Checks whether current syntax places the cursor outside a callable's lexical scope.
+ * @param[in] index Node index of the current syntax revision.
+ * @param[in] cursorByte Cursor offset within the indexed document.
+ * @return True between a function signature and body or within a class declaration outside any callable.
+ * @note Uses the indexed callable and class span lookups, then checks the function's direct fields.
+ */
+[[nodiscard]] bool IsOutsideCallableInCurrentSyntax(const NodeIndex& index, uint32_t cursorByte) noexcept;
+
+/**
  * @brief Tells whether a position sits directly in a class or interface body, outside any member function.
  *        Climbing from the node at the position stops at the first function declaration or statement block
  *        (the position is inside a callable) or at the first class or interface declaration (it is not).

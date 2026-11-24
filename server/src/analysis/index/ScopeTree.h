@@ -221,11 +221,13 @@ struct ScopeEnclosingContext
     std::shared_ptr<const IndexedReferenceReceivers> receivers;
     std::shared_ptr<const CallBindings> callBindings;
     std::shared_ptr<const IndexedOperatorSites> operatorSites;
+    /** @brief Half-open range excluded from the function scope after the parameter list. */
+    SourceRange signatureBodyGap{};
 };
 
 /**
- * @brief One lexical scope (function body, statement block, loop header, class body, ...) in the
- *        tree built from a document's LOCALS_QUERY matches. Scopes nest by source range: every
+ * @brief One lexical scope in the tree built from a document's LOCALS_QUERY matches.
+ * @note A function shares its definitions across the signature and body, with the gap between them excluded.
  */
 struct Scope
 {
@@ -247,6 +249,8 @@ struct Scope
     bool isFunctionScope : 1 = false;
     bool isConstMethod : 1 = false;
     bool alwaysImplementsDefaultConstruct : 1 = false; ///< Document-root policy from the analyzed engine profile.
+    /** @brief Marks the position after a written closing brace as outside the function scope. */
+    bool endIsExclusive : 1 = false;
     uint32_t containerSpanIndex = UINT32_MAX;
 
     std::shared_ptr<const ScopeEnclosingContext> enclosingContext;
@@ -409,24 +413,13 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
 const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefinition& def);
 
 /**
- * @brief Checks if a scope's range contains the given source line and character.
+ * @brief Checks whether a source position belongs to the lexical scope.
+ * @param[in] scope Scope whose bounds and signature-to-body gap are checked.
+ * @param[in] line Zero-based source line.
+ * @param[in] character Zero-based byte column.
+ * @return True if the position belongs to the scope.
  */
-[[nodiscard]] inline bool ScopeContains(const Scope& scope, uint32_t line, uint32_t character) noexcept
-{
-    if (line < scope.startLine || line > scope.endLine)
-    {
-        return false;
-    }
-    if (line == scope.startLine && character < scope.startCharacter)
-    {
-        return false;
-    }
-    if (line == scope.endLine && character > scope.endCharacter)
-    {
-        return false;
-    }
-    return true;
-}
+[[nodiscard]] bool ScopeContains(const Scope& scope, uint32_t line, uint32_t character) noexcept;
 
 /**
  * @brief Finds the direct child scope of parent containing the point, using binary search when child count > 8.

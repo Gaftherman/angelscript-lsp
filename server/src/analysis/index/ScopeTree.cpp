@@ -1,6 +1,7 @@
 #include "analysis/index/ScopeTree.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace angel_lsp::analysis
 {
@@ -216,7 +217,23 @@ static inline bool PositionEndsBefore(const Scope& scope, uint32_t line, uint32_
     {
         return scope.endLine < line;
     }
-    return scope.endCharacter < character;
+    return scope.endCharacter < character || (scope.endIsExclusive && scope.endCharacter == character);
+}
+
+bool ScopeContains(const Scope& scope, uint32_t line, uint32_t character) noexcept
+{
+    const std::pair position{line, character};
+    if (position < std::pair{scope.startLine, scope.startCharacter} || PositionEndsBefore(scope, line, character))
+    {
+        return false;
+    }
+    if (scope.kind == ScopeKind::Function && scope.enclosingContext)
+    {
+        const SourceRange& gap = scope.enclosingContext->signatureBodyGap;
+        return position < std::pair{gap.startLine, gap.startCharacter} ||
+               position >= std::pair{gap.endLine, gap.endCharacter};
+    }
+    return true;
 }
 
 const Scope* FindContainingChild(const Scope& parent, uint32_t line, uint32_t character) noexcept
@@ -339,6 +356,7 @@ static void CopyLexicalScope(const Scope& source, Scope& target)
     target.kind = source.kind;
     target.isFunctionScope = source.isFunctionScope;
     target.isConstMethod = source.isConstMethod;
+    target.endIsExclusive = source.endIsExclusive;
     target.containerSpanIndex = source.containerSpanIndex;
     target.enclosingContext = source.enclosingContext;
 }
