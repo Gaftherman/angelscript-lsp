@@ -108,6 +108,7 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
         m_i18n.get()};
     car.nodeIndex = syntax ? &syntax->index : nullptr;
     car.parameterRefFacts = syntax ? &syntax->parameterRefFacts : nullptr;
+    car.localConstFacts = syntax ? &syntax->localConstFacts : nullptr;
     auto actions = features::GetCodeActions(car);
     if (actions.has_value())
     {

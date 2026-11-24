@@ -1,3 +1,4 @@
+#include "analysis/index/LocalConstFacts.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
@@ -6,6 +7,8 @@
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <doctest/doctest.h>
 
 using namespace angel_lsp;
@@ -52,11 +55,25 @@ struct RefactorTestEnvironment
                                                             lsp::CodeActionContext context = lsp::CodeActionContext{})
     {
         angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
+        const LocalConstFacts localConstFacts(codeActionIndex.index);
         CodeActionRequest req{uri, sourceCode, range, context, symbolTable, scopeIndex};
         req.nodeIndex = &codeActionIndex.index;
+        req.localConstFacts = &localConstFacts;
         return GetCodeActions(req);
     }
 };
+
+/** @brief Locates an action by its editor title. */
+const lsp::CodeAction* FindRefactoringAction(const std::optional<std::vector<lsp::CodeAction>>& actions,
+                                             std::string_view title)
+{
+    if (!actions)
+    {
+        return nullptr;
+    }
+    const auto action = std::ranges::find_if(*actions, [title](const auto& item) { return item.title == title; });
+    return action == actions->end() ? nullptr : &*action;
+}
 } // namespace
 
 TEST_SUITE("analysis/code_action/Refactoring")
@@ -565,6 +582,175 @@ TEST_SUITE("analysis/code_action/Refactoring")
                 CHECK(action.title != "Add 'const' qualifier to method");
             }
         }
+    }
+
+    TEST_CASE("Refactoring - Add const targets the local declaration or the method header")
+    {
+        const auto owner = test::GenerateRandomSymbolName("Owner");
+        const auto method = test::GenerateRandomSymbolName("Method");
+        const auto local = test::GenerateRandomSymbolName("local");
+        const std::string declaration = "        int " + local + " = 1;";
+        const std::string code = "class " + owner + " {\n    int " + method + "() {\n" + declaration +
+                                 "\n        return " + local + ";\n    }\n}\n";
+        RefactorTestEnvironment env(code);
+
+        SUBCASE("Local type and name select the same insertion")
+        {
+            for (const uint32_t column : {8U, 12U})
+            {
+                CAPTURE(column);
+                const auto actions = env.CodeActions({{2, column}, {2, column}});
+                const auto* variable = FindRefactoringAction(actions, "Add const to variable");
+                REQUIRE(variable);
+                CHECK_FALSE(FindRefactoringAction(actions, "Add 'const' qualifier to method"));
+                REQUIRE(variable->edit);
+                REQUIRE(variable->edit->changes);
+                const auto& edits = variable->edit->changes->at(lsp::DocumentUri::parse(env.uri));
+                REQUIRE(edits.size() == 1);
+                CHECK(edits[0].range.start.line == 2);
+                CHECK(edits[0].range.end.line == 2);
+                CHECK(edits[0].range.start.character == 8);
+                CHECK(edits[0].range.end.character == 8);
+                auto edited = code;
+                edited.insert(code.find(declaration) + 8, edits[0].newText);
+                CHECK(edited == "class " + owner + " {\n    int " + method + "() {\n        const int " + local +
+                                    " = 1;\n        return " + local + ";\n    }\n}\n");
+            }
+        }
+        SUBCASE("The method name and closing parenthesis select the method")
+        {
+            const uint32_t closingParen = 9 + static_cast<uint32_t>(method.size());
+            for (const uint32_t column : {4U, 8U, closingParen})
+            {
+                CAPTURE(column);
+                const auto actions = env.CodeActions({{1, column}, {1, column}});
+                CHECK(FindRefactoringAction(actions, "Add 'const' qualifier to method"));
+                CHECK_FALSE(FindRefactoringAction(actions, "Add const to variable"));
+            }
+        }
+        SUBCASE("The brace and variable initializer select neither")
+        {
+            const uint32_t brace = 11 + static_cast<uint32_t>(method.size());
+            const auto body = env.CodeActions({{1, brace}, {1, brace}});
+            CHECK_FALSE(FindRefactoringAction(body, "Add 'const' qualifier to method"));
+            const uint32_t initializer = static_cast<uint32_t>(declaration.size()) - 2;
+            const auto actions = env.CodeActions({{2, initializer}, {2, initializer}});
+            CHECK_FALSE(FindRefactoringAction(actions, "Add 'const' qualifier to method"));
+            CHECK_FALSE(FindRefactoringAction(actions, "Add const to variable"));
+        }
+    }
+
+    TEST_CASE("Refactoring - Add const rejects mutable and uninitialized locals")
+    {
+        const auto method = test::GenerateRandomSymbolName("Method");
+        const auto local = test::GenerateRandomSymbolName("local");
+        const auto callee = test::GenerateRandomSymbolName("Write");
+        const auto parameter = test::GenerateRandomSymbolName("parameter");
+        const std::string initialized = "int " + local + " = 1;\n";
+        const auto check = [&](std::string_view declaration, std::string_view laterUse)
+        {
+            const std::string prefix =
+                "void " + callee + "(int &inout " + parameter + ") {}\nvoid " + method + "() {\n    ";
+            RefactorTestEnvironment env(prefix + std::string(declaration) + "    " + std::string(laterUse) + "\n}\n");
+            CHECK_FALSE(FindRefactoringAction(env.CodeActions({{2, 4}, {2, 4}}), "Add const to variable"));
+        };
+
+        SUBCASE("Assignment")
+        {
+            check(initialized, local + " = 2;");
+        }
+        SUBCASE("Compound assignment")
+        {
+            check(initialized, local + " += 2;");
+        }
+        SUBCASE("Postfix increment")
+        {
+            check(initialized, local + "++;");
+        }
+        SUBCASE("Prefix increment with parentheses")
+        {
+            check(initialized, "++(" + local + ");");
+        }
+        SUBCASE("Mutable reference argument")
+        {
+            check(initialized, callee + "((" + local + "));");
+        }
+        SUBCASE("Named mutable reference argument")
+        {
+            check(initialized, callee + "(" + parameter + ": " + local + ");");
+        }
+        SUBCASE("Already const")
+        {
+            check("const " + initialized, {});
+        }
+        SUBCASE("Uninitialized")
+        {
+            check("int " + local + ";\n", {});
+        }
+    }
+
+    TEST_CASE("Refactoring - Add const follows lexical bindings and writable storage")
+    {
+        const auto function = test::GenerateRandomSymbolName("Function");
+        const auto local = test::GenerateRandomSymbolName("local");
+        const auto type = test::GenerateRandomSymbolName("Value");
+        const auto field = test::GenerateRandomSymbolName("field");
+        const auto reader = test::GenerateRandomSymbolName("Read");
+        const auto parameter = test::GenerateRandomSymbolName("parameter");
+        const auto handle = test::GenerateRandomSymbolName("handle");
+        const std::string prefix = "class " + type + " { int " + field + "; }\nvoid " + reader + "(const int &in " +
+                                   parameter + ") {}\nvoid " + function + "() {\n    ";
+        const auto actionsFor = [&](const std::string& statements)
+        {
+            RefactorTestEnvironment env(prefix + statements + "\n}\n");
+            return env.CodeActions({{3, 4}, {3, 4}});
+        };
+
+        SUBCASE("A const reference read and a write to a shadowed name")
+        {
+            CHECK(FindRefactoringAction(actionsFor("int " + local + " = 1;\n    { int " + local + " = 2; " + local +
+                                                   "++; }\n    " + reader + "(" + local + ");"),
+                                        "Add const to variable"));
+        }
+        SUBCASE("Writing a member of the local")
+        {
+            CHECK_FALSE(FindRefactoringAction(
+                actionsFor(type + " " + local + " = " + type + "();\n    " + local + "." + field + " = 2;"),
+                "Add const to variable"));
+        }
+        SUBCASE("Taking a handle to the local")
+        {
+            CHECK_FALSE(FindRefactoringAction(actionsFor(type + " " + local + " = " + type + "();\n    " + type + "@ " +
+                                                         handle + " = @(" + local + ");"),
+                                              "Add const to variable"));
+        }
+        SUBCASE("Initializing a handle from the local")
+        {
+            CHECK_FALSE(FindRefactoringAction(actionsFor(type + " " + local + " = " + type + "();\n    " + type + "@ " +
+                                                         handle + " = " + local + ";"),
+                                              "Add const to variable"));
+        }
+    }
+
+    TEST_CASE("Refactoring - Add const keeps a single edit for the handle diagnostic")
+    {
+        const auto function = test::GenerateRandomSymbolName("Function");
+        const auto type = test::GenerateRandomSymbolName("Value");
+        const auto local = test::GenerateRandomSymbolName("local");
+        const std::string code =
+            "class " + type + " {}\nvoid " + function + "() {\n    " + type + "@ " + local + " = null;\n}\n";
+        RefactorTestEnvironment env(code);
+        lsp::Diagnostic diagnostic;
+        diagnostic.code = lsp::String("as-err-no-implicit-conversion");
+        const uint32_t column = 6 + static_cast<uint32_t>(type.size());
+        diagnostic.range = {{2, column}, {2, column + static_cast<uint32_t>(local.size())}};
+        lsp::CodeActionContext context;
+        context.diagnostics = {diagnostic};
+        const auto actions = env.CodeActions(diagnostic.range, context);
+        const auto* fix = FindRefactoringAction(actions, "Add 'const' qualifier");
+        REQUIRE(fix);
+        CHECK(fix->isPreferred.value_or(false));
+        CHECK_FALSE(FindRefactoringAction(actions, "Add const to variable"));
     }
 
     TEST_CASE("Refactoring - Sort and Clean Includes: Alphabetical and Grouped")

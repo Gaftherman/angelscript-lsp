@@ -1,15 +1,17 @@
 /**
  * @file CodeActionConstQualifier.cpp
- * @brief Code action providers for adding const qualifier to methods.
+ * @brief Code action providers for adding const to methods and variables.
  */
 
 #include "analysis/code_action/CodeActionClassMutation.h"
 #include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/index/ConstQualifierFacts.h"
 #include "analysis/resolution/CodeActionResolution.h"
+#include "analysis/resolution/LocalConstResolution.h"
 #include "analysis/types/TypeSanitization.h"
 #include "utils/Utils.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -135,6 +137,55 @@ static void TryAddIntentionalConstAction(const CodeActionQuery& query, std::vect
     }
 }
 
+/** @brief Inserts the canonical const prefix at the beginning of a declared type. */
+static CodeActionTextEdit MakeConstTypeEdit(IndexedSourcePoint point)
+{
+    std::string constPrefix;
+    PrependConst(constPrefix);
+    return {{point.line, point.character, point.line, point.character}, std::move(constPrefix)};
+}
+
+/** @brief Offers const for an initialized local selected by its type or name. */
+static void TryAddLocalConstAction(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
+{
+    if (!query.localConstFacts)
+    {
+        return;
+    }
+    const auto* site = query.localConstFacts->FindAt({query.range.startLine, query.range.startCharacter});
+    if (!site)
+    {
+        return;
+    }
+
+    auto edit = MakeConstTypeEdit({site->typeRange.startLine, site->typeRange.startCharacter});
+    const bool editAlreadyOffered = std::ranges::any_of(entries,
+                                                        [&](const CodeActionEntry& entry)
+                                                        {
+                                                            return entry.edits && entry.edits->size() == 1 &&
+                                                                   entry.edits->front().range == edit.range &&
+                                                                   entry.edits->front().newText == edit.newText;
+                                                        });
+    if (editAlreadyOffered)
+    {
+        return;
+    }
+
+    const auto root = query.scopeIndex.GetOccurrenceRoot(query.uri);
+    if (!root)
+    {
+        return;
+    }
+    const SemanticMediator mediator(query.symbolTable, root.get(), query.nodeIndex, query.sourceCode, query.uri);
+    if (CanQualifyLocalConst(*site, *query.localConstFacts, mediator))
+    {
+        CodeActionEntry entry;
+        entry.title = i18n::FormatMessage(query.i18n, "action-add-const-local-variable", "Add const to variable");
+        entry.edits = std::vector<CodeActionTextEdit>{std::move(edit)};
+        entries.push_back(std::move(entry));
+    }
+}
+
 /**
  * @brief Constructs a QuickFix entry to prepend 'const' to a handle variable declaration.
  * @param[in] query Incoming code action query context.
@@ -160,15 +211,8 @@ static void TryAddConstHandleDiagnosticFix(const CodeActionQuery& query, uint32_
 
     std::string title = i18n::FormatMessage(query.i18n, "action-add-const-variable-qualifier", "Add 'const' qualifier");
 
-    std::string constPrefix;
-    analysis::PrependConst(constPrefix);
     entries.push_back(MakeQuickFixEntry(
-        QuickFixEntryOptions{std::move(title),
-                             diagIndex,
-                             {CodeActionTextEdit{analysis::SourceRange{site->typeStart.line, site->typeStart.character,
-                                                                       site->typeStart.line, site->typeStart.character},
-                                                 std::move(constPrefix)}},
-                             true}));
+        QuickFixEntryOptions{std::move(title), diagIndex, {MakeConstTypeEdit(site->typeStart)}, true}));
 }
 
 /**
@@ -195,6 +239,7 @@ void TryAddConstQualifierActions(const CodeActionQuery& query, std::vector<CodeA
         }
     }
     TryAddIntentionalConstAction(query, entries);
+    TryAddLocalConstAction(query, entries);
 }
 
 } // namespace angel_lsp::analysis::code_action

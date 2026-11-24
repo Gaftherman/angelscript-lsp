@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/ConstQualifierFacts.h"
+#include "analysis/index/LocalConstFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
@@ -19,7 +20,7 @@ struct ParsedDocumentSyntax
 {
     explicit ParsedDocumentSyntax(parser::TreePtr parsed, std::string_view source = {})
         : tree(std::move(parsed)), index(parser::GetRootNode(tree), analysis::NodeIndexOptions{.source = source}),
-          parameterRefFacts(analysis::BuildParameterRefFacts(index, source))
+          parameterRefFacts(analysis::BuildParameterRefFacts(index, source)), localConstFacts(index)
     {
     }
 
@@ -33,12 +34,14 @@ struct ParsedDocumentSyntax
     {
         return index.EstimateMemoryBytes() + sourceBytes + (tree ? index.EstimateTreeBytes() : 0) +
                sizeof(parameterRefFacts) +
-               parameterRefFacts.sites.capacity() * sizeof(analysis::IndexedParameterRefSite);
+               parameterRefFacts.sites.capacity() * sizeof(analysis::IndexedParameterRefSite) +
+               localConstFacts.EstimateMemoryBytes();
     }
 
     parser::TreePtr tree;
     analysis::NodeIndex index;
     analysis::ParameterRefFacts parameterRefFacts; ///< Reference-direction edits for the retained syntax.
+    analysis::LocalConstFacts localConstFacts;     ///< Declaration and escape facts for the retained syntax.
 };
 
 /// Identifies exact parser input for an open generation or a closed disk revision.

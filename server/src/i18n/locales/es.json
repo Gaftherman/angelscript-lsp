@@ -1,4 +1,5 @@
 {
+  "action-add-const-local-variable": "Añadir const a la variable",
   "action-add-const-qualifier": "Añadir calificador 'const' al método",
   "action-add-const-variable-qualifier": "Añadir calificador 'const'",
   "action-add-property-keyword": "Añadir la palabra clave 'property'",

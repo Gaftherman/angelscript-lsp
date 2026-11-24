@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/ConstQualifierFacts.h"
+#include "analysis/index/LocalConstFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
@@ -33,6 +34,7 @@ struct CodeActionRequest
     /// Pass-1 index of the document; providers read syntax facts from it instead of the raw tree.
     const analysis::NodeIndex* nodeIndex = nullptr;
     const analysis::ParameterRefFacts* parameterRefFacts = nullptr; ///< Reference sites from the same revision.
+    const analysis::LocalConstFacts* localConstFacts = nullptr;     ///< Local const sites from the same revision.
 };
 
 /**
