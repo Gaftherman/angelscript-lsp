@@ -4,6 +4,8 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-24
+
 ### Added
 
 - Added the `angelscript.runner.path` setting so a `launch` configuration with `program` can run scripts through an external AngelScript runner found on your PATH.
@@ -11,6 +13,10 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 ### Changed
 
 - Reorganized the README feature gallery into a single column with larger demos, moved the feature status table into a collapsible section, clarified that the extension checks code but does not run it, and added project folder trees to the workspace guide.
+- Added captions to the README feature galleries, grouped the LSP feature table, and made the workspace guide examples engine-neutral.
+
+---
+**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.2...v1.2.3
 
 ## [1.2.2] - 2026-11-24
 
@@ -3010,4 +3016,3 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](https://github.com/Gaftherman/angelscript-lsp/blob/HEAD/LICENSE) file for details.
-

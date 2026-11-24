@@ -25,19 +25,19 @@ Abre `my-project` en VS Code y escribe `int main() { return 42; }` en `main.as`.
 
 Pon el ejemplo de motor que corresponda a tu proyecto en `.vscode/settings.json`, dentro de `${workspaceFolder}`. En `angelscript.modules`, usa `folder` para agrupar todo lo que hay bajo una carpeta o `entry` para partir de un script y seguir sus `#include`. Con los módulos definidos, el editor puede comprobar si una declaración `external shared` tiene su definición en otro módulo.
 
-### Ejemplo A: Sven Co-op (módulo por carpeta)
+### Ejemplo A: Carpeta de plugins del juego (módulo por carpeta)
 
-Si todos los scripts de `maps/hcas` se compilan juntos, asigna un módulo a esa carpeta.
+Si todos los scripts de `maps/items` se compilan juntos, asigna un módulo a esa carpeta.
 
 ```text
-└── 📁svencoop-scripts
+└── 📁my-game-scripts
     ├── 📁.vscode
     │   └── 📄settings.json
     └── 📁maps
-        ├── 📁hcas
-        │   ├── 📄hcas_main.as
-        │   └── 📄hcas_items.as
-        └── 📄sven.as.predefined
+        ├── 📁items
+        │   ├── 📄main.as
+        │   └── 📄inventory.as
+        └── 📄game.as.predefined
 ```
 
 ```jsonc
@@ -46,26 +46,26 @@ Si todos los scripts de `maps/hcas` se compilan juntos, asigna un módulo a esa 
   "angelscript.searchDirectories": ["${workspaceFolder}/maps"],
   "angelscript.modules": [
     {
-      "name": "HCAS",
-      "folder": "${workspaceFolder}/maps/hcas"
+      "name": "Items",
+      "folder": "${workspaceFolder}/maps/items"
     }
   ],
-  "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
+  "angelscript.predefined.active": "${workspaceFolder}/maps/game.as.predefined"
 }
 ```
 
-### Ejemplo B: Sven Co-op (módulo por script de entrada)
+### Ejemplo B: Carpeta de plugins del juego (módulo por script de entrada)
 
-Si tu juego empieza por `ins2_register.as`, pon ese archivo como punto de entrada. Los scripts que incluye quedan en el mismo módulo.
+Si tu juego empieza por `register.as`, pon ese archivo como punto de entrada. Los scripts que incluye quedan en el mismo módulo.
 
 ```text
-└── 📁svencoop-scripts
+└── 📁my-game-scripts
     ├── 📁.vscode
     │   └── 📄settings.json
     └── 📁maps
-        ├── 📁ins2
-        │   └── 📄ins2_register.as
-        └── 📄sven.as.predefined
+        ├── 📁events
+        │   └── 📄register.as
+        └── 📄game.as.predefined
 ```
 
 ```jsonc
@@ -75,10 +75,10 @@ Si tu juego empieza por `ins2_register.as`, pon ese archivo como punto de entrad
   "angelscript.modules": [
     {
       "name": "MapInit",
-      "entry": "${workspaceFolder}/maps/ins2/ins2_register.as"
+      "entry": "${workspaceFolder}/maps/events/register.as"
     }
   ],
-  "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
+  "angelscript.predefined.active": "${workspaceFolder}/maps/game.as.predefined"
 }
 ```
 
@@ -123,8 +123,6 @@ Añade `game.as.predefined` junto a `main.as` y declara `int HostScore();`. En `
 - Si dejas `angelscript.predefined.active` vacío, se carga el primer stub detectado por orden de ruta. Usa `"all"` para cargarlos todos.
 - Si prefieres elegirlos desde VS Code, busca **Seleccionar stub predefinido** o **Seleccionar stubs predefinidos** en la paleta de comandos. También puedes abrir el menú de acciones desde el indicador de estado **AngelScript IntelliSense**.
 
-Puedes tomar como ejemplo el stub de Sven Co-op 5.26 en [predefined/sven.as.predefined](../predefined/sven.as.predefined).
-
 ## Reglas del motor (`angelscript.rules.json`)
 
 Si el motor llama a `MapInit` desde C++, agrégalo a las reglas para que el editor deje de marcarlo como función sin usar. Las reglas también sirven para asociar `BaseClass` con una clase nativa del stub o señalar llamadas y declaraciones que tu motor restringe.
@@ -135,7 +133,9 @@ Ajusta el editor a tu host y usa un archivo de reglas para compartir opciones y 
 
 Para crear un archivo inicial, abre **Configurar reglas del motor y API predefinida...** desde la paleta de comandos y elige la opción para crear las reglas.
 
-Consulta los ejemplos de la [Guía de reglas del motor](RULES.es.md) y el archivo [predefined/sven.angelscript.rules.json](../predefined/sven.angelscript.rules.json).
+Consulta los ejemplos de la [Guía de reglas del motor](RULES.es.md).
+
+Para ver un ejemplo real de Sven Co-op, consulta `predefined/sven.as.predefined` y `predefined/sven.angelscript.rules.json`.
 
 ## Opciones del motor y qué cambia en el editor
 
