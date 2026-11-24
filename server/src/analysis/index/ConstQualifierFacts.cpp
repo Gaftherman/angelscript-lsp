@@ -158,15 +158,18 @@ std::optional<IndexedIntentionalConstSite> FindIntentionalConstSite(const NodeIn
     {
         return std::nullopt;
     }
-    if (HasConstQualifierBetween(fnNode))
+    const TSPoint startPt = ts_node_start_point(fnNode);
+    const TSPoint insertPt = ts_node_end_point(paramList);
+    const auto cursor = std::tie(pt.row, pt.column);
+    if (cursor < std::tie(startPt.row, startPt.column) || cursor >= std::tie(insertPt.row, insertPt.column) ||
+        HasConstQualifierBetween(fnNode))
     {
         return std::nullopt;
     }
 
     IndexedIntentionalConstSite site;
-    const TSPoint insertPt = ts_node_end_point(paramList);
     site.parameterListEnd = IndexedSourcePoint{insertPt.row, insertPt.column};
-    site.methodStartLine = ts_node_start_point(fnNode).row;
+    site.methodStartLine = startPt.row;
 
     const TSNode classNameNode = parser::GetChildByField(classNode, gs.fieldName);
     site.className = ts_node_is_null(classNameNode)

@@ -193,9 +193,9 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
 
     const auto views = BuildDiagnosticViews(request.context);
     const analysis::code_action::CodeActionQuery query{
-        request.uri,    request.sourceCode,  request.nodeIndex,        FromLspRange(request.range),
-        views,          request.symbolTable, request.scopeIndex,       request.includeScope.allowedRoots,
-        request.config, request.i18n,        request.parameterRefFacts};
+        request.uri,    request.sourceCode,  request.nodeIndex,         FromLspRange(request.range),
+        views,          request.symbolTable, request.scopeIndex,        request.includeScope.allowedRoots,
+        request.config, request.i18n,        request.parameterRefFacts, request.localConstFacts};
     auto entries = analysis::code_action::CollectCodeActionEntries(query);
 
     std::vector<lsp::CodeAction> actions;

@@ -1396,7 +1396,19 @@ TEST_CASE("Completion - Method parameter members are visible in the signature an
         env.scopeIndex.InvalidateDocumentOccurrences(env.uri);
     };
 
-    SUBCASE("Between the parameter list and body")
+    SUBCASE("Between the parameter list and body on the same line")
+    {
+        const auto afterParen = static_cast<uint32_t>(signature.size() - signature.rfind('\n'));
+        TestEnvironment valid(signature + ")    {}\n}\n");
+        CHECK_FALSE(HasItem(valid.CompleteAt(2, afterParen + 1), parameter));
+
+        TestEnvironment env(signature + ") " + receiver + " {}\n}\n");
+        const auto column = afterParen + 1 + static_cast<uint32_t>(receiver.size());
+        CHECK(env.CompleteAt(2, column).empty());
+        usePreviousScopes(env);
+        CHECK(env.CompleteAt(2, column).empty());
+    }
+    SUBCASE("Between the parameter list and body across a newline")
     {
         TestEnvironment env(signature + ")\n    " + receiver + "\n    {}\n}\n");
         const auto column = static_cast<uint32_t>(4 + receiver.size());

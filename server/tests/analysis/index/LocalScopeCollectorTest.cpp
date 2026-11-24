@@ -1042,6 +1042,50 @@ TEST_CASE("LocalScopeCollector - Field and Virtual Property definitions contain 
     CHECK(defProp->kind == LocalDefinitionKind::Field);
 }
 
+TEST_CASE("FindInnermostScope excludes the signature gap and the position after a function body")
+{
+    const auto owner = angel_lsp::test::GenerateRandomSymbolName("Owner");
+    const auto method = angel_lsp::test::GenerateRandomSymbolName("Method");
+    const auto parameter = angel_lsp::test::GenerateRandomSymbolName("parameter");
+    const auto local = angel_lsp::test::GenerateRandomSymbolName("local");
+    const std::string signature = "class " + owner + " {\n    void " + method + "(int " + parameter + ")";
+
+    for (const std::string_view gap : {"   ", "\n    \n    "})
+    {
+        CAPTURE(gap);
+        const std::string code =
+            signature + std::string(gap) + "{\n        int " + local + " = " + parameter + ";\n    } \n}\n";
+        const auto root = CollectScopesFromSource(code);
+        REQUIRE(root);
+        REQUIRE(root->children.size() == 1);
+        const Scope* classScope = root->children.front().get();
+        REQUIRE(classScope->kind == ScopeKind::Class);
+        REQUIRE(classScope->children.size() == 1);
+        const Scope* functionScope = classScope->children.front().get();
+        REQUIRE(functionScope->kind == ScopeKind::Function);
+        REQUIRE(functionScope->children.size() == 1);
+        const Scope* bodyScope = functionScope->children.front().get();
+        REQUIRE(bodyScope->kind == ScopeKind::Block);
+
+        const auto gapPoint = FindPosition(code, std::string(gap), signature.size());
+        const auto openingBrace = FindPosition(code, "{", signature.size());
+        const auto bodyPoint = FindPosition(code, local, signature.size());
+        const auto closingBrace = FindPosition(code, "}", signature.size());
+        CHECK(FindInnermostScope(root.get(), gapPoint.line, gapPoint.character) == classScope);
+        if (gap.front() == '\n')
+        {
+            CHECK(FindInnermostScope(root.get(), gapPoint.line + 1, 2) == classScope);
+        }
+        CHECK(FindInnermostScope(root.get(), openingBrace.line, openingBrace.character) == bodyScope);
+        CHECK(FindInnermostScope(root.get(), bodyPoint.line, bodyPoint.character) == bodyScope);
+        CHECK(FindInnermostScope(root.get(), closingBrace.line, closingBrace.character) == bodyScope);
+        const auto* visible = ResolveInScope(bodyScope, parameter);
+        REQUIRE(visible);
+        CHECK(visible->kind == LocalDefinitionKind::Parameter);
+        CHECK(FindInnermostScope(root.get(), closingBrace.line, closingBrace.character + 1) == classScope);
+    }
+}
+
 TEST_CASE("Local scope lookup reaches both ends of a deeply nested scope tree")
 {
     const auto identifier = angel_lsp::test::GenerateRandomSymbolName("Visible");

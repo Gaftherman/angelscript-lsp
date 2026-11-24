@@ -60,7 +60,7 @@ struct IndexedIntentionalConstSite
 };
 
 /**
- * @brief Finds the intentional const qualification context for a method at the cursor position.
+ * @brief Finds the intentional const context from a method start through its closing parameter parenthesis.
  * @param[in] index Node index of the current syntax revision.
  * @param[in] sourceCode Document source text buffer.
  * @param[in] line 0-based line of the cursor position.

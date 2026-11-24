@@ -1,4 +1,5 @@
 {
+  "action-add-const-local-variable": "Add const to variable",
   "action-add-const-qualifier": "Add 'const' qualifier to method",
   "action-add-const-variable-qualifier": "Add 'const' qualifier",
   "action-add-property-keyword": "Add the 'property' keyword",
