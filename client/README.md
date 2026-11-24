@@ -7,11 +7,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![XERJ Corpus Hub contributor](https://img.shields.io/badge/XERJ%20Corpus%20Hub-contributor-1f6feb)](https://hub.xerj.org/contributors/Gaftherman)
 
-Angelscript gives VS Code a native C++20 language server for AngelScript (`.as`). It uses Tree-Sitter to parse scripts and index their symbols. It analyzes the workspace from syntax trees without running the game engine or concatenating scripts.
+Angelscript adds support for `.as` files to VS Code.
 
-Use it with Sven Co-op, other game engines, or your own `CScriptBuilder` setup. You get hover, completion, navigation, flow-sensitive null checks, and type inference across the workspace.
+AngelScript is a scripting language that game engines such as Sven Co-op use to run plugin and mod code, and the extension shows documentation on hover, suggests completions, and flags errors as you edit.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/hover.gif" alt="Hover documentation on a method call" width="720"><br><em>Hover over a call to see its signature and doc comment.</em></p>
+The C++20 language server uses Tree-Sitter to parse scripts and index their symbols.
+
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/hover.gif" alt="Hover documentation on a method call" width="720"></p>
 
 ## Installation
 
@@ -19,9 +21,22 @@ Install from the [Visual Studio Code Marketplace](https://marketplace.visualstud
 
 To install a VSIX, press `Ctrl+Shift+P`, run **Extensions: Install from VSIX...**, and select `angelscript-*.vsix`.
 
-1. Open a folder with `.as` files.
-2. If your game supplies its own types or functions, you can add an `.as.predefined` stub.
-3. If your project needs custom checks or shared engine settings, you can add an `angelscript.rules.json` file.
+### Try it in 30 seconds
+
+Open a folder in VS Code, create `hello.as`, and paste the code below. No game or engine is needed.
+
+```angelscript
+class Calculator {
+    /// Doubles a number.
+    int twice(int number) { return number * 2; }
+}
+int main() {
+    Calculator calc;
+    return calc.twice(21);
+}
+```
+
+Hover over `twice` in `calc.twice(21)` to see its signature and doc comment. Change the call to `calc.twcie(21)` to see an error underline.
 
 ## Features
 
@@ -61,6 +76,7 @@ To install a VSIX, press `Ctrl+Shift+P`, run **Extensions: Install from VSIX...*
 <td><strong>Host API</strong><br>Get completion for the types and functions declared in your stub.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/predefined-api.gif" alt="Host API" width="460"></td></tr>
 <tr><td><strong>Engine rules</strong><br>See your team's custom checks in the editor.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-rules.gif" alt="Engine rules" width="460"></td>
 <td><strong>Engine options</strong><br>Match the checks to the language options your host uses.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-options.gif" alt="Engine options" width="460"></td></tr>
+<tr><td><strong>Engine API hover</strong><br>Hover over an engine function to see its documentation from a <code>.as.predefined</code> stub.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-hover.gif" alt="Engine API hover" width="460"></td></tr>
 </table>
 
 ## Host API stubs (.as.predefined)
@@ -82,11 +98,9 @@ In `.vscode/settings.json`, set `"angelscript.predefined.active": "${workspaceFo
 
 ## Engine rules
 
-Put an `angelscript.rules.json` file in your workspace root to share engine settings and custom checks. For example, you can warn when a type is stored in a class field.
+Save `angelscript.rules.json` in the project root. Use the [Engine Rules Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.md) to configure your project's checks.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-rules.gif" alt="A custom rule flagging a field type" width="720"></p>
-
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/rules-file.png" alt="Example engine rules file" width="720"></p>
 
 ## Engine options
 
@@ -119,7 +133,7 @@ See the [debugger example project](https://github.com/Gaftherman/angelscript-deb
 
 - [Detailed Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/GUIDE.md) — workspace examples, predefined files, engine options, and commands.
 - [Configuration Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/CONFIGURATION.md) — settings and editor examples.
-- [Engine Rules Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.md) — how to write `*.angelscript.rules.json` files.
+- [Engine Rules Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.md) — custom checks and shared engine settings.
 - [CHANGELOG.md](CHANGELOG.md) — release history and changes.
 
 ## Building from source

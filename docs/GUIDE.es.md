@@ -2,8 +2,6 @@
 
 [English](GUIDE.md) | [Español](GUIDE.es.md) | [README](README.es.md)
 
-Empieza por el ejemplo que más se parezca a cómo tu juego carga los scripts. Después ajusta la API y las reglas del lenguaje que verá VS Code.
-
 > **Palabras que verás**
 >
 > - El **host** es el juego o programa que ejecuta tus scripts.
@@ -14,7 +12,16 @@ Empieza por el ejemplo que más se parezca a cómo tu juego carga los scripts. D
 
 ## Ejemplos de configuración del espacio de trabajo
 
-Pon el ejemplo en `.vscode/settings.json`, dentro de `${workspaceFolder}`. En `angelscript.modules`, usa `folder` para agrupar todo lo que hay bajo una carpeta o `entry` para partir de un script y seguir sus `#include`. Con los módulos definidos, el editor puede comprobar si una declaración `external shared` tiene su definición en otro módulo.
+### Empieza con un solo archivo
+
+```text
+mi-proyecto/
+└── main.as
+```
+
+Abre `mi-proyecto` en VS Code y escribe `int main() { return 42; }` en `main.as`. Pasa el cursor sobre `main` para ver `int main()`. No necesitas configurar el espacio de trabajo ni añadir stubs.
+
+Pon el ejemplo de motor que corresponda a tu proyecto en `.vscode/settings.json`, dentro de `${workspaceFolder}`. En `angelscript.modules`, usa `folder` para agrupar todo lo que hay bajo una carpeta o `entry` para partir de un script y seguir sus `#include`. Con los módulos definidos, el editor puede comprobar si una declaración `external shared` tiene su definición en otro módulo.
 
 ### Ejemplo A: Sven Co-op (módulo por carpeta)
 
@@ -71,18 +78,18 @@ Si tu motor guarda los archivos de inclusión y las declaraciones de la API en c
 
 ## Archivos de API predefinidos (`.as.predefined`)
 
-Declara en un stub `.as.predefined` la API que tu juego registra desde C++. Así el editor puede sugerir las clases y funciones del juego, mostrar sus firmas al pasar el cursor y revisar cómo las usas. Si tu host ofrece la función de Sven Co-op `float RandomFloat(float low, float high);`, añade esa declaración a `game.as.predefined` y prueba `RandomFloat(0.0f, 1.0f)` en un script.
+Añade `game.as.predefined` junto a `main.as` y declara `int HostScore();`. En `main.as`, escribe `int main() { return HostScore(); }`. Pasa el cursor sobre `HostScore` en la llamada para ver la firma `int HostScore()` del stub.
 
 ### Cómo se cargan los stubs
 
 - La búsqueda en el workspace usa el sufijo de `angelscript.predefinedExtension`. El valor inicial es `.as.predefined`.
-- Elige un stub con `angelscript.predefined.active`. Si lo dejas vacío, se carga el primero por orden de ruta. Con `"all"`, se cargan todos los que se encontraron.
-- Agrega a `angelscript.predefinedFiles` los stubs que quieras cargar siempre. Pueden estar fuera de `${workspaceFolder}` y sus rutas pueden usar `${userHome}` o `${env:NOMBRE}`.
+- Usa `angelscript.predefined.active` para elegir uno de los stubs detectados y `angelscript.predefinedFiles` para cargar archivos adicionales por ruta, incluso si están fuera del espacio de trabajo.
+- Si dejas `angelscript.predefined.active` vacío, se carga el primer stub detectado por orden de ruta. Usa `"all"` para cargarlos todos.
 - Si prefieres elegirlos desde VS Code, busca **Seleccionar stub predefinido** o **Seleccionar stubs predefinidos** en la paleta de comandos. También puedes abrir el menú de acciones desde el indicador de estado **AngelScript IntelliSense**.
 
 Puedes tomar como ejemplo el stub de Sven Co-op 5.26 en [predefined/sven.as.predefined](../predefined/sven.as.predefined).
 
-## Reglas del motor (`*.angelscript.rules.json`)
+## Reglas del motor (`angelscript.rules.json`)
 
 Si el motor llama a `MapInit` desde C++, agrégalo a las reglas para que el editor deje de marcarlo como función sin usar. Las reglas también sirven para asociar `BaseClass` con una clase nativa del stub o señalar llamadas y declaraciones que tu motor restringe.
 

@@ -1,300 +1,169 @@
-# Guía de Reglas del Motor en AngelScript (`angelscript.rules.json`)
+# Reglas del motor de AngelScript
+
+![Una regla señala un handle en un campo de clase](../client/images/engine-rules.gif)
+
+Un archivo de reglas le indica a la extensión qué tipos del motor o handles de objetos debe señalar, dónde se pueden usar y qué mensaje mostrar. También permite ajustar el análisis a las opciones del motor e indicar qué funciones llama directamente el juego o la aplicación anfitriona.
+
+![Ejemplo de archivo JSON de reglas](../client/images/rules-file.png)
 
 [English](RULES.md) | [Español](RULES.es.md)
 
-Si el motor llama a `MapInit` desde C++, el editor puede marcar la función como si nadie la usara, porque no ve ninguna llamada en los archivos `.as`. Agrégala a un archivo `*.angelscript.rules.json` para que el editor sepa que la llama el motor.
+## Dónde guardar el archivo
 
-Ese mismo archivo te sirve para vincular `BaseClass.Spawn()` con la API del motor y señalar llamadas o declaraciones que tu proyecto restringe.
+Guarda `angelscript.rules.json` en la raíz del espacio de trabajo. Para elegir un archivo concreto, pon `"angelscript.rulesFile": "${workspaceFolder}/config/game.angelscript.rules.json"` en `.vscode/settings.json`. El valor predeterminado es `""`.
 
----
+El servidor carga un solo archivo. Busca primero en la ruta configurada, luego el nombre exacto en la raíz, después junto al stub activo y los demás stubs conocidos, y por último cualquier `*.angelscript.rules.json` en la raíz. Junto a `game.as.predefined` busca primero `game.angelscript.rules.json` y luego el primer archivo que coincida con el patrón, por orden de ruta.
 
-## Implementación de Referencia: Sven Co-op
+Para crear una plantilla, ejecuta **Configurar reglas del motor y API predefinida...** (`angelscript.configureHostEnvironment`) en la paleta de comandos y elige **Crear plantilla angelscript.rules.json en el espacio de trabajo**.
 
-En las reglas de Sven Co-op 5.26 puedes ver cómo se configuran los callbacks de entidades, las clases base nativas y los avisos para llamadas al scheduler.
+## Ejemplos completos
 
-👉 [`predefined/sven.angelscript.rules.json`](../predefined/sven.angelscript.rules.json)
+Un handle es una referencia a un objeto. Escribe `@` después del tipo para declarar un handle.
 
----
+### Prohibir un handle en un campo de clase
 
-## Cómo Habilitar las Reglas en tu Proyecto
-
-### Método 1: Detección Automática (Cero Configuración)
-
-Guarda `angelscript.rules.json` en la raíz del workspace. También puedes usar un nombre como `sven.angelscript.rules.json` o `motor.angelscript.rules.json`. El servidor busca primero el nombre exacto en la raíz, luego busca junto a los stubs y, por último, revisa si hay otros archivos `*.angelscript.rules.json` en la raíz.
-
-### Método 2: Configuración en VS Code
-
-Si quieres elegir el archivo, pon su ruta en `angelscript.rulesFile` dentro de `.vscode/settings.json`.
-
-```jsonc
-{
-  "angelscript.rulesFile": "${workspaceFolder}/predefined/sven.angelscript.rules.json"
-}
-```
-
-### Método 3: Paleta de Comandos
-
-Abre la paleta con `Ctrl+Shift+P` (o `Cmd+Shift+P` en macOS) y ejecuta **AngelScript: Configurar reglas del motor y API predefinida...** (`angelscript.configureHostEnvironment`). Elige la opción para crear el archivo `angelscript.rules.json` inicial. VS Code abre la plantilla con una referencia `$schema` para que puedas editarla.
-
----
-
-## Guía Práctica Sección por Sección
-
-Parte de estos ejemplos y cambia los nombres por las funciones, los tipos y los callbacks que expone tu motor.
-
----
-
-### 1. `engineProperties` — Opciones de Compilación y Sintaxis
-
-#### Ejemplo
+Abre una carpeta vacía en VS Code y guarda este archivo como `angelscript.rules.json` en la raíz.
 
 ```json
 {
-  "engineProperties": {
-    "propertyAccessorMode": 2,
-    "requireEnumScope": false,
-    "disallowGlobalVars": false
-  }
-}
-```
-
-Con `propertyAccessorMode` en `2`, puedes acceder a `obj.X` mediante `get_X()` o `set_X(v)`. Si `requireEnumScope` está en `false`, basta escribir `SELECTFIRE_SEMI` en vez de `INS2_SELECTFIRE_OPTIONS::SELECTFIRE_SEMI`. Usa los mismos valores `asEP_*` que en tu motor.
-
----
-
-### 2. `unusedSymbolRules.ignoredGlobalFunctions` — Puntos de Entrada del Motor
-
-#### Ejemplo
-
-```json
-{
-  "unusedSymbolRules": {
-    "ignoredGlobalFunctions": [
-      "PluginInit",
-      "PluginExit",
-      "MapInit",
-      "MapStart",
-      "MapActivate"
-    ]
-  }
-}
-```
-
-Incluye `MapInit` y las demás funciones globales que llama el motor. El editor omite el aviso de función sin usar (`W118`) aunque ningún script las llame.
-
----
-
-### 3. `unusedSymbolRules.ignoredBaseClasses` — Clases Base de Entidades del Motor
-
-#### Ejemplo
-
-```json
-{
-  "unusedSymbolRules": {
-    "ignoredBaseClasses": [
-      "ScriptBaseEntity",
-      "ScriptBaseMonsterEntity",
-      "ScriptBasePlayerWeaponEntity",
-      "ScriptClassInterface"
-    ]
-  }
-}
-```
-
-Si el motor crea `class weapon_galil : ScriptBasePlayerWeaponEntity`, agrega la clase base a la lista. El editor omite el aviso de clase sin usar (`W120`) en la clase derivada. El aviso para variables globales sin usar lleva el código `W117`.
-
----
-
-### 4. `unusedSymbolRules.lifecycleMethods` — Métodos Universales del Ciclo de Vida
-
-#### Ejemplo
-
-```json
-{
-  "unusedSymbolRules": {
-    "lifecycleMethods": [
-      "Spawn",
-      "Precache",
-      "Think",
-      "Touch",
-      "Use",
-      "Blocked",
-      "Killed"
-    ]
-  }
-}
-```
-
-Agrega callbacks como `Spawn` y `Think` para quitarles el aviso de método sin usar (`W119`) en clases derivadas de las bases de `ignoredBaseClasses`.
-
-Si dejas vacía la lista `ignoredBaseClasses`, la exención se aplica a los métodos que coincidan en cualquier clase.
-
-Si el stub `.as.predefined` activo y `baseClassProxyMap` ya permiten vincular un callback con un método del motor, puedes dejarlo fuera de la lista.
-
----
-
-### 5. `unusedSymbolRules.baseClassLifecycleMethods` — Métodos Específicos por Tipo de Entidad
-
-#### Ejemplo
-
-```json
-{
-  "unusedSymbolRules": {
-    "baseClassLifecycleMethods": {
-      "ScriptBasePlayerWeaponEntity": [
-        "PrimaryAttack",
-        "SecondaryAttack",
-        "Reload",
-        "WeaponIdle",
-        "Deploy",
-        "Holster"
-      ]
-    }
-  }
-}
-```
-
-En este ejemplo, `PrimaryAttack` y `Reload` quedan exentos en clases que heredan de `ScriptBasePlayerWeaponEntity`. Si otra clase tiene un método `PrimaryAttack` que nadie usa, el editor sigue marcándolo.
-
-Si `baseClassProxyMap` y tus stubs ya identifican un método del motor, puedes omitirlo aquí.
-
----
-
-### 6. `unusedSymbolRules.baseClassProxyMap` y `baseClassDelegateProperties` — Vinculación con Clases Nativas C++
-
-#### Ejemplo
-
-```json
-{
-  "unusedSymbolRules": {
-    "baseClassDelegateProperties": [
-      "BaseClass"
-    ],
-    "baseClassProxyMap": {
-      "ScriptBaseEntity": ["BaseEntity", "CBaseEntity"],
-      "ScriptBaseMonsterEntity": ["BaseMonster", "CBaseMonster"],
-      "ScriptBasePlayerWeaponEntity": ["BasePlayerWeapon", "CBasePlayerWeapon"]
-    }
-  }
-}
-```
-
-En Sven Co-op, `BaseClass` es una propiedad delegada. Asocia la base de script `ScriptBasePlayerWeaponEntity` con `BasePlayerWeapon` o `CBasePlayerWeapon` en el stub `.as.predefined`. Si está disponible la declaración nativa, puedes abrirla con Ir a definición (`Ctrl+Click`) sobre `BaseClass.PrimaryAttack()` y ver información del stub en el hover.
-
----
-
-### 7. `unusedSymbolRules.stringReflectionCallees` — Registro por Reflexión y Cadenas
-
-#### Ejemplo
-
-```json
-{
-  "unusedSymbolRules": {
-    "stringReflectionCallees": [
-      {
-        "callee": "g_CustomEntityFuncs",
-        "methods": ["RegisterCustomEntity"],
-        "argIndices": [0]
-      },
-      {
-        "callee": "g_Scheduler",
-        "methods": ["SetTimeout", "SetInterval"],
-        "argIndices": [0]
-      }
-    ]
-  }
-}
-```
-
-Si escribes `g_CustomEntityFuncs.RegisterCustomEntity("weapon_galil", "weapon_galil")`, `argIndices` indica que la cadena en la posición `0` cuenta como un uso de `weapon_galil`. Así el editor puede reconocer que la clase se usa aunque el script no la instancie.
-
----
-
-### 8. `storageRules` — Seguridad de Memoria y Manejo de Handles
-
-#### Ejemplo
-
-```json
-{
+  "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
   "storageRules": [
     {
-      "id": "unsafe-entity-handle",
-      "inheritsFrom": "CBaseEntity",
-      "typeRegex": "CBase.*",
+      "id": "entity-member-handle",
+      "types": ["CBaseEntity"],
       "handleOnly": true,
       "disallowInMembers": true,
-      "disallowInArrays": true,
       "suggestReplacement": "EHandle",
-      "message": "El handle de entidad '{}' en miembro o arreglo puede quedar colgando si la entidad es eliminada; almacena 'EHandle' en su lugar.",
-      "severity": "warning"
+      "message": "El campo '{}' guarda un handle de entidad. Usa '{}'."
     }
   ]
 }
 ```
 
-La regla del ejemplo puede marcar `private CBasePlayer@ m_pTarget;` si el tipo coincide con el filtro de entidades. El aviso se aplica a miembros y arreglos y sugiere guardar un `EHandle` en lugar del handle directo.
+Guarda este código como `main.as` en la misma carpeta.
 
----
+```angelscript
+class CBaseEntity {}
+class Tracker { CBaseEntity@ target; }
+```
 
-### 9. `callRules` (anteriormente `schedulerRules`) — Seguridad en Llamadas y Tareas Asíncronas
+VS Code marca `target` con el aviso `W113`. «El campo 'target' guarda un handle de entidad. Usa 'EHandle'.» Abre el panel **Problemas** (`Ctrl+Shift+M`) para verlo en la lista.
 
-#### Ejemplo
+Si no aparece el aviso, abre **Ver → Salida** y selecciona **AngelScript C++ Language Server**.
+
+### Prohibir handles para un tipo por valor
+
+```json
+{
+  "noHandleTypes": ["string"]
+}
+```
+
+Si tu host declara `string` en un stub `.as.predefined`, `string@ label;` genera `E261` porque el tipo de la lista no admite `@`.
+
+### Señalar una llamada a un método del motor
 
 ```json
 {
   "callRules": [
     {
-      "id": "scheduler-safety",
-      "callee": "g_Scheduler",
-      "methods": ["SetTimeout", "SetInterval"],
-      "disallowArgInheritsFrom": "CBaseEntity",
-      "disallowArgRegex": "CBase.*",
-      "disallowArgHandleOnly": true,
-      "argSuggestReplacement": "EHandle",
-      "requireExplicitEnumConstruct": true,
-      "message": "Pasar un handle crudo de entidad al callback programado es inseguro. Utiliza 'EHandle'.",
-      "severity": "warning"
+      "id": "avoid-recorder-reset",
+      "receiverTypes": ["Recorder"],
+      "methods": ["Reset"],
+      "disallowMethod": true,
+      "message": "Usa Stop en lugar de Reset."
     }
   ]
 }
 ```
 
-Si pasas un handle de entidad que coincide con la regla a `g_Scheduler.SetTimeout(...)` o `g_Scheduler.SetInterval(...)`, el editor marca ese argumento (`W114`). El mensaje del ejemplo sugiere usar `EHandle` para los argumentos que usará el callback más adelante.
+`recorder.Reset()` genera `W121` con el aviso configurado si `Reset` se resuelve como método de `Recorder`.
 
-Los archivos antiguos pueden usar `schedulerRules` como alias de `callRules`.
+## Referencia de campos
 
----
+Las listas, los mapas y las cadenas opcionales están vacíos de forma predeterminada, salvo que se indique otro valor.
 
-### 10. `noHandleTypes` — Prohibición de Handles en Tipos de Valor del Motor
+| Campo | Para qué sirve | Ejemplo |
+| --- | --- | --- |
+| `$schema` | Activa la validación y las sugerencias de propiedades JSON en VS Code. | Usa la URL del primer ejemplo. |
+| `name` | Da un nombre descriptivo al conjunto de reglas. | `"Reglas del motor del juego"` |
+| `noHandleTypes` | Genera `E261` (`as-err-handle-on-no-handle-type`) al usar handles con los tipos de la lista, incluidos sus alias `typedef`. Se combina con `angelscript.engine.noHandleTypes` y `--no-handle-type=<name>`. | `["string", "Game::Value"]` |
+| `engineProperties` | Da prioridad a las opciones del motor indicadas en el archivo sobre los ajustes del editor. | `{"requireEnumScope": true}` |
+| `storageRules` | Señala dónde se guardan los tipos o handles que coinciden con la regla. | `[{"id": "member", "types": ["Entity"], "disallowInMembers": true}]` |
+| `typeSuggestions` | Recomienda un tipo alternativo para una declaración de variable. | `[{"id": "prefer-string", "fromType": "string_t", "toType": "string"}]` |
+| `callRules` | Comprueba las llamadas y sus argumentos. | `[{"id": "no-reset", "methods": ["Reset"], "disallowMethod": true}]` |
+| `schedulerRules` | Alias antiguo que se usa cuando el servidor no lee ninguna entrada de `callRules`. | La misma lista que `callRules` |
+| `unusedSymbolRules` | Configura los avisos de símbolos sin uso y las excepciones para las funciones que invoca el motor. | `{"ignoredGlobalFunctions": ["MapInit"]}` |
 
-#### Ejemplo
+El [esquema JSON](../schemas/angelscript.rules.schema.json) define el formato. El [archivo de reglas de Sven Co-op](../predefined/sven.angelscript.rules.json) es un ejemplo completo que acompaña al stub del motor.
 
-```json
-{
-  "noHandleTypes": ["string", "datetime", "complex"]
-}
-```
+### Opciones del motor
 
-Con esta lista, `string@ s;` y `array<string@> items;` dan `as-err-handle-on-no-handle-type` (`E261`). La regla también revisa los alias de `typedef`. En `string[]@` o `array<string>@`, el handle se aplica al arreglo.
+La tabla muestra los valores predeterminados de AngelLSP. En `engineProperties`, VS Code comprueba los tipos y los valores permitidos de las siete claves en camelCase que define el esquema. Otras claves que AngelLSP acepta, como `compilerWarnings` y los alias `asEP_*` de la tabla, siguen funcionando aunque VS Code las marque.
 
-También puedes indicar los tipos en `angelscript.engine.noHandleTypes` o con `--no-handle-type=<name>` al iniciar el servidor. El ajuste y el archivo de reglas se combinan sin duplicar tipos.
+| Campo | Para qué sirve | Ejemplo |
+| --- | --- | --- |
+| `propertyAccessorMode` (`asEP_PROPERTY_ACCESSOR_MODE`) | Elige un modo de acceso del `0` al `3`. El `2`, predeterminado, admite los accesores implícitos `get_X` y `set_X`. | `3` exige `property` en los accesores del script |
+| `disallowGlobalVars` (`asEP_DISALLOW_GLOBAL_VARS`) | Prohíbe declarar variables globales. Predeterminado `false`. | `true` |
+| `requireEnumScope` (`asEP_REQUIRE_ENUM_SCOPE`) | Exige calificar los valores de enumeraciones. Predeterminado `false`. | `true` exige `State::Ready` |
+| `boolConversionMode` (`asEP_BOOL_CONVERSION_MODE`) | Controla el uso implícito de operadores de conversión de una clase a `bool`. Predeterminado `0`. | `1` permite `if (obj)` si el tipo tiene una conversión adecuada |
+| `allowUnsafeReferences` (`asEP_ALLOW_UNSAFE_REFERENCES`) | Relaja las restricciones sobre los parámetros por referencia. Predeterminado `false`. | `true` permite `int&inout` |
+| `allowMultilineStrings` (`asEP_ALLOW_MULTILINE_STRINGS`) | Permite saltos de línea literales dentro de cadenas entre comillas. Predeterminado `false`. | `true` |
+| `disableIntegerDivision` (`asEP_DISABLE_INTEGER_DIVISION`) | Hace que la división de enteros dé un valor de punto flotante. Predeterminado `false`. | `true` |
+| `privatePropAsProtected` (`asEP_PRIVATE_PROP_AS_PROTECTED`) | Permite que las clases derivadas accedan a miembros privados como si fueran protegidos. Predeterminado `false`. | `true` |
+| `useCharacterLiterals` (`asEP_USE_CHARACTER_LITERALS`) | Define cómo se interpretan las comillas simples. El `0`, predeterminado, las trata como cadenas. | `1` interpreta `'A'` como código de carácter |
+| `disallowValueAssignForRef` (`asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE`, `asEP_DISALLOW_VALUE_ASSIGN_FOR_REF`) | Exige asignar por handle en tipos de referencia. Predeterminado `false`. | `true` |
+| `alterSyntaxNamedArgs` (`asEP_ALTER_SYNTAX_NAMED_ARGS`) | Controla `nombre = valor` en llamadas. El `0`, predeterminado, lo rechaza. El `1` avisa y el `2` lo acepta. | `2` |
+| `disallowEmptyListElements` (`asEP_DISALLOW_EMPTY_LIST_ELEMENTS`) | Rechaza huecos en las listas de inicialización. Predeterminado `false`. | `true` rechaza `{1, , 3}` |
+| `foreachSupport` (`asEP_FOREACH_SUPPORT`) | Habilita la sintaxis `foreach`. Predeterminado `true`. | `false` |
+| `alwaysImplDefaultConstruct` (`asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT`) | Proporciona un constructor predeterminado implícito aunque una clase declare otros constructores. Predeterminado `false`. | `true` |
+| `allowUnicodeIdentifiers` (`asEP_ALLOW_UNICODE_IDENTIFIERS`) | Permite letras fuera de ASCII en los nombres. Predeterminado `false`. | `true` |
+| `ignoreDuplicateSharedIntf` (`asEP_IGNORE_DUPLICATE_SHARED_INTF`) | Permite declaraciones idénticas de una interfaz compartida en varios archivos. Predeterminado `false`. | `true` |
+| `compilerWarnings` (`asEP_COMPILER_WARNINGS`) | Ajusta los avisos. El `1`, predeterminado, los muestra. El `0` los oculta y el `2` los convierte en errores. | `2` |
+| `memberInitMode` (`asEP_MEMBER_INIT_MODE`) | Carga el modo de inicialización de miembros del motor en la configuración del servidor. Predeterminado `0`. | `1` |
+| `heredocTrimMode` (`asEP_HEREDOC_TRIM_MODE`) | Carga el modo de recorte de cadenas heredoc del motor en la configuración del servidor. Predeterminado `1`. | `0` |
 
----
+### Almacenamiento, sugerencias de tipos y llamadas
 
-## Validación por Esquema y Autocompletado
+El esquema requiere `id` en cada regla y, para las sugerencias de tipos, también `fromType` y `toType`. Los niveles disponibles son `error`, `warning`, `info`, `information` y `hint`. Los códigos con prefijo `W` identifican el diagnóstico aunque cambies su nivel.
 
-Agrega `$schema` a tu archivo `*.angelscript.rules.json` para que VS Code revise los campos y te sugiera nombres de propiedades.
+| Campo | Para qué sirve | Ejemplo |
+| --- | --- | --- |
+| `id` | Identifica una regla. | `"entity-member-handle"` |
+| `storageRules[].types`, `inheritsFrom`, `typeRegex` | Buscan coincidencias por nombre exacto, por herencia (incluido el propio tipo base) o por expresión regular sobre el nombre completo. Basta con que coincida uno. | `["Entity"]`, `"BaseEntity"`, `"CBase.*"` |
+| `storageRules[].handleOnly` | Limita la regla a los handles. Predeterminado `false`. | `true` |
+| `storageRules[].disallowInMembers`, `disallowInGlobals`, `disallowInArrays` | Señalan campos, variables globales de nivel superior o elementos de arrays, respectivamente. Todos tienen `false` como valor predeterminado. | `"disallowInGlobals": true` |
+| `storageRules[].suggestReplacement`, `message`, `severity` | Configuran `W113`. En el mensaje, el primer `{}` inserta el nombre de la variable y el segundo, el reemplazo. Nivel predeterminado `warning`. | `"EHandle"`, `"Campo '{}'. Usa '{}'."`, `"error"` |
+| `typeSuggestions[].fromType`, `toType` | Indican el tipo que se señala y el que se recomienda en su lugar. | `"string_t"`, `"string"` |
+| `typeSuggestions[].appliesTo` | El esquema admite `local`, `member`, `param`, `return` y `all` (predeterminado `["all"]`). La comprobación actual revisa declaraciones de variables e ignora este filtro. | `["local"]` |
+| `typeSuggestions[].message`, `severity` | Configuran `W160`. El mensaje personalizado se muestra tal cual. Nivel predeterminado `hint`. | `"Usa string."`, `"information"` |
+| `callRules[].callee`, `receiverTypes` | Buscan coincidencias con el texto del receptor o el tipo que declara el método resuelto. Si los dos campos están vacíos, vale cualquier receptor. | `"g_Scheduler"`, `["CScheduler"]` |
+| `callRules[].methods`, `methodNames` | Indican qué métodos se comprueban. Las dos listas se combinan. | `["SetTimeout", "SetInterval"]` |
+| `callRules[].disallowArgInheritsFrom`, `disallowArgRegex`, `disallowArgHandleOnly` | Señalan argumentos por herencia o expresión regular (`W114`). El filtro de handles tiene `true` como valor predeterminado. | `"CBaseEntity"`, `"CBase.*"`, `false` |
+| `callRules[].argSuggestReplacement` | El servidor lee este campo. Para mostrar un reemplazo en `W114`, inclúyelo en `message`. | `"EHandle"` |
+| `callRules[].disallowParamInheritsFrom`, `disallowParamRegex`, `disallowParamHandleOnly`, `paramSuggestReplacement` | El servidor lee estos campos para parámetros de callbacks. La comprobación actual omite esos parámetros. El filtro de handles tiene `true` como valor predeterminado. | `"CBaseEntity"`, `"CBase.*"`, `false`, `"EHandle"` |
+| `callRules[].disallowMethod`, `suggestReplacement` | Señalan una llamada que coincide (`W121`) y permiten recomendar otra API. `disallowMethod` tiene `false` como valor predeterminado. | `true`, `"Stop"` |
+| `callRules[].requireExplicitEnumConstruct` | Avisa si se pasa un entero donde un método candidato espera una enumeración (`W115`). Predeterminado `false`. | `true` |
+| `callRules[].message`, `severity` | Configuran `W114` y `W121`. En `W121`, el primer `{}` puede insertar el método y el segundo, su reemplazo. `W114` muestra el texto literal. Nivel predeterminado `warning`. | `"Llama a Stop."`, `"error"` |
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json"
-}
-```
+### Símbolos sin uso
 
-Si guardas el archivo en una carpeta al mismo nivel que `schemas`, puedes usar una ruta relativa.
+Estas reglas cubren variables locales (`W103`), campos (`W116`), variables globales (`W117`), funciones (`W118`), métodos (`W119`) y clases sin uso (`W120`).
 
-```json
-{
-  "$schema": "../schemas/angelscript.rules.schema.json"
-}
-```
+| Campo | Para qué sirve | Ejemplo |
+| --- | --- | --- |
+| `enabled` | Su valor predeterminado dentro de `unusedSymbolRules` es `true`. Con `false` o sin la sección, los ajustes de diagnóstico controlan las comprobaciones de miembros, variables globales, funciones y clases. | `false` |
+| `checkLocals`, `checkMembers`, `checkGlobals`, `checkFunctions`, `checkClasses` | Activan cada comprobación. Dentro de la sección, todos tienen `true` como valor predeterminado. Los ajustes explícitos del editor pueden cambiar las comprobaciones de miembros, variables globales, funciones y clases. | `"checkLocals": false` |
+| `ignoreUnusedGlobalsWithCallInitializer`, `unusedGlobalExemptTypes` | Excluyen las variables globales inicializadas con una llamada o las de los tipos indicados. La opción de inicialización tiene `false` como valor predeterminado. | `true`, `["CClientCommand"]` |
+| `ignoredGlobalFunctions`, `ignoredGlobalFunctionRegex` | Excluyen puntos de entrada del motor por nombre o expresión regular. | `["MapInit"]`, `"^On.*"` |
+| `ignoredBaseClasses`, `lifecycleMethods` | Excluyen las clases derivadas de las bases indicadas y sus métodos del ciclo de vida. Con una lista de bases vacía, los nombres de métodos se aplican a cualquier clase. | `["ScriptBaseEntity"]`, `["Spawn"]` |
+| `baseClassLifecycleMethods` | Excluye métodos según la clase base. | `{"ScriptBaseEntity": ["Precache"]}` |
+| `baseClassDelegateProperties`, `baseClassProxyMap` | Vinculan propiedades como `BaseClass` y clases base del script con declaraciones nativas en un stub. Cada valor del mapa acepta un nombre o una lista. | `["BaseClass"]`, `{"ScriptBaseEntity": ["CBaseEntity"]}` |
+| `stringReflectionCallees` | Cuenta como referencias los argumentos de texto que nombran símbolos. Cada entrada requiere `callee` y `methods`. Usa `argIndices` para varios índices desde cero, o `argIndex` para uno. | `[{"callee": "g_CustomEntityFuncs", "methods": ["RegisterCustomEntity"], "argIndex": 0}]` |
+| `engineCallbackSignatures` | Excluye funciones globales cuyos tipos de parámetros coinciden con una firma de la lista. | `[["CBaseEntity@", "float"]]` |
+
+## Solución de problemas
+
+- Consulta la salida de **AngelScript C++ Language Server** para ver qué ruta cargó o si hubo un error al leer el JSON.
+- Comprueba que los nombres de la regla coincidan con las declaraciones del espacio de trabajo o del stub activo.
+- En las reglas de almacenamiento, indica qué tipo buscar y dónde se restringe su uso. Para las reglas de llamada, incluye el nombre del método.

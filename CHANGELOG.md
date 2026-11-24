@@ -4,6 +4,25 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-24
+
+### Added
+
+- Added the "Add const to variable" quick action for initialized local variables that are never reassigned.
+
+### Changed
+
+- Rewrote the READMEs, workspace guides, and engine rules guide around animated demos. Added a demo of hover documentation for engine functions declared in an `.as.predefined` stub and linked to the [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example).
+
+### Fixed
+
+- Completion stops suggesting a function's parameters between its closing parenthesis and opening brace, and after its closing brace.
+- The "Add const" quick fix no longer targets the method when the cursor is on a local variable inside the method body.
+- Removed elapsed-time limits from tests that could fail on slow Windows x86 CI runners.
+
+---
+**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.0...v1.2.1
+
 ## [1.2.0] - 2026-11-21
 
 ### Added
