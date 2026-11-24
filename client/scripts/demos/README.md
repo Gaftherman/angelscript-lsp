@@ -26,6 +26,13 @@ The GIF is written to `angelscript-debug-example/media/debugger.gif`. Review
 states in `.vscode-test/temp-videos/review/`. The debugger demo runs for
 20–30 seconds and has a 5 MB limit.
 
+Run `npm run demos -- --only debugger-engine` to capture the host call,
+callback, and unverified stub breakpoint. This uses the same Release host and
+writes `angelscript-debug-example/media/debugger-engine.gif`. Review the
+12-frame `debugger-engine.png` and the full-resolution `debugger-engine-*.png`
+frames in the same review directory. The engine demo runs for 15–25 seconds
+at 960 px wide and has a 5 MB limit.
+
 ## Visual Rules
 1. Keep the synthetic pointer visible. Show all keycaps in a shortcut, light them in order, and hold the completed shortcut before sending it to VS Code.
 2. Keep hovers, signatures, and suggestions legible within the frame.

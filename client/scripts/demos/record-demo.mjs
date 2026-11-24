@@ -17,6 +17,9 @@ import {
   DEBUGGER_SCENARIO, DEBUGGER_WORKSPACE_DIR, copyDebuggerWorkspace, launchDebuggerHost,
   prepareDebuggerWindow, runDebuggerSteps, writeDebuggerCompatibilityExtension, writeDebuggerContactSheets,
 } from './record-debugger.mjs';
+import {
+  DEBUGGER_ENGINE_SCENARIO, prepareDebuggerEngine, runDebuggerEngineSteps, writeDebuggerEngineReview,
+} from './record-debugger-engine.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,9 +89,10 @@ const ALL_FEATURES = [
 
 const targetFeatures = runAll ? ALL_FEATURES : onlyFeatures;
 const debuggerExample = path.resolve(CLIENT_ROOT, '../../angelscript-debug-example');
+const debuggerScenarios = { debugger: DEBUGGER_SCENARIO, 'debugger-engine': DEBUGGER_ENGINE_SCENARIO };
 
 // Reserve the feature workspace only for runs that use it.
-if (targetFeatures.some(feature => feature !== 'debugger')) {
+if (targetFeatures.some(feature => !Object.hasOwn(debuggerScenarios, feature))) {
   if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
     throw new Error('The neutral demo workspace is already in use.');
   }
@@ -116,7 +120,8 @@ function probeDuration(file) {
 }
 
 async function runScenario(featureName) {
-  const isDebugger = featureName === 'debugger';
+  const isDebugger = Object.hasOwn(debuggerScenarios, featureName);
+  const isEngineDebugger = featureName === 'debugger-engine';
   const workspaceDir = isDebugger ? DEBUGGER_WORKSPACE_DIR : NEUTRAL_WORKSPACE_DIR;
   const scenarioFile = path.join(SCENARIOS_DIR, `${featureName}.json`);
   if (!isDebugger && !fs.existsSync(scenarioFile)) {
@@ -124,7 +129,7 @@ async function runScenario(featureName) {
     return null;
   }
 
-  const scenario = isDebugger ? DEBUGGER_SCENARIO : JSON.parse(fs.readFileSync(scenarioFile, 'utf8'));
+  const scenario = isDebugger ? debuggerScenarios[featureName] : JSON.parse(fs.readFileSync(scenarioFile, 'utf8'));
   if (!isDebugger) fs.cpSync(WORKSPACE_DIR, workspaceDir, { recursive: true });
   if (scenario.setup?.storageRulesOnly) {
     const rulesPath = path.join(workspaceDir, scenario.setup.tab);
@@ -754,7 +759,9 @@ async function runScenario(featureName) {
   };
 
   if (isDebugger) {
-    await prepareDebuggerWindow(win);
+    if (isEngineDebugger) await clickTab(scenario.file);
+    await prepareDebuggerWindow(win, scenario.sidebarWidth);
+    if (isEngineDebugger) await prepareDebuggerEngine(win);
     await animMoveMouse({ x: 1140, y: 420 });
     // Leave stable footage before the scene trim to cover window-close latency.
     await win.waitForTimeout(1600);
@@ -786,9 +793,9 @@ async function runScenario(featureName) {
 
   // Mark first scenario action timestamp
   const firstActionTime = Date.now();
-  const debuggerStops = isDebugger
-    ? await runDebuggerSteps({ win, animClick, animMoveMouse, press, firstActionTime })
-    : null;
+  const runDebugger = isEngineDebugger ? runDebuggerEngineSteps : runDebuggerSteps;
+  const debuggerReview = isDebugger
+    ? await runDebugger({ win, animClick, animMoveMouse, press, firstActionTime }) : null;
 
   for (const [stepIndex, step] of scenario.steps.entries()) {
     if (step.action === 'goto') {
@@ -970,11 +977,11 @@ async function runScenario(featureName) {
     }
   }
 
-  const minimumDuration = isDebugger ? 20.1 : 6.1;
+  const minimumDuration = isEngineDebugger ? 15.1 : isDebugger ? 20.1 : 6.1;
   const elapsed = (Date.now() - firstActionTime) / 1000;
   await win.waitForTimeout(Math.max(650, (minimumDuration - elapsed) * 1000));
   const sceneDuration = (Date.now() - firstActionTime) / 1000;
-  const maximumDuration = { debugger: 30, 'code-actions': 38, 'signature-help': 11 }[featureName] ?? 10;
+  const maximumDuration = { debugger: 30, 'debugger-engine': 25, 'code-actions': 38, 'signature-help': 11 }[featureName] ?? 10;
   if (sceneDuration > maximumDuration) {
     throw new Error('Scenario took ' + sceneDuration.toFixed(2) + ' s (limit ' + maximumDuration + ' s).');
   }
@@ -1025,11 +1032,15 @@ async function runScenario(featureName) {
   if (size > sizeLimit) throw new Error(`GIF exceeded ${sizeLimit / 1_000_000} MB after encoding.`);
 
   const duration = probeDuration(reviewGif);
-  if (duration < (isDebugger ? 20 : 6) || duration > maximumDuration) {
+  if (duration < Math.floor(minimumDuration) || duration > maximumDuration) {
     throw new Error('Encoded duration ' + duration.toFixed(2) + ' s is out of range.');
   }
   if (isDebugger) {
-    writeDebuggerContactSheets(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, ...debuggerStops });
+    if (isEngineDebugger) {
+      writeDebuggerEngineReview(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, samples: debuggerReview });
+    } else {
+      writeDebuggerContactSheets(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, ...debuggerReview });
+    }
     fs.mkdirSync(outputDir, { recursive: true });
   } else {
     const sheet = featureName === 'code-actions' ? 'fps=12/' + duration + ':round=up,scale=480:-1,tile=3x4'
