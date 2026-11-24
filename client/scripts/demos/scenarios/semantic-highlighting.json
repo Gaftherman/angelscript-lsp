@@ -5,6 +5,10 @@
   "zoomIn": 1.0,
   "zoomOrigin": "0px 0px",
   "zoomOut": 1.0,
+  "wholeLineMargin": 16,
+  "editorSettings": {
+    "editor.lineHeight": 28
+  },
   "steps": [
     { "action": "wait", "ms": 400 },
     { "action": "moveCursor", "toToken": "Dispense", "duration": 400 },

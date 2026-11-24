@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
   "name": "Demo Safety Rules",
   "engineProperties": {
     "propertyAccessorMode": 2,

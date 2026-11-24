@@ -1,47 +1,12 @@
 {
   "name": "hover",
   "file": "MedkitPlugin.as",
-  "initialLine": 53,
-  "zoomIn": 1.4,
-  "zoomOrigin": "0px 0px",
-  "zoomOut": 1.0,
+  "initialLine": 54,
+  "zoomIn": 1,
   "steps": [
-    {
-      "action": "wait",
-      "ms": 1500
-    },
-    {
-      "action": "moveCursor",
-      "toToken": "Dispense",
-      "duration": 700
-    },
-    {
-      "action": "ensureHover"
-    },
-    {
-      "action": "wait",
-      "ms": 2000
-    },
-    {
-      "action": "smoothZoomOut",
-      "duration": 700
-    },
-    {
-      "action": "moveCursor",
-      "duration": 300,
-      "toLastToken": true
-    },
-    {
-      "action": "ensureHover"
-    },
-    {
-      "action": "wait",
-      "ms": 1000
-    },
-    {
-      "action": "hold",
-      "ms": 2500
-    }
-  ],
-  "preLine": 1
+    { "action": "wait", "ms": 1350 },
+    { "action": "moveCursor", "toToken": "Dispense", "lineIncludes": "g_MainStation.Dispense(player);", "duration": 700 },
+    { "action": "ensureHover", "expect": "Dispenses medical aid.", "above": true },
+    { "action": "hold", "ms": 3400 }
+  ]
 }

@@ -5,11 +5,20 @@
   "zoomIn": 1.0,
   "zoomOrigin": "0px 0px",
   "zoomOut": 1.0,
+  "wholeLineMargin": 16,
+  "editorSettings": {
+    "editor.lineHeight": 28,
+    "editor.hover.sticky": false
+  },
   "steps": [
     { "action": "wait", "ms": 600 },
     { "action": "moveCursor", "toToken": "initialCharges", "duration": 700 },
-    { "action": "wait", "ms": 1200 },
+    { "action": "ensureHover", "expect": "int initialCharges = 5" },
+    { "action": "wait", "ms": 1000 },
+    { "action": "moveCursor", "x": 620, "y": 365, "duration": 350 },
+    { "action": "wait", "ms": 200 },
     { "action": "moveCursor", "toToken": "healPower", "duration": 600 },
+    { "action": "ensureHover", "expect": "float healPower = 25.0f" },
     { "action": "wait", "ms": 1200 },
     { "action": "moveCursor", "toToken": "message", "duration": 600 },
     { "action": "hold", "ms": 2500 }

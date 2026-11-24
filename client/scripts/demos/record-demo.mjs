@@ -11,53 +11,38 @@ import { _electron as electron } from 'playwright-core';
 import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const CLIENT_ROOT = path.resolve(__dirname, '../..');
-const REPO_ROOT = path.resolve(CLIENT_ROOT, '..');
 const WORKSPACE_DIR = path.resolve(__dirname, 'workspace');
 const NEUTRAL_WORKSPACE_DIR = 'C:\\demo\\medkit';
 const SCENARIOS_DIR = path.resolve(__dirname, 'scenarios');
 const IMAGES_DIR = path.resolve(CLIENT_ROOT, 'images');
-const FRAMES_ROOT = path.resolve(REPO_ROOT, '_frames');
 const VSCODE_TEST_DIR = path.resolve(CLIENT_ROOT, '.vscode-test');
-const USER_DATA_DIR = path.resolve(VSCODE_TEST_DIR, 'demo-user-data');
 const EMPTY_EXT_DIR = path.resolve(VSCODE_TEST_DIR, 'empty-extensions');
 const TEMP_VIDEOS_DIR = path.resolve(VSCODE_TEST_DIR, 'temp-videos');
+const REVIEW_DIR = path.join(TEMP_VIDEOS_DIR, 'review');
+const USER_SETTINGS = JSON.parse(fs.readFileSync(path.join(__dirname, 'user-settings.json'), 'utf8'));
 
-// Verify ffmpeg exists
-try {
-  execSync('ffmpeg -version', { stdio: 'pipe' });
-} catch {
-  console.error('Error: ffmpeg is not found on PATH. Please install ffmpeg.');
-  process.exit(1);
-}
-
-// Backup pristine workspace files
-const PRISTINE_FILES = new Map();
-function backupWorkspace() {
-  const filesToBackup = ['MedkitPlugin.as', 'DiagnosticsDemo.as', 'FormatDemo.as', '.vscode/settings.json', '.angelscript.rules.json'];
-  for (const f of filesToBackup) {
-    const full = path.join(WORKSPACE_DIR, f);
-    if (fs.existsSync(full)) {
-      PRISTINE_FILES.set(full, fs.readFileSync(full, 'utf8'));
-    }
+for (const tool of ['ffmpeg', 'ffprobe']) {
+  try {
+    execFileSync(tool, ['-version'], { stdio: 'pipe' });
+  } catch {
+    console.error(`Error: ${tool} is not found on PATH.`);
+    process.exit(1);
   }
 }
 
-function restoreWorkspace() {
-  for (const [full, content] of PRISTINE_FILES.entries()) {
-    fs.writeFileSync(full, content, 'utf8');
-  }
-  // Sync pristine files into neutral directory C:\demo\medkit
-  fs.mkdirSync(NEUTRAL_WORKSPACE_DIR, { recursive: true });
-  fs.cpSync(WORKSPACE_DIR, NEUTRAL_WORKSPACE_DIR, { recursive: true });
+// Reserve the neutral recording path and only clean up a copy owned by this run.
+if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
+  throw new Error('The neutral demo workspace is already in use.');
 }
-
+fs.mkdirSync(path.dirname(NEUTRAL_WORKSPACE_DIR), { recursive: true });
+fs.mkdirSync(NEUTRAL_WORKSPACE_DIR);
 process.on('exit', () => {
   try {
     if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
@@ -68,9 +53,8 @@ process.on('exit', () => {
 
 // Ensure output directories exist
 fs.mkdirSync(IMAGES_DIR, { recursive: true });
-fs.mkdirSync(FRAMES_ROOT, { recursive: true });
 fs.mkdirSync(EMPTY_EXT_DIR, { recursive: true });
-fs.mkdirSync(TEMP_VIDEOS_DIR, { recursive: true });
+fs.mkdirSync(REVIEW_DIR, { recursive: true });
 
 // Parse CLI flags
 const args = process.argv.slice(2);
@@ -114,42 +98,42 @@ const targetFeatures = runAll ? ALL_FEATURES : onlyFeatures;
 console.log('=== AngelScript LSP Demo Recorder ===');
 console.log(`Targets (${targetFeatures.length}): ${targetFeatures.join(', ')}`);
 
-backupWorkspace();
+function ffmpeg(args) {
+  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { stdio: 'pipe' });
+}
+
+function probeDuration(file) {
+  return Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
+    '-of', 'default=noprint_wrappers=1:nokey=1', file], { encoding: 'utf8' }).trim());
+}
 
 async function runScenario(featureName) {
   const scenarioFile = path.join(SCENARIOS_DIR, `${featureName}.json`);
   if (!fs.existsSync(scenarioFile)) {
-    console.warn(`Scenario file not found: ${scenarioFile}, skipping.`);
+    console.warn(`Scenario file not found for ${featureName}.`);
     return null;
   }
 
   const scenario = JSON.parse(fs.readFileSync(scenarioFile, 'utf8'));
-  restoreWorkspace();
+  fs.cpSync(WORKSPACE_DIR, NEUTRAL_WORKSPACE_DIR, { recursive: true });
 
   console.log(`\n--- Recording scenario: ${featureName} ---`);
 
-  // Kill any lingering Code.exe processes to ensure clean run
-  try {
-    execSync('taskkill /F /IM Code.exe 2>nul', { stdio: 'ignore' });
-  } catch {}
-
   const vscodePath = await downloadAndUnzipVSCode('1.146.0');
-  const targetFiles = (featureName === 'engine-options')
-    ? [path.join(NEUTRAL_WORKSPACE_DIR, 'MedkitPlugin.as'), path.join(NEUTRAL_WORKSPACE_DIR, '.vscode/settings.json')]
-    : (scenario.file ? [path.join(NEUTRAL_WORKSPACE_DIR, scenario.file)] : [NEUTRAL_WORKSPACE_DIR]);
+  const targetFiles = [scenario.file, scenario.setup?.tab].filter(Boolean)
+    .map(file => path.join(NEUTRAL_WORKSPACE_DIR, file));
+  const isEngineOptions = scenario.setup?.action === 'splitRight';
+  const isScreenshot = scenario.steps.some(step => step.action === 'screenshot');
+  const cropHeight = scenario.cropHeight || 720;
   const zoomIn = scenario.zoomIn || scenario.initialZoom || 1.0;
   let lastTokenCoords = null;
   const zoomOrigin = scenario.zoomOrigin || '360px 420px';
 
-  const videoLaunchTime = Date.now();
-
-  fs.mkdirSync(path.join(USER_DATA_DIR, 'User'), { recursive: true });
-  fs.writeFileSync(path.join(USER_DATA_DIR, 'User', 'settings.json'), JSON.stringify({
-    'window.titleBarStyle': 'native',
-    'window.commandCenter': false,
-    'workbench.layoutControl.enabled': false,
-    'chat.disableAIFeatures': true,
-    'workbench.secondarySideBar.defaultVisibility': 'hidden'
+  const userDataDir = fs.mkdtempSync(path.join(VSCODE_TEST_DIR, 'demo-user-data-'));
+  fs.mkdirSync(path.join(userDataDir, 'User'));
+  fs.writeFileSync(path.join(userDataDir, 'User', 'settings.json'), JSON.stringify({
+    ...USER_SETTINGS,
+    ...scenario.editorSettings
   }, null, 2));
 
   let app = null;
@@ -162,7 +146,7 @@ async function runScenario(featureName) {
         NEUTRAL_WORKSPACE_DIR,
         '--extensionDevelopmentPath=' + CLIENT_ROOT,
         '--extensions-dir=' + EMPTY_EXT_DIR,
-        '--user-data-dir=' + USER_DATA_DIR,
+        '--user-data-dir=' + userDataDir,
         '--locale=en',
         '--no-sandbox',
         '--disable-gpu-sandbox',
@@ -173,7 +157,7 @@ async function runScenario(featureName) {
         '--skip-release-notes',
         ...targetFiles
       ],
-      recordVideo: {
+      recordVideo: isScreenshot ? undefined : {
         dir: TEMP_VIDEOS_DIR,
         size: { width: 1280, height: 720 }
       }
@@ -234,7 +218,7 @@ async function runScenario(featureName) {
   }
   console.log('layout=' + JSON.stringify(await win.evaluate(() => ['.part.sidebar','.part.auxiliarybar','.part.activitybar','.part.editor'].map(q => { const e=document.querySelector(q); return e? q+':'+Math.round(e.getBoundingClientRect().width)+'@'+getComputedStyle(e).display : q+':none'; }))));
   // Setup pristine UI layout filling 1280x720 without any black borders
-  await win.evaluate(({ initZoom, origin, isSemantic, isEngineOptions, isSnap }) => {
+  await win.evaluate(({ initZoom, origin, hideHover, isEngineOptions, isSnap, suggestWidth, wholeLineMargin, cropHeight }) => {
     const style = document.createElement('style');
     style.textContent = `
       .part.auxiliarybar, .part.sidebar, .notifications-toasts, .part.statusbar, .part.titlebar, .part.activitybar {
@@ -243,7 +227,6 @@ async function runScenario(featureName) {
       .part.editor .title.tabs {
         ${isEngineOptions ? 'display: flex !important;' : 'display: none !important;'}
       }
-      ${isEngineOptions ? '' : ''}
       .part.editor .tab {
         font-size: 16px !important;
         height: 38px !important;
@@ -263,13 +246,21 @@ async function runScenario(featureName) {
         width: 1280px !important;
         height: 720px !important;
       }
-      .monaco-editor, .monaco-editor .overflow-guard {
-        width: 1280px !important;
-      }
+      ${isEngineOptions ? '' : `
+        .monaco-editor, .monaco-editor .overflow-guard { width: 1280px !important; }
+      `}
       /* Tooltip width and margin protection */
       .monaco-hover {
-        max-width: 720px !important;
-        ${isSemantic ? 'display: none !important;' : ''}
+        max-width: ${isEngineOptions ? 400 : 720}px !important;
+        ${hideHover ? 'display: none !important;' : ''}
+      }
+      ${isEngineOptions ? `
+        .monaco-hover, .monaco-hover .monaco-scrollable-element, .monaco-hover-content {
+          max-height: 440px !important;
+        }
+      ` : ''}
+      .demo-edge-row {
+        visibility: hidden;
       }
       /* Ensure quick-input search box never touches top edge */
       .quick-input-widget {
@@ -294,18 +285,12 @@ async function runScenario(featureName) {
       .zone-widget, .zone-widget-container, .peekview-widget {
         width: 1236px !important;
       }
-      .peekview-widget {
-        height: 430px !important;
-      }
       .peekview-widget .body .split-view-view:nth-child(1) { left: 0px !important; width: 600px !important; }
       .peekview-widget .body .split-view-view:nth-child(2) { left: 604px !important; width: 624px !important; }
       .peekview-widget .preview {
         left: 0 !important;
         width: 600px !important;
         min-width: 600px !important;
-      }
-      .peekview-widget .preview .monaco-editor .view-lines {
-        padding-bottom: 30px !important;
       }
       .peekview-widget .ref-tree,
       .peekview-widget .tree,
@@ -340,21 +325,21 @@ async function runScenario(featureName) {
       }
       /* Widen autocomplete / suggest widget to avoid ellipsized signatures */
       .suggest-widget {
-        width: 980px !important;
-        max-width: 980px !important;
+        width: ${suggestWidth}px !important;
+        max-width: ${suggestWidth}px !important;
       }
       .suggest-widget .monaco-list,
       .suggest-widget .monaco-list-rows,
       .suggest-widget .monaco-list-row {
-        width: 980px !important;
-        max-width: 980px !important;
+        width: ${suggestWidth}px !important;
+        max-width: ${suggestWidth}px !important;
       }
       .suggest-widget .monaco-list-row .contents {
-        width: 960px !important;
-        max-width: 960px !important;
+        width: ${suggestWidth - 20}px !important;
+        max-width: ${suggestWidth - 20}px !important;
       }
       .suggest-widget .monaco-list-row .contents .main {
-        max-width: 940px !important;
+        max-width: ${suggestWidth - 40}px !important;
       }
       .suggest-widget .monaco-list-row .contents .main .signature-label,
       .suggest-widget .monaco-list-row .contents .main .monaco-icon-label {
@@ -371,17 +356,61 @@ async function runScenario(featureName) {
         width: 460px !important;
         max-width: 460px !important;
       }
+      #demo-keycaps {
+        position: fixed;
+        right: 32px;
+        display: flex;
+        gap: 8px;
+        z-index: 2147483646;
+        pointer-events: none;
+        animation: demo-keycaps-hold 1420ms linear both;
+      }
+      #demo-keycaps kbd {
+        position: relative;
+        min-width: 40px;
+        padding: 7px 12px;
+        border: 1px solid #8393a5;
+        border-bottom-width: 3px;
+        border-radius: 7px;
+        background: #262d37;
+        color: #fff;
+        text-align: center;
+        font: 600 22px/1.2 system-ui, sans-serif;
+      }
+      #demo-keycaps kbd::after {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border: 2px solid #8dccff;
+        border-radius: inherit;
+        animation: demo-keycap-flash 150ms ease-out both;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        #demo-keycaps kbd { animation: demo-keycap-press 150ms ease-out both; }
+      }
+      @keyframes demo-keycap-press {
+        from { transform: scale(.9); }
+        to { transform: scale(1); }
+      }
+      @keyframes demo-keycap-flash {
+        from { opacity: 1; }
+        to { opacity: 0; }
+      }
+      @keyframes demo-keycaps-hold {
+        0%, 84% { opacity: 1; }
+        100% { opacity: 0; }
+      }
     `;
     document.head.appendChild(style);
 
     // Set initial zoom level on workbench
     const wb = document.querySelector('.monaco-workbench');
-    if (wb) {
+    if (wb && initZoom !== 1) {
       wb.style.transformOrigin = origin;
       wb.style.transform = `scale(${initZoom})`;
     }
 
-    if (isEngineOptions || isSnap) {
+    if (isSnap) {
       // Hide partial text lines at the editor top/bottom so only whole lines are ever visible.
       const snap = () => {
         const ed = document.querySelector('.part.editor .editor-container .monaco-editor');
@@ -402,16 +431,38 @@ async function runScenario(featureName) {
       };
       requestAnimationFrame(snap);
     }
-    window.dispatchEvent(new Event('resize'));
-  }, { initZoom: zoomIn, origin: zoomOrigin, isSemantic: featureName === 'semantic-highlighting', isEngineOptions: featureName === 'engine-options', isSnap: ['code-lens'].includes(featureName) });
 
-  if (featureName === 'engine-options') {
-    await win.evaluate(() => {
-      const tab = Array.from(document.querySelectorAll('.tab')).find(t => (t.getAttribute('aria-label') || t.innerText || '').includes('MedkitPlugin.as'));
-      if (tab) tab.click();
-    });
-    await win.waitForTimeout(500);
-  }
+    if (wholeLineMargin) {
+      // Hide edge rows individually. Monaco's scroll surface and widgets keep their own geometry.
+      const frameLines = () => {
+        for (const container of document.querySelectorAll('.part.editor .editor-container')) {
+          const editor = container.querySelector('.monaco-editor');
+          if (!editor || !editor.clientHeight) continue;
+          const bounds = editor.getBoundingClientRect();
+          const top = Math.max(0, bounds.top) + wholeLineMargin;
+          const bottom = Math.min(cropHeight, bounds.bottom) - wholeLineMargin;
+          const rows = editor.querySelectorAll('.view-lines > .view-line, .line-numbers, .codelens-decoration');
+          const edges = Array.from(rows, row => {
+            const bounds = row.getBoundingClientRect();
+            return bounds.top < top || bounds.bottom > bottom;
+          });
+          rows.forEach((row, index) => row.classList.toggle('demo-edge-row', edges[index]));
+        }
+        requestAnimationFrame(frameLines);
+      };
+      requestAnimationFrame(frameLines);
+    }
+    window.dispatchEvent(new Event('resize'));
+  }, {
+    initZoom: zoomIn,
+    origin: zoomOrigin,
+    hideHover: ['semantic-highlighting', 'autocomplete', 'predefined-api'].includes(featureName),
+    isEngineOptions,
+    isSnap: featureName === 'code-lens',
+    suggestWidth: scenario.suggestWidth || 720,
+    wholeLineMargin: scenario.wholeLineMargin,
+    cropHeight,
+  });
 
   // Ensure an editor with content is loaded
   const hasContent = await win.evaluate(() => {
@@ -531,35 +582,26 @@ async function runScenario(featureName) {
   // Wait for LSP server to index and publish diagnostics/tokens
   await win.waitForTimeout(2000);
 
-  const findTokenCoords = async (token) => {
-    return win.evaluate((tok) => {
+  const findTokenCoords = async ({ toToken, lineIncludes, lineOffset = 0 }) => {
+    return win.evaluate(({ token, line, offset }) => {
       const elements = Array.from(document.querySelectorAll('.view-lines span, .codelens-decoration a, .codelens-decoration span, .tab-label a, .monaco-list-row span, a'));
-      const exact = elements.filter(s => s.textContent.trim() === tok);
-      const matches = exact.length > 0 ? exact : elements.filter(s => s.textContent.includes(tok));
-      if (matches.length === 0) return null;
-      // Filter for elements that are on screen
-      const vh = window.innerHeight;
-      const onScreen = matches.filter(s => {
-        const r = s.getBoundingClientRect();
-        return r.top >= 0 && r.top <= vh && r.width > 0 && r.height > 0;
+      const visible = elements.flatMap(element => {
+        const row = element.closest('.view-line');
+        if (row?.classList.contains('demo-edge-row')) return [];
+        if (line && !row?.textContent.replace(/\u00a0/g, ' ').includes(line)) return [];
+        const text = element.textContent.trim();
+        if (!text.includes(token)) return [];
+        const bounds = element.getBoundingClientRect();
+        const y = bounds.top + bounds.height / 2 + (row?.getBoundingClientRect().height || 0) * offset;
+        const x = bounds.left + bounds.width / 2;
+        return bounds.width > 0 && x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
+          ? [{ x, y, exact: text === token, width: bounds.width }]
+          : [];
       });
-      let chosen = null;
-      if (onScreen.length > 0) {
-        onScreen.sort((a, b) => {
-          const distA = Math.abs((a.getBoundingClientRect().top + a.getBoundingClientRect().height / 2) - vh / 2);
-          const distB = Math.abs((b.getBoundingClientRect().top + b.getBoundingClientRect().height / 2) - vh / 2);
-          return distA - distB;
-        });
-        chosen = onScreen[0];
-      } else {
-        chosen = matches[matches.length - 1];
-      }
-      const r = chosen.getBoundingClientRect();
-      return {
-        x: r.left + r.width / 2,
-        y: r.top + r.height / 2
-      };
-    }, token);
+      visible.sort((a, b) => Number(b.exact) - Number(a.exact) || a.width - b.width ||
+        Math.abs(a.y - innerHeight / 2) - Math.abs(b.y - innerHeight / 2));
+      return visible[0] ?? null;
+    }, { token: toToken, line: lineIncludes, offset: lineOffset });
   };
 
   const animMoveMouse = async (coords, durationMs = 600) => {
@@ -568,7 +610,7 @@ async function runScenario(featureName) {
 
     const curPos = await win.evaluate(() => ({ x: window.__cursorX, y: window.__cursorY }));
     const movePromise = win.evaluate(({ tx, ty, ms }) => window.__moveCursor(tx, ty, ms), { tx: targetX, ty: targetY, ms: durationMs });
-    const steps = 16;
+    const steps = Math.min(16, Math.max(1, Math.ceil(durationMs / 25)));
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -581,7 +623,7 @@ async function runScenario(featureName) {
     await win.mouse.move(targetX, targetY);
   };
 
-  const animClick = async (coords) => {
+  const animClick = async (coords, clickCount = 1) => {
     const curPos = await win.evaluate(() => ({ x: window.__cursorX, y: window.__cursorY }));
     const targetX = coords ? (coords.x !== undefined ? coords.x : coords.vx) : curPos.x;
     const targetY = coords ? (coords.y !== undefined ? coords.y : coords.vy) : curPos.y;
@@ -589,8 +631,64 @@ async function runScenario(featureName) {
       await animMoveMouse(coords, 400);
     }
     await win.evaluate(() => window.__clickRipple());
-    await win.mouse.click(targetX, targetY);
+    await win.mouse.click(targetX, targetY, { clickCount });
   };
+
+  const clickTab = async (tabName) => {
+    const name = path.basename(tabName);
+    const tab = win.locator('.part.editor .tab').filter({ has: win.getByText(name, { exact: true }) });
+    await tab.click();
+  };
+
+  const showKeys = async (keys, leadMs = 270) => {
+    const labels = keys.split('+').map(key => ({ Control: 'Ctrl', Meta: 'Win' }[key] ??
+      (key.length === 1 ? key.toUpperCase() : key)));
+    await win.evaluate(({ labels, bottom }) => {
+      document.querySelector('#demo-keycaps')?.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'demo-keycaps';
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.style.bottom = `${bottom}px`;
+      for (const label of labels) {
+        const cap = document.createElement('kbd');
+        cap.textContent = label;
+        overlay.appendChild(cap);
+      }
+      overlay.addEventListener('animationend', event => {
+        if (event.target === overlay) overlay.remove();
+      });
+      document.body.appendChild(overlay);
+    }, { labels, bottom: 720 - cropHeight + 32 });
+    await win.waitForTimeout(leadMs);
+  };
+
+  let preShownKeys;
+  const press = async (key) => {
+    const display = key.replace(/\bControl\b/g, 'Ctrl').toLowerCase();
+    if ((key.includes('+') || /^F(?:[1-9]|1[0-2])$/.test(key)) && display !== preShownKeys) {
+      await showKeys(key);
+    }
+    preShownKeys = undefined;
+    await win.keyboard.press(key);
+  };
+
+  const expectEditorText = async (expected) => {
+    await win.waitForFunction(text => Array.from(document.querySelectorAll('.part.editor .view-line'))
+      .some(line => line.textContent.replace(/\u00a0/g, ' ').includes(text)), expected, { timeout: 2500 })
+      .catch(() => { throw new Error('Expected visible editor text: ' + expected); });
+  };
+
+  if (isEngineOptions) {
+    await clickTab(scenario.setup.tab);
+    await win.keyboard.press('Control+Shift+P');
+    await win.keyboard.type('View: Move Editor into Right Group');
+    await win.locator('.quick-input-widget .monaco-list-row.focused').filter({ hasText: 'Move Editor into Right Group' }).waitFor();
+    await win.keyboard.press('Enter');
+    await win.locator('.part.editor .editor-group-container').nth(1).waitFor();
+    await clickTab(scenario.file);
+    await win.keyboard.press('Control+Home');
+    await win.waitForTimeout(450);
+  }
 
   // Mark first scenario action timestamp
   const firstActionTime = Date.now();
@@ -609,103 +707,136 @@ async function runScenario(featureName) {
         await win.waitForTimeout(40);
       }
     } else if (step.action === 'ensureHover') {
-      let hoverVisible = false;
-      for (let attempt = 0; attempt < 10; attempt++) {
-        hoverVisible = await win.evaluate(() => {
-          const h = document.querySelector('.monaco-hover');
-          const hc = document.querySelector('.monaco-hover-content');
-          if (!h) return false;
-          const style = window.getComputedStyle(h);
-          if (h.classList.contains('hidden') || style.display === 'none' || style.visibility === 'hidden') return false;
-          return hc && hc.innerText.trim().length > 0;
-        });
-        if (hoverVisible) break;
-
-        // Ensure mouse is at current cursor position with micro-wiggle
-        const curPos = await win.evaluate(() => ({ x: window.__cursorX, y: window.__cursorY }));
-        await win.mouse.move(curPos.x, curPos.y);
-        await win.waitForTimeout(80);
-        await win.mouse.move(curPos.x + 2, curPos.y);
-        await win.waitForTimeout(80);
-        await win.mouse.move(curPos.x, curPos.y);
-        await win.waitForTimeout(200);
-
-        hoverVisible = await win.evaluate(() => {
-          const h = document.querySelector('.monaco-hover');
-          const hc = document.querySelector('.monaco-hover-content');
-          if (!h) return false;
-          const style = window.getComputedStyle(h);
-          if (h.classList.contains('hidden') || style.display === 'none' || style.visibility === 'hidden') return false;
-          return hc && hc.innerText.trim().length > 0;
-        });
-        if (hoverVisible) break;
-
-        // Click token to position caret
-        await win.mouse.click(curPos.x, curPos.y);
-        await win.waitForTimeout(100);
-
-        // Try Ctrl+K Ctrl+I
-        await win.keyboard.press('Control+k');
-        await win.keyboard.press('Control+i');
-        await win.waitForTimeout(350);
-
-        hoverVisible = await win.evaluate(() => {
-          const h = document.querySelector('.monaco-hover');
-          const hc = document.querySelector('.monaco-hover-content');
-          if (!h) return false;
-          const style = window.getComputedStyle(h);
-          if (h.classList.contains('hidden') || style.display === 'none' || style.visibility === 'hidden') return false;
-          return hc && hc.innerText.trim().length > 0;
-        });
-        if (hoverVisible) break;
-
-        // Try F1 Show Hover
-        await win.keyboard.press('F1');
-        await win.waitForTimeout(150);
-        await win.keyboard.type('Show or Focus Hover');
-        await win.keyboard.press('Enter');
-        await win.waitForTimeout(400);
+      let matchingHover = win.locator('.monaco-hover:visible .monaco-hover-content');
+      for (const text of [step.expect || /\S/].flat()) {
+        matchingHover = matchingHover.filter({ hasText: text });
       }
-      if (!hoverVisible) {
-        throw new Error(`FAIL: Hover popup (.monaco-hover) failed to appear for scenario ${featureName} (cursor ${JSON.stringify(await win.evaluate(() => ({x: window.__cursorX, y: window.__cursorY})))})`);
+      const hover = matchingHover.first();
+      await hover.waitFor({ timeout: 3500 });
+      if (step.above) {
+        const bounds = await hover.boundingBox();
+        const cursorY = await win.evaluate(() => window.__cursorY);
+        if (bounds.y + bounds.height > cursorY) throw new Error('Hover appeared below the target.');
       }
-      console.log('ensureHover status: VISIBLE');
+      if (step.fullyVisible) {
+        const fits = await hover.evaluate((content, crop) => {
+          const bounds = content.getBoundingClientRect();
+          return content.scrollHeight <= content.clientHeight && content.scrollWidth <= content.clientWidth &&
+            bounds.top >= 0 && bounds.bottom <= crop && bounds.left >= 0 && bounds.right <= innerWidth;
+        }, cropHeight);
+        if (!fits) throw new Error('Hover content extends beyond the recording or its scroll area.');
+      }
+      if (process.env.DEMO_DEBUG) console.log('Hover:', (await hover.innerText()).trim());
     } else if (step.action === 'moveCursor') {
-      let coords = { x: step.x, y: step.y };
-      if (step.toToken) {
-        const found = await findTokenCoords(step.toToken);
-        if (found) { coords = found; lastTokenCoords = { x: found.x, y: found.y }; }
-      } else if (step.toLastToken && lastTokenCoords) {
+      const coords = step.toToken ? await findTokenCoords(step) : { x: step.x, y: step.y };
+      if (!coords) throw new Error('Could not locate token ' + step.toToken);
+      if (step.toToken) lastTokenCoords = coords;
+      if (step.toLastToken && lastTokenCoords) {
         const ratio = (scenario.zoomOut || 1.0) / zoomIn;
-        coords = { x: lastTokenCoords.x * ratio, y: lastTokenCoords.y * ratio };
+        coords.x = lastTokenCoords.x * ratio;
+        coords.y = lastTokenCoords.y * ratio;
       }
-      if (coords.x !== undefined) {
-        await animMoveMouse(coords, step.duration || 650);
-      }
+      await animMoveMouse(coords, step.duration || 650);
     } else if (step.action === 'click') {
-      let coords = null;
-      if (step.toToken) {
-        coords = await findTokenCoords(step.toToken);
-      } else if (step.x !== undefined && step.y !== undefined) {
-        coords = { x: step.x, y: step.y };
+      const coords = step.toToken ? await findTokenCoords(step) :
+        (step.x === undefined ? null : { x: step.x, y: step.y });
+      if (step.toToken && !coords) throw new Error('Could not locate token ' + step.toToken);
+      await animClick(coords, step.clickCount);
+    } else if (step.action === 'smoothScroll') {
+      const bounds = await win.locator('.part.editor .editor-group-container.active .monaco-editor').first().boundingBox();
+      await animMoveMouse({ x: bounds.x + bounds.width * 0.8, y: bounds.y + bounds.height * 0.65 }, 260);
+      let target;
+      for (let i = 0; i < 28; i++) {
+        target = await findTokenCoords(step);
+        const delta = target ? Math.round(target.y - step.targetY) : 110;
+        if (Math.abs(delta) <= 35) break;
+        await win.mouse.wheel(0, Math.max(-110, Math.min(delta, 110)));
+        await win.waitForTimeout(80);
       }
-      await animClick(coords);
-    } else if (step.action === 'clickTab') {
-      const coords = await win.evaluate((tabName) => {
-        const tab = Array.from(document.querySelectorAll('.tab')).find(t => (t.getAttribute('aria-label') || t.innerText || '').includes(tabName));
-        if (!tab) return null;
-        const r = tab.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      }, step.tab);
-      if (coords) {
-        await animClick(coords);
-      } else {
-        console.warn(`Tab not found: ${step.tab}`);
+      await win.waitForTimeout(180);
+      target = await findTokenCoords(step);
+      if (!target || Math.abs(target.y - step.targetY) > 60) {
+        throw new Error('Scroll did not frame ' + step.toToken);
       }
     } else if (step.action === 'type') {
-      await win.keyboard.type(step.text, { delay: step.delay || 75 });
+      await win.keyboard.type(step.text, { delay: step.delay ?? 75 });
     } else if (step.action === 'press') {
-      await win.keyboard.press(step.key);
+      await press(step.key);
+    } else if (step.action === 'showKeys') {
+      await showKeys(step.keys, step.leadMs);
+      preShownKeys = step.keys.toLowerCase();
+    } else if (step.action === 'expectEditorText') {
+      await expectEditorText(step.text);
+    } else if (step.action === 'ensureSignature') {
+      await win.locator('.parameter-hints-widget:visible .parameter.active')
+        .filter({ hasText: step.parameter }).first().waitFor({ timeout: 1800 });
+    } else if (step.action === 'selectSuggestion') {
+      const focused = win.locator('.suggest-widget.visible .monaco-list-row.focused .label-name').first();
+      await focused.waitFor({ timeout: 2500 });
+      for (let i = 0; i < 16 && (await focused.innerText()).trim() !== step.label; i++) {
+        await win.keyboard.press('ArrowDown');
+        await win.waitForTimeout(140);
+      }
+      if ((await focused.innerText()).trim() !== step.label) throw new Error('Could not highlight ' + step.label);
+    } else if (step.action === 'cycleCodeActions') {
+      const actions = win.locator('.action-widget:visible .monaco-list-row[role="option"]');
+      const editorRows = '.part.editor .editor-instance .view-lines > .view-line';
+      const readCode = rows => rows.map(line => line.textContent.replace(/\u00a0/g, ' ').trim()).join('\n');
+      const focused = win.locator('.action-widget .monaco-list-row.focused').first();
+      for (const [index, pick] of step.picks.entries()) {
+        if (index > 0) {
+          const target = pick.target ?? step;
+          const coords = await findTokenCoords(target);
+          if (!coords) throw new Error('Could not locate action target ' + target.toToken);
+          await animMoveMouse(coords, 120);
+          await animClick();
+        }
+        await press('Control+.');
+        await actions.first().waitFor({ timeout: 2500 });
+        const titles = (await actions.allTextContents()).map(title => title.trim());
+        if (index === 0) {
+          const expected = step.picks.map(item => item.title);
+          if (titles.length !== expected.length || expected.some(title => !titles.includes(title))) {
+            throw new Error('The opening menu differs from the recorded actions: ' + titles.join(' | '));
+          }
+          console.log('Opening code action menu:', titles.join(' | '));
+          await win.waitForTimeout(900);
+        }
+        const actionIndex = titles.indexOf(pick.title);
+        if (actionIndex < 0) throw new Error('Could not find ' + pick.title + ' in ' + titles.join(' | '));
+        const bounds = await actions.nth(actionIndex).boundingBox();
+        await animMoveMouse({ x: bounds.x + bounds.width - 14, y: bounds.y + bounds.height / 2 }, 130);
+        for (let i = 0; i < titles.length && (await focused.textContent()).trim() !== pick.title; i++) {
+          await win.keyboard.press('ArrowDown');
+        }
+        if ((await focused.textContent()).trim() !== pick.title) throw new Error('Could not highlight ' + pick.title);
+        await win.waitForTimeout(180);
+        const before = await win.locator(editorRows).evaluateAll(readCode);
+        await win.keyboard.press('Enter');
+        await actions.first().waitFor({ state: 'hidden', timeout: 1500 });
+        if (pick.removes) {
+          await win.locator(editorRows).filter({ hasText: pick.removes }).first().waitFor({ state: 'hidden', timeout: 2500 });
+        }
+        for (const line of pick.shows ?? []) await expectEditorText(line);
+        if (await win.locator(editorRows).evaluateAll(readCode) === before) {
+          throw new Error('No visible edit after applying ' + pick.title);
+        }
+        console.log('Applied code action at ' + ((Date.now() - firstActionTime) / 1000).toFixed(2) + ' s:', pick.title);
+        await win.waitForTimeout(850);
+        await showKeys('Control+z', 130);
+        await win.keyboard.press('Control+z');
+        await win.waitForFunction(({ rows, before }) => Array.from(document.querySelectorAll(rows),
+          line => line.textContent.replace(/\u00a0/g, ' ').trim()).join('\n') === before,
+          { rows: editorRows, before }, { timeout: 2500 })
+          .catch(async () => { throw new Error('Undo for ' + pick.title + ' produced:\n' +
+            await win.locator(editorRows).evaluateAll(readCode)); });
+      }
+    } else if (step.action === 'screenshot') {
+      await win.screenshot({
+        path: path.join(IMAGES_DIR, featureName + '.png'),
+        clip: { x: 0, y: 0, width: 1280, height: cropHeight },
+      });
+      return { name: featureName, width: 1280 };
     } else if (step.action === 'wait') {
       await win.waitForTimeout(step.ms || 500);
     } else if (step.action === 'smoothZoomOut') {
@@ -720,22 +851,7 @@ async function runScenario(featureName) {
       }, { to: zoomOut, duration: dur });
       await win.waitForTimeout(dur);
     } else if (step.action === 'ensureDefinition') {
-      console.log('DEFDBG ' + JSON.stringify(await win.evaluate(() => { const c = document.querySelector('.part.editor .cursor'); if (!c) return 'nocursor'; const b = c.getBoundingClientRect(); const e = document.elementFromPoint(b.left + 4, b.top + 10); return [Math.round(b.left), Math.round(b.top), e && e.textContent, (document.querySelector('.part.editor .view-lines')||{}).innerText && (document.querySelector('.part.editor .view-lines').innerText.slice(-120))]; })));
-      try { await win.bringToFront(); } catch {}
-      let jumped = false;
-      for (let attempt = 0; attempt < 6 && !jumped; attempt++) {
-        if (attempt % 2 === 0) {
-          await win.keyboard.press('F12');
-        } else {
-          const cp = await win.evaluate(() => ({ x: window.__cursorX, y: window.__cursorY }));
-          await win.keyboard.down('Control');
-          await win.mouse.click(cp.x + 6, cp.y);
-          await win.keyboard.up('Control');
-        }
-        await win.waitForTimeout(1300);
-        jumped = await win.evaluate((txt) => Array.from(document.querySelectorAll('.part.editor .view-lines')).some(v => v.innerText.replace(/[\u00a0\s]+/g, ' ').includes(txt)), step.expect);
-      }
-      if (!jumped) throw new Error('FAIL: go to definition did not jump for scenario ' + featureName);
+      await expectEditorText(step.expect);
     } else if (step.action === 'hold') {
       if (process.env.DEMO_DEBUG) console.log('GEOM ' + JSON.stringify(await win.evaluate(() => {
         const r = (q) => Array.from(document.querySelectorAll(q)).slice(0, 3).map(e => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height), e.scrollWidth]; });
@@ -745,80 +861,75 @@ async function runScenario(featureName) {
     }
   }
 
-  // Final hold of 1.0s as required by MEDIA2 brief
-  await win.waitForTimeout(1000);
-  const lastActionEndTime = Date.now();
+  const minimumDuration = 6.1;
+  const elapsed = (Date.now() - firstActionTime) / 1000;
+  await win.waitForTimeout(Math.max(650, (minimumDuration - elapsed) * 1000));
+  const sceneDuration = (Date.now() - firstActionTime) / 1000;
+  const maximumDuration = featureName === 'code-actions' ? 25 : 10;
+  if (sceneDuration > maximumDuration) {
+    throw new Error('Scenario took ' + sceneDuration.toFixed(2) + ' s (limit ' + maximumDuration + ' s).');
+  }
 
   const video = win.video();
   await app.close();
   app = null;
-  const vidPath = await video.path();
+  const videoPath = await video.path();
 
-  // Dynamic trimming based on scenario timestamps (MEDIA2 requirement 2)
-  const trimStart = Math.max(0, (firstActionTime - videoLaunchTime) / 1000 - 0.3);
-  let duration = ((lastActionEndTime - firstActionTime) / 1000) + 0.3;
-  // Ensure duration is in the 6.0 - 10.0s window
-  if (duration < 6.0) duration = 6.0;
-  if (duration > 10.0) duration = 10.0;
+  // Align the trim to the recorded end because Electron startup precedes frame capture.
+  const trimStart = Math.max(0, probeDuration(videoPath) - sceneDuration);
+  const gifOut = path.join(IMAGES_DIR, featureName + '.gif');
+  const reviewGif = path.join(REVIEW_DIR, featureName + '.gif');
+  const palette = path.join(TEMP_VIDEOS_DIR, featureName + '-palette.png');
+  const candidates = featureName === 'code-actions' ? [
+    { width: 960, fps: 10, colors: 96, dither: 'none' },
+    { width: 960, fps: 10, colors: 64, dither: 'none' },
+    { width: 880, fps: 10, colors: 64, dither: 'none' },
+    { width: 800, fps: 10, colors: 48, dither: 'none' },
+  ] : [
+    { width: 960, fps: 15, colors: 128 },
+    { width: 960, fps: 12, colors: 96 },
+    { width: 960, fps: 12, colors: 64, dither: 'none' },
+    { width: 960, fps: 10, colors: 64, dither: 'none' },
+    { width: 800, fps: 12, colors: 64 },
+    { width: 768, fps: 10, colors: 64 },
+  ];
 
-  const gifOut = path.join(IMAGES_DIR, `${featureName}.gif`);
-  const palette = path.join(TEMP_VIDEOS_DIR, `${featureName}-palette.png`);
-
-  console.log(`Encoding GIF with trimStart=${trimStart.toFixed(2)}s, duration=${duration.toFixed(2)}s...`);
-
-  // First pass: 15 fps, 960x540, 128 max colors
-  const cropH = scenario.cropHeight || 720;
-  execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -vf "crop=1280:${cropH}:0:0,scale=960:-2:flags=lanczos,fps=15,palettegen=stats_mode=diff:max_colors=128" -vframes 1 -update 1 "${palette}"`, { stdio: 'pipe' });
-  execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -i "${palette}" -filter_complex "[0:v]crop=1280:${cropH}:0:0,scale=960:-2:flags=lanczos,fps=15[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" -loop 0 "${gifOut}"`, { stdio: 'pipe' });
-
-  let stat = fs.statSync(gifOut);
-  // Guarantee <= 3 MB per MEDIA2 requirement
-  if (stat.size > 3145728) {
-    console.warn(`File ${gifOut} (${(stat.size / 1024).toFixed(1)} KB) > 3 MB. Re-encoding at 12 fps, 960x540, max_colors=96...`);
-    execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -vf "crop=1280:${cropH}:0:0,scale=960:-2:flags=lanczos,fps=12,palettegen=stats_mode=diff:max_colors=96" -vframes 1 -update 1 "${palette}"`, { stdio: 'pipe' });
-    execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -i "${palette}" -filter_complex "[0:v]crop=1280:${cropH}:0:0,scale=960:-2:flags=lanczos,fps=12[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" -loop 0 "${gifOut}"`, { stdio: 'pipe' });
-    stat = fs.statSync(gifOut);
+  let size;
+  for (const { width, fps, colors, dither = 'bayer:bayer_scale=3' } of candidates) {
+    const input = ['-ss', trimStart.toFixed(3), '-t', Math.min(sceneDuration, maximumDuration - 0.03).toFixed(3), '-i', videoPath];
+    const filter = 'crop=1280:' + cropHeight + ':0:0,scale=' + width + ':-2:flags=lanczos,fps=' + fps;
+    ffmpeg([...input, '-vf', filter + ',palettegen=stats_mode=diff:max_colors=' + colors, '-frames:v', '1', '-update', '1', palette]);
+    ffmpeg([...input, '-i', palette, '-filter_complex',
+      '[0:v]' + filter + '[scene];[scene][1:v]paletteuse=dither=' + dither + ':diff_mode=rectangle',
+      '-loop', '0', reviewGif]);
+    size = fs.statSync(reviewGif).size;
+    if (size <= 3_000_000) break;
   }
-  if (stat.size > 3145728) {
-    console.warn(`File ${gifOut} still (${(stat.size / 1024).toFixed(1)} KB) > 3 MB. Re-encoding at 12 fps, 800x450, max_colors=96...`);
-    execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -vf "crop=1280:${cropH}:0:0,scale=800:-2:flags=lanczos,fps=12,palettegen=stats_mode=diff:max_colors=96" -vframes 1 -update 1 "${palette}"`, { stdio: 'pipe' });
-    execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -i "${palette}" -filter_complex "[0:v]crop=1280:${cropH}:0:0,scale=800:-2:flags=lanczos,fps=12[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" -loop 0 "${gifOut}"`, { stdio: 'pipe' });
-    stat = fs.statSync(gifOut);
-  }
-  if (stat.size > 3145728) {
-    console.warn(`File ${gifOut} still (${(stat.size / 1024).toFixed(1)} KB) > 3 MB. Re-encoding at 12 fps, 800x450, max_colors=64...`);
-    execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -vf "crop=1280:${cropH}:0:0,scale=800:-2:flags=lanczos,fps=12,palettegen=stats_mode=diff:max_colors=64" -vframes 1 -update 1 "${palette}"`, { stdio: 'pipe' });
-    execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -i "${palette}" -filter_complex "[0:v]crop=1280:${cropH}:0:0,scale=800:-2:flags=lanczos,fps=12[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" -loop 0 "${gifOut}"`, { stdio: 'pipe' });
-    stat = fs.statSync(gifOut);
-  }
-  if (stat.size > 3145728) {
-    console.warn(`File ${gifOut} still (${(stat.size / 1024).toFixed(1)} KB) > 3 MB. Re-encoding at 10 fps, 768x432, max_colors=64...`);
-    execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -vf "crop=1280:${cropH}:0:0,scale=768:432:flags=lanczos,fps=10,palettegen=stats_mode=diff:max_colors=64" -vframes 1 -update 1 "${palette}"`, { stdio: 'pipe' });
-    execSync(`ffmpeg -y -ss ${trimStart.toFixed(2)} -t ${duration.toFixed(2)} -i "${vidPath}" -i "${palette}" -filter_complex "[0:v]crop=1280:${cropH}:0:0,scale=768:432:flags=lanczos,fps=10[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" -loop 0 "${gifOut}"`, { stdio: 'pipe' });
-    stat = fs.statSync(gifOut);
-  }
+  if (size > 3_000_000) throw new Error('GIF exceeded 3 MB after encoding.');
 
-  // Extract 6 frames evenly spaced for mandatory self-review (MEDIA4 requirement)
-  const frameDir = path.join(FRAMES_ROOT, featureName);
-  fs.rmSync(frameDir, { recursive: true, force: true });
-  fs.mkdirSync(frameDir, { recursive: true });
-  execSync(`ffmpeg -y -i "${gifOut}" -vf "fps=6/${duration.toFixed(2)}" "${frameDir}/%02d.png"`, { stdio: 'pipe' });
-  const frameCount = fs.readdirSync(frameDir).length;
+  const duration = probeDuration(reviewGif);
+  if (duration < 6 || duration > maximumDuration) {
+    throw new Error('Encoded duration ' + duration.toFixed(2) + ' s is out of range.');
+  }
+  ffmpeg(['-i', reviewGif, '-vf', 'fps=6/' + duration + ':round=up,scale=640:-1,tile=2x3',
+    '-frames:v', '1', '-update', '1', path.join(REVIEW_DIR, featureName + '.png')]);
+  fs.copyFileSync(reviewGif, gifOut);
+  fs.rmSync(reviewGif);
+  fs.rmSync(videoPath);
+  fs.rmSync(palette);
 
-  console.log(`[DONE] ${featureName}.gif: ${(stat.size / 1024).toFixed(1)} KB, ~${duration.toFixed(1)}s, ${frameCount} review frames`);
-
-  return {
-    name: featureName,
-    sizeKb: (stat.size / 1024).toFixed(1),
-    duration: duration.toFixed(1),
-    frames: frameCount,
-    issuesFixed: 'Clean (1280x720 cropped, zoom calibrated, dynamic timing)'
-  };
+  console.log('[DONE] ' + featureName + '.gif: ' + (size / 1024).toFixed(1) + ' KiB, ' + duration.toFixed(2) + ' s');
+  return { name: featureName, size, duration };
 } finally {
   if (app) {
     try {
       await app.close();
     } catch {}
+  }
+  try {
+    fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });
+  } catch (err) {
+    console.warn('Could not clean up the isolated VS Code profile:', err.code);
   }
 }
 }
@@ -847,12 +958,11 @@ async function runScenario(featureName) {
     }
   }
 
-  restoreWorkspace();
-
   console.log('\n================ RECORDING SUMMARY ================');
   console.table(results);
   if (skipped.length > 0) {
     console.log('Skipped features:');
     console.table(skipped);
+    process.exitCode = 1;
   }
 })();
