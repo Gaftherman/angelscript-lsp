@@ -5,6 +5,9 @@
   "zoomIn": 1.0,
   "zoomOrigin": "0px 0px",
   "zoomOut": 1.0,
+  "editorSettings": {
+    "editor.lineHeight": 28
+  },
   "steps": [
     { "action": "wait", "ms": 500 },
     { "action": "moveCursor", "toToken": "m_charges", "duration": 650 },

@@ -1,59 +1,31 @@
 {
   "name": "predefined-api",
   "file": "MedkitPlugin.as",
-  "initialLine": 44,
-  "zoomIn": 1.0,
-  "zoomOrigin": "0px 0px",
-  "zoomOut": 1.0,
+  "initialLine": 52,
+  "zoomIn": 1,
+  "wholeLineMargin": 16,
+  "suggestWidth": 960,
+  "editorSettings": {
+    "editor.quickSuggestions": false,
+    "editor.suggestOnTriggerCharacters": false,
+    "editor.inlayHints.enabled": "off"
+  },
   "steps": [
-    {
-      "action": "wait",
-      "ms": 400
-    },
-    {
-      "action": "moveCursor",
-      "toToken": "ServerPrint",
-      "duration": 650
-    },
-    {
-      "action": "click"
-    },
-    {
-      "action": "press",
-      "key": "End"
-    },
-    {
-      "action": "press",
-      "key": "Enter"
-    },
-    {
-      "action": "press",
-      "key": "Home"
-    },
-    {
-      "action": "press",
-      "key": "Home"
-    },
-    {
-      "action": "wait",
-      "ms": 300
-    },
-    {
-      "action": "type",
-      "text": "g_EngineFuncs.",
-      "delay": 75
-    },
-    {
-      "action": "wait",
-      "ms": 900
-    },
-    {
-      "action": "press",
-      "key": "ArrowDown"
-    },
-    {
-      "action": "hold",
-      "ms": 2800
-    }
+    { "action": "wait", "ms": 650 },
+    { "action": "moveCursor", "toToken": "Dispense", "lineIncludes": "g_MainStation.Dispense(player);", "duration": 620 },
+    { "action": "click" },
+    { "action": "press", "key": "End" },
+    { "action": "press", "key": "Enter" },
+    { "action": "type", "text": "g_EngineFuncs.", "delay": 64 },
+    { "action": "press", "key": "Control+Space" },
+    { "action": "selectSuggestion", "label": "ClientPrint" },
+    { "action": "hold", "ms": 1600 },
+    { "action": "press", "key": "Enter" },
+    { "action": "expectEditorText", "text": "g_EngineFuncs.ClientPrint()" },
+    { "action": "type", "text": "player, \"Welcome!\\n\"", "delay": 53 },
+    { "action": "press", "key": "End" },
+    { "action": "type", "text": ";" },
+    { "action": "expectEditorText", "text": "    g_EngineFuncs.ClientPrint(player, \"Welcome!\\n\");" },
+    { "action": "hold", "ms": 1800 }
   ]
 }

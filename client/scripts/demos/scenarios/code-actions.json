@@ -1,18 +1,51 @@
 {
   "name": "code-actions",
-  "file": "DiagnosticsDemo.as",
+  "file": "CodeActionsDemo.as",
   "initialLine": 1,
-  "zoomIn": 1.0,
-  "zoomOrigin": "0px 0px",
-  "zoomOut": 1.0,
+  "zoomIn": 1,
+  "editorSettings": {
+    "editor.codeLens": false,
+    "editor.lineHeight": 27,
+    "editor.padding.top": 24,
+    "editor.hover.enabled": "off",
+    "editor.inlayHints.enabled": "off"
+  },
   "steps": [
-    { "action": "wait", "ms": 400 },
-    { "action": "moveCursor", "toToken": "healthName", "duration": 650 },
+    { "action": "wait", "ms": 350 },
+    { "action": "moveCursor", "toToken": "healthReading", "lineIncludes": "float healthReading", "duration": 550 },
     { "action": "click" },
-    { "action": "wait", "ms": 300 },
-    { "action": "press", "key": "Control+." },
-    { "action": "wait", "ms": 900 },
-    { "action": "moveCursor", "x": 420, "y": 350, "duration": 500 },
-    { "action": "hold", "ms": 3000 }
+    {
+      "action": "cycleCodeActions",
+      "toToken": "healthReading",
+      "lineIncludes": "float healthReading",
+      "picks": [
+        { "title": "Remove unused variable 'healthReading'", "removes": "float healthReading" },
+        { "title": "Disable W103 for this line", "shows": ["// disable-line W103"] },
+        { "title": "Disable W103 with // disable ... // enable", "shows": ["// disable W103", "// enable W103"] },
+        { "title": "Disable W103 for entire file", "shows": ["// disable W103"] },
+        { "title": "Disable unused for entire file", "shows": ["// disable unused"] },
+        { "title": "Add 'const' qualifier to method", "shows": ["void Sample(CBasePlayer@ target) const"] },
+        {
+          "title": "Extract Variable",
+          "target": { "toToken": "GetHealth", "lineIncludes": "float healthReading" },
+          "shows": ["float health = target.GetHealth();", "float healthReading = health * 0.5f;"]
+        },
+        {
+          "title": "Generate Getter",
+          "target": { "toToken": "m_threshold", "lineIncludes": "private float m_threshold" },
+          "shows": ["float get_Threshold() const", "return m_threshold;"]
+        },
+        {
+          "title": "Generate Setter",
+          "target": { "toToken": "m_threshold", "lineIncludes": "private float m_threshold" },
+          "shows": ["void set_Threshold(float value)", "m_threshold = value;"]
+        },
+        {
+          "title": "Generate Getter and Setter",
+          "target": { "toToken": "m_threshold", "lineIncludes": "private float m_threshold" },
+          "shows": ["return m_threshold;", "m_threshold = value;"]
+        }
+      ]
+    }
   ]
 }

@@ -1,22 +1,35 @@
 {
   "name": "autocomplete",
   "file": "MedkitPlugin.as",
-  "initialLine": 25,
-  "zoomIn": 1.0,
-  "zoomOrigin": "0px 0px",
-  "zoomOut": 1.0,
+  "initialLine": 30,
+  "zoomIn": 1,
+  "wholeLineMargin": 16,
+  "editorSettings": {
+    "editor.lineHeight": 28,
+    "editor.quickSuggestions": false,
+    "editor.suggestOnTriggerCharacters": false
+  },
   "steps": [
-    { "action": "wait", "ms": 400 },
-    { "action": "moveCursor", "toToken": "Dispense", "duration": 650 },
+    { "action": "wait", "ms": 420 },
+    { "action": "moveCursor", "toToken": "m_charges", "lineIncludes": "m_charges--;", "duration": 620 },
     { "action": "click" },
     { "action": "press", "key": "End" },
     { "action": "press", "key": "Enter" },
-    { "action": "wait", "ms": 350 },
     { "action": "type", "text": "player.", "delay": 85 },
-    { "action": "wait", "ms": 800 },
+    { "action": "press", "key": "Control+Space" },
+    { "action": "selectSuggestion", "label": "GetHealth" },
+    { "action": "press", "key": "ArrowUp" },
+    { "action": "wait", "ms": 240 },
     { "action": "press", "key": "ArrowDown" },
-    { "action": "wait", "ms": 500 },
-    { "action": "press", "key": "ArrowDown" },
-    { "action": "hold", "ms": 3000 }
+    { "action": "selectSuggestion", "label": "GetHealth" },
+    { "action": "hold", "ms": 1200 },
+    { "action": "press", "key": "Enter" },
+    { "action": "expectEditorText", "text": "player.GetHealth()" },
+    { "action": "type", "text": ";" },
+    { "action": "press", "key": "Home" },
+    { "action": "type", "text": "float hp = ", "delay": 55 },
+    { "action": "expectEditorText", "text": "        float hp = player.GetHealth();" },
+    { "action": "press", "key": "End" },
+    { "action": "hold", "ms": 1900 }
   ]
 }

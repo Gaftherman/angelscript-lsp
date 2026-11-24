@@ -1,108 +1,31 @@
 {
   "name": "engine-options",
   "file": "MedkitPlugin.as",
-  "initialLine": 45,
-  "zoomIn": 1.0,
-  "zoomOrigin": "0px 0px",
-  "zoomOut": 1.0,
+  "zoomIn": 1,
+  "wholeLineMargin": 16,
+  "setup": {
+    "action": "splitRight",
+    "tab": ".vscode/settings.json"
+  },
+  "editorSettings": {
+    "editor.fontSize": 17,
+    "editor.lineHeight": 28,
+    "editor.padding.top": 26,
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": false,
+    "editor.suggestOnTriggerCharacters": false
+  },
   "steps": [
-    {
-      "action": "wait",
-      "ms": 600
-    },
-    {
-      "action": "clickTab",
-      "tab": "settings.json"
-    },
-    {
-      "action": "wait",
-      "ms": 400
-    },
-    {
-      "action": "goto",
-      "target": "2:1"
-    },
-    {
-      "action": "press",
-      "key": "End"
-    },
-    {
-      "action": "press",
-      "key": "Backspace"
-    },
-    {
-      "action": "press",
-      "key": "Backspace"
-    },
-    {
-      "action": "press",
-      "key": "Backspace"
-    },
-    {
-      "action": "press",
-      "key": "Backspace"
-    },
-    {
-      "action": "press",
-      "key": "Backspace"
-    },
-    {
-      "action": "press",
-      "key": "Backspace"
-    },
-    {
-      "action": "type",
-      "text": "true,",
-      "delay": 60
-    },
-    {
-      "action": "wait",
-      "ms": 1500
-    },
-    {
-      "action": "wait",
-      "ms": 300
-    },
-    {
-      "action": "press",
-      "key": "Control+s"
-    },
-    {
-      "action": "wait",
-      "ms": 500
-    },
-    {
-      "action": "clickTab",
-      "tab": "MedkitPlugin.as"
-    },
-    {
-      "action": "wait",
-      "ms": 800
-    },
-    {
-      "action": "goto",
-      "target": "1:1"
-    },
-    {
-      "action": "goto",
-      "target": "45:1"
-    },
-    {
-      "action": "wait",
-      "ms": 300
-    },
-    {
-      "action": "moveCursor",
-      "toToken": "g_MainStation",
-      "duration": 500
-    },
-    {
-      "action": "ensureHover"
-    },
-    {
-      "action": "hold",
-      "ms": 2600
-    }
-  ],
-  "preLine": 1
+    { "action": "wait", "ms": 380 },
+    { "action": "smoothScroll", "toToken": "g_MainStation", "lineIncludes": "MedkitStation g_MainStation", "targetY": 555 },
+    { "action": "hold", "ms": 430 },
+    { "action": "moveCursor", "toToken": "false", "lineIncludes": "\"angelscript.engine.disallowGlobalVars\"", "duration": 540 },
+    { "action": "click", "clickCount": 2 },
+    { "action": "type", "text": "true", "delay": 75 },
+    { "action": "press", "key": "Control+s" },
+    { "action": "hold", "ms": 450 },
+    { "action": "moveCursor", "toToken": "g_MainStation", "lineIncludes": "MedkitStation g_MainStation", "duration": 590 },
+    { "action": "ensureHover", "expect": ["E145", "Global variable 'g_MainStation' is not allowed: global variables have been disabled by the application.", "MedkitStation::MedkitStation", "float healPower = 25.0f"], "fullyVisible": true },
+    { "action": "hold", "ms": 2250 }
+  ]
 }

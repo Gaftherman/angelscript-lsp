@@ -5,7 +5,8 @@ class HealthBeacon
 
     void Activate(CBasePlayer@ target)
     {
-        // Type mismatch diagnostic: string assigned from float
+        // Unused local variable diagnostic
         string healthName = target.GetHealth();
+
     }
 }

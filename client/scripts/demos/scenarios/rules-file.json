@@ -1,0 +1,16 @@
+{
+  "name": "rules-file",
+  "file": ".angelscript.rules.json",
+  "initialLine": 1,
+  "zoomIn": 1,
+  "cropHeight": 660,
+  "editorSettings": {
+    "editor.wordWrap": "on",
+    "editor.lineHeight": 26,
+    "editor.padding.top": 22
+  },
+  "steps": [
+    { "action": "wait", "ms": 850 },
+    { "action": "screenshot" }
+  ]
+}

@@ -2,50 +2,22 @@
   "name": "go-to-definition",
   "file": "MedkitPlugin.as",
   "initialLine": 52,
-  "zoomIn": 1.0,
-  "zoomOrigin": "0px 0px",
-  "zoomOut": 1.0,
+  "zoomIn": 1,
+  "wholeLineMargin": 16,
+  "editorSettings": {
+    "editor.lineHeight": 28,
+    "editor.smoothScrolling": false
+  },
   "steps": [
-    {
-      "action": "wait",
-      "ms": 3500
-    },
-    {
-      "action": "moveCursor",
-      "toToken": "Dispense",
-      "duration": 650
-    },
-    {
-      "action": "ensureHover"
-    },
-    {
-      "action": "wait",
-      "ms": 600
-    },
-    {
-      "action": "click"
-    },
-    {
-      "action": "wait",
-      "ms": 400
-    },
-    {
-      "action": "ensureDefinition",
-      "expect": "bool Dispense(CBasePlayer"
-    },
-    {
-      "action": "wait",
-      "ms": 1000
-    },
-    {
-      "action": "moveCursor",
-      "toToken": "Dispense",
-      "duration": 500
-    },
-    {
-      "action": "hold",
-      "ms": 2000
-    }
-  ],
-  "preLine": 1
+    { "action": "wait", "ms": 650 },
+    { "action": "moveCursor", "toToken": "Dispense", "lineIncludes": "g_MainStation.Dispense(player);", "duration": 650 },
+    { "action": "ensureHover", "expect": "MedkitStation::Dispense" },
+    { "action": "click" },
+    { "action": "wait", "ms": 350 },
+    { "action": "press", "key": "F12" },
+    { "action": "ensureDefinition", "expect": "bool Dispense(CBasePlayer" },
+    { "action": "wait", "ms": 500 },
+    { "action": "moveCursor", "toToken": "Dispense", "lineIncludes": "bool Dispense(CBasePlayer", "duration": 520 },
+    { "action": "hold", "ms": 2450 }
+  ]
 }
