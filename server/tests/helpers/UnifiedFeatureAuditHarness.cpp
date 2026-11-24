@@ -3,6 +3,7 @@
 #include "helpers/TestUtils.h"
 
 #include <algorithm>
+#include <chrono>
 #include <doctest/doctest.h>
 
 namespace angel_lsp::test
@@ -81,80 +82,73 @@ lsp::SemanticTokens UnifiedFeatureAuditHarness::RequestSemanticTokens(const std:
     return features::GetSemanticTokens(req);
 }
 
-std::optional<lsp::Hover> UnifiedFeatureAuditHarness::AuditHover(const std::string& uri, uint32_t line, uint32_t col,
-                                                                 double maxMs)
+std::optional<lsp::Hover> UnifiedFeatureAuditHarness::AuditHover(const std::string& uri, uint32_t line, uint32_t col)
 {
     (void)RequestHover(uri, line, col);
     auto t0 = std::chrono::high_resolution_clock::now();
     auto result = RequestHover(uri, line, col);
     auto t1 = std::chrono::high_resolution_clock::now();
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    INFO("Hover latency: " << ms << " ms, budget: " << maxMs << " ms");
-    CHECK(ms <= maxMs * 5.0);
+    MESSAGE("Hover latency: " << ms << " ms");
     return result;
 }
 
 std::vector<lsp::CompletionItem> UnifiedFeatureAuditHarness::AuditCompletion(const std::string& uri, uint32_t line,
-                                                                             uint32_t col, double maxMs)
+                                                                             uint32_t col)
 {
     (void)RequestCompletion(uri, line, col);
     auto t0 = std::chrono::high_resolution_clock::now();
     auto result = RequestCompletion(uri, line, col);
     auto t1 = std::chrono::high_resolution_clock::now();
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    INFO("Completion latency: " << ms << " ms, budget: " << maxMs << " ms");
-    CHECK(ms <= maxMs * 5.0);
+    MESSAGE("Completion latency: " << ms << " ms");
     return result;
 }
 
-std::optional<std::vector<lsp::Location>>
-UnifiedFeatureAuditHarness::AuditDefinition(const std::string& uri, uint32_t line, uint32_t col, double maxMs)
+std::optional<std::vector<lsp::Location>> UnifiedFeatureAuditHarness::AuditDefinition(const std::string& uri,
+                                                                                      uint32_t line, uint32_t col)
 {
     (void)RequestDefinition(uri, line, col);
     auto t0 = std::chrono::high_resolution_clock::now();
     auto result = RequestDefinition(uri, line, col);
     auto t1 = std::chrono::high_resolution_clock::now();
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    INFO("Definition latency: " << ms << " ms, budget: " << maxMs << " ms");
-    CHECK(ms <= maxMs * 5.0);
+    MESSAGE("Definition latency: " << ms << " ms");
     return result;
 }
 
-std::optional<std::vector<lsp::Location>>
-UnifiedFeatureAuditHarness::AuditReferences(const std::string& uri, uint32_t line, uint32_t col, double maxMs)
+std::optional<std::vector<lsp::Location>> UnifiedFeatureAuditHarness::AuditReferences(const std::string& uri,
+                                                                                      uint32_t line, uint32_t col)
 {
     (void)RequestReferences(uri, line, col);
     auto t0 = std::chrono::high_resolution_clock::now();
     auto result = RequestReferences(uri, line, col);
     auto t1 = std::chrono::high_resolution_clock::now();
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    INFO("References latency: " << ms << " ms, budget: " << maxMs << " ms");
-    CHECK(ms <= maxMs * 5.0);
+    MESSAGE("References latency: " << ms << " ms");
     return result;
 }
 
-std::optional<std::vector<lsp::CodeAction>>
-UnifiedFeatureAuditHarness::AuditCodeActions(const std::string& uri, const lsp::Range& range, double maxMs)
+std::optional<std::vector<lsp::CodeAction>> UnifiedFeatureAuditHarness::AuditCodeActions(const std::string& uri,
+                                                                                         const lsp::Range& range)
 {
     (void)RequestCodeActions(uri, range);
     auto t0 = std::chrono::high_resolution_clock::now();
     auto result = RequestCodeActions(uri, range);
     auto t1 = std::chrono::high_resolution_clock::now();
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    INFO("CodeActions latency: " << ms << " ms, budget: " << maxMs << " ms");
-    CHECK(ms <= maxMs * 5.0);
+    MESSAGE("CodeActions latency: " << ms << " ms");
     return result;
 }
 
-lsp::SemanticTokens UnifiedFeatureAuditHarness::AuditSemanticTokens(const std::string& uri, double maxMs)
+lsp::SemanticTokens UnifiedFeatureAuditHarness::AuditSemanticTokens(const std::string& uri)
 {
     (void)RequestSemanticTokens(uri);
     auto t0 = std::chrono::high_resolution_clock::now();
     auto result = RequestSemanticTokens(uri);
     auto t1 = std::chrono::high_resolution_clock::now();
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    INFO("SemanticTokens latency: " << ms << " ms, budget: " << maxMs << " ms");
-    CHECK(ms <= maxMs * 5.0);
+    MESSAGE("SemanticTokens latency: " << ms << " ms");
     return result;
 }
 

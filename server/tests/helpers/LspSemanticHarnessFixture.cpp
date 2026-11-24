@@ -303,7 +303,7 @@ void LspSemanticHarnessFixture::LoadPredefinedStub(const std::string& stubRelati
 
     std::ostringstream ss;
     ss << in.rdbuf();
-    const std::string content = ss.str();
+    std::string content = ss.str();
     const std::string stubUri = utils::PathToUri(target.generic_string());
 
     TSTree* tree = m_parser.Parse(content);
@@ -312,6 +312,7 @@ void LspSemanticHarnessFixture::LoadPredefinedStub(const std::string& stubRelati
         analysis::SymbolTable staging;
         m_symbolCollector.CollectSymbolsWithTree({stubUri, content, &m_i18n}, tree, staging);
         m_symbolTable->ReplaceDocumentSymbols(stubUri, std::move(staging));
+        m_documents.insert_or_assign(stubUri, std::move(content));
         ts_tree_delete(tree);
     }
 }

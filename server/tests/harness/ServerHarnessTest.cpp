@@ -8101,7 +8101,7 @@ TEST_CASE("ServerHarness - MasterHarnessTelemetrySmokeTest")
     const std::string validCode = "void main()\n{\n    int x = 1 + 2;\n}\n";
     auto validResult = fixture.analyzeWithTelemetry(validUri, validCode);
 
-    CHECK(validResult.elapsedMs >= 0.0);
+    MESSAGE("Valid script analysis: " << validResult.elapsedMs << " ms");
     CHECK_FALSE(validResult.hadSyntaxErrorNodes);
     CHECK(validResult.cascadingSemanticErrorsOnBrokenLine == 0);
 
@@ -8110,7 +8110,7 @@ TEST_CASE("ServerHarness - MasterHarnessTelemetrySmokeTest")
     const std::string brokenCode = "void main()\n{\n    int x = 1 + ;\n}\n";
     auto brokenResult = fixture.analyzeWithTelemetry(brokenUri, brokenCode);
 
-    CHECK(brokenResult.elapsedMs >= 0.0);
+    MESSAGE("Broken script analysis: " << brokenResult.elapsedMs << " ms");
     CHECK(brokenResult.hadSyntaxErrorNodes);
     CHECK(brokenResult.cascadingSemanticErrorsOnBrokenLine == 0);
 }

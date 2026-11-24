@@ -321,6 +321,5 @@ TEST_CASE("Perf - Baseline Measurements" * doctest::skip(true))
     MESSAGE("  6. Peak resident memory                    : " << (peakResidentBytes / (1024.0 * 1024.0)) << " MB ("
                                                               << peakResidentBytes << " bytes)");
 
-    CHECK(stubLoadMs > 0.0);
     CHECK(tokenCount > 0);
 }

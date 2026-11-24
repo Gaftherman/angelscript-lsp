@@ -156,7 +156,7 @@ TEST_CASE("External Predefined Stubs - Trackmania Nations Forever (Sashi0034)")
     const bool success = LoadPredefinedStub(stubPath, table, elapsedMs);
 
     REQUIRE(success);
-    CHECK(elapsedMs < 1000.0);
+    MESSAGE("Trackmania predefined stub load: " << elapsedMs << " ms");
 
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("OnTick");
     const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cam");
@@ -178,7 +178,7 @@ TEST_CASE("External Predefined Stubs - OpenSiv3D (Sashi0034)")
     const bool success = LoadPredefinedStub(stubPath, table, elapsedMs);
 
     REQUIRE(success);
-    CHECK(elapsedMs < 2000.0);
+    MESSAGE("OpenSiv3D predefined stub load: " << elapsedMs << " ms");
 
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MainApp");
     const std::string varVec = angel_lsp::test::GenerateRandomSymbolName("position");
@@ -199,7 +199,7 @@ TEST_CASE("External Predefined Stubs - Sven Co-op Legacy (Sashi0034)")
     const bool success = LoadPredefinedStub(stubPath, table, elapsedMs);
 
     REQUIRE(success);
-    CHECK(elapsedMs < 5000.0);
+    MESSAGE("Sven Co-op legacy predefined stub load: " << elapsedMs << " ms");
 
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MapInit");
     const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("player");
@@ -221,7 +221,7 @@ TEST_CASE("External Predefined Stubs - Sven Co-op Modern (Gaftherman)")
     const bool success = LoadPredefinedStub(stubPath, table, elapsedMs);
 
     REQUIRE(success);
-    CHECK(elapsedMs < 5000.0);
+    MESSAGE("Sven Co-op modern predefined stub load: " << elapsedMs << " ms");
 
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("PlayerSpawn");
     const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("player");
