@@ -218,31 +218,11 @@ Abre la paleta de comandos (`Ctrl+Shift+P` o `Cmd+Shift+P`). En el Explorador ta
 
 ## Depurador
 
-Pon el ejemplo en `.vscode/launch.json` y elige una configuración en **Ejecutar y depurar**. Para conectarte a un proceso, inicia un juego o host con [asdebugger](https://github.com/Gaftherman/asdebugger) escuchando en `127.0.0.1:9002`. Si eliges iniciar el juego, VS Code ejecuta el programa configurado e intenta conectarse al puerto de escucha. Tu host ejecuta los scripts y atiende las solicitudes de depuración. El servidor de lenguaje puede comprobar dónde poner puntos de interrupción.
+Con el depurador de VS Code puedes usar puntos de interrupción, ver la pila de llamadas e inspeccionar variables mientras tu aplicación ejecuta los scripts.
+El [proyecto de ejemplo del depurador](https://github.com/Gaftherman/angelscript-debugger-example) muestra cómo configurar la aplicación y realizar una sesión de depuración completa.
 
-| Campo | Valor |
-| :--- | :--- |
-| `type`, `request` | Usa `"angelscript"` y elige `"attach"` o `"launch"`. |
-| `host`, `port`, `protocol` | Usa la dirección DAP de tu host, por ejemplo, `127.0.0.1` y el puerto `9002`, con `"dap"` sobre TCP. Si omites el puerto, se usa `angelscript.debug.defaultPort`. |
-| `executable`, `args`, `cwd` | Para iniciar el juego, indica el ejecutable del host, los argumentos que necesite y su carpeta de trabajo. |
-
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Conectar al juego", "type": "angelscript", "request": "attach",
-      "host": "127.0.0.1", "port": 9002, "protocol": "dap"
-    },
-    {
-      "name": "Iniciar y depurar el juego", "type": "angelscript", "request": "launch",
-      "executable": "${workspaceFolder}/bin/game.exe",
-      "args": [], "cwd": "${workspaceFolder}",
-      "host": "127.0.0.1", "port": 9002, "protocol": "dap"
-    }
-  ]
-}
-```
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Ejecución paso a paso de AngelScript en VS Code" width="720"></p>
+<p align="center"><em>Ejecuta un script de AngelScript paso a paso en VS Code.</em></p>
 
 ## Compilar desde el código fuente
 

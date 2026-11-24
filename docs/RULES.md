@@ -1,12 +1,16 @@
 # AngelScript engine rules
 
+[English](RULES.md) | [Español](RULES.es.md)
+
 ![A storage rule flags a handle in a class field](../client/images/engine-rules.gif)
+
+*A storage rule flags a handle in a class field.*
 
 A rules file tells the extension which engine types or object handles to flag, where they can be used, and what message to show. It also lets you match the host's language options and tell the editor which functions the engine calls directly.
 
 ![Example JSON rules file](../client/images/rules-file.png)
 
-[English](RULES.md) | [Español](RULES.es.md)
+*A JSON file with engine options and a storage rule.*
 
 ## Where the file goes
 

@@ -14,6 +14,7 @@ AngelScript is a scripting language that game engines such as Sven Co-op use to 
 The C++20 language server uses Tree-Sitter to parse scripts and index their symbols.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/hover.gif" alt="Hover documentation on a method call" width="720"></p>
+<p align="center"><em>Hover over a method call to see its documentation.</em></p>
 
 ## Installation
 
@@ -76,7 +77,6 @@ Hover over `twice` in `calc.twice(21)` to see its signature and doc comment. Cha
 <td><strong>Host API</strong><br>Get completion for the types and functions declared in your stub.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/predefined-api.gif" alt="Host API" width="460"></td></tr>
 <tr><td><strong>Engine rules</strong><br>See your team's custom checks in the editor.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-rules.gif" alt="Engine rules" width="460"></td>
 <td><strong>Engine options</strong><br>Match the checks to the language options your host uses.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-options.gif" alt="Engine options" width="460"></td></tr>
-<tr><td><strong>Engine API hover</strong><br>Hover over an engine function to see its documentation from a <code>.as.predefined</code> stub.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-hover.gif" alt="Engine API hover" width="460"></td></tr>
 </table>
 
 ## Host API stubs (.as.predefined)
@@ -93,41 +93,32 @@ In AngelScript, the host application registers its C++ API so your scripts can c
 In `.vscode/settings.json`, set `"angelscript.predefined.active": "${workspaceFolder}/path/to/stub.as.predefined"` or use `"all"` to load every discovered stub. The default is `""`, which selects the first stub in path order. You can also run **AngelScript: Select Predefined Stub** or open the **AngelScript IntelliSense** status item to choose one.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/predefined-api.gif" alt="Host API in completion" width="720"></p>
+<p align="center"><em>VS Code suggests functions from the host API.</em></p>
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/predefined-file.png" alt="Example .as.predefined file" width="720"></p>
+<p align="center"><em>A stub declares a class and its methods for the editor.</em></p>
 
 ## Engine rules
 
 Save `angelscript.rules.json` in the project root. Use the [Engine Rules Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.md) to configure your project's checks.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-rules.gif" alt="A custom rule flagging a field type" width="720"></p>
+<p align="center"><em>A storage rule flags a handle in a class field.</em></p>
 
 ## Engine options
 
 Use `angelscript.engine.*` in VS Code to match your host's language options. For example, set `angelscript.engine.foreachSupport` to `false` if your host disables `foreach`.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-options.gif" alt="Editor checks for an engine option" width="720"></p>
+<p align="center"><em>Disabling global variables makes the editor flag a global declaration.</em></p>
 
 ## Debugger
 
-The VS Code debugger connects to your game or host so you can debug scripts while they run. Start a host with [asdebugger](https://github.com/Gaftherman/asdebugger) listening on `127.0.0.1:9002`. Save this as `.vscode/launch.json` and select it in **Run and Debug**.
+Use breakpoints, view the call stack, and inspect variables with the VS Code debugger while scripts run in your host.
+The [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example) shows how to set up the host and run a complete debug session.
 
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Attach to Game",
-      "type": "angelscript",
-      "request": "attach",
-      "port": 9002,
-      "protocol": "dap"
-    }
-  ]
-}
-```
-
-See the [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example) for a host setup.
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Stepping through AngelScript in VS Code" width="720"></p>
+<p align="center"><em>Step through an AngelScript script in VS Code.</em></p>
 
 ## Documentation
 

@@ -14,6 +14,7 @@ AngelScript es un lenguaje de scripting que usan motores de juegos como Sven Co-
 El servidor de lenguaje, escrito en C++20, usa Tree-Sitter para analizar los scripts e indexar sus símbolos.
 
 <p align="center"><img src="../client/images/hover.gif" alt="Documentación al pasar el cursor sobre una llamada" width="720"></p>
+<p align="center"><em>Pasa el cursor sobre una llamada para ver su documentación.</em></p>
 
 ## Instalación
 
@@ -76,7 +77,6 @@ Pasa el cursor sobre `twice` en `calc.twice(21)` para ver la firma y el comentar
 <td><strong>API del host</strong><br>Obtén sugerencias para los tipos y funciones que declara tu stub.<br><img src="../client/images/predefined-api.gif" alt="API del host" width="460"></td></tr>
 <tr><td><strong>Reglas del motor</strong><br>Ve en el editor los avisos de las comprobaciones de tu equipo.<br><img src="../client/images/engine-rules.gif" alt="Reglas del motor" width="460"></td>
 <td><strong>Opciones del motor</strong><br>Adapta las comprobaciones a las opciones de lenguaje de tu motor.<br><img src="../client/images/engine-options.gif" alt="Opciones del motor" width="460"></td></tr>
-<tr><td><strong>Documentación de la API del motor</strong><br>Pasa el cursor sobre una función del motor para ver la documentación de su stub <code>.as.predefined</code>.<br><img src="../client/images/engine-hover.gif" alt="Documentación de la API del motor" width="460"></td></tr>
 </table>
 
 ## Stubs de la API del host (.as.predefined)
@@ -93,41 +93,32 @@ En AngelScript, la aplicación anfitriona registra su API de C++ para que tus sc
 En `.vscode/settings.json`, pon `"angelscript.predefined.active": "${workspaceFolder}/path/to/stub.as.predefined"` o usa `"all"` para cargar todos los stubs que encuentre el servidor. El valor predeterminado es `""` y selecciona el primer stub por orden de ruta. También puedes ejecutar **AngelScript: Seleccionar stub predefinido** o abrir el indicador de estado **AngelScript IntelliSense** para elegir uno.
 
 <p align="center"><img src="../client/images/predefined-api.gif" alt="API del juego en el autocompletado" width="720"></p>
+<p align="center"><em>VS Code sugiere funciones de la API del motor.</em></p>
 
 <p align="center"><img src="../client/images/predefined-file.png" alt="Ejemplo de archivo .as.predefined" width="720"></p>
+<p align="center"><em>Un stub declara una clase y sus métodos para el editor.</em></p>
 
 ## Reglas del motor
 
 Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](RULES.es.md) para configurar las comprobaciones de tu proyecto.
 
 <p align="center"><img src="../client/images/engine-rules.gif" alt="Una regla personalizada marca el tipo de un campo" width="720"></p>
+<p align="center"><em>Una regla de almacenamiento marca un handle en un campo.</em></p>
 
 ## Opciones del motor
 
 Usa los ajustes `angelscript.engine.*` de VS Code para que coincidan con las opciones de tu motor. Por ejemplo, pon `angelscript.engine.foreachSupport` en `false` si tu motor desactiva `foreach`.
 
 <p align="center"><img src="../client/images/engine-options.gif" alt="Comprobaciones del editor según una opción del motor" width="720"></p>
+<p align="center"><em>Al desactivar las variables globales, el editor marca una declaración global.</em></p>
 
 ## Depurador
 
-El depurador de VS Code se conecta a tu juego o aplicación anfitriona para que puedas depurar los scripts mientras se ejecutan. Inicia el host con [asdebugger](https://github.com/Gaftherman/asdebugger) escuchando en `127.0.0.1:9002`. Guarda esto como `.vscode/launch.json` y elige la configuración en **Ejecutar y depurar**.
+Con el depurador de VS Code puedes usar puntos de interrupción, ver la pila de llamadas e inspeccionar variables mientras tu aplicación ejecuta los scripts.
+El [proyecto de ejemplo del depurador](https://github.com/Gaftherman/angelscript-debugger-example) muestra cómo configurar la aplicación y realizar una sesión de depuración completa.
 
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Conectar al juego",
-      "type": "angelscript",
-      "request": "attach",
-      "port": 9002,
-      "protocol": "dap"
-    }
-  ]
-}
-```
-
-Consulta el [proyecto de ejemplo del depurador](https://github.com/Gaftherman/angelscript-debugger-example) para ver cómo configurar un host.
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Ejecución paso a paso de AngelScript en VS Code" width="720"></p>
+<p align="center"><em>Ejecuta un script de AngelScript paso a paso en VS Code.</em></p>
 
 ## Documentación
 
