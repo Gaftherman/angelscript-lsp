@@ -101,7 +101,7 @@ export function writeDebuggerCompatibilityExtension(userDataDir) {
   return extensionDir;
 }
 
-export async function prepareDebuggerWindow(win) {
+export async function prepareDebuggerWindow(win, sidebarWidth = 408) {
   await win.addStyleTag({ content: `
     #demo-debugger-frame {
       position: fixed;
@@ -157,14 +157,14 @@ export async function prepareDebuggerWindow(win) {
   const y = sash.y + sash.height / 2;
   await win.mouse.move(edge, y);
   await win.mouse.down();
-  await win.mouse.move(panel.x + 408, y, { steps: 8 });
+  await win.mouse.move(panel.x + sidebarWidth, y, { steps: 8 });
   await win.mouse.up();
   await sidebar.getByText('Attach to AngelScript Demo', { exact: true }).first().waitFor({ timeout: 5000 });
   await sidebar.getByText('Watch', { exact: true }).click();
   await win.locator('.part.editor .view-line:visible').first().click({ position: { x: 4, y: 11 } });
 }
 
-async function holdDebuggerFrame(win) {
+export async function holdDebuggerFrame(win) {
   // Cover the workbench while VS Code refreshes the editor, Locals and Call Stack independently.
   const screenshot = await win.screenshot();
   await win.evaluate(async png => {
