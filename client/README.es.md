@@ -184,6 +184,38 @@ Con una configuración de tipo `launch`, pulsa F5 para iniciar la aplicación an
 - [Guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) — comprobaciones propias y ajustes compartidos del motor.
 - [CHANGELOG.md](CHANGELOG.md) — historial de versiones y cambios.
 
+## Otros clientes
+
+Esta extensión también está disponible en Open VSX: [AngelScript Language Server (Open VSX)](https://open-vsx.org/extension/Gaftherman/angelscript-gaftherman).
+
+Existen otros servidores de lenguaje para AngelScript. Si este no encaja con tu proyecto, te recomendamos abiertamente probarlos:
+
+- [sashi0034/angel-lsp](https://github.com/sashi0034/angel-lsp): otro servidor de lenguaje de AngelScript para VS Code. Sigue en desarrollo y también tiene una implementación para IntelliJ.
+
+## Problemas y contribuciones
+
+Los reportes de errores y las sugerencias son bienvenidos en [GitHub Issues](https://github.com/Gaftherman/angelscript-lsp/issues). Cuando el servidor falla, ejecuta **AngelScript: Report Issue** (o pulsa **Report Issue** en el mensaje de error). Abre el formulario con tus versiones, el registro y una pequeña muestra anonimizada de tu código ya rellenos, para que revises todo antes de enviarlo.
+
+Si corriges un error pequeño o añades una mejora, puedes enviar un pull request.
+
+Si creas un archivo `.as.predefined` para tu aplicación, contribuirlo como ejemplo se agradecería mucho y puede servir a otras personas.
+
+## Créditos
+
+Angelscript para VS Code se apoya en el trabajo de estos proyectos. Sus licencias se reproducen en [THIRD_PARTY_NOTICES.md](https://github.com/Gaftherman/angelscript-lsp/blob/main/THIRD_PARTY_NOTICES.md).
+
+| Proyecto | Licencia | Uso |
+| --- | --- | --- |
+| [Relrin/tree-sitter-angelscript](https://github.com/Relrin/tree-sitter-angelscript) | BSD-3-Clause | Base de la gramática de AngelScript. Este proyecto mantiene un [fork](https://github.com/Gaftherman/tree-sitter-angelscript). |
+| [AngelScript](https://github.com/anjo76/angelscript) by Andreas Jönsson | zlib | El lenguaje en sí. Su compilador es el oráculo de pruebas de los diagnósticos. |
+| [tree-sitter](https://github.com/tree-sitter/tree-sitter) | MIT | Análisis incremental. |
+| [tree-sitter-doxygen](https://github.com/tree-sitter-grammars/tree-sitter-doxygen) | MIT | Comentarios de documentación. |
+| [lsp-framework](https://github.com/leon-bckl/lsp-framework) | MIT | Biblioteca del Language Server Protocol. |
+| [nlohmann/json](https://github.com/nlohmann/json) | MIT | JSON. |
+| [spdlog](https://github.com/gabime/spdlog) | MIT | Registro de eventos. |
+| [unordered_dense](https://github.com/martinus/unordered_dense) | MIT | Contenedores hash. |
+| [doctest](https://github.com/doctest/doctest) | MIT | Framework de pruebas. |
+
 ## Compilar desde el código fuente
 
 ```bash

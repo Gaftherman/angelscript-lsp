@@ -4,23 +4,20 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
-### Added
-
-- The MCP bridge now exposes `workspace_info`, `engine_rules`, `module_graph`, `references`, `workspace_symbols` and `predefined_lookup`, so an agent can learn the module entry point, the host engine rules and the predefined API before it edits. The server answers the first four through the new `angelscript/workspaceInfo`, `angelscript/engineRules`, `angelscript/moduleGraph` and `angelscript/predefinedLookup` requests, which wait for the initial workspace scan.
-
-### Changed
-
-- Runner discovery also finds `angelscript` and `asc` on `PATH` and continues to support `angelscript-cli`.
-
 ## [1.2.3] - 2026-11-24
 
 ### Added
 
+- Added the **AngelScript: Report Issue** command, also offered as **Report Issue** in every server error message. It opens the VS Code issue reporter with the extension, VS Code and OS versions, the tail of the server log and the code near the cursor already filled in. Workspace paths, the home directory, the user name and email addresses are replaced, and the code sample is rewritten with generic names (`T1`, `f2`, `v3`), empty strings and no comments, so the case can be reproduced without sharing private code. Editors without the reporter open the pre-filled GitHub form instead.
+- Added "Other Clients", "Issues and Contributions" and "Credits" sections to the README, and `THIRD_PARTY_NOTICES.md` with the license of every project the server builds on. The notices ship inside the extension.
+- The release workflow publishes the extension to Open VSX when the `OVSX_PAT` secret is set.
+- The MCP bridge now exposes `workspace_info`, `engine_rules`, `module_graph`, `references`, `workspace_symbols` and `predefined_lookup`, so an agent can learn the module entry point, the host engine rules and the predefined API before it edits. The server answers the first four through the new `angelscript/workspaceInfo`, `angelscript/engineRules`, `angelscript/moduleGraph` and `angelscript/predefinedLookup` requests, which wait for the initial workspace scan.
 - Added the `angelscript.runner.path` setting so a `launch` configuration with `program` can run scripts through an external AngelScript runner found on your PATH.
 - Added an opt-in end-to-end test against angelscript-cli
 
 ### Changed
 
+- Runner discovery also finds `angelscript` and `asc` on `PATH` and continues to support `angelscript-cli`.
 - Reorganized the README feature gallery into a single column with larger demos, moved the feature status table into a collapsible section, clarified that the extension checks code but does not run it, and added project folder trees to the workspace guide.
 - Added captions to the README feature galleries, grouped the LSP feature table, and made the workspace guide examples engine-neutral.
 

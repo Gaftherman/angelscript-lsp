@@ -184,6 +184,38 @@ With a `launch` configuration, press F5 to start your host program and see its c
 - [Engine Rules Guide](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.md) — custom checks and shared engine settings.
 - [CHANGELOG.md](CHANGELOG.md) — release history and changes.
 
+## Other Clients
+
+This extension is also available on Open VSX: [AngelScript Language Server (Open VSX)](https://open-vsx.org/extension/Gaftherman/angelscript-gaftherman).
+
+Other AngelScript language servers exist. If this one does not fit your project, we openly recommend trying them:
+
+- [sashi0034/angel-lsp](https://github.com/sashi0034/angel-lsp): another AngelScript language server for VS Code. It is still in development and also has an implementation for IntelliJ.
+
+## Issues and Contributions
+
+Bug reports and feature requests are welcome via [GitHub Issues](https://github.com/Gaftherman/angelscript-lsp/issues). When the server fails, run **AngelScript: Report Issue** (or press **Report Issue** in the error message). It opens the issue form with your versions, the log and a small anonymized sample of your code already filled in, so you can review everything before it is sent.
+
+If you fix a small bug or add an enhancement, feel free to submit a pull request.
+
+If you create an `.as.predefined` file for your application, contributing it as an example would be greatly appreciated and could be helpful to others.
+
+## Credits
+
+Angelscript for VS Code is built on the work of these projects. Their licenses are reproduced in [THIRD_PARTY_NOTICES.md](https://github.com/Gaftherman/angelscript-lsp/blob/main/THIRD_PARTY_NOTICES.md).
+
+| Project | License | Use |
+| --- | --- | --- |
+| [Relrin/tree-sitter-angelscript](https://github.com/Relrin/tree-sitter-angelscript) | BSD-3-Clause | Base of the AngelScript grammar. This project keeps a [fork](https://github.com/Gaftherman/tree-sitter-angelscript). |
+| [AngelScript](https://github.com/anjo76/angelscript) by Andreas Jönsson | zlib | The language itself. Its compiler is the test oracle for diagnostics. |
+| [tree-sitter](https://github.com/tree-sitter/tree-sitter) | MIT | Incremental parsing. |
+| [tree-sitter-doxygen](https://github.com/tree-sitter-grammars/tree-sitter-doxygen) | MIT | Documentation comments. |
+| [lsp-framework](https://github.com/leon-bckl/lsp-framework) | MIT | Language Server Protocol library. |
+| [nlohmann/json](https://github.com/nlohmann/json) | MIT | JSON. |
+| [spdlog](https://github.com/gabime/spdlog) | MIT | Logging. |
+| [unordered_dense](https://github.com/martinus/unordered_dense) | MIT | Hash containers. |
+| [doctest](https://github.com/doctest/doctest) | MIT | Test framework. |
+
 ## Building from source
 
 ```bash

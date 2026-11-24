@@ -392,3 +392,14 @@ jobs:
           fi
 
           gh release edit "$TAG" --draft=false
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "OVSX_PAT is not set; skipping Open VSX."
+            exit 0
+          fi
+          npx --yes ovsx publish release/angelscript.vsix -p "$OVSX_PAT"
