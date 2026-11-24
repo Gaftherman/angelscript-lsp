@@ -44,6 +44,11 @@ void Server::SetWorkspaceScanComplete(bool complete) noexcept
     m_sessionCoordinator->SetWorkspaceScanComplete(complete);
 }
 
+bool Server::WaitForWorkspaceScan(std::chrono::milliseconds timeout) const
+{
+    return m_sessionCoordinator->WaitUntilWorkspaceScanComplete(timeout);
+}
+
 analysis::formatting::BraceStyle Server::CurrentBraceStyle() const
 {
     return m_sessionCoordinator->GetFormatBraceStyleKR() ? analysis::formatting::BraceStyle::KAndR

@@ -64,6 +64,13 @@ class LspSessionCoordinator
     [[nodiscard]] bool IsWorkspaceScanComplete() const noexcept;
 
     /**
+     * @brief Blocks until the initial background workspace scan has finished or the timeout passes.
+     * @param[in] timeout Longest time to wait.
+     * @return True if the scan is complete, false if the timeout passed first.
+     */
+    bool WaitUntilWorkspaceScanComplete(std::chrono::milliseconds timeout) const;
+
+    /**
      * @brief Sets barrier signaling that predefined stubs and engine profiles are loaded.
      * @param[in] ready True when predefined files are fully indexed.
      */
@@ -276,6 +283,8 @@ class LspSessionCoordinator
     std::atomic<bool> m_predefinedReady{false};
     mutable std::mutex m_predefinedMutex;
     mutable std::condition_variable m_predefinedCv;
+    mutable std::mutex m_scanMutex;
+    mutable std::condition_variable m_scanCv;
 
     std::atomic<bool> m_formatBraceStyleKR{false};
     std::atomic<bool> m_formatSpacesInsideParentheses{false};

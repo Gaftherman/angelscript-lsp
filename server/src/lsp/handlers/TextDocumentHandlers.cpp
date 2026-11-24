@@ -63,6 +63,18 @@ static void RegisterNavigationHandlers(Server& server, lsp::MessageHandler& hand
 
     handler.add("angelscript/debugCompletion", [&server](lsp::json::Value&& params)
                 { return server.HandleRequestsAngelscript_DebugCompletion(std::move(params)); });
+
+    handler.add("angelscript/workspaceInfo", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsAngelscript_WorkspaceInfo(std::move(params)); });
+
+    handler.add("angelscript/engineRules", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsAngelscript_EngineRules(std::move(params)); });
+
+    handler.add("angelscript/moduleGraph", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsAngelscript_ModuleGraph(std::move(params)); });
+
+    handler.add("angelscript/predefinedLookup", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsAngelscript_PredefinedLookup(std::move(params)); });
 }
 
 static void RegisterEditingHandlers(Server& server, lsp::MessageHandler& handler)

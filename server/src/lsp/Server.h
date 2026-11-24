@@ -104,6 +104,12 @@ class Server
     [[nodiscard]] std::string_view ImplicitIncludeExtension() const noexcept;
     void SetOnBeforeCommitHook(OnBeforeCommitHook hook);
     void SetWorkspaceScanComplete(bool complete) noexcept;
+    /**
+     * @brief Waits for the initial workspace scan, so project facts are complete before they are reported.
+     * @param[in] timeout Longest time to wait.
+     * @return True if the scan has finished.
+     */
+    bool WaitForWorkspaceScan(std::chrono::milliseconds timeout) const;
     void SetPredefinedReady(bool ready);
     [[nodiscard]] bool IsPredefinedReady() const noexcept;
     bool WaitForPredefinedReady(std::chrono::milliseconds timeout) const;
@@ -288,6 +294,14 @@ class Server
     lsp::json::Value HandleRequestsTextDocument_BreakpointLocations(lsp::json::Value&& params);
     lsp::json::Value HandleRequestsTextDocument_EvaluatableExpression(lsp::json::Value&& params);
     lsp::json::Value HandleRequestsAngelscript_DebugCompletion(lsp::json::Value&& params);
+    /** @brief Answers angelscript/workspaceInfo: root, entry point, stubs, rules file and include roots. */
+    lsp::json::Value HandleRequestsAngelscript_WorkspaceInfo(lsp::json::Value&& params);
+    /** @brief Answers angelscript/engineRules: the host engine rules in effect. */
+    lsp::json::Value HandleRequestsAngelscript_EngineRules(lsp::json::Value&& params);
+    /** @brief Answers angelscript/moduleGraph: the files reachable from a module entry point. */
+    lsp::json::Value HandleRequestsAngelscript_ModuleGraph(lsp::json::Value&& params);
+    /** @brief Answers angelscript/predefinedLookup: declarations of host symbols by name. */
+    lsp::json::Value HandleRequestsAngelscript_PredefinedLookup(lsp::json::Value&& params);
 
   private:
     /**
@@ -383,6 +397,8 @@ class Server
     std::vector<ModuleView> m_modules;
     std::vector<std::string> m_discoveredPredefined;
     std::string m_effectivePredefined;
+    std::string m_effectiveRulesPath; ///< Engine rules file in effect; empty when none was found. Guarded by
+                                      ///< m_runtimeConfigMutex.
     TransparentStringSet m_predefinedTransitiveIncludes;
     TransparentStringSet m_fileNoHandleTypes;
     std::string m_workspaceProgressToken;

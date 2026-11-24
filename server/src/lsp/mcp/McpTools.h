@@ -67,6 +67,10 @@ class McpToolbox
     lsp::json::Value PositionRequest(std::string_view method, const lsp::json::Value& args);
     lsp::json::Value Completion(const lsp::json::Value& args);
     lsp::json::Value DocumentSymbols(const lsp::json::Value& args);
+    lsp::json::Value References(const lsp::json::Value& args);
+    lsp::json::Value WorkspaceSymbols(const lsp::json::Value& args);
+    lsp::json::Value ModuleGraph(const lsp::json::Value& args);
+    lsp::json::Value PredefinedLookup(const lsp::json::Value& args);
     void SendChange(std::string_view uri, lsp::json::Value change);
 
     /** @throws std::runtime_error when the document was never opened through open_document. */
