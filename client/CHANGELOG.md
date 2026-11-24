@@ -6,6 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Changed
+
+- Reorganized the README feature gallery into a single column with larger demos, moved the feature status table into a collapsible section, clarified that the extension checks code but does not run it, and added project folder trees to the workspace guide.
+
 ## [1.2.2] - 2026-11-24
 
 ### Changed
