@@ -174,13 +174,14 @@
   "config.debug.enableBreakpointLocations.description": "Enable semantic breakpoint location verification via AngelLSP server before binding breakpoints.",
   "config.debug.defaultPort.description": "Default TCP port for connecting to AngelScript runtime debug server (default: 9002).",
   "config.debug.defaultProtocol.description": "Default protocol for AngelScript debugging ('dap' for Debug Adapter Protocol, 'asdbg' for binary socket, or 'cdebugger' for text command socket).",
+  "config.runner.path.description": "Absolute path to the AngelScript runner executable. Leave empty to find `angelscript-cli` on `PATH`.",
   "debugger.angelscript.name": "AngelScript Debugger",
-  "configuration.angelscript.debug.program": "Path to the main AngelScript file to launch or debug.",
+  "configuration.angelscript.debug.program": "Path to the main AngelScript file to launch or debug. When executable is omitted, the AngelScript runner runs this file.",
   "configuration.angelscript.debug.stopOnEntry": "Automatically pause execution immediately upon starting or attaching.",
   "configuration.angelscript.debug.port": "TCP port of the AngelScript debug server to connect to.",
   "configuration.angelscript.debug.host": "Host address or IP where the AngelScript debug server is listening (default: 127.0.0.1).",
   "configuration.angelscript.debug.protocol": "Target debugger protocol ('dap', 'asdbg', or 'cdebugger').",
-  "configuration.angelscript.debug.executable": "Path to the game or host executable to automatically launch before debugging.",
+  "configuration.angelscript.debug.executable": "Path to the game or host executable to launch before debugging. Leave empty to run program through the AngelScript runner.",
   "configuration.angelscript.debug.args": "Command line arguments passed to the launched executable.",
   "configuration.angelscript.debug.cwd": "Working directory for the launched executable."
 }

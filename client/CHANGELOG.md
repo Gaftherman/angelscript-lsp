@@ -6,6 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Added
+
+- Added the `angelscript.runner.path` setting so a `launch` configuration with `program` can run scripts through an external AngelScript runner found on your PATH.
+
 ### Changed
 
 - Reorganized the README feature gallery into a single column with larger demos, moved the feature status table into a collapsible section, clarified that the extension checks code but does not run it, and added project folder trees to the workspace guide.

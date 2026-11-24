@@ -1722,7 +1722,10 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         debug.registerDebugAdapterDescriptorFactory(
             'angelscript',
-            new AngelScriptDebugAdapterDescriptorFactory(() => activeClient())));
+            new AngelScriptDebugAdapterDescriptorFactory(
+                () => activeClient(),
+                folder => workspace.getConfiguration('angelscript', folder).get<string>('runner.path', '')
+            )));
     context.subscriptions.push(
         languages.registerEvaluatableExpressionProvider(
             'angelscript',
