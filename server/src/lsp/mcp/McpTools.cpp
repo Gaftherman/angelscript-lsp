@@ -20,6 +20,12 @@ static constexpr ToolSpec k_tools[] = {
     {"signature_help", "mcp-tool-signature-help", "path:string!,line:integer!,character:integer!"},
     {"definition", "mcp-tool-definition", "path:string!,line:integer!,character:integer!"},
     {"document_symbols", "mcp-tool-document-symbols", "path:string!"},
+    {"references", "mcp-tool-references", "path:string!,line:integer!,character:integer!,includeDeclaration:boolean"},
+    {"workspace_symbols", "mcp-tool-workspace-symbols", "query:string!,limit:integer"},
+    {"workspace_info", "mcp-tool-workspace-info", ""},
+    {"engine_rules", "mcp-tool-engine-rules", ""},
+    {"module_graph", "mcp-tool-module-graph", "path:string,limit:integer"},
+    {"predefined_lookup", "mcp-tool-predefined-lookup", "name:string!,limit:integer"},
 };
 
 /** @brief Turns a "name:type!,name:type" list into a JSON Schema object. */
@@ -143,6 +149,27 @@ lsp::json::Value McpToolbox::CallTool(std::string_view name, const lsp::json::Va
     if (name == "document_symbols")
     {
         return DocumentSymbols(args);
+    }
+    if (name == "references")
+    {
+        return References(args);
+    }
+    if (name == "workspace_symbols")
+    {
+        return WorkspaceSymbols(args);
+    }
+    if (name == "workspace_info" || name == "engine_rules")
+    {
+        return m_session.Request(name == "workspace_info" ? "angelscript/workspaceInfo" : "angelscript/engineRules",
+                                 json::MakeObject());
+    }
+    if (name == "module_graph")
+    {
+        return ModuleGraph(args);
+    }
+    if (name == "predefined_lookup")
+    {
+        return PredefinedLookup(args);
     }
     throw std::runtime_error("unknown tool '" + std::string(name) + "'");
 }

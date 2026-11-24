@@ -4,6 +4,10 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+### Added
+
+- The MCP bridge now exposes `workspace_info`, `engine_rules`, `module_graph`, `references`, `workspace_symbols` and `predefined_lookup`, so an agent can learn the module entry point, the host engine rules and the predefined API before it edits. The server answers the first four through the new `angelscript/workspaceInfo`, `angelscript/engineRules`, `angelscript/moduleGraph` and `angelscript/predefinedLookup` requests, which wait for the initial workspace scan.
+
 ## [1.2.3] - 2026-11-24
 
 ### Added

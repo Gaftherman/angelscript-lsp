@@ -54,6 +54,44 @@ inline int GetNonNegativeInt(const lsp::json::Value& args, std::string_view key)
     return value->integer();
 }
 
+/**
+ * @brief Reads an optional boolean member of an arguments object.
+ * @param[in] args Arguments value; anything other than an object counts as having no members.
+ * @param[in] key Member name.
+ * @param[in] fallback Result when the member is absent.
+ * @throws std::runtime_error when present with another type.
+ */
+inline bool GetBool(const lsp::json::Value& args, std::string_view key, bool fallback)
+{
+    const lsp::json::Value* value = args.isObject() ? args.object().find(key) : nullptr;
+    if (value == nullptr || value->isNull())
+    {
+        return fallback;
+    }
+    if (!value->isBoolean())
+    {
+        throw std::runtime_error("argument '" + std::string(key) + "' must be a boolean");
+    }
+    return value->boolean();
+}
+
+/**
+ * @brief Reads an optional positive integer member of an arguments object.
+ * @param[in] args Arguments value; anything other than an object counts as having no members.
+ * @param[in] key Member name.
+ * @param[in] fallback Result when the member is absent.
+ * @throws std::runtime_error when present but not an integer.
+ */
+inline int GetLimit(const lsp::json::Value& args, std::string_view key, int fallback)
+{
+    const lsp::json::Value* value = args.isObject() ? args.object().find(key) : nullptr;
+    if (value == nullptr || value->isNull())
+    {
+        return fallback;
+    }
+    return GetNonNegativeInt(args, key) < 1 ? 1 : GetNonNegativeInt(args, key);
+}
+
 /** @brief Builds an LSP Position object. */
 inline lsp::json::Value MakePosition(int line, int character)
 {

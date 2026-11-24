@@ -22,7 +22,7 @@
 TEST_SUITE("lsp/McpBridge")
 {
 
-    TEST_CASE("McpBridge - Good - lists the nine tools and answers ping")
+    TEST_CASE("McpBridge - Good - lists the tools and answers ping")
     {
         angel_lsp::test::McpTestSession session;
         const int list = session.Request("tools/list", angel_lsp::mcp::json::MakeObject());
@@ -30,7 +30,7 @@ TEST_SUITE("lsp/McpBridge")
         const auto replies = session.Run();
 
         const auto& tools = replies.at(list).object().get("result").object().get("tools").array();
-        CHECK(tools.size() == 9);
+        CHECK(tools.size() == 15);
         for (const auto& tool : tools)
         {
             CHECK_FALSE(tool.object().get("description").string().empty());

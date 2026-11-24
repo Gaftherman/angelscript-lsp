@@ -27,7 +27,21 @@ bool LspSessionCoordinator::IsRunning() const noexcept
 
 void LspSessionCoordinator::SetWorkspaceScanComplete(bool complete) noexcept
 {
-    m_workspaceScanComplete.store(complete);
+    {
+        std::lock_guard<std::mutex> lock(m_scanMutex);
+        m_workspaceScanComplete.store(complete);
+    }
+    m_scanCv.notify_all();
+}
+
+bool LspSessionCoordinator::WaitUntilWorkspaceScanComplete(std::chrono::milliseconds timeout) const
+{
+    if (m_workspaceScanComplete.load())
+    {
+        return true;
+    }
+    std::unique_lock<std::mutex> lock(m_scanMutex);
+    return m_scanCv.wait_for(lock, timeout, [this]() { return m_workspaceScanComplete.load(); });
 }
 
 bool LspSessionCoordinator::IsWorkspaceScanComplete() const noexcept

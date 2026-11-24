@@ -193,6 +193,10 @@ void Server::LoadWorkspaceEngineRules(std::span<const std::string> workspaceRoot
     }
 
     const std::string rulesPath = ResolveRulesPath(m_config.rulesFile, workspaceRoots, effectivePredef, fallbackStubs);
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        m_effectiveRulesPath = rulesPath;
+    }
     if (rulesPath.empty())
     {
         const bool hadFileRules = !m_fileNoHandleTypes.empty() || !m_config.engineRules.storageRules.empty() ||
