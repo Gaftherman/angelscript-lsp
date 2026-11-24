@@ -22,10 +22,9 @@ const base = {
 	],
 };
 
-// Two runs with their own label so `vscode-test --label unit` stays quick and the live-typing
-// benchmark, which drives the real server for many mutation cycles, is opt-in. The first settings
-// write after the extension host starts goes through a cold configuration service, which is
-// slower than mocha's 2 s default, so every run gets a timeout sized for that.
+// Separate labels keep the unit run quick and let callers opt in to integration tests and
+// benchmarks. The first settings write after the extension host starts can take longer than
+// Mocha's 2 s default, so each run gets its own timeout.
 export default defineConfig([
 	{
 		...base,
@@ -37,6 +36,12 @@ export default defineConfig([
 		...base,
 		label: 'e2e',
 		files: ['out/test/e2e.test.js', 'out/test/diagnostics.test.js', 'out/test/completion.test.js'],
+		mocha: { timeout: 60_000 },
+	},
+	{
+		...base,
+		label: 'runner-e2e',
+		files: 'out/test/runnerE2E.test.js',
 		mocha: { timeout: 60_000 },
 	},
 	{
