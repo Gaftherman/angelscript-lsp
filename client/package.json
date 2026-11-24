@@ -1300,6 +1300,7 @@
     "lint": "eslint src",
     "test": "vscode-test --label unit",
     "test:e2e": "vscode-test --label e2e",
+    "test:runner-e2e": "vscode-test --label runner-e2e",
     "test:perf": "vscode-test --label perf",
     "test:all": "vscode-test",
     "check-settings": "node scripts/check-settings-wired.mjs",
