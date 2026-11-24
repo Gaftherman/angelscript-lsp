@@ -8,18 +8,26 @@
     "tab": ".vscode/settings.json"
   },
   "editorSettings": {
-    "editor.fontSize": 17,
+    "editor.fontSize": 20,
     "editor.lineHeight": 28,
     "editor.padding.top": 26,
-    "editor.wordWrap": "on",
     "editor.quickSuggestions": false,
-    "editor.suggestOnTriggerCharacters": false
+    "editor.suggestOnTriggerCharacters": false,
+    "[jsonc]": {
+      "editor.fontSize": 14,
+      "editor.lineHeight": 24,
+      "editor.lineNumbers": "off",
+      "editor.folding": false,
+      "editor.glyphMargin": false,
+      "editor.lineDecorationsWidth": 0,
+      "editor.wordWrap": "on"
+    }
   },
   "steps": [
     { "action": "wait", "ms": 380 },
     { "action": "smoothScroll", "toToken": "g_MainStation", "lineIncludes": "MedkitStation g_MainStation", "targetY": 555 },
     { "action": "hold", "ms": 430 },
-    { "action": "moveCursor", "toToken": "false", "lineIncludes": "\"angelscript.engine.disallowGlobalVars\"", "duration": 540 },
+    { "action": "moveCursor", "toToken": "false", "duration": 540 },
     { "action": "click", "clickCount": 2 },
     { "action": "type", "text": "true", "delay": 75 },
     { "action": "press", "key": "Control+s" },

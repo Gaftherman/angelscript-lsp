@@ -13,6 +13,10 @@ import path from 'path';
 import fs from 'fs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import {
+  DEBUGGER_SCENARIO, DEBUGGER_WORKSPACE_DIR, copyDebuggerWorkspace, launchDebuggerHost,
+  prepareDebuggerWindow, runDebuggerSteps, writeDebuggerCompatibilityExtension, writeDebuggerContactSheets,
+} from './record-debugger.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,20 +40,6 @@ for (const tool of ['ffmpeg', 'ffprobe']) {
     process.exit(1);
   }
 }
-
-// Reserve the neutral recording path and only clean up a copy owned by this run.
-if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
-  throw new Error('The neutral demo workspace is already in use.');
-}
-fs.mkdirSync(path.dirname(NEUTRAL_WORKSPACE_DIR), { recursive: true });
-fs.mkdirSync(NEUTRAL_WORKSPACE_DIR);
-process.on('exit', () => {
-  try {
-    if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
-      fs.rmSync(NEUTRAL_WORKSPACE_DIR, { recursive: true, force: true });
-    }
-  } catch {}
-});
 
 // Ensure output directories exist
 fs.mkdirSync(IMAGES_DIR, { recursive: true });
@@ -94,6 +84,23 @@ const ALL_FEATURES = [
 ];
 
 const targetFeatures = runAll ? ALL_FEATURES : onlyFeatures;
+const debuggerExample = path.resolve(CLIENT_ROOT, '../../angelscript-debug-example');
+
+// Reserve the feature workspace only for runs that use it.
+if (targetFeatures.some(feature => feature !== 'debugger')) {
+  if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
+    throw new Error('The neutral demo workspace is already in use.');
+  }
+  fs.mkdirSync(path.dirname(NEUTRAL_WORKSPACE_DIR), { recursive: true });
+  fs.mkdirSync(NEUTRAL_WORKSPACE_DIR);
+  process.on('exit', () => {
+    try {
+      if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
+        fs.rmSync(NEUTRAL_WORKSPACE_DIR, { recursive: true, force: true });
+      }
+    } catch {}
+  });
+}
 
 console.log('=== AngelScript LSP Demo Recorder ===');
 console.log(`Targets (${targetFeatures.length}): ${targetFeatures.join(', ')}`);
@@ -108,21 +115,28 @@ function probeDuration(file) {
 }
 
 async function runScenario(featureName) {
+  const isDebugger = featureName === 'debugger';
+  const workspaceDir = isDebugger ? DEBUGGER_WORKSPACE_DIR : NEUTRAL_WORKSPACE_DIR;
   const scenarioFile = path.join(SCENARIOS_DIR, `${featureName}.json`);
-  if (!fs.existsSync(scenarioFile)) {
+  if (!isDebugger && !fs.existsSync(scenarioFile)) {
     console.warn(`Scenario file not found for ${featureName}.`);
     return null;
   }
 
-  const scenario = JSON.parse(fs.readFileSync(scenarioFile, 'utf8'));
-  fs.cpSync(WORKSPACE_DIR, NEUTRAL_WORKSPACE_DIR, { recursive: true });
+  const scenario = isDebugger ? DEBUGGER_SCENARIO : JSON.parse(fs.readFileSync(scenarioFile, 'utf8'));
+  if (!isDebugger) fs.cpSync(WORKSPACE_DIR, workspaceDir, { recursive: true });
+  if (scenario.setup?.storageRulesOnly) {
+    const rulesPath = path.join(workspaceDir, scenario.setup.tab);
+    const { storageRules } = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
+    fs.writeFileSync(rulesPath, JSON.stringify({ storageRules }, null, 2) + '\n');
+  }
 
   console.log(`\n--- Recording scenario: ${featureName} ---`);
 
   const vscodePath = await downloadAndUnzipVSCode('1.146.0');
   const targetFiles = [scenario.file, scenario.setup?.tab].filter(Boolean)
-    .map(file => path.join(NEUTRAL_WORKSPACE_DIR, file));
-  const isEngineOptions = scenario.setup?.action === 'splitRight';
+    .map(file => path.join(workspaceDir, file));
+  const isSplit = scenario.setup?.action === 'splitRight';
   const isScreenshot = scenario.steps.some(step => step.action === 'screenshot');
   const cropHeight = scenario.cropHeight || 720;
   const zoomIn = scenario.zoomIn || scenario.initialZoom || 1.0;
@@ -137,14 +151,24 @@ async function runScenario(featureName) {
   }, null, 2));
 
   let app = null;
+  let debuggerHost;
+  let cleanDebuggerWorkspace;
   try {
+    const extraExtensions = [];
+    if (isDebugger) {
+      cleanDebuggerWorkspace = copyDebuggerWorkspace(debuggerExample);
+      debuggerHost = launchDebuggerHost(debuggerExample);
+      await debuggerHost.ready;
+      extraExtensions.push('--extensionDevelopmentPath=' + writeDebuggerCompatibilityExtension(userDataDir));
+    }
     app = await electron.launch({
       executablePath: vscodePath,
       args: [
         '--window-size=1280,720',
         '--force-device-scale-factor=1',
-        NEUTRAL_WORKSPACE_DIR,
+        workspaceDir,
         '--extensionDevelopmentPath=' + CLIENT_ROOT,
+        ...extraExtensions,
         '--extensions-dir=' + EMPTY_EXT_DIR,
         '--user-data-dir=' + userDataDir,
         '--locale=en',
@@ -186,46 +210,48 @@ async function runScenario(featureName) {
     await win.setViewportSize({ width: 1280, height: 720 });
   } catch {}
 
-  // Close primary and secondary sidebars cleanly via VS Code command palette
-  await win.keyboard.press('Control+Shift+P');
-  await win.waitForTimeout(150);
-  await win.keyboard.type('View: Close Primary Side Bar');
-  await win.keyboard.press('Enter');
-  await win.waitForTimeout(150);
+  if (!isDebugger) {
+    // Close primary and secondary sidebars cleanly via VS Code command palette
+    await win.keyboard.press('Control+Shift+P');
+    await win.waitForTimeout(150);
+    await win.keyboard.type('View: Close Primary Side Bar');
+    await win.keyboard.press('Enter');
+    await win.waitForTimeout(150);
 
-  await win.keyboard.press('Control+Shift+P');
-  await win.waitForTimeout(150);
-  await win.keyboard.type('View: Close Secondary Side Bar');
-  await win.keyboard.press('Enter');
-  await win.waitForTimeout(200);
+    await win.keyboard.press('Control+Shift+P');
+    await win.waitForTimeout(150);
+    await win.keyboard.type('View: Close Secondary Side Bar');
+    await win.keyboard.press('Enter');
+    await win.waitForTimeout(200);
 
-  // Close the real side bars so VS Code relayouts the editor at full width (CSS alone leaves stale layout widths)
-  for (const _ of [0, 1]) {
-    const sidebarOpen = await win.evaluate(() => {
-      const el = document.querySelector('.part.sidebar');
-      return !!el && el.offsetWidth > 0 && getComputedStyle(el).display !== 'none';
-    });
-    console.log('sidebarOpen=' + sidebarOpen);
-    if (!sidebarOpen) break;
-    await win.keyboard.press('Control+b');
-    await win.waitForTimeout(400);
+    // Close the real side bars so VS Code relayouts the editor at full width (CSS alone leaves stale layout widths)
+    for (const _ of [0, 1]) {
+      const sidebarOpen = await win.evaluate(() => {
+        const el = document.querySelector('.part.sidebar');
+        return !!el && el.offsetWidth > 0 && getComputedStyle(el).display !== 'none';
+      });
+      console.log('sidebarOpen=' + sidebarOpen);
+      if (!sidebarOpen) break;
+      await win.keyboard.press('Control+b');
+      await win.waitForTimeout(400);
+    }
+    for (const _ of [0, 1]) {
+      const auxOpen = await win.evaluate(() => { const e = document.querySelector('.part.auxiliarybar'); return !!e && e.getBoundingClientRect().width > 10; });
+      if (!auxOpen) break;
+      await win.keyboard.press('Control+Alt+b');
+      await win.waitForTimeout(500);
+    }
+    console.log('layout=' + JSON.stringify(await win.evaluate(() => ['.part.sidebar','.part.auxiliarybar','.part.activitybar','.part.editor'].map(q => { const e=document.querySelector(q); return e? q+':'+Math.round(e.getBoundingClientRect().width)+'@'+getComputedStyle(e).display : q+':none'; }))));
   }
-  for (const _ of [0, 1]) {
-    const auxOpen = await win.evaluate(() => { const e = document.querySelector('.part.auxiliarybar'); return !!e && e.getBoundingClientRect().width > 10; });
-    if (!auxOpen) break;
-    await win.keyboard.press('Control+Alt+b');
-    await win.waitForTimeout(500);
-  }
-  console.log('layout=' + JSON.stringify(await win.evaluate(() => ['.part.sidebar','.part.auxiliarybar','.part.activitybar','.part.editor'].map(q => { const e=document.querySelector(q); return e? q+':'+Math.round(e.getBoundingClientRect().width)+'@'+getComputedStyle(e).display : q+':none'; }))));
   // Setup pristine UI layout filling 1280x720 without any black borders
-  await win.evaluate(({ initZoom, origin, hideHover, isEngineOptions, isSnap, suggestWidth, wholeLineMargin, cropHeight }) => {
+  await win.evaluate(({ initZoom, origin, hideHover, isSplit, isSnap, suggestWidth, wholeLineMargin, cropHeight, actionMenuFontSize, isDebugger }) => {
     const style = document.createElement('style');
-    style.textContent = `
+    style.textContent = `${isDebugger ? '' : `
       .part.auxiliarybar, .part.sidebar, .notifications-toasts, .part.statusbar, .part.titlebar, .part.activitybar {
         display: none !important;
       }
       .part.editor .title.tabs {
-        ${isEngineOptions ? 'display: flex !important;' : 'display: none !important;'}
+        ${isSplit ? 'display: flex !important;' : 'display: none !important;'}
       }
       .part.editor .tab {
         font-size: 16px !important;
@@ -246,22 +272,22 @@ async function runScenario(featureName) {
         width: 1280px !important;
         height: 720px !important;
       }
-      ${isEngineOptions ? '' : `
+      ${isSplit ? '' : `
         .monaco-editor, .monaco-editor .overflow-guard { width: 1280px !important; }
       `}
       /* Tooltip width and margin protection */
       .monaco-hover {
-        max-width: ${isEngineOptions ? 400 : 720}px !important;
+        max-width: ${isSplit ? 520 : 720}px !important;
         ${hideHover ? 'display: none !important;' : ''}
       }
-      ${isEngineOptions ? `
+      ${isSplit ? `
         .monaco-hover, .monaco-hover .monaco-scrollable-element, .monaco-hover-content {
           max-height: 440px !important;
         }
+        .monaco-hover .hover-row {
+          font-size: 17px;
+        }
       ` : ''}
-      .demo-edge-row {
-        visibility: hidden;
-      }
       /* Ensure quick-input search box never touches top edge */
       .quick-input-widget {
         top: 36px !important;
@@ -281,6 +307,11 @@ async function runScenario(featureName) {
       .action-widget .monaco-list-row {
         font-size: 17px !important;
       }
+      ${actionMenuFontSize ? `
+        .context-view .action-widget .monaco-list-row[role="option"] .title {
+          font-size: ${actionMenuFontSize}px;
+        }
+      ` : ''}
       /* Peek widget (code lens / find references) */
       .zone-widget, .zone-widget-container, .peekview-widget {
         width: 1236px !important;
@@ -356,6 +387,10 @@ async function runScenario(featureName) {
         width: 460px !important;
         max-width: 460px !important;
       }
+    `}
+      .demo-edge-row {
+        visibility: hidden;
+      }
       #demo-keycaps {
         position: fixed;
         right: 32px;
@@ -363,19 +398,27 @@ async function runScenario(featureName) {
         gap: 8px;
         z-index: 2147483646;
         pointer-events: none;
-        animation: demo-keycaps-hold 1420ms linear both;
+        --first-press: 160ms;
+        --key-gap: 250ms;
+        --press-duration: 180ms;
       }
       #demo-keycaps kbd {
         position: relative;
         min-width: 40px;
         padding: 7px 12px;
-        border: 1px solid #8393a5;
+        border: 1px solid #737881;
         border-bottom-width: 3px;
         border-radius: 7px;
-        background: #262d37;
-        color: #fff;
+        background: #34373c;
+        color: #c4c8ce;
         text-align: center;
         font: 600 22px/1.2 system-ui, sans-serif;
+        animation: demo-keycap-lit 0s both;
+        animation-delay: var(--press-time);
+        --press-time: calc(var(--first-press) + (var(--key-index) - 1) * var(--key-gap));
+      }
+      @supports (animation-delay: calc(sibling-index() * 1ms)) {
+        #demo-keycaps kbd { --key-index: sibling-index(); }
       }
       #demo-keycaps kbd::after {
         content: '';
@@ -383,22 +426,33 @@ async function runScenario(featureName) {
         inset: -1px;
         border: 2px solid #8dccff;
         border-radius: inherit;
-        animation: demo-keycap-flash 150ms ease-out both;
+        opacity: 0;
       }
       @media (prefers-reduced-motion: no-preference) {
-        #demo-keycaps kbd { animation: demo-keycap-press 150ms ease-out both; }
+        #demo-keycaps kbd {
+          animation: demo-keycap-lit 0s var(--press-time) both,
+            demo-keycap-press var(--press-duration) ease-out var(--press-time) both;
+        }
+        #demo-keycaps kbd::after {
+          animation: demo-keycap-flash var(--press-duration) ease-out var(--press-time) forwards;
+        }
+      }
+      @keyframes demo-keycap-lit {
+        to { background: #244767; color: #fff; border-color: #8dccff; }
       }
       @keyframes demo-keycap-press {
-        from { transform: scale(.9); }
-        to { transform: scale(1); }
+        0%, 100% { transform: scale(1); }
+        35% { transform: scale(.9); }
       }
       @keyframes demo-keycap-flash {
         from { opacity: 1; }
         to { opacity: 0; }
       }
-      @keyframes demo-keycaps-hold {
-        0%, 84% { opacity: 1; }
-        100% { opacity: 0; }
+      #demo-keycaps.demo-keycaps-fade {
+        animation: demo-keycaps-fade 200ms linear var(--demo-keycap-hold, 1000ms) forwards;
+      }
+      @keyframes demo-keycaps-fade {
+        to { opacity: 0; }
       }
     `;
     document.head.appendChild(style);
@@ -457,11 +511,13 @@ async function runScenario(featureName) {
     initZoom: zoomIn,
     origin: zoomOrigin,
     hideHover: ['semantic-highlighting', 'autocomplete', 'predefined-api'].includes(featureName),
-    isEngineOptions,
+    isSplit,
     isSnap: featureName === 'code-lens',
     suggestWidth: scenario.suggestWidth || 720,
     wholeLineMargin: scenario.wholeLineMargin,
     cropHeight,
+    actionMenuFontSize: scenario.actionMenuFontSize,
+    isDebugger,
   });
 
   // Ensure an editor with content is loaded
@@ -609,6 +665,7 @@ async function runScenario(featureName) {
     const targetY = coords.y;
 
     const curPos = await win.evaluate(() => ({ x: window.__cursorX, y: window.__cursorY }));
+    if (curPos.x === targetX && curPos.y === targetY) return;
     const movePromise = win.evaluate(({ tx, ty, ms }) => window.__moveCursor(tx, ty, ms), { tx: targetX, ty: targetY, ms: durationMs });
     const steps = Math.min(16, Math.max(1, Math.ceil(durationMs / 25)));
     for (let i = 1; i <= steps; i++) {
@@ -640,36 +697,53 @@ async function runScenario(featureName) {
     await tab.click();
   };
 
-  const showKeys = async (keys, leadMs = 270) => {
-    const labels = keys.split('+').map(key => ({ Control: 'Ctrl', Meta: 'Win' }[key] ??
-      (key.length === 1 ? key.toUpperCase() : key)));
-    await win.evaluate(({ labels, bottom }) => {
+  const keyLabels = keys => keys.split('+').map(key => ({
+    control: 'Ctrl', ctrl: 'Ctrl', meta: 'Win', win: 'Win',
+    shift: 'Shift', alt: 'Alt', space: 'Space',
+  }[key.toLowerCase()] ?? key.toUpperCase()));
+
+  const showKeys = async (labels) => {
+    const pressSequence = await win.evaluate(({ labels, bottom, holdMs }) => {
       document.querySelector('#demo-keycaps')?.remove();
       const overlay = document.createElement('div');
       overlay.id = 'demo-keycaps';
       overlay.setAttribute('aria-hidden', 'true');
       overlay.style.bottom = `${bottom}px`;
-      for (const label of labels) {
+      if (holdMs !== undefined) overlay.style.setProperty('--demo-keycap-hold', `${holdMs}ms`);
+      const hasSiblingIndex = CSS.supports('animation-delay: calc(sibling-index() * 1ms)');
+      for (const [index, label] of labels.entries()) {
         const cap = document.createElement('kbd');
         cap.textContent = label;
+        if (!hasSiblingIndex) cap.style.setProperty('--key-index', String(index + 1));
         overlay.appendChild(cap);
       }
       overlay.addEventListener('animationend', event => {
-        if (event.target === overlay) overlay.remove();
+        if (event.animationName === 'demo-keycaps-fade') overlay.remove();
       });
       document.body.appendChild(overlay);
-    }, { labels, bottom: 720 - cropHeight + 32 });
-    await win.waitForTimeout(leadMs);
+      const style = getComputedStyle(overlay);
+      const firstPress = parseFloat(style.getPropertyValue('--first-press'));
+      const gap = parseFloat(style.getPropertyValue('--key-gap'));
+      const duration = parseFloat(style.getPropertyValue('--press-duration'));
+      return firstPress + (labels.length - 1) * gap + duration;
+    }, { labels, bottom: 720 - cropHeight + 32, holdMs: scenario.keycapHoldMs });
+    await win.waitForTimeout(pressSequence + 500);
   };
 
+  const fadeKeys = () => win.evaluate(() => {
+    document.querySelector('#demo-keycaps')?.classList.add('demo-keycaps-fade');
+  });
+
   let preShownKeys;
-  const press = async (key) => {
-    const display = key.replace(/\bControl\b/g, 'Ctrl').toLowerCase();
-    if ((key.includes('+') || /^F(?:[1-9]|1[0-2])$/.test(key)) && display !== preShownKeys) {
-      await showKeys(key);
-    }
+  const press = async (key, waitForResult) => {
+    const labels = keyLabels(key);
+    const shown = labels.join('+') === preShownKeys;
+    const hasOverlay = shown || key.includes('+') || /^F(?:[1-9]|1[0-2])$/i.test(key);
+    if (hasOverlay && !shown) await showKeys(labels);
     preShownKeys = undefined;
     await win.keyboard.press(key);
+    if (waitForResult) await waitForResult();
+    if (hasOverlay) await fadeKeys();
   };
 
   const expectEditorText = async (expected) => {
@@ -678,13 +752,32 @@ async function runScenario(featureName) {
       .catch(() => { throw new Error('Expected visible editor text: ' + expected); });
   };
 
-  if (isEngineOptions) {
+  if (isDebugger) {
+    await prepareDebuggerWindow(win);
+    await animMoveMouse({ x: 1140, y: 420 });
+    // Leave stable footage before the scene trim to cover window-close latency.
+    await win.waitForTimeout(1600);
+  }
+
+  if (isSplit) {
     await clickTab(scenario.setup.tab);
     await win.keyboard.press('Control+Shift+P');
     await win.keyboard.type('View: Move Editor into Right Group');
     await win.locator('.quick-input-widget .monaco-list-row.focused').filter({ hasText: 'Move Editor into Right Group' }).waitFor();
     await win.keyboard.press('Enter');
     await win.locator('.part.editor .editor-group-container').nth(1).waitFor();
+    const sash = win.locator('.part.editor .monaco-grid-view .monaco-sash.vertical:visible').first();
+    const divider = await sash.boundingBox();
+    if (!divider) throw new Error('Could not find the editor split divider.');
+    const y = divider.y + divider.height / 2;
+    await win.mouse.move(divider.x + divider.width / 2, y);
+    await win.mouse.down();
+    await win.mouse.move(1280 * 0.7, y, { steps: 8 });
+    await win.mouse.up();
+    const right = await win.locator('.part.editor .editor-group-container').nth(1).boundingBox();
+    if (!right || Math.abs(right.x - 1280 * 0.7) > 25) {
+      throw new Error('Could not size the editor split to 70/30.');
+    }
     await clickTab(scenario.file);
     await win.keyboard.press('Control+Home');
     await win.waitForTimeout(450);
@@ -692,8 +785,11 @@ async function runScenario(featureName) {
 
   // Mark first scenario action timestamp
   const firstActionTime = Date.now();
+  const debuggerStops = isDebugger
+    ? await runDebuggerSteps({ win, animClick, animMoveMouse, press, firstActionTime })
+    : null;
 
-  for (const step of scenario.steps) {
+  for (const [stepIndex, step] of scenario.steps.entries()) {
     if (step.action === 'goto') {
       await win.keyboard.press('Control+g');
       await win.waitForTimeout(150);
@@ -763,8 +859,14 @@ async function runScenario(featureName) {
     } else if (step.action === 'press') {
       await press(step.key);
     } else if (step.action === 'showKeys') {
-      await showKeys(step.keys, step.leadMs);
-      preShownKeys = step.keys.toLowerCase();
+      const labels = keyLabels(step.keys);
+      await showKeys(labels);
+      const next = scenario.steps[stepIndex + 1];
+      if (next?.action === 'press' && labels.join('+') === keyLabels(next.key).join('+')) {
+        preShownKeys = labels.join('+');
+      } else {
+        await fadeKeys();
+      }
     } else if (step.action === 'expectEditorText') {
       await expectEditorText(step.text);
     } else if (step.action === 'ensureSignature') {
@@ -796,21 +898,28 @@ async function runScenario(featureName) {
         const titles = (await actions.allTextContents()).map(title => title.trim());
         if (index === 0) {
           const expected = step.picks.map(item => item.title);
-          if (titles.length !== expected.length || expected.some(title => !titles.includes(title))) {
+          if (titles.length !== expected.length || !expected.every(title => titles.includes(title))) {
             throw new Error('The opening menu differs from the recorded actions: ' + titles.join(' | '));
           }
           console.log('Opening code action menu:', titles.join(' | '));
-          await win.waitForTimeout(900);
         }
-        const actionIndex = titles.indexOf(pick.title);
-        if (actionIndex < 0) throw new Error('Could not find ' + pick.title + ' in ' + titles.join(' | '));
-        const bounds = await actions.nth(actionIndex).boundingBox();
-        await animMoveMouse({ x: bounds.x + bounds.width - 14, y: bounds.y + bounds.height / 2 }, 130);
+        const clippedTitle = await actions.evaluateAll((rows, height) => {
+          for (const row of rows) {
+            const label = row.querySelector('.title');
+            const { top, right, bottom, left } = row.getBoundingClientRect();
+            if (label.scrollWidth > label.clientWidth || top < 0 || right > innerWidth || bottom > height || left < 0) {
+              return label.textContent;
+            }
+          }
+        }, cropHeight);
+        if (clippedTitle) throw new Error('Code action label clipped: ' + clippedTitle);
+        if (!titles.includes(pick.title)) throw new Error('Could not find ' + pick.title + ' in ' + titles.join(' | '));
+        if (!(await focused.count())) await win.keyboard.press('ArrowDown');
         for (let i = 0; i < titles.length && (await focused.textContent()).trim() !== pick.title; i++) {
           await win.keyboard.press('ArrowDown');
         }
         if ((await focused.textContent()).trim() !== pick.title) throw new Error('Could not highlight ' + pick.title);
-        await win.waitForTimeout(180);
+        await win.waitForTimeout(step.menuHoldMs);
         const before = await win.locator(editorRows).evaluateAll(readCode);
         await win.keyboard.press('Enter');
         await actions.first().waitFor({ state: 'hidden', timeout: 1500 });
@@ -822,8 +931,7 @@ async function runScenario(featureName) {
           throw new Error('No visible edit after applying ' + pick.title);
         }
         console.log('Applied code action at ' + ((Date.now() - firstActionTime) / 1000).toFixed(2) + ' s:', pick.title);
-        await win.waitForTimeout(850);
-        await showKeys('Control+z', 130);
+        await win.waitForTimeout(step.resultHoldMs);
         await win.keyboard.press('Control+z');
         await win.waitForFunction(({ rows, before }) => Array.from(document.querySelectorAll(rows),
           line => line.textContent.replace(/\u00a0/g, ' ').trim()).join('\n') === before,
@@ -861,11 +969,11 @@ async function runScenario(featureName) {
     }
   }
 
-  const minimumDuration = 6.1;
+  const minimumDuration = isDebugger ? 20.1 : 6.1;
   const elapsed = (Date.now() - firstActionTime) / 1000;
   await win.waitForTimeout(Math.max(650, (minimumDuration - elapsed) * 1000));
   const sceneDuration = (Date.now() - firstActionTime) / 1000;
-  const maximumDuration = featureName === 'code-actions' ? 25 : 10;
+  const maximumDuration = { debugger: 30, 'code-actions': 38, 'signature-help': 11 }[featureName] ?? 10;
   if (sceneDuration > maximumDuration) {
     throw new Error('Scenario took ' + sceneDuration.toFixed(2) + ' s (limit ' + maximumDuration + ' s).');
   }
@@ -877,14 +985,21 @@ async function runScenario(featureName) {
 
   // Align the trim to the recorded end because Electron startup precedes frame capture.
   const trimStart = Math.max(0, probeDuration(videoPath) - sceneDuration);
-  const gifOut = path.join(IMAGES_DIR, featureName + '.gif');
+  const outputDir = isDebugger ? path.join(debuggerExample, 'media') : IMAGES_DIR;
+  const gifOut = path.join(outputDir, featureName + '.gif');
   const reviewGif = path.join(REVIEW_DIR, featureName + '.gif');
   const palette = path.join(TEMP_VIDEOS_DIR, featureName + '-palette.png');
-  const candidates = featureName === 'code-actions' ? [
+  const candidates = isDebugger ? [
+    { width: 960, fps: 12, colors: 128, dither: 'none' },
+    { width: 960, fps: 10, colors: 96, dither: 'none' },
+    { width: 960, fps: 8, colors: 64, dither: 'none' },
+    { width: 960, fps: 8, colors: 48, dither: 'none' },
+  ] : featureName === 'code-actions' ? [
     { width: 960, fps: 10, colors: 96, dither: 'none' },
     { width: 960, fps: 10, colors: 64, dither: 'none' },
+    { width: 960, fps: 8, colors: 64, dither: 'none' },
     { width: 880, fps: 10, colors: 64, dither: 'none' },
-    { width: 800, fps: 10, colors: 48, dither: 'none' },
+    { width: 880, fps: 8, colors: 48, dither: 'none' },
   ] : [
     { width: 960, fps: 15, colors: 128 },
     { width: 960, fps: 12, colors: 96 },
@@ -894,6 +1009,7 @@ async function runScenario(featureName) {
     { width: 768, fps: 10, colors: 64 },
   ];
 
+  const sizeLimit = isDebugger ? 5_000_000 : 3_000_000;
   let size;
   for (const { width, fps, colors, dither = 'bayer:bayer_scale=3' } of candidates) {
     const input = ['-ss', trimStart.toFixed(3), '-t', Math.min(sceneDuration, maximumDuration - 0.03).toFixed(3), '-i', videoPath];
@@ -903,16 +1019,23 @@ async function runScenario(featureName) {
       '[0:v]' + filter + '[scene];[scene][1:v]paletteuse=dither=' + dither + ':diff_mode=rectangle',
       '-loop', '0', reviewGif]);
     size = fs.statSync(reviewGif).size;
-    if (size <= 3_000_000) break;
+    if (size <= sizeLimit) break;
   }
-  if (size > 3_000_000) throw new Error('GIF exceeded 3 MB after encoding.');
+  if (size > sizeLimit) throw new Error(`GIF exceeded ${sizeLimit / 1_000_000} MB after encoding.`);
 
   const duration = probeDuration(reviewGif);
-  if (duration < 6 || duration > maximumDuration) {
+  if (duration < (isDebugger ? 20 : 6) || duration > maximumDuration) {
     throw new Error('Encoded duration ' + duration.toFixed(2) + ' s is out of range.');
   }
-  ffmpeg(['-i', reviewGif, '-vf', 'fps=6/' + duration + ':round=up,scale=640:-1,tile=2x3',
-    '-frames:v', '1', '-update', '1', path.join(REVIEW_DIR, featureName + '.png')]);
+  if (isDebugger) {
+    writeDebuggerContactSheets(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, ...debuggerStops });
+    fs.mkdirSync(outputDir, { recursive: true });
+  } else {
+    const sheet = featureName === 'code-actions' ? 'fps=12/' + duration + ':round=up,scale=480:-1,tile=3x4'
+      : 'fps=6/' + duration + ':round=up,scale=640:-1,tile=2x3';
+    ffmpeg(['-i', reviewGif, '-vf', sheet,
+      '-frames:v', '1', '-update', '1', path.join(REVIEW_DIR, featureName + '.png')]);
+  }
   fs.copyFileSync(reviewGif, gifOut);
   fs.rmSync(reviewGif);
   fs.rmSync(videoPath);
@@ -925,6 +1048,11 @@ async function runScenario(featureName) {
     try {
       await app.close();
     } catch {}
+  }
+  try {
+    await debuggerHost?.stop();
+  } finally {
+    cleanDebuggerWorkspace?.();
   }
   try {
     fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });

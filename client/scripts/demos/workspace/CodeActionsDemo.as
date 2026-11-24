@@ -2,8 +2,9 @@ class HealthMonitor
 {
     private float m_threshold = 25.0f;
 
-    void Sample(CBasePlayer@ target)
+    void Sample(CBasePlayer@ target) const
     {
-        float healthReading = target.GetHealth() * 0.5f;
+        float multiplier = 0.5f;
+        float healthReading = target.GetHealth() * multiplier;
     }
 }

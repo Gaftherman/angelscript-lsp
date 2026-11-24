@@ -2,6 +2,8 @@
   "name": "find-references",
   "file": "MedkitPlugin.as",
   "initialLine": 1,
+  "cropHeight": 700,
+  "wholeLineMargin": 6,
   "zoomIn": 1.0,
   "zoomOrigin": "0px 0px",
   "zoomOut": 1.0,
