@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { DEBUGGER_SCENARIO, holdDebuggerFrame } from './record-debugger.mjs';
 
 export const DEBUGGER_ENGINE_SCENARIO = {
@@ -111,13 +110,4 @@ export async function runDebuggerEngineSteps({ win, animClick, press, firstActio
   await press('F9', () => waitVisible(editor(win).locator('.glyph-margin-widgets .codicon-debug-breakpoint-unverified').first()));
   await hold('unverified', 2200);
   return samples;
-}
-
-export function writeDebuggerEngineReview(ffmpeg, gif, { duration, reviewDir, samples }) {
-  ffmpeg(['-i', gif, '-vf', `fps=12/${duration}:round=up,scale=480:-1,tile=3x4`,
-    '-frames:v', '1', '-update', '1', path.join(reviewDir, 'debugger-engine.png')]);
-  for (const { name, time } of samples) {
-    ffmpeg(['-ss', time.toFixed(3), '-i', gif, '-frames:v', '1', '-update', '1',
-      path.join(reviewDir, `debugger-engine-${name}.png`)]);
-  }
 }
