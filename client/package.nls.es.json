@@ -174,7 +174,7 @@
   "config.debug.enableBreakpointLocations.description": "Habilitar la verificación semántica de ubicaciones de puntos de interrupción mediante el servidor AngelLSP antes de vincularlos.",
   "config.debug.defaultPort.description": "Puerto TCP predeterminado para conectar al servidor de depuración en tiempo de ejecución de AngelScript (predeterminado: 9002).",
   "config.debug.defaultProtocol.description": "Protocolo predeterminado para depuración de AngelScript ('dap' para Protocolo de Adaptador de Depuración, 'asdbg' para socket binario o 'cdebugger' para socket de comandos de texto).",
-  "config.runner.path.description": "Ruta absoluta al ejecutable del runner de AngelScript. Déjala vacía para buscar `angelscript-cli` en `PATH`.",
+  "config.runner.path.markdownDescription": "Ruta absoluta al ejecutable de AngelScript. Deja el ajuste vacío para buscar `angelscript`, `asc` o `angelscript-cli` en `PATH`.",
   "debugger.angelscript.name": "Depurador de AngelScript",
   "configuration.angelscript.debug.program": "Ruta al archivo principal de AngelScript que se va a ejecutar o depurar. Si omites executable, el runner de AngelScript ejecuta este archivo.",
   "configuration.angelscript.debug.stopOnEntry": "Pausar automáticamente la ejecución inmediatamente al iniciar o adjuntar.",

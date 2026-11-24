@@ -68,7 +68,7 @@
   "Created starter \"{0}\".": "Se creó la plantilla inicial \"{0}\".",
   "No engine rules file found in workspace.": "No se encontró ningún archivo de reglas del motor en el espacio de trabajo.",
   "AngelScript Debugger connection error: {0}": "Error de conexión del depurador de AngelScript: {0}",
-  "AngelScript runner not found. Set angelscript.runner.path to an executable or clear it to use angelscript-cli from PATH.": "No se encontró el runner de AngelScript. Indica la ruta al ejecutable en angelscript.runner.path o deja el ajuste vacío para usar angelscript-cli desde PATH.",
+  "AngelScript runner not found. Set angelscript.runner.path to an executable or clear it to use angelscript, asc or angelscript-cli from PATH.": "No se encontró el ejecutable de AngelScript. Indica la ruta al ejecutable en angelscript.runner.path o deja el ajuste vacío para buscar angelscript, asc o angelscript-cli en PATH.",
   "Failed to launch executable \"{0}\": {1}": "No se pudo iniciar el ejecutable \"{0}\": {1}",
   "Process exited with code {0} (signal: {1})": "El proceso terminó con el código {0} (señal: {1})",
   "none": "ninguna",

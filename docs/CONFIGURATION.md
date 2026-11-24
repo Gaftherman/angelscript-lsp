@@ -281,7 +281,7 @@ Use `engine.*` to match the host's language options. Use the rules file to share
 | `angelscript.debug.enableBreakpointLocations` | `true` | Enable semantic breakpoint location verification via AngelLSP server before binding breakpoints. |
 | `angelscript.debug.defaultPort` | `9002` | Default TCP port for connecting to AngelScript runtime debug server (default: 9002). |
 | `angelscript.debug.defaultProtocol` | `"dap"` | Default protocol for AngelScript debugging ('dap' for Debug Adapter Protocol, 'asdbg' for binary socket, or 'cdebugger' for text command socket). |
-| `angelscript.runner.path` | `""` | Absolute path to the AngelScript runner executable. Leave empty to find `angelscript-cli` on `PATH`. |
+| `angelscript.runner.path` | `""` | Absolute path to the AngelScript runner executable. Leave empty to search `PATH` for `angelscript`, `asc`, or `angelscript-cli`. |
 <!-- CONFIG_DEBUG_END -->
 
 Choose the protocol and port your runtime listens on. You can override the defaults for one debug configuration with `protocol` and `port` in `.vscode/launch.json`.

@@ -1275,7 +1275,7 @@
             "type": "string",
             "default": "",
             "scope": "machine-overridable",
-            "markdownDescription": "%config.runner.path.description%"
+            "markdownDescription": "%config.runner.path.markdownDescription%"
           }
         }
       }

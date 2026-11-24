@@ -299,7 +299,7 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
                 if ('path' in this.runner) {
                     this.launchRunner(this.runner.path);
                 } else {
-                    const message = vscode.l10n.t('AngelScript runner not found. Set angelscript.runner.path to an executable or clear it to use angelscript-cli from PATH.');
+                    const message = vscode.l10n.t('AngelScript runner not found. Set angelscript.runner.path to an executable or clear it to use angelscript, asc or angelscript-cli from PATH.');
                     this.writeOutput('stderr', `${message}\n`);
                     void this.showRunnerSettings(message);
                     this.terminateRunner();

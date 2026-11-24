@@ -174,7 +174,7 @@
   "config.debug.enableBreakpointLocations.description": "Enable semantic breakpoint location verification via AngelLSP server before binding breakpoints.",
   "config.debug.defaultPort.description": "Default TCP port for connecting to AngelScript runtime debug server (default: 9002).",
   "config.debug.defaultProtocol.description": "Default protocol for AngelScript debugging ('dap' for Debug Adapter Protocol, 'asdbg' for binary socket, or 'cdebugger' for text command socket).",
-  "config.runner.path.description": "Absolute path to the AngelScript runner executable. Leave empty to find `angelscript-cli` on `PATH`.",
+  "config.runner.path.markdownDescription": "Absolute path to the AngelScript runner executable. Leave empty to search `PATH` for `angelscript`, `asc`, or `angelscript-cli`.",
   "debugger.angelscript.name": "AngelScript Debugger",
   "configuration.angelscript.debug.program": "Path to the main AngelScript file to launch or debug. When executable is omitted, the AngelScript runner runs this file.",
   "configuration.angelscript.debug.stopOnEntry": "Automatically pause execution immediately upon starting or attaching.",

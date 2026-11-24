@@ -1,5 +1,8 @@
 import * as path from 'path';
 
+/** @brief Lists supported runner executable names in priority order within a PATH directory. */
+export const RUNNER_NAMES = ['angelscript', 'asc', 'angelscript-cli'] as const;
+
 /** @brief Supplies the host environment and executable file check for runner discovery. */
 export interface RunnerResolverDependencies {
     /** @brief Environment variables to search for PATH and, on Windows, PATHEXT. */
@@ -12,6 +15,7 @@ export interface RunnerResolverDependencies {
 
 /**
  * @brief Finds the external AngelScript runner from an explicit setting or PATH.
+ * Searches PATH directories in order, then runner names in priority order, then Windows PATHEXT entries in order.
  * @param[in] setting Absolute runner path, or an empty string to search PATH.
  * @param[in] deps Host discovery inputs, including the candidate file check.
  * @return The first matching path, or a not-found error if discovery fails.
@@ -42,10 +46,12 @@ export function resolveRunner(
         if (!directory) {
             continue;
         }
-        for (const extension of extensions) {
-            const candidate = platformPath.join(directory, `angelscript-cli${extension}`);
-            if (fileExists(candidate)) {
-                return { path: candidate };
+        for (const name of RUNNER_NAMES) {
+            for (const extension of extensions) {
+                const candidate = platformPath.join(directory, `${name}${extension}`);
+                if (fileExists(candidate)) {
+                    return { path: candidate };
+                }
             }
         }
     }

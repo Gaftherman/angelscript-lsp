@@ -79,7 +79,7 @@ async function within<T>(task: PromiseLike<T>, timeoutMs: number, operation: str
     }
 }
 
-/** @brief Lets the OS select a loopback port for the CLI's DAP listener. */
+/** @brief Lets the OS select a loopback port for the runner's DAP listener. */
 async function getDebugPort(): Promise<number> {
     const server = net.createServer();
     const listening = once(server, 'listening');
@@ -145,7 +145,7 @@ suite('AngelScript runner E2E', function () {
         }
     });
 
-    suite('with angelscript-cli', function () {
+    suite('with the angelscript runner executable', function () {
         let runnerPath: string;
 
         suiteSetup(async function () {
@@ -158,7 +158,7 @@ suite('AngelScript runner E2E', function () {
                     return;
                 }
             }
-            console.log('Skipping real-runner tests: set ANGELSCRIPT_CLI_PATH to an existing angelscript-cli file.');
+            console.log('Skipping real-runner tests: set ANGELSCRIPT_CLI_PATH to the runner executable (angelscript).');
             this.skip();
         });
 
@@ -206,13 +206,13 @@ suite('AngelScript runner E2E', function () {
 
     test('reports a missing runner and terminates the launch', async function () {
         this.timeout(20_000);
-        const missingRunner = path.join(folder.uri.fsPath, `missing-runner-${randomSuffix()}`, 'angelscript-cli');
+        const missingRunner = path.join(folder.uri.fsPath, `missing-runner-${randomSuffix()}`, 'angelscript');
         const current = await start(missingRunner, {
             type: 'angelscript', request: 'launch', name: 'e2e-missing-runner',
             program: path.join(fixtureDirectory, 'hello.as'), noDebug: true,
         });
         await within(current.terminated, 10_000, 'missing-runner session termination');
-        const message = vscode.l10n.t('AngelScript runner not found. Set angelscript.runner.path to an executable or clear it to use angelscript-cli from PATH.');
+        const message = vscode.l10n.t('AngelScript runner not found. Set angelscript.runner.path to an executable or clear it to use angelscript, asc or angelscript-cli from PATH.');
         assertOutputLines(current.output.stderr, [message]);
     });
 });
