@@ -74,7 +74,7 @@ class LspSemanticHarnessFixture
     void TearDown();
 
     /**
-     * @brief Loads a predefined stub file into the symbol table.
+     * @brief Indexes a predefined stub file and retains its source for cross-file hover.
      * @param[in] stubRelativePath Relative or absolute path to the .as.predefined stub.
      */
     void LoadPredefinedStub(const std::string& stubRelativePath);

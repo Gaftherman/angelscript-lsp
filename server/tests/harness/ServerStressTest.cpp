@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
+#include <latch>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -696,36 +697,32 @@ TEST_CASE("Server - Closed analysis cannot publish after a disk revision is with
     config.modules = {{"TestModule", (ws.dir / "entry.as").string(), ""}};
     config.searchDirectories.push_back(ws.dir.string());
 
+    std::latch paused(1);
+    std::latch resume(1);
+    std::once_flag pauseFirstCommit;
     angel_lsp::test::ScriptedStream stream;
     angel_lsp::Server server(config, stream);
     const auto useKey = server.DocumentKey(useUri);
-    std::mutex mutex;
-    std::condition_variable condition;
-    bool paused = false;
-    bool release = false;
-    bool observed = false;
     server.SetOnBeforeCommitHook(
-        [&](std::string_view uri, int version, [[maybe_unused]] uint64_t generation)
+        [&paused, &resume, &pauseFirstCommit, useKey](std::string_view uri, int version,
+                                                      [[maybe_unused]] uint64_t generation)
         {
             if (uri != useKey || version != -1)
             {
                 return;
             }
-            std::unique_lock lock(mutex);
-            paused = true;
-            condition.notify_all();
-            condition.wait(lock, [&]() { return release; });
+            std::call_once(pauseFirstCommit,
+                           [&]()
+                           {
+                               paused.count_down();
+                               resume.wait();
+                           });
         });
 
     stream.Push(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":")" +
                 ws.RootUri() + R"(","capabilities":{}}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.PushAction(
-        [&]()
-        {
-            std::unique_lock lock(mutex);
-            observed = condition.wait_for(lock, std::chrono::seconds(8), [&]() { return paused; });
-        });
+    stream.PushAction([&]() { paused.wait(); });
     stream.PushAction(
         [&]()
         {
@@ -744,11 +741,7 @@ TEST_CASE("Server - Closed analysis cannot publish after a disk revision is with
     stream.PushAction(
         [&]()
         {
-            {
-                std::lock_guard lock(mutex);
-                release = true;
-            }
-            condition.notify_all();
+            resume.count_down();
             server.DrainQueue();
         });
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" + entryUri +
@@ -759,7 +752,6 @@ TEST_CASE("Server - Closed analysis cannot publish after a disk revision is with
     stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
     server.Run();
 
-    REQUIRE(observed);
     CHECK(server.GetSymbolTable().FindSymbols("Ghost").empty());
     CHECK(server.GetSymbolTable().FindSymbols("Fresh").empty() == !replace);
     CHECK(stream.Output().find("as-err-not-all-paths-return") == std::string::npos);

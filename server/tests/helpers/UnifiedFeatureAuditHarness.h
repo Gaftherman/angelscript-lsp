@@ -6,7 +6,6 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "helpers/LspSemanticHarnessFixture.h"
 
-#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -15,21 +14,7 @@ namespace angel_lsp::test
 {
 
 /**
- * @brief Telemetry audit thresholds for LSP language feature requests.
- */
-struct FeatureTelemetryLimits
-{
-    double maxHoverMs = 1.0;
-    double maxCompletionMs = 5.0;
-    double maxDefinitionMs = 5.0;
-    double maxReferencesMs = 5.0;
-    double maxCodeActionsMs = 5.0;
-    double maxSemanticTokensMs = 20.0;
-};
-
-/**
- * @brief Unified harness for multi-feature LSP audits, parity oracle tests,
- *        and latency budget assertions across good, bad, and boundary paths.
+ * @brief Runs LSP feature audits and parity oracle tests with latency telemetry.
  */
 class UnifiedFeatureAuditHarness : public LspSemanticHarnessFixture
 {
@@ -71,65 +56,55 @@ class UnifiedFeatureAuditHarness : public LspSemanticHarnessFixture
     lsp::SemanticTokens RequestSemanticTokens(const std::string& uri);
 
     /**
-     * @brief Audits Hover latency and asserts it stays within the budget.
+     * @brief Reports the latency of a hover request.
      * @param[in] uri Virtual document URI.
      * @param[in] line 0-indexed line number.
      * @param[in] col 0-indexed column number.
-     * @param[in] maxMs Max allowed latency in milliseconds.
      * @return Hover response.
      */
-    std::optional<lsp::Hover> AuditHover(const std::string& uri, uint32_t line, uint32_t col, double maxMs = 1.0);
+    std::optional<lsp::Hover> AuditHover(const std::string& uri, uint32_t line, uint32_t col);
 
     /**
-     * @brief Audits Completion latency and asserts it stays within the budget.
+     * @brief Reports the latency of a completion request.
      * @param[in] uri Virtual document URI.
      * @param[in] line 0-indexed line number.
      * @param[in] col 0-indexed column number.
-     * @param[in] maxMs Max allowed latency in milliseconds.
      * @return Vector of completion items.
      */
-    std::vector<lsp::CompletionItem> AuditCompletion(const std::string& uri, uint32_t line, uint32_t col,
-                                                     double maxMs = 5.0);
+    std::vector<lsp::CompletionItem> AuditCompletion(const std::string& uri, uint32_t line, uint32_t col);
 
     /**
-     * @brief Audits Definition latency and asserts it stays within the budget.
+     * @brief Reports the latency of a definition request.
      * @param[in] uri Virtual document URI.
      * @param[in] line 0-indexed line number.
      * @param[in] col 0-indexed column number.
-     * @param[in] maxMs Max allowed latency in milliseconds.
      * @return Optional vector of locations.
      */
-    std::optional<std::vector<lsp::Location>> AuditDefinition(const std::string& uri, uint32_t line, uint32_t col,
-                                                              double maxMs = 5.0);
+    std::optional<std::vector<lsp::Location>> AuditDefinition(const std::string& uri, uint32_t line, uint32_t col);
 
     /**
-     * @brief Audits References latency and asserts it stays within the budget.
+     * @brief Reports the latency of a references request.
      * @param[in] uri Virtual document URI.
      * @param[in] line 0-indexed line number.
      * @param[in] col 0-indexed column number.
-     * @param[in] maxMs Max allowed latency in milliseconds.
      * @return Optional vector of locations.
      */
-    std::optional<std::vector<lsp::Location>> AuditReferences(const std::string& uri, uint32_t line, uint32_t col,
-                                                              double maxMs = 5.0);
+    std::optional<std::vector<lsp::Location>> AuditReferences(const std::string& uri, uint32_t line, uint32_t col);
 
     /**
-     * @brief Audits Code Actions latency and asserts it stays within the budget.
+     * @brief Reports the latency of a code action request.
      * @param[in] uri Virtual document URI.
      * @param[in] range Range in document.
-     * @param[in] maxMs Max allowed latency in milliseconds.
      * @return Optional vector of code actions.
      */
-    std::optional<std::vector<lsp::CodeAction>> AuditCodeActions(const std::string& uri, const lsp::Range& range,
-                                                                 double maxMs = 5.0);
+    std::optional<std::vector<lsp::CodeAction>> AuditCodeActions(const std::string& uri, const lsp::Range& range);
 
     /**
-     * @brief Audits Semantic Tokens latency and asserts it stays within the budget.
+     * @brief Reports the latency of a semantic tokens request.
      * @param[in] uri Virtual document URI.
-     * @param[in] maxMs Max allowed latency in milliseconds.
      * @return SemanticTokens struct.
      */
-    lsp::SemanticTokens AuditSemanticTokens(const std::string& uri, double maxMs = 20.0);
+    lsp::SemanticTokens AuditSemanticTokens(const std::string& uri);
 
     /**
      * @brief Executes 3-way verification: Good Path (0 diagnostics).

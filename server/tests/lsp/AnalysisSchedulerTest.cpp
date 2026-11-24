@@ -70,14 +70,10 @@ TEST_SUITE("lsp/AnalysisScheduler")
         const std::string uri = "file:///revision.as";
         scheduler.ScheduleImmediate(
             {.uriStr = uri, .text = "int value;", .version = 3, .generation = 1, .configRevision = 1});
-        const bool started = entered.try_acquire_for(std::chrono::seconds(2));
-        if (started)
-        {
-            scheduler.ScheduleImmediate(
-                {.uriStr = uri, .text = "int value;", .version = 3, .generation = 1, .configRevision = 2});
-        }
+        entered.acquire();
+        scheduler.ScheduleImmediate(
+            {.uriStr = uri, .text = "int value;", .version = 3, .generation = 1, .configRevision = 2});
         resume.release();
-        REQUIRE(started);
         scheduler.DrainQueue();
         CHECK(revisions == std::vector<uint64_t>{1, 2});
     }

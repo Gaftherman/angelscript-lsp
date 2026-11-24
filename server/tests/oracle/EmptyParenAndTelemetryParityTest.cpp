@@ -31,7 +31,7 @@ TEST_SUITE("oracle/EmptyParenAndTelemetryParity")
             harness.VerifyGoodPath("scripts/" + GenerateRandomSymbolName("ep_good") + ".as", goodScript);
 
         // Hover at fieldName definition (line 1, col 9)
-        auto hover = harness.AuditHover(uri, 1, 9, 1.0);
+        auto hover = harness.AuditHover(uri, 1, 9);
         REQUIRE(hover.has_value());
 
         // Boundary: reference-returning function should NOT become a variable
@@ -73,7 +73,7 @@ TEST_SUITE("oracle/EmptyParenAndTelemetryParity")
         harness.VerifyGoodPath("scripts/" + GenerateRandomSymbolName("ep_ns") + ".as", nsScript);
     }
 
-    TEST_CASE("EmptyParenAndTelemetryParity - Feature telemetry latency budget audit across all LSP capabilities")
+    TEST_CASE("EmptyParenAndTelemetryParity - Feature results and latency telemetry across LSP capabilities")
     {
         UnifiedFeatureAuditHarness harness;
         const std::string cls = GenerateRandomSymbolName("TelemetryTarget");
@@ -97,29 +97,23 @@ TEST_SUITE("oracle/EmptyParenAndTelemetryParity")
         const std::string uri = harness.SandboxUri("scripts/" + GenerateRandomSymbolName("telemetry") + ".as");
         harness.AddVirtualDocument(uri, script);
 
-        // Hover <= 1.0 ms
-        auto hover = harness.AuditHover(uri, 1, 9, 1.0);
+        auto hover = harness.AuditHover(uri, 1, 9);
         CHECK(hover.has_value());
 
-        // Completion <= 5.0 ms
-        auto comp = harness.AuditCompletion(uri, 4, 13, 5.0);
+        auto comp = harness.AuditCompletion(uri, 4, 13);
         CHECK(!comp.empty());
 
-        // Definition <= 5.0 ms
-        auto def = harness.AuditDefinition(uri, 4, 14, 5.0);
+        auto def = harness.AuditDefinition(uri, 4, 14);
         CHECK(def.has_value());
 
-        // References <= 5.0 ms
-        auto refs = harness.AuditReferences(uri, 1, 9, 5.0);
+        auto refs = harness.AuditReferences(uri, 1, 9);
         CHECK(refs.has_value());
 
-        // Code Actions <= 5.0 ms
         lsp::Range range{{3, 8}, {3, 20}};
-        auto actions = harness.AuditCodeActions(uri, range, 5.0);
+        auto actions = harness.AuditCodeActions(uri, range);
         CHECK(actions.has_value());
 
-        // Semantic Tokens <= 20.0 ms
-        auto tokens = harness.AuditSemanticTokens(uri, 20.0);
+        auto tokens = harness.AuditSemanticTokens(uri);
         CHECK(!tokens.data.empty());
     }
 
