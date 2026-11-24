@@ -1,0 +1,18 @@
+{
+  "name": "formatting",
+  "file": "FormatDemo.as",
+  "initialLine": 1,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 400 },
+    { "action": "moveCursor", "x": 580, "y": 240, "duration": 500 },
+    { "action": "click" },
+    { "action": "wait", "ms": 400 },
+    { "action": "press", "key": "Shift+Alt+f" },
+    { "action": "wait", "ms": 1000 },
+    { "action": "moveCursor", "x": 620, "y": 320, "duration": 600 },
+    { "action": "hold", "ms": 2000 }
+  ]
+}

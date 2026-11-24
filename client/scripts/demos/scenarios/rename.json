@@ -1,0 +1,21 @@
+{
+  "name": "rename",
+  "file": "MedkitPlugin.as",
+  "initialLine": 1,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 400 },
+    { "action": "moveCursor", "toToken": "m_charges", "duration": 650 },
+    { "action": "click" },
+    { "action": "wait", "ms": 300 },
+    { "action": "press", "key": "F2" },
+    { "action": "wait", "ms": 500 },
+    { "action": "type", "text": "m_availableUses", "delay": 70 },
+    { "action": "wait", "ms": 600 },
+    { "action": "press", "key": "Enter" },
+    { "action": "wait", "ms": 1000 },
+    { "action": "hold", "ms": 2000 }
+  ]
+}

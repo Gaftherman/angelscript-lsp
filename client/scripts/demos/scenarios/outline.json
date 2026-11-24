@@ -1,0 +1,19 @@
+{
+  "name": "outline",
+  "file": "MedkitPlugin.as",
+  "initialLine": 1,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 500 },
+    { "action": "press", "key": "Control+Shift+o" },
+    { "action": "wait", "ms": 900 },
+    { "action": "press", "key": "ArrowDown" },
+    { "action": "wait", "ms": 400 },
+    { "action": "press", "key": "ArrowDown" },
+    { "action": "wait", "ms": 400 },
+    { "action": "press", "key": "ArrowDown" },
+    { "action": "hold", "ms": 3000 }
+  ]
+}

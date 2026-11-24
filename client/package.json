@@ -1296,7 +1296,8 @@
     "test:e2e": "vscode-test --label e2e",
     "test:perf": "vscode-test --label perf",
     "test:all": "vscode-test",
-    "check-settings": "node scripts/check-settings-wired.mjs"
+    "check-settings": "node scripts/check-settings-wired.mjs",
+    "demos": "node scripts/demos/record-demo.mjs"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -1306,9 +1307,9 @@
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.3",
+    "playwright-core": "^1.65.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "vscode-languageclient": "^9.0.1"
-  },
-  "dependencies": {}
+  }
 }

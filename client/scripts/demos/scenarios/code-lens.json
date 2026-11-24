@@ -1,0 +1,17 @@
+{
+  "name": "code-lens",
+  "file": "MedkitPlugin.as",
+  "initialLine": 1,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 500 },
+    { "action": "moveCursor", "toToken": "1 reference", "duration": 650 },
+    { "action": "wait", "ms": 400 },
+    { "action": "click", "toToken": "1 reference" },
+    { "action": "wait", "ms": 1300 },
+    { "action": "moveCursor", "x": 800, "y": 300, "duration": 600 },
+    { "action": "hold", "ms": 2800 }
+  ]
+}

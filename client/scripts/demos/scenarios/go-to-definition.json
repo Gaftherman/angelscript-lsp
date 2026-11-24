@@ -1,0 +1,51 @@
+{
+  "name": "go-to-definition",
+  "file": "MedkitPlugin.as",
+  "initialLine": 52,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    {
+      "action": "wait",
+      "ms": 3500
+    },
+    {
+      "action": "moveCursor",
+      "toToken": "Dispense",
+      "duration": 650
+    },
+    {
+      "action": "ensureHover"
+    },
+    {
+      "action": "wait",
+      "ms": 600
+    },
+    {
+      "action": "click"
+    },
+    {
+      "action": "wait",
+      "ms": 400
+    },
+    {
+      "action": "ensureDefinition",
+      "expect": "bool Dispense(CBasePlayer"
+    },
+    {
+      "action": "wait",
+      "ms": 1000
+    },
+    {
+      "action": "moveCursor",
+      "toToken": "Dispense",
+      "duration": 500
+    },
+    {
+      "action": "hold",
+      "ms": 2000
+    }
+  ],
+  "preLine": 1
+}

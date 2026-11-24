@@ -1,0 +1,22 @@
+{
+  "name": "autocomplete",
+  "file": "MedkitPlugin.as",
+  "initialLine": 25,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 400 },
+    { "action": "moveCursor", "toToken": "Dispense", "duration": 650 },
+    { "action": "click" },
+    { "action": "press", "key": "End" },
+    { "action": "press", "key": "Enter" },
+    { "action": "wait", "ms": 350 },
+    { "action": "type", "text": "player.", "delay": 85 },
+    { "action": "wait", "ms": 800 },
+    { "action": "press", "key": "ArrowDown" },
+    { "action": "wait", "ms": 500 },
+    { "action": "press", "key": "ArrowDown" },
+    { "action": "hold", "ms": 3000 }
+  ]
+}

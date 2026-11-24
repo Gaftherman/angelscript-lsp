@@ -1,0 +1,59 @@
+{
+  "name": "predefined-api",
+  "file": "MedkitPlugin.as",
+  "initialLine": 44,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    {
+      "action": "wait",
+      "ms": 400
+    },
+    {
+      "action": "moveCursor",
+      "toToken": "ServerPrint",
+      "duration": 650
+    },
+    {
+      "action": "click"
+    },
+    {
+      "action": "press",
+      "key": "End"
+    },
+    {
+      "action": "press",
+      "key": "Enter"
+    },
+    {
+      "action": "press",
+      "key": "Home"
+    },
+    {
+      "action": "press",
+      "key": "Home"
+    },
+    {
+      "action": "wait",
+      "ms": 300
+    },
+    {
+      "action": "type",
+      "text": "g_EngineFuncs.",
+      "delay": 75
+    },
+    {
+      "action": "wait",
+      "ms": 900
+    },
+    {
+      "action": "press",
+      "key": "ArrowDown"
+    },
+    {
+      "action": "hold",
+      "ms": 2800
+    }
+  ]
+}

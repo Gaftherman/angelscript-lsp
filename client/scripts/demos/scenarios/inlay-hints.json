@@ -1,0 +1,17 @@
+{
+  "name": "inlay-hints",
+  "file": "MedkitPlugin.as",
+  "initialLine": 45,
+  "zoomIn": 1.0,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    { "action": "wait", "ms": 600 },
+    { "action": "moveCursor", "toToken": "initialCharges", "duration": 700 },
+    { "action": "wait", "ms": 1200 },
+    { "action": "moveCursor", "toToken": "healPower", "duration": 600 },
+    { "action": "wait", "ms": 1200 },
+    { "action": "moveCursor", "toToken": "message", "duration": 600 },
+    { "action": "hold", "ms": 2500 }
+  ]
+}

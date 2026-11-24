@@ -1,0 +1,46 @@
+{
+  "name": "engine-rules",
+  "file": "DiagnosticsDemo.as",
+  "initialLine": 1,
+  "zoomIn": 1.08,
+  "zoomOrigin": "0px 0px",
+  "zoomOut": 1.0,
+  "steps": [
+    {
+      "action": "wait",
+      "ms": 500
+    },
+    {
+      "action": "moveCursor",
+      "toToken": "m_targetPlayer",
+      "duration": 700
+    },
+    {
+      "action": "ensureHover"
+    },
+    {
+      "action": "wait",
+      "ms": 900
+    },
+    {
+      "action": "smoothZoomOut",
+      "duration": 700
+    },
+    {
+      "action": "moveCursor",
+      "duration": 300,
+      "toLastToken": true
+    },
+    {
+      "action": "ensureHover"
+    },
+    {
+      "action": "wait",
+      "ms": 1000
+    },
+    {
+      "action": "hold",
+      "ms": 2500
+    }
+  ]
+}
