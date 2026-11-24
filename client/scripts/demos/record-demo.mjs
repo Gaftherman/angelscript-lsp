@@ -66,7 +66,6 @@ if (!runAll && onlyFeatures.length === 0) {
 // Feature demos in recording order.
 const ALL_FEATURES = [
   'hover',
-  'engine-hover',
   'autocomplete',
   'diagnostics',
   'engine-options',

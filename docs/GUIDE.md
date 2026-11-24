@@ -218,31 +218,11 @@ Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`). The Explorer also ha
 
 ## Debugger
 
-Put the example in `.vscode/launch.json` and choose a configuration in **Run and Debug**. For attach, start a game or host with [asdebugger](https://github.com/Gaftherman/asdebugger) listening on `127.0.0.1:9002`. For launch, VS Code starts the configured executable and tries to connect to its listener. Your host runs the scripts and handles debug requests. The language server can check breakpoint locations.
+Use breakpoints, view the call stack, and inspect variables with the VS Code debugger while scripts run in your host.
+The [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example) shows how to set up the host and run a complete debug session.
 
-| Field | What to set |
-| :--- | :--- |
-| `type`, `request` | Use `"angelscript"` and either `"attach"` or `"launch"`. |
-| `host`, `port`, `protocol` | Use the host’s DAP address, for example `127.0.0.1` and port `9002`, with `"dap"` over TCP. If you omit the port, it comes from `angelscript.debug.defaultPort`. |
-| `executable`, `args`, `cwd` | For launch, give the host executable, any arguments it needs, and its working directory. |
-
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Attach to Game", "type": "angelscript", "request": "attach",
-      "host": "127.0.0.1", "port": 9002, "protocol": "dap"
-    },
-    {
-      "name": "Launch Game and Debug", "type": "angelscript", "request": "launch",
-      "executable": "${workspaceFolder}/bin/game.exe",
-      "args": [], "cwd": "${workspaceFolder}",
-      "host": "127.0.0.1", "port": 9002, "protocol": "dap"
-    }
-  ]
-}
-```
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Stepping through AngelScript in VS Code" width="720"></p>
+<p align="center"><em>Step through an AngelScript script in VS Code.</em></p>
 
 ## Building from Source
 

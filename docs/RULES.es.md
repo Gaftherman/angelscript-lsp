@@ -1,12 +1,16 @@
 # Reglas del motor de AngelScript
 
+[English](RULES.md) | [Español](RULES.es.md)
+
 ![Una regla señala un handle en un campo de clase](../client/images/engine-rules.gif)
+
+*Una regla de almacenamiento marca un handle en un campo.*
 
 Un archivo de reglas le indica a la extensión qué tipos del motor o handles de objetos debe señalar, dónde se pueden usar y qué mensaje mostrar. También permite ajustar el análisis a las opciones del motor e indicar qué funciones llama directamente el juego o la aplicación anfitriona.
 
 ![Ejemplo de archivo JSON de reglas](../client/images/rules-file.png)
 
-[English](RULES.md) | [Español](RULES.es.md)
+*Un archivo JSON con opciones del motor y una regla de almacenamiento.*
 
 ## Dónde guardar el archivo
 

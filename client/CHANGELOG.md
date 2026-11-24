@@ -6,6 +6,16 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-24
+
+### Changed
+
+- Updated the Debugger sections of the READMEs and guides to point to the debugger example project and added captions to demo images.
+- Removed the engine hover demo.
+
+---
+**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.1...v1.2.2
+
 ## [1.2.1] - 2026-11-24
 
 ### Added
