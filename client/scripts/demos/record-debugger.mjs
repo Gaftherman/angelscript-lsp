@@ -282,3 +282,12 @@ export function writeDebuggerContactSheets(ffmpeg, gif, { duration, reviewDir, s
   writeSheet(['-ss', stopStart.toFixed(3), '-t', stopDuration, '-i', gif],
     `fps=6/${stopDuration}:round=up,tile=2x3`, 'debugger-stop.png');
 }
+
+export function writeDebuggerReview(ffmpeg, gif, { duration, reviewDir, samples, name }) {
+  ffmpeg(['-i', gif, '-vf', `fps=12/${duration}:round=up,scale=480:-1,tile=3x4`,
+    '-frames:v', '1', '-update', '1', path.join(reviewDir, `${name}.png`)]);
+  for (const { name: sample, time } of samples) {
+    ffmpeg(['-ss', time.toFixed(3), '-i', gif, '-frames:v', '1', '-update', '1',
+      path.join(reviewDir, `${name}-${sample}.png`)]);
+  }
+}

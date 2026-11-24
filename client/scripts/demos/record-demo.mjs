@@ -16,10 +16,14 @@ import { fileURLToPath } from 'url';
 import {
   DEBUGGER_SCENARIO, DEBUGGER_WORKSPACE_DIR, copyDebuggerWorkspace, launchDebuggerHost,
   prepareDebuggerWindow, runDebuggerSteps, writeDebuggerCompatibilityExtension, writeDebuggerContactSheets,
+  writeDebuggerReview,
 } from './record-debugger.mjs';
 import {
-  DEBUGGER_ENGINE_SCENARIO, prepareDebuggerEngine, runDebuggerEngineSteps, writeDebuggerEngineReview,
+  DEBUGGER_ENGINE_SCENARIO, prepareDebuggerEngine, runDebuggerEngineSteps,
 } from './record-debugger-engine.mjs';
+import {
+  DEBUGGER_LAUNCH_SCENARIO, buildDebuggerLaunchWorkspace, prepareDebuggerLaunch, runDebuggerLaunchSteps,
+} from './record-debugger-launch.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,7 +92,11 @@ const ALL_FEATURES = [
 
 const targetFeatures = runAll ? ALL_FEATURES : onlyFeatures;
 const debuggerExample = path.resolve(CLIENT_ROOT, '../../angelscript-debug-example');
-const debuggerScenarios = { debugger: DEBUGGER_SCENARIO, 'debugger-engine': DEBUGGER_ENGINE_SCENARIO };
+const debuggerScenarios = {
+  debugger: DEBUGGER_SCENARIO,
+  'debugger-engine': DEBUGGER_ENGINE_SCENARIO,
+  'debugger-launch': DEBUGGER_LAUNCH_SCENARIO,
+};
 
 // Reserve the feature workspace only for runs that use it.
 if (targetFeatures.some(feature => !Object.hasOwn(debuggerScenarios, feature))) {
@@ -121,6 +129,7 @@ function probeDuration(file) {
 async function runScenario(featureName) {
   const isDebugger = Object.hasOwn(debuggerScenarios, featureName);
   const isEngineDebugger = featureName === 'debugger-engine';
+  const isLaunchDebugger = featureName === 'debugger-launch';
   const workspaceDir = isDebugger ? DEBUGGER_WORKSPACE_DIR : NEUTRAL_WORKSPACE_DIR;
   const scenarioFile = path.join(SCENARIOS_DIR, `${featureName}.json`);
   if (!isDebugger && !fs.existsSync(scenarioFile)) {
@@ -162,8 +171,12 @@ async function runScenario(featureName) {
     const extraExtensions = [];
     if (isDebugger) {
       cleanDebuggerWorkspace = copyDebuggerWorkspace(debuggerExample);
-      debuggerHost = launchDebuggerHost(debuggerExample);
-      await debuggerHost.ready;
+      if (isLaunchDebugger) {
+        buildDebuggerLaunchWorkspace(debuggerExample, workspaceDir);
+      } else {
+        debuggerHost = launchDebuggerHost(debuggerExample);
+        await debuggerHost.ready;
+      }
       extraExtensions.push('--extensionDevelopmentPath=' + writeDebuggerCompatibilityExtension(userDataDir));
     }
     app = await electron.launch({
@@ -708,13 +721,14 @@ async function runScenario(featureName) {
   }[key.toLowerCase()] ?? key.toUpperCase()));
 
   const showKeys = async (labels) => {
-    const pressSequence = await win.evaluate(({ labels, bottom, holdMs }) => {
+    const pressSequence = await win.evaluate(({ labels, bottom, holdMs, gapMs }) => {
       document.querySelector('#demo-keycaps')?.remove();
       const overlay = document.createElement('div');
       overlay.id = 'demo-keycaps';
       overlay.setAttribute('aria-hidden', 'true');
       overlay.style.bottom = `${bottom}px`;
       if (holdMs !== undefined) overlay.style.setProperty('--demo-keycap-hold', `${holdMs}ms`);
+      if (gapMs !== undefined) overlay.style.setProperty('--key-gap', `${gapMs}ms`);
       const hasSiblingIndex = CSS.supports('animation-delay: calc(sibling-index() * 1ms)');
       for (const [index, label] of labels.entries()) {
         const cap = document.createElement('kbd');
@@ -731,7 +745,7 @@ async function runScenario(featureName) {
       const gap = parseFloat(style.getPropertyValue('--key-gap'));
       const duration = parseFloat(style.getPropertyValue('--press-duration'));
       return firstPress + (labels.length - 1) * gap + duration;
-    }, { labels, bottom: 720 - cropHeight + 32, holdMs: scenario.keycapHoldMs });
+    }, { labels, bottom: 720 - cropHeight + 32, holdMs: scenario.keycapHoldMs, gapMs: scenario.keycapGapMs });
     await win.waitForTimeout(pressSequence + 500);
   };
 
@@ -759,7 +773,8 @@ async function runScenario(featureName) {
 
   if (isDebugger) {
     if (isEngineDebugger) await clickTab(scenario.file);
-    await prepareDebuggerWindow(win, scenario.sidebarWidth);
+    if (isLaunchDebugger) await prepareDebuggerLaunch(win, workspaceDir);
+    else await prepareDebuggerWindow(win, scenario.sidebarWidth);
     if (isEngineDebugger) await prepareDebuggerEngine(win);
     await animMoveMouse({ x: 1140, y: 420 });
     // Leave stable footage before the scene trim to cover window-close latency.
@@ -792,7 +807,8 @@ async function runScenario(featureName) {
 
   // Mark first scenario action timestamp
   const firstActionTime = Date.now();
-  const runDebugger = isEngineDebugger ? runDebuggerEngineSteps : runDebuggerSteps;
+  const runDebugger = { debugger: runDebuggerSteps, 'debugger-engine': runDebuggerEngineSteps,
+    'debugger-launch': runDebuggerLaunchSteps }[featureName];
   const debuggerReview = isDebugger
     ? await runDebugger({ win, animClick, animMoveMouse, press, firstActionTime }) : null;
 
@@ -976,22 +992,25 @@ async function runScenario(featureName) {
     }
   }
 
-  const minimumDuration = isEngineDebugger ? 15.1 : isDebugger ? 20.1 : 6.1;
+  const minimumDuration = isEngineDebugger || isLaunchDebugger ? 15.1 : isDebugger ? 20.1 : 6.1;
   const elapsed = (Date.now() - firstActionTime) / 1000;
   await win.waitForTimeout(Math.max(650, (minimumDuration - elapsed) * 1000));
   const sceneDuration = (Date.now() - firstActionTime) / 1000;
-  const maximumDuration = { debugger: 30, 'debugger-engine': 25, 'code-actions': 38, 'signature-help': 11 }[featureName] ?? 10;
+  const maximumDuration = { debugger: 30, 'debugger-engine': 25, 'debugger-launch': 25,
+    'code-actions': 38, 'signature-help': 11 }[featureName] ?? 10;
   if (sceneDuration > maximumDuration) {
     throw new Error('Scenario took ' + sceneDuration.toFixed(2) + ' s (limit ' + maximumDuration + ' s).');
   }
 
   const video = win.video();
+  const closeStarted = Date.now();
   await app.close();
   app = null;
+  const closeDuration = (Date.now() - closeStarted) / 1000;
   const videoPath = await video.path();
 
-  // Align the trim to the recorded end because Electron startup precedes frame capture.
-  const trimStart = Math.max(0, probeDuration(videoPath) - sceneDuration);
+  // Align to the recorded end. Exclude the window-close tail for the F9 overlay at launch.
+  const trimStart = Math.max(0, probeDuration(videoPath) - sceneDuration - (isLaunchDebugger ? closeDuration : 0));
   const outputDir = isDebugger ? path.join(debuggerExample, 'media') : IMAGES_DIR;
   const gifOut = path.join(outputDir, featureName + '.gif');
   const reviewGif = path.join(REVIEW_DIR, featureName + '.gif');
@@ -1035,8 +1054,8 @@ async function runScenario(featureName) {
     throw new Error('Encoded duration ' + duration.toFixed(2) + ' s is out of range.');
   }
   if (isDebugger) {
-    if (isEngineDebugger) {
-      writeDebuggerEngineReview(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, samples: debuggerReview });
+    if (isEngineDebugger || isLaunchDebugger) {
+      writeDebuggerReview(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, samples: debuggerReview, name: featureName });
     } else {
       writeDebuggerContactSheets(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, ...debuggerReview });
     }

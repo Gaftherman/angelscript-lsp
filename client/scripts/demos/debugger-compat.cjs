@@ -4,7 +4,7 @@ const vscode = require('vscode');
 exports.activate = context => {
   context.subscriptions.push(vscode.debug.registerDebugAdapterTrackerFactory('angelscript', {
     createDebugAdapterTracker(session) {
-      if (session.configuration.name !== 'Attach to AngelScript Demo') return;
+      if (!['Attach to AngelScript Demo', 'Launch AngelScript Demo'].includes(session.configuration.name)) return;
 
       return {
         onDidSendMessage(message) {
