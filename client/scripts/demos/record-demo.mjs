@@ -63,9 +63,10 @@ if (!runAll && onlyFeatures.length === 0) {
   onlyFeatures = ['hover'];
 }
 
-// All 16 features in priority order (MEDIA2: hover, autocomplete, diagnostics, engine-options, then the rest)
+// Feature demos in recording order.
 const ALL_FEATURES = [
   'hover',
+  'engine-hover',
   'autocomplete',
   'diagnostics',
   'engine-options',
