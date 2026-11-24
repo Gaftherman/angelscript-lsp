@@ -24,24 +24,123 @@ To install a VSIX, press `Ctrl+Shift+P`, run **Extensions: Install from VSIX...*
 
 ### Try it in 30 seconds
 
-Open a folder in VS Code, create `hello.as`, and paste the code below. No game or engine is needed.
+Open a folder in VS Code, create `hello.as`, and paste the code below. The extension checks your code as you edit, shows documentation on hover, suggests completions, and underlines errors.
 
 ```angelscript
 class Calculator {
     /// Doubles a number.
     int twice(int number) { return number * 2; }
 }
-int main() {
+void Run() {
     Calculator calc;
-    return calc.twice(21);
+    calc.twice(21);
 }
 ```
 
-Hover over `twice` in `calc.twice(21)` to see its signature and doc comment. Change the call to `calc.twcie(21)` to see an error underline.
+Hover over `twice` in `calc.twice(21)` to see its signature and doc comment. Type `calc.` to see member suggestions. Change the original call to `calc.twcie(21)` to see the editor underline the error.
+
+The extension does not run scripts. AngelScript scripts run inside a host application such as a game. See [Debugger](#debugger) to run and debug scripts in a host.
 
 ## Features
 
-<div align="center">
+### Hover
+
+See a symbol's signature and documentation.
+
+<p align="center"><img src="client/images/hover.gif" alt="Hover" width="720"></p>
+
+### Autocomplete
+
+Type after a dot to see matching members.
+
+<p align="center"><img src="client/images/autocomplete.gif" alt="Autocomplete" width="720"></p>
+
+### Signature help
+
+See which parameter you are filling in as you type a call.
+
+<p align="center"><img src="client/images/signature-help.gif" alt="Signature help" width="720"></p>
+
+### Diagnostics
+
+See warnings such as unused variables in the editor.
+
+<p align="center"><img src="client/images/diagnostics.gif" alt="Diagnostics" width="720"></p>
+
+### Go to Definition
+
+Jump from a name to its definition.
+
+<p align="center"><img src="client/images/go-to-definition.gif" alt="Go to Definition" width="720"></p>
+
+### Find All References
+
+List the places where a symbol is used.
+
+<p align="center"><img src="client/images/find-references.gif" alt="Find All References" width="720"></p>
+
+### Rename
+
+Change a script symbol's name and update its uses.
+
+<p align="center"><img src="client/images/rename.gif" alt="Rename" width="720"></p>
+
+### Code actions
+
+Open the lightbulb to see fixes and refactorings.
+
+<p align="center"><img src="client/images/code-actions.gif" alt="Code actions" width="720"></p>
+
+### Formatting
+
+Format the whole script or just the selected lines.
+
+<p align="center"><img src="client/images/formatting.gif" alt="Formatting" width="720"></p>
+
+### Inlay hints
+
+See parameter names beside call arguments.
+
+<p align="center"><img src="client/images/inlay-hints.gif" alt="Inlay hints" width="720"></p>
+
+### Code lens
+
+See the reference count above a declaration.
+
+<p align="center"><img src="client/images/code-lens.gif" alt="Code lens" width="720"></p>
+
+### Outline
+
+Browse the current script's classes, functions, and other symbols.
+
+<p align="center"><img src="client/images/outline.gif" alt="Outline" width="720"></p>
+
+### Semantic highlighting
+
+See parameters and fields colored by what they represent.
+
+<p align="center"><img src="client/images/semantic-highlighting.gif" alt="Semantic highlighting" width="720"></p>
+
+### Host API
+
+Get completion for the types and functions declared in your stub.
+
+<p align="center"><img src="client/images/predefined-api.gif" alt="Host API" width="720"></p>
+
+### Engine rules
+
+See your team's custom checks in the editor.
+
+<p align="center"><img src="client/images/engine-rules.gif" alt="Engine rules" width="720"></p>
+
+### Engine options
+
+Match the checks to the language options your host uses.
+
+<p align="center"><img src="client/images/engine-options.gif" alt="Engine options" width="720"></p>
+
+<details>
+<summary>Supported LSP features</summary>
 
 | Feature | Status |
 | :--- | :--- |
@@ -58,26 +157,7 @@ Hover over `twice` in `calc.twice(21)` to see its signature and doc comment. Cha
 | Document and range formatting | ✅ |
 | Push and pull diagnostics | ✅ |
 
-</div>
-
-<table>
-<tr><td><strong>Hover</strong><br>See a symbol's signature and documentation.<br><img src="client/images/hover.gif" alt="Hover" width="460"></td>
-<td><strong>Autocomplete</strong><br>Type after a dot to see matching members.<br><img src="client/images/autocomplete.gif" alt="Autocomplete" width="460"></td></tr>
-<tr><td><strong>Signature help</strong><br>See which parameter you are filling in as you type a call.<br><img src="client/images/signature-help.gif" alt="Signature help" width="460"></td>
-<td><strong>Diagnostics</strong><br>See warnings such as unused variables in the editor.<br><img src="client/images/diagnostics.gif" alt="Diagnostics" width="460"></td></tr>
-<tr><td><strong>Go to Definition</strong><br>Jump from a name to its definition.<br><img src="client/images/go-to-definition.gif" alt="Go to Definition" width="460"></td>
-<td><strong>Find All References</strong><br>List the places where a symbol is used.<br><img src="client/images/find-references.gif" alt="Find All References" width="460"></td></tr>
-<tr><td><strong>Rename</strong><br>Change a script symbol's name and update its uses.<br><img src="client/images/rename.gif" alt="Rename" width="460"></td>
-<td><strong>Code actions</strong><br>Open the lightbulb to see fixes and refactorings.<br><img src="client/images/code-actions.gif" alt="Code actions" width="460"></td></tr>
-<tr><td><strong>Formatting</strong><br>Format the whole script or just the selected lines.<br><img src="client/images/formatting.gif" alt="Formatting" width="460"></td>
-<td><strong>Inlay hints</strong><br>See parameter names beside call arguments.<br><img src="client/images/inlay-hints.gif" alt="Inlay hints" width="460"></td></tr>
-<tr><td><strong>Code lens</strong><br>See the reference count above a declaration.<br><img src="client/images/code-lens.gif" alt="Code lens" width="460"></td>
-<td><strong>Outline</strong><br>Browse the current script's classes, functions, and other symbols.<br><img src="client/images/outline.gif" alt="Outline" width="460"></td></tr>
-<tr><td><strong>Semantic highlighting</strong><br>See parameters and fields colored by what they represent.<br><img src="client/images/semantic-highlighting.gif" alt="Semantic highlighting" width="460"></td>
-<td><strong>Host API</strong><br>Get completion for the types and functions declared in your stub.<br><img src="client/images/predefined-api.gif" alt="Host API" width="460"></td></tr>
-<tr><td><strong>Engine rules</strong><br>See your team's custom checks in the editor.<br><img src="client/images/engine-rules.gif" alt="Engine rules" width="460"></td>
-<td><strong>Engine options</strong><br>Match the checks to the language options your host uses.<br><img src="client/images/engine-options.gif" alt="Engine options" width="460"></td></tr>
-</table>
+</details>
 
 ## Host API stubs (.as.predefined)
 
@@ -92,9 +172,6 @@ In AngelScript, the host application registers its C++ API so your scripts can c
 
 In `.vscode/settings.json`, set `"angelscript.predefined.active": "${workspaceFolder}/path/to/stub.as.predefined"` or use `"all"` to load every discovered stub. The default is `""`, which selects the first stub in path order. You can also run **AngelScript: Select Predefined Stub** or open the **AngelScript IntelliSense** status item to choose one.
 
-<p align="center"><img src="client/images/predefined-api.gif" alt="Host API in completion" width="720"></p>
-<p align="center"><em>VS Code suggests functions from the host API.</em></p>
-
 <p align="center"><img src="client/images/predefined-file.png" alt="Example .as.predefined file" width="720"></p>
 <p align="center"><em>A stub declares a class and its methods for the editor.</em></p>
 
@@ -102,20 +179,16 @@ In `.vscode/settings.json`, set `"angelscript.predefined.active": "${workspaceFo
 
 Save `angelscript.rules.json` in the project root. Use the [Engine Rules Guide](docs/RULES.md) to configure your project's checks.
 
-<p align="center"><img src="client/images/engine-rules.gif" alt="A custom rule flagging a field type" width="720"></p>
-<p align="center"><em>A storage rule flags a handle in a class field.</em></p>
-
 ## Engine options
 
 Use `angelscript.engine.*` in VS Code to match your host's language options. For example, set `angelscript.engine.foreachSupport` to `false` if your host disables `foreach`.
-
-<p align="center"><img src="client/images/engine-options.gif" alt="Editor checks for an engine option" width="720"></p>
-<p align="center"><em>Disabling global variables makes the editor flag a global declaration.</em></p>
 
 ## Debugger
 
 Use breakpoints, view the call stack, and inspect variables with the VS Code debugger while scripts run in your host.
 The [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example) shows how to set up the host and run a complete debug session.
+
+With a `launch` configuration, press F5 to start your host program and see its console output in the VS Code Debug Console, as shown in the example project.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Stepping through AngelScript in VS Code" width="720"></p>
 <p align="center"><em>Step through an AngelScript script in VS Code.</em></p>

@@ -15,17 +15,30 @@
 ### Empieza con un solo archivo
 
 ```text
-mi-proyecto/
-└── main.as
+└── 📁my-project
+    ├── 📁.vscode
+    │   └── 📄settings.json
+    └── 📄main.as
 ```
 
-Abre `mi-proyecto` en VS Code y escribe `int main() { return 42; }` en `main.as`. Pasa el cursor sobre `main` para ver `int main()`. No necesitas configurar el espacio de trabajo ni añadir stubs.
+Abre `my-project` en VS Code y escribe `int main() { return 42; }` en `main.as`. Pasa el cursor sobre `main` para ver `int main()`. Para este ejemplo puedes prescindir de `.vscode/settings.json` y de los stubs.
 
 Pon el ejemplo de motor que corresponda a tu proyecto en `.vscode/settings.json`, dentro de `${workspaceFolder}`. En `angelscript.modules`, usa `folder` para agrupar todo lo que hay bajo una carpeta o `entry` para partir de un script y seguir sus `#include`. Con los módulos definidos, el editor puede comprobar si una declaración `external shared` tiene su definición en otro módulo.
 
 ### Ejemplo A: Sven Co-op (módulo por carpeta)
 
 Si todos los scripts de `maps/hcas` se compilan juntos, asigna un módulo a esa carpeta.
+
+```text
+└── 📁svencoop-scripts
+    ├── 📁.vscode
+    │   └── 📄settings.json
+    └── 📁maps
+        ├── 📁hcas
+        │   ├── 📄hcas_main.as
+        │   └── 📄hcas_items.as
+        └── 📄sven.as.predefined
+```
 
 ```jsonc
 {
@@ -45,6 +58,16 @@ Si todos los scripts de `maps/hcas` se compilan juntos, asigna un módulo a esa 
 
 Si tu juego empieza por `ins2_register.as`, pon ese archivo como punto de entrada. Los scripts que incluye quedan en el mismo módulo.
 
+```text
+└── 📁svencoop-scripts
+    ├── 📁.vscode
+    │   └── 📄settings.json
+    └── 📁maps
+        ├── 📁ins2
+        │   └── 📄ins2_register.as
+        └── 📄sven.as.predefined
+```
+
 ```jsonc
 {
   "angelscript.include.implicitExtension": true,
@@ -62,6 +85,19 @@ Si tu juego empieza por `ins2_register.as`, pon ese archivo como punto de entrad
 ### Ejemplo C: Motor genérico o proyecto independiente
 
 Si tu motor guarda los archivos de inclusión y las declaraciones de la API en carpetas distintas, indica cada ruta por separado.
+
+```text
+└── 📁game-project
+    ├── 📁.vscode
+    │   └── 📄settings.json
+    └── 📁scripts
+        ├── 📁api
+        │   └── 📄engine.as.predefined
+        ├── 📁game
+        │   └── 📄main.as
+        └── 📁include
+            └── 📄utility.as
+```
 
 ```jsonc
 {
@@ -220,6 +256,8 @@ Abre la paleta de comandos (`Ctrl+Shift+P` o `Cmd+Shift+P`). En el Explorador ta
 
 Con el depurador de VS Code puedes usar puntos de interrupción, ver la pila de llamadas e inspeccionar variables mientras tu aplicación ejecuta los scripts.
 El [proyecto de ejemplo del depurador](https://github.com/Gaftherman/angelscript-debugger-example) muestra cómo configurar la aplicación y realizar una sesión de depuración completa.
+
+Con una configuración de tipo `launch`, pulsa F5 para iniciar la aplicación anfitriona y ver su salida en la consola de depuración de VS Code, tal como se muestra en el proyecto de ejemplo.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Ejecución paso a paso de AngelScript en VS Code" width="720"></p>
 <p align="center"><em>Ejecuta un script de AngelScript paso a paso en VS Code.</em></p>

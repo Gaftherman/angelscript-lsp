@@ -15,17 +15,30 @@
 ### Start with one file
 
 ```text
-my-project/
-└── main.as
+└── 📁my-project
+    ├── 📁.vscode
+    │   └── 📄settings.json
+    └── 📄main.as
 ```
 
-Open `my-project` in VS Code and put `int main() { return 42; }` in `main.as`. Hover over `main` to see `int main()`. No workspace settings or stubs are needed.
+Open `my-project` in VS Code and put `int main() { return 42; }` in `main.as`. Hover over `main` to see `int main()`. You can skip `.vscode/settings.json` and stubs for this example.
 
 Put the engine example that matches your project in `.vscode/settings.json` under `${workspaceFolder}`. In `angelscript.modules`, use `folder` for every script under a directory or `entry` for one script and the files it reaches through `#include`. Module boundaries let the editor check whether an `external shared` declaration has a matching definition in another module.
 
 ### Example A: Sven Co-op (Folder Module)
 
 If all scripts under `maps/hcas` build together, give that folder a module name.
+
+```text
+└── 📁svencoop-scripts
+    ├── 📁.vscode
+    │   └── 📄settings.json
+    └── 📁maps
+        ├── 📁hcas
+        │   ├── 📄hcas_main.as
+        │   └── 📄hcas_items.as
+        └── 📄sven.as.predefined
+```
 
 ```jsonc
 {
@@ -45,6 +58,16 @@ If all scripts under `maps/hcas` build together, give that folder a module name.
 
 If your game starts from `ins2_register.as`, use that file as the entry point. Its includes join the same module.
 
+```text
+└── 📁svencoop-scripts
+    ├── 📁.vscode
+    │   └── 📄settings.json
+    └── 📁maps
+        ├── 📁ins2
+        │   └── 📄ins2_register.as
+        └── 📄sven.as.predefined
+```
+
 ```jsonc
 {
   "angelscript.include.implicitExtension": true,
@@ -62,6 +85,19 @@ If your game starts from `ins2_register.as`, use that file as the entry point. I
 ### Example C: Generic Game Engine
 
 If your engine keeps shared includes and API declarations in separate directories, give each directory or file its own path in the settings.
+
+```text
+└── 📁game-project
+    ├── 📁.vscode
+    │   └── 📄settings.json
+    └── 📁scripts
+        ├── 📁api
+        │   └── 📄engine.as.predefined
+        ├── 📁game
+        │   └── 📄main.as
+        └── 📁include
+            └── 📄utility.as
+```
 
 ```jsonc
 {
@@ -220,6 +256,8 @@ Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`). The Explorer also ha
 
 Use breakpoints, view the call stack, and inspect variables with the VS Code debugger while scripts run in your host.
 The [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example) shows how to set up the host and run a complete debug session.
+
+With a `launch` configuration, press F5 to start your host program and see its console output in the VS Code Debug Console, as shown in the example project.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Stepping through AngelScript in VS Code" width="720"></p>
 <p align="center"><em>Step through an AngelScript script in VS Code.</em></p>
