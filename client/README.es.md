@@ -7,11 +7,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![XERJ Corpus Hub contributor](https://img.shields.io/badge/XERJ%20Corpus%20Hub-contributor-1f6feb)](https://hub.xerj.org/contributors/Gaftherman)
 
-Angelscript añade a VS Code un servidor de lenguaje nativo en C++20 para AngelScript (`.as`). Usa Tree-Sitter para analizar los scripts e indexar sus símbolos. Analiza el espacio de trabajo a partir de los árboles de sintaxis, sin ejecutar el motor del juego ni concatenar los scripts.
+Angelscript añade compatibilidad con archivos `.as` en VS Code.
 
-Úsalo con Sven Co-op, con otros motores de juegos o con tu propia integración de `CScriptBuilder`. Tienes información al pasar el cursor, autocompletado, navegación, comprobaciones de nulos que siguen el flujo del código e inferencia de tipos en todo el espacio de trabajo.
+AngelScript es un lenguaje de scripting que usan motores de juegos como Sven Co-op para ejecutar código de plugins y mods, y la extensión muestra documentación al pasar el cursor, ofrece autocompletado y marca errores mientras escribes.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/hover.gif" alt="Documentación al pasar el cursor sobre una llamada" width="720"><br><em>Pasa el cursor sobre una llamada para ver su firma y su comentario de documentación.</em></p>
+El servidor de lenguaje, escrito en C++20, usa Tree-Sitter para analizar los scripts e indexar sus símbolos.
+
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/hover.gif" alt="Documentación al pasar el cursor sobre una llamada" width="720"></p>
 
 ## Instalación
 
@@ -19,9 +21,22 @@ Instala la extensión desde [Visual Studio Code Marketplace](https://marketplace
 
 Para instalar un VSIX, pulsa `Ctrl+Shift+P`, ejecuta **Extensiones: Instalar desde VSIX...** (**Extensions: Install from VSIX...**) y elige `angelscript-*.vsix`.
 
-1. Abre una carpeta con archivos `.as`.
-2. Si tu juego ofrece tipos o funciones propias, puedes añadir un stub `.as.predefined`.
-3. Si tu proyecto necesita comprobaciones propias o ajustes compartidos del motor, puedes añadir un archivo `angelscript.rules.json`.
+### Pruébalo en 30 segundos
+
+Abre una carpeta en VS Code, crea `hello.as` y pega el código de abajo. No necesitas un juego ni un motor.
+
+```angelscript
+class Calculator {
+    /// Devuelve el doble de un número.
+    int twice(int number) { return number * 2; }
+}
+int main() {
+    Calculator calc;
+    return calc.twice(21);
+}
+```
+
+Pasa el cursor sobre `twice` en `calc.twice(21)` para ver la firma y el comentario de documentación. Cambia la llamada a `calc.twcie(21)` para que el editor subraye el error.
 
 ## Funciones
 
@@ -61,6 +76,7 @@ Para instalar un VSIX, pulsa `Ctrl+Shift+P`, ejecuta **Extensiones: Instalar des
 <td><strong>API del host</strong><br>Obtén sugerencias para los tipos y funciones que declara tu stub.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/predefined-api.gif" alt="API del host" width="460"></td></tr>
 <tr><td><strong>Reglas del motor</strong><br>Ve en el editor los avisos de las comprobaciones de tu equipo.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-rules.gif" alt="Reglas del motor" width="460"></td>
 <td><strong>Opciones del motor</strong><br>Adapta las comprobaciones a las opciones de lenguaje de tu motor.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-options.gif" alt="Opciones del motor" width="460"></td></tr>
+<tr><td><strong>Documentación de la API del motor</strong><br>Pasa el cursor sobre una función del motor para ver la documentación de su stub <code>.as.predefined</code>.<br><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-hover.gif" alt="Documentación de la API del motor" width="460"></td></tr>
 </table>
 
 ## Stubs de la API del host (.as.predefined)
@@ -82,11 +98,9 @@ En `.vscode/settings.json`, pon `"angelscript.predefined.active": "${workspaceFo
 
 ## Reglas del motor
 
-Pon un archivo `angelscript.rules.json` en la raíz del espacio de trabajo para compartir los ajustes del motor y añadir tus propias comprobaciones. Por ejemplo, puedes mostrar un aviso si un campo de una clase usa un tipo determinado.
+Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) para configurar las comprobaciones de tu proyecto.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-rules.gif" alt="Una regla personalizada marca el tipo de un campo" width="720"></p>
-
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/rules-file.png" alt="Ejemplo de archivo de reglas del motor" width="720"></p>
 
 ## Opciones del motor
 
@@ -119,7 +133,7 @@ Consulta el [proyecto de ejemplo del depurador](https://github.com/Gaftherman/an
 
 - [Guía detallada](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/GUIDE.es.md) — ejemplos de espacio de trabajo, archivos predefinidos, opciones del motor y comandos.
 - [Guía de configuración](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/CONFIGURATION.es.md) — ajustes y ejemplos para editores.
-- [Guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) — cómo escribir archivos `*.angelscript.rules.json`.
+- [Guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) — comprobaciones propias y ajustes compartidos del motor.
 - [CHANGELOG.md](CHANGELOG.md) — historial de versiones y cambios.
 
 ## Compilar desde el código fuente

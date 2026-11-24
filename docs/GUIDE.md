@@ -2,8 +2,6 @@
 
 [English](GUIDE.md) | [Español](GUIDE.es.md) | [README](../README.md)
 
-Start with a workspace example that matches how your game loads scripts. Then use the settings below to tell VS Code about the game’s API and language rules.
-
 > **Words you will see**
 >
 > - **Host** is the game or program that runs your scripts.
@@ -14,7 +12,16 @@ Start with a workspace example that matches how your game loads scripts. Then us
 
 ## Workspace Setup Examples
 
-Put the example in `.vscode/settings.json` under `${workspaceFolder}`. In `angelscript.modules`, use `folder` for every script under a directory or `entry` for one script and the files it reaches through `#include`. Module boundaries let the editor check whether an `external shared` declaration has a matching definition in another module.
+### Start with one file
+
+```text
+my-project/
+└── main.as
+```
+
+Open `my-project` in VS Code and put `int main() { return 42; }` in `main.as`. Hover over `main` to see `int main()`. No workspace settings or stubs are needed.
+
+Put the engine example that matches your project in `.vscode/settings.json` under `${workspaceFolder}`. In `angelscript.modules`, use `folder` for every script under a directory or `entry` for one script and the files it reaches through `#include`. Module boundaries let the editor check whether an `external shared` declaration has a matching definition in another module.
 
 ### Example A: Sven Co-op (Folder Module)
 
@@ -71,18 +78,18 @@ If your engine keeps shared includes and API declarations in separate directorie
 
 ## Predefined Game API Files (`.as.predefined`)
 
-Add an `.as.predefined` stub to describe the API your host registers in C++. The editor can then suggest the host’s classes and functions, show their signatures on hover, and check how you use them. If your host provides Sven Co-op’s `float RandomFloat(float low, float high);`, add that declaration to `game.as.predefined` and try `RandomFloat(0.0f, 1.0f)` in a script.
+Add `game.as.predefined` beside `main.as` and put `int HostScore();` in it. In `main.as`, use `int main() { return HostScore(); }`. Hover over `HostScore` in the call to see `int HostScore()` from the stub.
 
 ### How stubs are loaded
 
 - The workspace scan looks for files with the `angelscript.predefinedExtension` suffix, which defaults to `.as.predefined`.
-- Set `angelscript.predefined.active` to the stub you want. Leave it empty to use the first one in path order, or set it to `"all"` to load every stub the scan finds.
-- List stubs you always want to load in `angelscript.predefinedFiles`. They can live outside `${workspaceFolder}`. Paths can use `${userHome}` and `${env:NAME}`.
+- Use `angelscript.predefined.active` to choose a discovered stub and `angelscript.predefinedFiles` to load explicit paths alongside it, including paths outside the workspace.
+- An empty `angelscript.predefined.active` selects the first discovered stub in path order. Use `"all"` to load every discovered stub.
 - Run **Select Predefined Stub** or **Select Predefined Stubs** from the Command Palette. You can also open the actions menu from the **AngelScript IntelliSense** language status item.
 
 For a Sven Co-op 5.26 example, open [predefined/sven.as.predefined](../predefined/sven.as.predefined).
 
-## Engine Rules (`*.angelscript.rules.json`)
+## Engine Rules (`angelscript.rules.json`)
 
 If your engine calls `MapInit` from C++, add it to the engine rules to clear the unused-function warning. You can also use rules to link `BaseClass` to a native class in a stub or flag calls and declarations that break your host’s rules.
 
