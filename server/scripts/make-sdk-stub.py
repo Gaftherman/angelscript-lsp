@@ -2,19 +2,23 @@ import io, re
 from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent.parent
-FIXTURE = SERVER / 'tests' / 'fixtures' / 'full-addons.as.predefined'
-SDK = SERVER / 'tests' / 'fixtures' / 'sdk-addons.as.predefined'
+FIXTURE = SERVER / "tests" / "fixtures" / "full-addons.as.predefined"
+SDK = SERVER / "tests" / "fixtures" / "sdk-addons.as.predefined"
 
-text = FIXTURE.read_text(encoding='utf-8')
+text = FIXTURE.read_text(encoding="utf-8")
 
 # ---------------------------------------------------------------- 1. correct the socket section
 # scriptsocket IS an SDK add-on (sdk/add_on/scriptsocket), and its API is far smaller than the one
 # invented here: no address family enums, no bind, and connect takes a packed IPv4 address rather
 # than a host string.
-start = text.index('// =====================================================================================\n// socket')
-end = text.index('// =====================================================================================\n// String utilities')
+start = text.index(
+    "// =====================================================================================\n// socket"
+)
+end = text.index(
+    "// =====================================================================================\n// String utilities"
+)
 
-corrected_socket = '''// =====================================================================================
+corrected_socket = """// =====================================================================================
 // socket - add_on/scriptsocket/scriptsocket.cpp
 //
 // Registered by the SDK, but not by AS-Harness and not by this repository's parity oracle: it needs
@@ -41,31 +45,39 @@ class socket
 }
 
 
-'''
+"""
 text = text[:start] + corrected_socket + text[end:]
-FIXTURE.write_text(text, encoding='utf-8', newline='')
-print('fixture socket section corrected')
+FIXTURE.write_text(text, encoding="utf-8", newline="")
+print("fixture socket section corrected")
+
 
 # ---------------------------------------------------------------- 2. derive the oracle's stub
 def drop_section(body, heading):
-    begin = body.index('// =====================================================================================\n// ' + heading)
-    rest = body.index('// =====================================================================================\n// ', begin + 90)
+    begin = body.index(
+        "// =====================================================================================\n// " + heading
+    )
+    rest = body.index(
+        "// =====================================================================================\n// ", begin + 90
+    )
     return body[:begin] + body[rest:]
+
 
 sdk = text
 
 # contextmgr and scriptsocket are not compiled into the oracle, so nothing may declare them.
-sdk = drop_section(sdk, 'Co-routines')
-sdk = drop_section(sdk, 'socket')
+sdk = drop_section(sdk, "Co-routines")
+sdk = drop_section(sdk, "socket")
 
 # The Exception object, SetException and GetException come from AS-Harness's own add-ons, not the
 # SDK. `throw` / `getExceptionInfo` are scripthelper's and stay.
-exc_begin = sdk.index('/// Addon: ASException\n/// Exception object')
-exc_end = sdk.index('/// add_on/scripthelper/scripthelper.cpp - raises a script exception.')
+exc_begin = sdk.index("/// Addon: ASException\n/// Exception object")
+exc_end = sdk.index("/// add_on/scripthelper/scripthelper.cpp - raises a script exception.")
 sdk = sdk[:exc_begin] + sdk[exc_end:]
 
-header_end = sdk.index('\n\n// =====================================================================================\n// string -')
-sdk = '''// The exact script surface server/tools/oracle/main.cpp registers.
+header_end = sdk.index(
+    "\n\n// =====================================================================================\n// string -"
+)
+sdk = """// The exact script surface server/tools/oracle/main.cpp registers.
 //
 // GENERATED from full-addons.as.predefined - do not edit by hand. Re-run
 // scripts/make-sdk-stub.py after changing either this or the oracle's registrations.
@@ -78,16 +90,24 @@ sdk = '''// The exact script surface server/tools/oracle/main.cpp registers.
 //
 // See server/cmake/Oracle.cmake for the add-on list, and the README section "Initializer List
 // Patterns" for what the @listpattern tags do.
-''' + sdk[header_end:]
+""" + sdk[header_end:]
 
-SDK.write_text(sdk, encoding='utf-8', newline='')
-print('sdk stub written:', sum(1 for _ in io.open(SDK, encoding='utf-8')), 'lines')
+SDK.write_text(sdk, encoding="utf-8", newline="")
+print("sdk stub written:", sum(1 for _ in io.open(SDK, encoding="utf-8")), "lines")
 
-for forbidden in ['class Exception', 'SetException', 'GetException', 'createCoRoutine', 'class socket', 'yield()']:
+for forbidden in ["class Exception", "SetException", "GetException", "createCoRoutine", "class socket", "yield()"]:
     if forbidden in sdk:
-        raise SystemExit('sdk stub still declares ' + forbidden)
-for required in ['class array<T>', 'class grid<T>', 'class dictionary', 'class weakref<T>',
-                 'class any', 'class complex', 'void throw(', 'string getExceptionInfo()']:
+        raise SystemExit("sdk stub still declares " + forbidden)
+for required in [
+    "class array<T>",
+    "class grid<T>",
+    "class dictionary",
+    "class weakref<T>",
+    "class any",
+    "class complex",
+    "void throw(",
+    "string getExceptionInfo()",
+]:
     if required not in sdk:
-        raise SystemExit('sdk stub is missing ' + required)
-print('content checks passed')
+        raise SystemExit("sdk stub is missing " + required)
+print("content checks passed")

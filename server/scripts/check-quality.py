@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 passed_steps = []
 skipped_steps = []
 
+
 def run_step(name, command):
     print(f"\n[RUNNING] {name}...")
     res = subprocess.run(command, shell=True, cwd=REPO_ROOT)
@@ -19,9 +20,11 @@ def run_step(name, command):
     print(f"[PASSED] {name}")
     passed_steps.append(name)
 
+
 def skip_step(name, reason):
     print(f"\n[SKIPPED] {name} ({reason})")
     skipped_steps.append((name, reason))
+
 
 def main():
     # 1. Architectural Layer Matrix
@@ -55,7 +58,7 @@ def main():
     if shutil.which("npx"):
         run_step(
             "Code Duplication (jscpd)",
-            'npx jscpd server/src/ --threshold 3 --min-tokens 90 --format cpp --reporters console --ignore "**/build/**,**/tests/**,**/predefined/**,**/_deps/**,**/generated/**"'
+            'npx jscpd server/src/ --threshold 3 --min-tokens 90 --format cpp --reporters console --ignore "**/build/**,**/tests/**,**/predefined/**,**/_deps/**,**/generated/**"',
         )
     else:
         skip_step("Code Duplication (jscpd)", "npx not found in PATH")
@@ -81,7 +84,7 @@ def main():
             f'"{cppcheck_bin}" --enable=warning,performance,portability '
             "--error-exitcode=1 --suppress=missingInclude --suppress=unusedFunction "
             "--suppress=uninitMemberVarNoCtor --suppress=uselessCallsSubstr "
-            "--inline-suppr --std=c++20 server/src/"
+            "--inline-suppr --std=c++20 server/src/",
         )
     else:
         skip_step("Static Analysis (Cppcheck)", "cppcheck not found in PATH")
@@ -100,6 +103,7 @@ def main():
             print(f"  - {name}: {reason}")
     print("=======================================================")
     print("[SUCCESS] All active static quality gates passed successfully.")
+
 
 if __name__ == "__main__":
     main()

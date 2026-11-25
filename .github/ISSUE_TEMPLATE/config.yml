@@ -3,3 +3,6 @@ contact_links:
   - name: GitHub Discussions
     url: https://github.com/Gaftherman/angelscript-lsp/discussions
     about: Ask questions, discuss game engine setups, and share AngelScript workflows.
+  - name: Debugger problem (DAP)
+    url: https://github.com/Gaftherman/angelscript-dap/issues/new
+    about: Breakpoints, stepping and variables are handled by the angelscript-dap repository.

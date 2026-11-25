@@ -1,6 +1,6 @@
 # Angelscript para VS Code
 
-**[English](README.md)** | **[Español](README.es.md)**
+**[English](../README.md)** | **[Español](README.es.md)**
 
 [![Marketplace](https://vsmarketplacebadges.dev/version-short/Gaftherman.angelscript-gaftherman.svg)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
 [![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/Gaftherman.angelscript-gaftherman.svg)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
@@ -169,13 +169,11 @@ Usa los ajustes `angelscript.engine.*` de VS Code para que coincidan con las opc
 
 ## Depurador
 
-Con el depurador de VS Code puedes usar puntos de interrupción, ver la pila de llamadas e inspeccionar variables mientras tu aplicación ejecuta los scripts.
-El [proyecto de ejemplo del depurador](https://github.com/Gaftherman/angelscript-debugger-example) muestra cómo configurar la aplicación y realizar una sesión de depuración completa.
+La depuración vive en sus propios proyectos, para que cualquier aplicación pueda usarla. [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) es el depurador, el [proyecto de ejemplo](https://github.com/Gaftherman/angelscript-debugger-example) muestra una aplicación completa y la configuración de VS Code, y la [CLI de AngelScript](https://github.com/Gaftherman/angelscript-cli) ejecuta y depura scripts desde la terminal con `angelscript --dap-port 9002 script.as`.
 
-Con una configuración de tipo `launch`, pulsa F5 para iniciar la aplicación anfitriona y ver su salida en la consola de depuración de VS Code, tal como se muestra en el proyecto de ejemplo.
+Añade una configuración `attach` o `launch` de tipo `angelscript` a `launch.json`, pon puntos de interrupción en tus archivos `.as` y pulsa F5.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Ejecución paso a paso de AngelScript en VS Code" width="720"></p>
-<p align="center"><em>Ejecuta un script de AngelScript paso a paso en VS Code.</em></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code conectado a un script que se ejecuta en el Símbolo del sistema" width="720"></p>
 
 ## Documentación
 
@@ -196,13 +194,13 @@ Existen otros servidores de lenguaje para AngelScript. Si este no encaja con tu 
 
 Los reportes de errores y las sugerencias son bienvenidos en [GitHub Issues](https://github.com/Gaftherman/angelscript-lsp/issues). Cuando el servidor falla, ejecuta **AngelScript: Report Issue** (o pulsa **Report Issue** en el mensaje de error). Abre el formulario con tus versiones, el registro y una pequeña muestra anonimizada de tu código ya rellenos, para que revises todo antes de enviarlo.
 
-Si corriges un error pequeño o añades una mejora, puedes enviar un pull request.
+Si corriges un error pequeño o añades una mejora, puedes enviar un pull request. [CONTRIBUTING.es.md](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/CONTRIBUTING.es.md) explica cómo compilar y comprobar un cambio.
 
 Si creas un archivo `.as.predefined` para tu aplicación, contribuirlo como ejemplo se agradecería mucho y puede servir a otras personas.
 
 ## Créditos
 
-Angelscript para VS Code se apoya en el trabajo de estos proyectos. Sus licencias se reproducen en [THIRD_PARTY_NOTICES.md](https://github.com/Gaftherman/angelscript-lsp/blob/main/THIRD_PARTY_NOTICES.md).
+Angelscript para VS Code se apoya en el trabajo de estos proyectos. Sus licencias se reproducen en [THIRD_PARTY_NOTICES.md](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/THIRD_PARTY_NOTICES.md).
 
 | Proyecto | Licencia | Uso |
 | --- | --- | --- |

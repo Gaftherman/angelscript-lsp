@@ -24,6 +24,7 @@ Compiler diagnostics without identity match by case-relative file and UTF-16 sta
 Unpaired positions are informational when both tools report errors in the same file.
 Server errors in extra files are informational when the oracle reports an error in the case.
 """
+
 import argparse
 import json
 import re
@@ -132,7 +133,11 @@ class Case:
     def siblings(self):
         if not self.path.is_dir():
             return {}
-        return {p.name: p.read_text(encoding="utf-8") for p in self.path.iterdir() if p.suffix == ".as" and p.name != "main.as"}
+        return {
+            p.name: p.read_text(encoding="utf-8")
+            for p in self.path.iterdir()
+            if p.suffix == ".as" and p.name != "main.as"
+        }
 
     def marker(self):
         """Returns (text without marker, prefix, line, character, offset) or None."""
@@ -142,7 +147,7 @@ class Case:
         before = self.text[:index]
         m = re.search(r"[A-Za-z_]\w*$|$", before)
         prefix = m.group(0)
-        clean = before + self.text[index + len(MARKER):]
+        clean = before + self.text[index + len(MARKER) :]
         line = before.count("\n")
         character = len(before.rsplit("\n", 1)[-1].encode("utf-16-le")) // 2
         return clean, prefix, line, character, index
@@ -154,8 +159,14 @@ def run_oracle(oracle: Path, files: dict, main: str):
     try:
         for name, text in files.items():
             (work / name).write_text(text, encoding="utf-8")
-        proc = subprocess.run([str(oracle.resolve()), str(work / main), "--json", "--no-pause", "--no-mixin-probe"],
-                              capture_output=True, text=True, encoding="utf-8", timeout=60, cwd=work)
+        proc = subprocess.run(
+            [str(oracle.resolve()), str(work / main), "--json", "--no-pause", "--no-mixin-probe"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            cwd=work,
+        )
         if proc.returncode not in (0, 1):
             raise OracleFailure(f"compiler exit {proc.returncode}: {proc.stderr.strip()[:240]}")
         sections = {(work / name).resolve(): name for name in files}
@@ -174,8 +185,12 @@ def run_oracle(oracle: Path, files: dict, main: str):
                 section = message["section"]
                 row, column = message["row"], message["col"]
                 detail = message["message"]
-                if (not isinstance(section, str) or type(row) is not int or type(column) is not int
-                        or not isinstance(detail, str)):
+                if (
+                    not isinstance(section, str)
+                    or type(row) is not int
+                    or type(column) is not int
+                    or not isinstance(detail, str)
+                ):
                     raise ValueError("invalid compiler diagnostic")
                 file = None
                 if section and section not in SYNTHETIC_SECTIONS:
@@ -200,16 +215,28 @@ def run_oracle(oracle: Path, files: dict, main: str):
 
 class McpClient:
     def __init__(self, exe: Path, root: Path):
-        self.proc = subprocess.Popen([str(exe), "--mcp", "--mcp-root", str(root)], stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-                                     encoding="utf-8", bufsize=1)
+        self.proc = subprocess.Popen(
+            [str(exe), "--mcp", "--mcp-root", str(root)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+        )
         self.replies = Queue()
         self.reader = Thread(target=self._read_replies, daemon=True)
         self.reader.start()
         self.n = 0
         try:
-            self._rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                     "clientInfo": {"name": "differential", "version": "1"}})
+            self._rpc(
+                "initialize",
+                {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "differential", "version": "1"},
+                },
+            )
             self._rpc("notifications/initialized", notify=True)
         except Exception:
             self.close()
@@ -334,8 +361,11 @@ def compare_diagnostics(reports, oracle_errors, files):
     server_files = {file for file, diagnostics in reports.items() if diagnostics}
     oracle_files = {error.file for error in oracle_errors if error.file is not None}
     shared_files = server_files & oracle_files
-    server = Counter((file, diagnostic.get("code"), diagnostic_range(diagnostic))
-                     for file, diagnostics in reports.items() for diagnostic in diagnostics)
+    server = Counter(
+        (file, diagnostic.get("code"), diagnostic_range(diagnostic))
+        for file, diagnostics in reports.items()
+        for diagnostic in diagnostics
+    )
     oracle = Counter((error.file, error.code, error.span) for error in oracle_errors if error.code is not None)
     exact = server & oracle
     matched = sum(exact.values())
@@ -382,10 +412,14 @@ def compare_diagnostics(reports, oracle_errors, files):
             findings.append(("RANGE_FILE_MISMATCH", f"server {identity!r}; oracle {candidates.pop()!r}", "failing"))
         elif identity[0] in shared_files:
             findings.append(("SERVER_ONLY", repr(identity), "informational"))
-    findings.extend(("ORACLE_ONLY", repr(identity), "failing")
-                    for group in remaining_oracle.values() for identity in group)
-    findings.extend(("ORACLE_ONLY", f"{error.file}:{error.row}:{error.column}: {error.message}", "informational")
-                    for error in unmatched_positions if error.file in shared_files)
+    findings.extend(
+        ("ORACLE_ONLY", repr(identity), "failing") for group in remaining_oracle.values() for identity in group
+    )
+    findings.extend(
+        ("ORACLE_ONLY", f"{error.file}:{error.row}:{error.column}: {error.message}", "informational")
+        for error in unmatched_positions
+        if error.file in shared_files
+    )
 
     # Synthetic sections can establish rejection at case level when the oracle has no file attribution.
     if oracle_errors and not oracle_files and not server_files:
@@ -405,11 +439,23 @@ def evaluate(case: Case, oracle: Path, lsp_exe: Path):
     try:
         return evaluate_case(case, oracle, lsp_exe)
     except OracleFailure as error:
-        return 0, [{"case": f"{case.category}/{case.id}", "kind": "ORACLE_ERROR", "detail": str(error),
-                    "classification": "oracle_failure"}]
+        return 0, [
+            {
+                "case": f"{case.category}/{case.id}",
+                "kind": "ORACLE_ERROR",
+                "detail": str(error),
+                "classification": "oracle_failure",
+            }
+        ]
     except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
-        return 0, [{"case": f"{case.category}/{case.id}", "kind": "HARNESS_ERROR", "detail": str(error),
-                    "classification": "harness_error"}]
+        return 0, [
+            {
+                "case": f"{case.category}/{case.id}",
+                "kind": "HARNESS_ERROR",
+                "detail": str(error),
+                "classification": "harness_error",
+            }
+        ]
 
 
 def evaluate_case(case: Case, oracle: Path, lsp_exe: Path):
@@ -419,8 +465,9 @@ def evaluate_case(case: Case, oracle: Path, lsp_exe: Path):
     def add(kind, detail, classification="failing"):
         if kind == "ORACLE_CONTRADICTS_CASE":
             classification = "oracle_contradiction"
-        findings.append({"case": f"{case.category}/{case.id}", "kind": kind, "detail": detail,
-                         "classification": classification})
+        findings.append(
+            {"case": f"{case.category}/{case.id}", "kind": kind, "detail": detail, "classification": classification}
+        )
 
     files = {"main.as": case.text.replace(MARKER, "")}
     files.update(case.siblings())
@@ -432,7 +479,10 @@ def evaluate_case(case: Case, oracle: Path, lsp_exe: Path):
     # forms below; diagnostics are compared only for cases without a marker.
     accepted, errors = (True, []) if marker else run_oracle(oracle, files, "main.as")
     if not marker and case.expect and accepted != (case.expect == "accept"):
-        add("ORACLE_CONTRADICTS_CASE", f"header says {case.expect}, oracle {'accepts' if accepted else 'rejects'}: {errors[:1]}")
+        add(
+            "ORACLE_CONTRADICTS_CASE",
+            f"header says {case.expect}, oracle {'accepts' if accepted else 'rejects'}: {errors[:1]}",
+        )
         return matched, findings
 
     # Candidate verdicts from the oracle, decided before the server is ever asked.
@@ -440,13 +490,15 @@ def evaluate_case(case: Case, oracle: Path, lsp_exe: Path):
     if marker:
         clean, prefix, _, _, _ = marker
         stem = clean[: marker[4] - len(prefix)]
-        tail = clean[marker[4]:]
+        tail = clean[marker[4] :]
+
         def judge(label):
             if label not in verdict:
                 body = dict(files)
                 body["main.as"] = stem + label + tail
                 verdict[label] = run_oracle(oracle, body, "main.as")[0]
             return verdict[label]
+
         for label in case.plus:
             if not judge(label):
                 add("ORACLE_CONTRADICTS_CASE", f"@complete+ {label} does not compile")
@@ -500,7 +552,9 @@ def evaluate_case(case: Case, oracle: Path, lsp_exe: Path):
                     if not label.lower().startswith(prefix.lower()):
                         continue
                     if not judge(label):
-                        add("COMPLETION_LEAK", f"{label} (kind {next(i['kind'] for i in items if i['label'] == label)})")
+                        add(
+                            "COMPLETION_LEAK", f"{label} (kind {next(i['kind'] for i in items if i['label'] == label)})"
+                        )
     finally:
         if client is not None:
             client.close()

@@ -7,6 +7,7 @@ and `find('<')` / `starts_with("const")` template and qualifier probes, per sour
 may only go down. A file with no baseline entry must have none. `--update` rewrites the baseline
 after a migration lowered counts; it refuses to raise any count.
 """
+
 import json
 import re
 import sys
@@ -18,14 +19,10 @@ BASELINE = REPO_ROOT / "server" / "rules" / "raw-literal-baseline.json"
 SCAN_DIRS = ("analysis", "features", "lsp")
 EXEMPT = ("analysis/formatting/ClangFormat",)
 
-LITERALS = (
-    "auto|void|null|true|false|this|super|const|bool|int|uint|float|double|string|any|\\?"
-)
+LITERALS = "auto|void|null|true|false|this|super|const|bool|int|uint|float|double|string|any|\\?"
 # Literals that are also counted when built or passed (`push_back("void")`, `return "bool"`,
 # `insert(0, "const ")`), not only when compared.
-STANDALONE = (
-    "auto|auto@|void|null|true|false|this|super|function|const |const|bool|int|uint|float|double"
-)
+STANDALONE = "auto|auto@|void|null|true|false|this|super|function|const |const|bool|int|uint|float|double"
 PATTERN = re.compile(
     r"find\('<'\)"
     r'|starts_with\("const[^"]*"'
@@ -82,7 +79,9 @@ def main() -> int:
         print(f"baseline lowered for {len(lowered)} files")
     elif lowered:
         print(f"[NOTE] {len(lowered)} files improved; run with --update to lock it in")
-    print(f"raw literal comparisons: {sum(current.values())} sites in {len(current)} files (baseline {sum(baseline.values())})")
+    print(
+        f"raw literal comparisons: {sum(current.values())} sites in {len(current)} files (baseline {sum(baseline.values())})"
+    )
     return 0
 
 

@@ -169,13 +169,11 @@ Use `angelscript.engine.*` in VS Code to match your host's language options. For
 
 ## Debugger
 
-Use breakpoints, view the call stack, and inspect variables with the VS Code debugger while scripts run in your host.
-The [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example) shows how to set up the host and run a complete debug session.
+Debugging lives in its own projects, so any host can use it. [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) is the debugger, the [example project](https://github.com/Gaftherman/angelscript-debugger-example) shows a complete host and VS Code setup, and the [AngelScript CLI](https://github.com/Gaftherman/angelscript-cli) runs and debugs scripts from the terminal with `angelscript --dap-port 9002 script.as`.
 
-With a `launch` configuration, press F5 to start your host program and see its console output in the VS Code Debug Console, as shown in the example project.
+Add an `attach` or `launch` configuration of type `angelscript` to `launch.json`, set breakpoints in your `.as` files and press F5.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Stepping through AngelScript in VS Code" width="720"></p>
-<p align="center"><em>Step through an AngelScript script in VS Code.</em></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code attached to a script running in Command Prompt" width="720"></p>
 
 ## Documentation
 
@@ -196,13 +194,13 @@ Other AngelScript language servers exist. If this one does not fit your project,
 
 Bug reports and feature requests are welcome via [GitHub Issues](https://github.com/Gaftherman/angelscript-lsp/issues). When the server fails, run **AngelScript: Report Issue** (or press **Report Issue** in the error message). It opens the issue form with your versions, the log and a small anonymized sample of your code already filled in, so you can review everything before it is sent.
 
-If you fix a small bug or add an enhancement, feel free to submit a pull request.
+If you fix a small bug or add an enhancement, feel free to submit a pull request. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to build and check a change.
 
 If you create an `.as.predefined` file for your application, contributing it as an example would be greatly appreciated and could be helpful to others.
 
 ## Credits
 
-Angelscript for VS Code is built on the work of these projects. Their licenses are reproduced in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Angelscript for VS Code is built on the work of these projects. Their licenses are reproduced in [THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md).
 
 | Project | License | Use |
 | --- | --- | --- |

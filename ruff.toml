@@ -1,0 +1,2 @@
+line-length = 120
+extend-exclude = ["external", "asext", "metamod", "build", "node_modules", ".vscode-test"]

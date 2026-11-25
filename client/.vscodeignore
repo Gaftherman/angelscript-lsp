@@ -33,3 +33,6 @@ bin/**/*.pdb
 
 # README media is referenced by absolute raw.githubusercontent.com URLs, so it does not ship in the .vsix.
 images/**
+
+# Developer notes that do not belong in the extension package.
+docs/DEMOS.md

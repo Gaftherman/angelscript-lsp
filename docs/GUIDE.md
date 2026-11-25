@@ -254,14 +254,11 @@ Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`). The Explorer also ha
 
 ## Debugger
 
-Use breakpoints, view the call stack, and inspect variables with the VS Code debugger while scripts run in your host.
-The [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example) shows how to set up the host and run a complete debug session.
+Debugging lives in its own projects, so any host can use it. [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) is the debugger, the [example project](https://github.com/Gaftherman/angelscript-debugger-example) shows a complete host and VS Code setup, and the [AngelScript CLI](https://github.com/Gaftherman/angelscript-cli) runs and debugs scripts from the terminal with `angelscript --dap-port 9002 script.as`.
 
-With a `launch` configuration, press F5 to start your host program and see its console output in the VS Code Debug Console, as shown in the example project.
-To run a script without a game, install the [AngelScript CLI (`angelscript` / `asc`)](https://github.com/Gaftherman/angelscript-cli) and set `angelscript.runner.path` or put the runner on your `PATH`.
+Add an `attach` or `launch` configuration of type `angelscript` to `launch.json`, set breakpoints in your `.as` files and press F5.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-debugger-example/main/media/debugger.gif" alt="Stepping through AngelScript in VS Code" width="720"></p>
-<p align="center"><em>Step through an AngelScript script in VS Code.</em></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code attached to a script running in Command Prompt" width="720"></p>
 
 ## Building from Source
 

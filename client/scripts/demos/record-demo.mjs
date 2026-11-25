@@ -12,18 +12,6 @@ import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 import path from 'path';
 import fs from 'fs';
 import { execFileSync } from 'child_process';
-import { fileURLToPath } from 'url';
-import {
-  DEBUGGER_SCENARIO, DEBUGGER_WORKSPACE_DIR, copyDebuggerWorkspace, launchDebuggerHost,
-  prepareDebuggerWindow, runDebuggerSteps, writeDebuggerCompatibilityExtension, writeDebuggerContactSheets,
-  writeDebuggerReview,
-} from './record-debugger.mjs';
-import {
-  DEBUGGER_ENGINE_SCENARIO, prepareDebuggerEngine, runDebuggerEngineSteps,
-} from './record-debugger-engine.mjs';
-import {
-  DEBUGGER_LAUNCH_SCENARIO, buildDebuggerLaunchWorkspace, prepareDebuggerLaunch, runDebuggerLaunchSteps,
-} from './record-debugger-launch.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -91,28 +79,20 @@ const ALL_FEATURES = [
 ];
 
 const targetFeatures = runAll ? ALL_FEATURES : onlyFeatures;
-const debuggerExample = path.resolve(CLIENT_ROOT, '../../angelscript-debug-example');
-const debuggerScenarios = {
-  debugger: DEBUGGER_SCENARIO,
-  'debugger-engine': DEBUGGER_ENGINE_SCENARIO,
-  'debugger-launch': DEBUGGER_LAUNCH_SCENARIO,
-};
 
-// Reserve the feature workspace only for runs that use it.
-if (targetFeatures.some(feature => !Object.hasOwn(debuggerScenarios, feature))) {
-  if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
-    throw new Error('The neutral demo workspace is already in use.');
-  }
-  fs.mkdirSync(path.dirname(NEUTRAL_WORKSPACE_DIR), { recursive: true });
-  fs.mkdirSync(NEUTRAL_WORKSPACE_DIR);
-  process.on('exit', () => {
-    try {
-      if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
-        fs.rmSync(NEUTRAL_WORKSPACE_DIR, { recursive: true, force: true });
-      }
-    } catch {}
-  });
+// Reserve the feature workspace.
+if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
+  throw new Error('The neutral demo workspace is already in use.');
 }
+fs.mkdirSync(path.dirname(NEUTRAL_WORKSPACE_DIR), { recursive: true });
+fs.mkdirSync(NEUTRAL_WORKSPACE_DIR);
+process.on('exit', () => {
+  try {
+    if (fs.existsSync(NEUTRAL_WORKSPACE_DIR)) {
+      fs.rmSync(NEUTRAL_WORKSPACE_DIR, { recursive: true, force: true });
+    }
+  } catch {}
+});
 
 console.log('=== AngelScript LSP Demo Recorder ===');
 console.log(`Targets (${targetFeatures.length}): ${targetFeatures.join(', ')}`);
@@ -127,18 +107,15 @@ function probeDuration(file) {
 }
 
 async function runScenario(featureName) {
-  const isDebugger = Object.hasOwn(debuggerScenarios, featureName);
-  const isEngineDebugger = featureName === 'debugger-engine';
-  const isLaunchDebugger = featureName === 'debugger-launch';
-  const workspaceDir = isDebugger ? DEBUGGER_WORKSPACE_DIR : NEUTRAL_WORKSPACE_DIR;
+  const workspaceDir = NEUTRAL_WORKSPACE_DIR;
   const scenarioFile = path.join(SCENARIOS_DIR, `${featureName}.json`);
-  if (!isDebugger && !fs.existsSync(scenarioFile)) {
+  if (!fs.existsSync(scenarioFile)) {
     console.warn(`Scenario file not found for ${featureName}.`);
     return null;
   }
 
-  const scenario = isDebugger ? debuggerScenarios[featureName] : JSON.parse(fs.readFileSync(scenarioFile, 'utf8'));
-  if (!isDebugger) fs.cpSync(WORKSPACE_DIR, workspaceDir, { recursive: true });
+  const scenario = JSON.parse(fs.readFileSync(scenarioFile, 'utf8'));
+  fs.cpSync(WORKSPACE_DIR, workspaceDir, { recursive: true });
   if (scenario.setup?.storageRulesOnly) {
     const rulesPath = path.join(workspaceDir, scenario.setup.tab);
     const { storageRules } = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
@@ -165,20 +142,8 @@ async function runScenario(featureName) {
   }, null, 2));
 
   let app = null;
-  let debuggerHost;
-  let cleanDebuggerWorkspace;
   try {
     const extraExtensions = [];
-    if (isDebugger) {
-      cleanDebuggerWorkspace = copyDebuggerWorkspace(debuggerExample);
-      if (isLaunchDebugger) {
-        buildDebuggerLaunchWorkspace(debuggerExample, workspaceDir);
-      } else {
-        debuggerHost = launchDebuggerHost(debuggerExample);
-        await debuggerHost.ready;
-      }
-      extraExtensions.push('--extensionDevelopmentPath=' + writeDebuggerCompatibilityExtension(userDataDir));
-    }
     app = await electron.launch({
       executablePath: vscodePath,
       args: [
@@ -228,43 +193,41 @@ async function runScenario(featureName) {
     await win.setViewportSize({ width: 1280, height: 720 });
   } catch {}
 
-  if (!isDebugger) {
-    // Close primary and secondary sidebars cleanly via VS Code command palette
-    await win.keyboard.press('Control+Shift+P');
-    await win.waitForTimeout(150);
-    await win.keyboard.type('View: Close Primary Side Bar');
-    await win.keyboard.press('Enter');
-    await win.waitForTimeout(150);
+  // Close primary and secondary sidebars cleanly via VS Code command palette
+  await win.keyboard.press('Control+Shift+P');
+  await win.waitForTimeout(150);
+  await win.keyboard.type('View: Close Primary Side Bar');
+  await win.keyboard.press('Enter');
+  await win.waitForTimeout(150);
 
-    await win.keyboard.press('Control+Shift+P');
-    await win.waitForTimeout(150);
-    await win.keyboard.type('View: Close Secondary Side Bar');
-    await win.keyboard.press('Enter');
-    await win.waitForTimeout(200);
+  await win.keyboard.press('Control+Shift+P');
+  await win.waitForTimeout(150);
+  await win.keyboard.type('View: Close Secondary Side Bar');
+  await win.keyboard.press('Enter');
+  await win.waitForTimeout(200);
 
-    // Close the real side bars so VS Code relayouts the editor at full width (CSS alone leaves stale layout widths)
-    for (const _ of [0, 1]) {
-      const sidebarOpen = await win.evaluate(() => {
-        const el = document.querySelector('.part.sidebar');
-        return !!el && el.offsetWidth > 0 && getComputedStyle(el).display !== 'none';
-      });
-      console.log('sidebarOpen=' + sidebarOpen);
-      if (!sidebarOpen) break;
-      await win.keyboard.press('Control+b');
-      await win.waitForTimeout(400);
-    }
-    for (const _ of [0, 1]) {
-      const auxOpen = await win.evaluate(() => { const e = document.querySelector('.part.auxiliarybar'); return !!e && e.getBoundingClientRect().width > 10; });
-      if (!auxOpen) break;
-      await win.keyboard.press('Control+Alt+b');
-      await win.waitForTimeout(500);
-    }
-    console.log('layout=' + JSON.stringify(await win.evaluate(() => ['.part.sidebar','.part.auxiliarybar','.part.activitybar','.part.editor'].map(q => { const e=document.querySelector(q); return e? q+':'+Math.round(e.getBoundingClientRect().width)+'@'+getComputedStyle(e).display : q+':none'; }))));
+  // Close the real side bars so VS Code relayouts the editor at full width (CSS alone leaves stale layout widths)
+  for (const _ of [0, 1]) {
+    const sidebarOpen = await win.evaluate(() => {
+      const el = document.querySelector('.part.sidebar');
+      return !!el && el.offsetWidth > 0 && getComputedStyle(el).display !== 'none';
+    });
+    console.log('sidebarOpen=' + sidebarOpen);
+    if (!sidebarOpen) break;
+    await win.keyboard.press('Control+b');
+    await win.waitForTimeout(400);
   }
+  for (const _ of [0, 1]) {
+    const auxOpen = await win.evaluate(() => { const e = document.querySelector('.part.auxiliarybar'); return !!e && e.getBoundingClientRect().width > 10; });
+    if (!auxOpen) break;
+    await win.keyboard.press('Control+Alt+b');
+    await win.waitForTimeout(500);
+  }
+  console.log('layout=' + JSON.stringify(await win.evaluate(() => ['.part.sidebar','.part.auxiliarybar','.part.activitybar','.part.editor'].map(q => { const e=document.querySelector(q); return e? q+':'+Math.round(e.getBoundingClientRect().width)+'@'+getComputedStyle(e).display : q+':none'; }))));
   // Setup pristine UI layout filling 1280x720 without any black borders
-  await win.evaluate(({ initZoom, origin, hideHover, isSplit, isSnap, suggestWidth, wholeLineMargin, cropHeight, actionMenuFontSize, isDebugger }) => {
+  await win.evaluate(({ initZoom, origin, hideHover, isSplit, isSnap, suggestWidth, wholeLineMargin, cropHeight, actionMenuFontSize }) => {
     const style = document.createElement('style');
-    style.textContent = `${isDebugger ? '' : `
+    style.textContent = `
       .part.auxiliarybar, .part.sidebar, .notifications-toasts, .part.statusbar, .part.titlebar, .part.activitybar {
         display: none !important;
       }
@@ -405,7 +368,6 @@ async function runScenario(featureName) {
         width: 460px !important;
         max-width: 460px !important;
       }
-    `}
       .demo-edge-row {
         visibility: hidden;
       }
@@ -535,7 +497,6 @@ async function runScenario(featureName) {
     wholeLineMargin: scenario.wholeLineMargin,
     cropHeight,
     actionMenuFontSize: scenario.actionMenuFontSize,
-    isDebugger,
   });
 
   // Ensure an editor with content is loaded
@@ -771,16 +732,6 @@ async function runScenario(featureName) {
       .catch(() => { throw new Error('Expected visible editor text: ' + expected); });
   };
 
-  if (isDebugger) {
-    if (isEngineDebugger) await clickTab(scenario.file);
-    if (isLaunchDebugger) await prepareDebuggerLaunch(win, workspaceDir);
-    else await prepareDebuggerWindow(win, scenario.sidebarWidth);
-    if (isEngineDebugger) await prepareDebuggerEngine(win);
-    await animMoveMouse({ x: 1140, y: 420 });
-    // Leave stable footage before the scene trim to cover window-close latency.
-    await win.waitForTimeout(1600);
-  }
-
   if (isSplit) {
     await clickTab(scenario.setup.tab);
     await win.keyboard.press('Control+Shift+P');
@@ -807,10 +758,6 @@ async function runScenario(featureName) {
 
   // Mark first scenario action timestamp
   const firstActionTime = Date.now();
-  const runDebugger = { debugger: runDebuggerSteps, 'debugger-engine': runDebuggerEngineSteps,
-    'debugger-launch': runDebuggerLaunchSteps }[featureName];
-  const debuggerReview = isDebugger
-    ? await runDebugger({ win, animClick, animMoveMouse, press, firstActionTime }) : null;
 
   for (const [stepIndex, step] of scenario.steps.entries()) {
     if (step.action === 'goto') {
@@ -992,35 +939,28 @@ async function runScenario(featureName) {
     }
   }
 
-  const minimumDuration = isEngineDebugger || isLaunchDebugger ? 15.1 : isDebugger ? 20.1 : 6.1;
+  const minimumDuration = 6.1;
   const elapsed = (Date.now() - firstActionTime) / 1000;
   await win.waitForTimeout(Math.max(650, (minimumDuration - elapsed) * 1000));
   const sceneDuration = (Date.now() - firstActionTime) / 1000;
-  const maximumDuration = { debugger: 30, 'debugger-engine': 25, 'debugger-launch': 25,
+  const maximumDuration = {
     'code-actions': 38, 'signature-help': 11 }[featureName] ?? 10;
   if (sceneDuration > maximumDuration) {
     throw new Error('Scenario took ' + sceneDuration.toFixed(2) + ' s (limit ' + maximumDuration + ' s).');
   }
 
   const video = win.video();
-  const closeStarted = Date.now();
   await app.close();
   app = null;
-  const closeDuration = (Date.now() - closeStarted) / 1000;
   const videoPath = await video.path();
 
   // Align to the recorded end. Exclude the window-close tail for the F9 overlay at launch.
-  const trimStart = Math.max(0, probeDuration(videoPath) - sceneDuration - (isLaunchDebugger ? closeDuration : 0));
-  const outputDir = isDebugger ? path.join(debuggerExample, 'media') : IMAGES_DIR;
+  const trimStart = Math.max(0, probeDuration(videoPath) - sceneDuration);
+  const outputDir = IMAGES_DIR;
   const gifOut = path.join(outputDir, featureName + '.gif');
   const reviewGif = path.join(REVIEW_DIR, featureName + '.gif');
   const palette = path.join(TEMP_VIDEOS_DIR, featureName + '-palette.png');
-  const candidates = isDebugger ? [
-    { width: 960, fps: 12, colors: 128, dither: 'none' },
-    { width: 960, fps: 10, colors: 96, dither: 'none' },
-    { width: 960, fps: 8, colors: 64, dither: 'none' },
-    { width: 960, fps: 8, colors: 48, dither: 'none' },
-  ] : featureName === 'code-actions' ? [
+  const candidates = featureName === 'code-actions' ? [
     { width: 960, fps: 10, colors: 96, dither: 'none' },
     { width: 960, fps: 10, colors: 64, dither: 'none' },
     { width: 960, fps: 8, colors: 64, dither: 'none' },
@@ -1035,7 +975,7 @@ async function runScenario(featureName) {
     { width: 768, fps: 10, colors: 64 },
   ];
 
-  const sizeLimit = isDebugger ? 5_000_000 : 3_000_000;
+  const sizeLimit = 3_000_000;
   let size;
   for (const { width, fps, colors, dither = 'bayer:bayer_scale=3' } of candidates) {
     const input = ['-ss', trimStart.toFixed(3), '-t', Math.min(sceneDuration, maximumDuration - 0.03).toFixed(3), '-i', videoPath];
@@ -1053,19 +993,10 @@ async function runScenario(featureName) {
   if (duration < Math.floor(minimumDuration) || duration > maximumDuration) {
     throw new Error('Encoded duration ' + duration.toFixed(2) + ' s is out of range.');
   }
-  if (isDebugger) {
-    if (isEngineDebugger || isLaunchDebugger) {
-      writeDebuggerReview(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, samples: debuggerReview, name: featureName });
-    } else {
-      writeDebuggerContactSheets(ffmpeg, reviewGif, { duration, reviewDir: REVIEW_DIR, ...debuggerReview });
-    }
-    fs.mkdirSync(outputDir, { recursive: true });
-  } else {
-    const sheet = featureName === 'code-actions' ? 'fps=12/' + duration + ':round=up,scale=480:-1,tile=3x4'
-      : 'fps=6/' + duration + ':round=up,scale=640:-1,tile=2x3';
-    ffmpeg(['-i', reviewGif, '-vf', sheet,
-      '-frames:v', '1', '-update', '1', path.join(REVIEW_DIR, featureName + '.png')]);
-  }
+  const sheet = featureName === 'code-actions' ? 'fps=12/' + duration + ':round=up,scale=480:-1,tile=3x4'
+    : 'fps=6/' + duration + ':round=up,scale=640:-1,tile=2x3';
+  ffmpeg(['-i', reviewGif, '-vf', sheet,
+    '-frames:v', '1', '-update', '1', path.join(REVIEW_DIR, featureName + '.png')]);
   fs.copyFileSync(reviewGif, gifOut);
   fs.rmSync(reviewGif);
   fs.rmSync(videoPath);
@@ -1078,11 +1009,6 @@ async function runScenario(featureName) {
     try {
       await app.close();
     } catch {}
-  }
-  try {
-    await debuggerHost?.stop();
-  } finally {
-    cleanDebuggerWorkspace?.();
   }
   try {
     fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });

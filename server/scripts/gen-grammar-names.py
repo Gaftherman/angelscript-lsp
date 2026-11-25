@@ -1,4 +1,5 @@
 """Generate GrammarNames.h from the grammar's own node-types.json."""
+
 import json
 import sys
 from pathlib import Path
@@ -7,32 +8,32 @@ SERVER = Path(__file__).resolve().parent.parent
 REPO_ROOT = SERVER.parent
 
 # Locate the fetched grammar's node-types.json across server/build* or root build*
-candidates = sorted(SERVER.glob('build*/_deps/tree_sitter_angelscript-src/src/node-types.json'))
+candidates = sorted(SERVER.glob("build*/_deps/tree_sitter_angelscript-src/src/node-types.json"))
 if not candidates:
-    candidates = sorted(REPO_ROOT.glob('build*/_deps/tree_sitter_angelscript-src/src/node-types.json'))
+    candidates = sorted(REPO_ROOT.glob("build*/_deps/tree_sitter_angelscript-src/src/node-types.json"))
 
 if not candidates:
-    print('gen-grammar-names: no node-types.json found under server/build*/ or build*/', file=sys.stderr)
-    print('  Configure CMake first so FetchContent downloads the grammar.', file=sys.stderr)
+    print("gen-grammar-names: no node-types.json found under server/build*/ or build*/", file=sys.stderr)
+    print("  Configure CMake first so FetchContent downloads the grammar.", file=sys.stderr)
     sys.exit(1)
 
 node_types_path = candidates[0]
-nt = json.loads(node_types_path.read_text(encoding='utf-8'))
+nt = json.loads(node_types_path.read_text(encoding="utf-8"))
 
-nodes = sorted({n['type'] for n in nt if n.get('named')})
+nodes = sorted({n["type"] for n in nt if n.get("named")})
 fields = set()
 for n in nt:
-    for f in (n.get('fields') or {}):
+    for f in n.get("fields") or {}:
         fields.add(f)
 fields = sorted(fields)
 
 
 def pascal(name):
-    return ''.join(part.capitalize() for part in name.split('_'))
+    return "".join(part.capitalize() for part in name.split("_"))
 
 
 out = []
-out.append('''#pragma once
+out.append("""#pragma once
 
 #include "parser/GrammarSymbols.h"
 
@@ -51,24 +52,24 @@ namespace angel_lsp::parser
  * @brief Named node types. Anonymous tokens - "class", "int", "(" - are deliberately absent.
  */
 namespace nodes
-{''')
+{""")
 
 for n in nodes:
     out.append('inline constexpr std::string_view %s = "%s";' % (pascal(n), n))
 
-out.append('''\
+out.append("""\
 } // namespace nodes
 
 /**
  * @brief Field names, for ts_node_child_by_field_name and the helper below.
  */
 namespace fields
-{''')
+{""")
 
 for f in fields:
     out.append('inline constexpr std::string_view %s = "%s";' % (pascal(f), f))
 
-out.append('''\
+out.append("""\
 } // namespace fields
 
 /**
@@ -131,27 +132,27 @@ out.append('''\
 /**
  * @brief Every constant in nodes::, for the test that checks they still resolve.
  */
-inline constexpr std::string_view k_allNodeTypes[] = {''')
+inline constexpr std::string_view k_allNodeTypes[] = {""")
 
 for n in nodes:
-    out.append('    nodes::%s,' % pascal(n))
+    out.append("    nodes::%s," % pascal(n))
 
-out.append('''\
+out.append("""\
 };
 
 /**
  * @brief Every constant in fields::, same purpose.
  */
-inline constexpr std::string_view k_allFieldNames[] = {''')
+inline constexpr std::string_view k_allFieldNames[] = {""")
 
 for f in fields:
-    out.append('    fields::%s,' % pascal(f))
+    out.append("    fields::%s," % pascal(f))
 
-out.append('''\
+out.append("""\
 };
 } // namespace angel_lsp::parser
-''')
+""")
 
-out_path = SERVER / 'src' / 'parser' / 'GrammarNames.h'
-out_path.write_text('\n'.join(out) + '\n', encoding='utf-8', newline='\n')
-print(f'generated {out_path.relative_to(REPO_ROOT)}: {len(nodes)} node types, {len(fields)} fields')
+out_path = SERVER / "src" / "parser" / "GrammarNames.h"
+out_path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
+print(f"generated {out_path.relative_to(REPO_ROOT)}: {len(nodes)} node types, {len(fields)} fields")

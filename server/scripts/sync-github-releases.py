@@ -151,7 +151,9 @@ def main() -> int:
 
     releases = all_releases
     if args.tag:
-        releases = [r for r in all_releases if r.get("tag_name") == args.tag or r.get("tag_name") == f"v{args.tag.lstrip('v')}"]
+        releases = [
+            r for r in all_releases if r.get("tag_name") == args.tag or r.get("tag_name") == f"v{args.tag.lstrip('v')}"
+        ]
         if not releases:
             print(f"Error: Release with tag '{args.tag}' not found on GitHub.", file=sys.stderr)
             return 1

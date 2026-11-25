@@ -125,7 +125,7 @@ lines.append("}")
 while len(lines) < target_lines:
     lines.append(f"// End of benchmark script padding line {len(lines) + 1}")
 
-out_path = os.path.join(os.path.dirname(__file__), "large_script_3000.as")
+out_path = os.path.join(os.path.dirname(__file__), "..", "tests", "perf", "large_script_3000.as")
 with open(out_path, "w", encoding="utf-8", newline="\n") as f:
     f.write("\n".join(lines) + "\n")
 print(f"Successfully generated {out_path} with {len(lines)} lines.")

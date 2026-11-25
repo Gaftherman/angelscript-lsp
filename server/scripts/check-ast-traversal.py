@@ -80,17 +80,38 @@ ENGINE_HARDCODED_SYMBOLS = [
 ENGINE_ALLOWED_FILES: set[Path] = set()
 
 BANNED_IDENTIFIER_PATTERNS = [
-    (re.compile(r"\bk_baseClassIdentifier\b"), "banned identifier k_baseClassIdentifier (eradicated in favor of dynamic baseClassDelegateProperties)"),
-    (re.compile(r"\bk_selfIdentifier\b"), "banned identifier k_selfIdentifier (eradicated in favor of generic SymbolTable / property accessors)"),
-    (re.compile(r"\bResolveSelfOrBaseClass\b"), "banned function ResolveSelfOrBaseClass (eradicated in favor of generic ResolveBaseClass / delegate properties)"),
-    (re.compile(r"\bResolveSelfOrBaseReceiver\b"), "banned function ResolveSelfOrBaseReceiver (eradicated in favor of generic ResolveDelegatePropertyReceiver)"),
+    (
+        re.compile(r"\bk_baseClassIdentifier\b"),
+        "banned identifier k_baseClassIdentifier (eradicated in favor of dynamic baseClassDelegateProperties)",
+    ),
+    (
+        re.compile(r"\bk_selfIdentifier\b"),
+        "banned identifier k_selfIdentifier (eradicated in favor of generic SymbolTable / property accessors)",
+    ),
+    (
+        re.compile(r"\bResolveSelfOrBaseClass\b"),
+        "banned function ResolveSelfOrBaseClass (eradicated in favor of generic ResolveBaseClass / delegate properties)",
+    ),
+    (
+        re.compile(r"\bResolveSelfOrBaseReceiver\b"),
+        "banned function ResolveSelfOrBaseReceiver (eradicated in favor of generic ResolveDelegatePropertyReceiver)",
+    ),
 ]
 
 FORBIDDEN_TYPE_PATTERNS = [
-    (re.compile(r'"weakref"|"const_weakref"'), 'hardcoded "weakref" / "const_weakref" (use SymbolTable + generic template resolution)'),
-    (re.compile(r'param\.baseTypeName\s*==\s*"string"'), 'hardcoded "string" check on param (use param.isOutRef / isInOutRef / isStandaloneRef)'),
-    (re.compile(r'IsWeakrefToConstWeakref'), 'IsWeakrefToConstWeakref is banned (use generic template constructors)'),
-    (re.compile(r'(?:,|\()\s*(?:const\s+)?std::string_view\s+\w+\s*=\s*"(?:string|array)"'), 'forbidden default parameter ="string" or ="array" in function signature'),
+    (
+        re.compile(r'"weakref"|"const_weakref"'),
+        'hardcoded "weakref" / "const_weakref" (use SymbolTable + generic template resolution)',
+    ),
+    (
+        re.compile(r'param\.baseTypeName\s*==\s*"string"'),
+        'hardcoded "string" check on param (use param.isOutRef / isInOutRef / isStandaloneRef)',
+    ),
+    (re.compile(r"IsWeakrefToConstWeakref"), "IsWeakrefToConstWeakref is banned (use generic template constructors)"),
+    (
+        re.compile(r'(?:,|\()\s*(?:const\s+)?std::string_view\s+\w+\s*=\s*"(?:string|array)"'),
+        'forbidden default parameter ="string" or ="array" in function signature',
+    ),
     (re.compile(r'"init_list"'), 'hardcoded "init_list" literal (use constants::k_initializerListTypeSentinel)'),
 ]
 
@@ -98,6 +119,7 @@ SYMBOL_LOOKUP_CONCAT_PATTERNS = [
     re.compile(r'\.(?:HasSymbol|FindSymbols|FindSymbolsPtr)\s*\([^)]*\+\s*"::"'),
     re.compile(r'\.(?:HasSymbol|FindSymbols|FindSymbolsPtr)\s*\([^)]*"::"\s*\+'),
 ]
+
 
 def check_no_root_climb_loops():
     """
@@ -140,6 +162,7 @@ def check_no_root_climb_loops():
                         break
     return violations
 
+
 def check_no_magic_depth_comparisons():
     """
     Enforces that NO magic depth numbers (depth < <number>) exist for upward AST traversal.
@@ -161,6 +184,7 @@ def check_no_magic_depth_comparisons():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_raw_ts_node_parent():
     violations = []
     raw_parent_pattern = re.compile(r"\bts_node_parent\s*\(")
@@ -178,6 +202,7 @@ def check_no_raw_ts_node_parent():
             if raw_parent_pattern.search(line):
                 violations.append((file_path, line_num, stripped))
     return violations
+
 
 def check_indexed_checkers_use_facts():
     violations = []
@@ -228,6 +253,7 @@ def check_no_engine_hardcoding():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_type_hardcoding():
     violations = []
     scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
@@ -248,6 +274,7 @@ def check_no_type_hardcoding():
                         violations.append((file_path, line_num, stripped, reason))
     return violations
 
+
 def check_no_symbol_lookup_concat():
     violations = []
     scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
@@ -267,6 +294,7 @@ def check_no_symbol_lookup_concat():
                     if pattern.search(line):
                         violations.append((file_path, line_num, stripped))
     return violations
+
 
 # The Doxygen renderer units hold Doxygen delimiters and syntax as data, which the prose checks misread.
 DOXYGEN_RENDERER_FILES = {"DoxygenMarkdown.cpp", "DoxygenText.cpp", "DoxygenCommentLines.cpp", "DoxygenTagRender.cpp"}
@@ -292,6 +320,7 @@ def check_no_ts_node_type():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_parser_fields():
     violations = []
     fields_pattern = re.compile(r"\bfields::\w+")
@@ -311,6 +340,7 @@ def check_no_parser_fields():
                 if fields_pattern.search(line):
                     violations.append((file_path, line_num, stripped))
     return violations
+
 
 def check_no_scope_string_concat_in_rules():
     violations = []
@@ -334,6 +364,7 @@ def check_no_scope_string_concat_in_rules():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_manual_scope_find():
     violations = []
     scope_find_pattern = re.compile(r'\.(?:find|rfind)\s*\(\s*"::"')
@@ -355,6 +386,7 @@ def check_no_manual_scope_find():
             if scope_find_pattern.search(line):
                 violations.append((file_path, line_num, stripped))
     return violations
+
 
 def check_no_manual_scope_string_ops():
     violations = []
@@ -379,9 +411,10 @@ def check_no_manual_scope_string_ops():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_operator_node_text():
     violations = []
-    op_text_pattern = re.compile(r'(?:NodeText|GetNodeText)\s*\(\s*(?:opNode|operatorNode)\b')
+    op_text_pattern = re.compile(r"(?:NodeText|GetNodeText)\s*\(\s*(?:opNode|operatorNode)\b")
     scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
     for root in scan_roots:
         for file_path in root.rglob("*.[ch]*"):
@@ -398,6 +431,7 @@ def check_no_operator_node_text():
                 if op_text_pattern.search(line):
                     violations.append((file_path, line_num, stripped))
     return violations
+
 
 def check_no_keyword_fallbacks():
     violations = []
@@ -419,9 +453,10 @@ def check_no_keyword_fallbacks():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_node_type_wrapper():
     violations = []
-    pattern = re.compile(r'(?<!\w)NodeType\s*\(')
+    pattern = re.compile(r"(?<!\w)NodeType\s*\(")
     scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features", SERVER_SRC / "lsp"]
     for root in scan_roots:
         for file_path in root.rglob("*.[ch]*"):
@@ -438,6 +473,7 @@ def check_no_node_type_wrapper():
                 if pattern.search(line):
                     violations.append((file_path, line_num, stripped))
     return violations
+
 
 def check_no_modifier_string_literals():
     violations = []
@@ -463,6 +499,7 @@ def check_no_modifier_string_literals():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_parser_nodes_in_layers_2_3_4():
     """
     Enforces that NO parser::nodes:: is referenced in Layer 2 (analysis), Layer 3 (features), or Layer 4 (lsp).
@@ -486,6 +523,7 @@ def check_no_parser_nodes_in_layers_2_3_4():
                 if pattern.search(line):
                     violations.append((file_path, line_num, stripped))
     return violations
+
 
 def check_no_cursor_field_name():
     """
@@ -511,6 +549,7 @@ def check_no_cursor_field_name():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_depth_number_comparisons():
     """
     Enforces that NO magic depth numbers (depth > N, depth >= N) or k_maxAstDepth exist in Layers 2, 3, or 4.
@@ -534,6 +573,7 @@ def check_no_depth_number_comparisons():
                 if pattern.search(line):
                     violations.append((file_path, line_num, stripped))
     return violations
+
 
 def check_no_duplicate_to_source_range():
     """
@@ -559,6 +599,7 @@ def check_no_duplicate_to_source_range():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_for_each_descendant_node():
     """
     Enforces that ForEachDescendantNode is eradicated across the entire server/src/ codebase.
@@ -580,6 +621,7 @@ def check_no_for_each_descendant_node():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_banned_identifiers():
     violations = []
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
@@ -597,6 +639,7 @@ def check_no_banned_identifiers():
                 if pat.search(line):
                     violations.append((file_path, line_num, stripped, reason))
     return violations
+
 
 def check_no_baseclass_in_tests():
     violations = []
@@ -617,12 +660,14 @@ def check_no_baseclass_in_tests():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+
 def check_no_analysis_ast_utils():
     """Enforces that analysis/ASTUtils.h does not exist (unified into parser/ASTUtils.h)."""
     target = SERVER_SRC / "analysis" / "ASTUtils.h"
     if target.exists():
         return [target]
     return []
+
 
 MANUAL_QUALIFIER_ALLOWED_FILES = {
     SERVER_SRC / "analysis" / "index" / "TypeExtraction.cpp",
@@ -634,11 +679,15 @@ MANUAL_QUALIFIER_ALLOWED_FILES = {
 MANUAL_QUALIFIER_PATTERNS = [
     (re.compile(r'\.(?:find|ends_with)\s*\(\s*[\'"]@[\'"]'), "manual '@' search (use analysis::IsHandleTypeView)"),
     (re.compile(r'\.back\(\)\s*==\s*[\'"]@[\'"]'), "manual back() == '@' (use analysis::IsHandleTypeView)"),
-    (re.compile(r'\.(?:starts_with|find)\s*\(\s*"const "'), 'manual "const " search (use analysis::IsConstTypeView or StripLeadingConst)'),
+    (
+        re.compile(r'\.(?:starts_with|find)\s*\(\s*"const "'),
+        'manual "const " search (use analysis::IsConstTypeView or StripLeadingConst)',
+    ),
     (re.compile(r'\.find\s*\(\s*"&out"'), 'manual "&out" search (use param.isOutRef / IsReferenceTypeView)'),
     (re.compile(r'\.find\s*\(\s*"&inout"'), 'manual "&inout" search (use param.isInOutRef / IsReferenceTypeView)'),
     (re.compile(r'\.find\s*\(\s*"&in"'), 'manual "&in" search (use param.modifier / IsReferenceTypeView)'),
 ]
+
 
 def check_no_manual_type_qualifier_parsing():
     """
@@ -666,6 +715,7 @@ def check_no_manual_type_qualifier_parsing():
                         violations.append((file_path, idx, stripped, desc))
                         break
     return violations
+
 
 def check_no_anonymous_namespaces():
     """
@@ -708,7 +758,12 @@ def check_no_using_namespace_or_declarations():
             continue
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
+            if (
+                stripped.startswith("//")
+                or stripped.startswith("*")
+                or stripped.startswith("/*")
+                or stripped.startswith(";")
+            ):
                 continue
             if using_ns_re.search(stripped) or using_sym_re.search(stripped) or ns_alias_re.search(stripped):
                 violations.append((file_path, idx, stripped))
@@ -724,7 +779,12 @@ def check_no_using_namespace_or_declarations():
             continue
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
+            if (
+                stripped.startswith("//")
+                or stripped.startswith("*")
+                or stripped.startswith("/*")
+                or stripped.startswith(";")
+            ):
                 continue
             if using_ns_re.search(stripped) or ns_alias_re.search(stripped):
                 violations.append((file_path, idx, stripped))
@@ -739,7 +799,12 @@ def check_no_using_namespace_or_declarations():
             continue
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
+            if (
+                stripped.startswith("//")
+                or stripped.startswith("*")
+                or stripped.startswith("/*")
+                or stripped.startswith(";")
+            ):
                 continue
             if ns_alias_re.search(stripped):
                 violations.append((file_path, idx, stripped))
@@ -794,7 +859,11 @@ def check_no_doxygen_slop():
                 violations.append((file_path, idx, stripped, "Orphaned manual re-evaluation note fragment"))
             elif orphan_pass1_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Orphaned pass 1 candidate note fragment"))
-            elif is_comment and (orphan_type_extract_re.search(stripped) or orphan_handle_type_re.search(stripped) or orphan_symbol_mod_re.search(stripped)):
+            elif is_comment and (
+                orphan_type_extract_re.search(stripped)
+                or orphan_handle_type_re.search(stripped)
+                or orphan_symbol_mod_re.search(stripped)
+            ):
                 violations.append((file_path, idx, stripped, "Orphaned type/symbol analysis note fragment"))
             elif slop_brief_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical @brief slop template"))
@@ -804,7 +873,9 @@ def check_no_doxygen_slop():
                 violations.append((file_path, idx, stripped, "Mechanical filler return description"))
             elif slop_param_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical filler parameter description"))
-            elif (slop_unify_re.search(stripped) or orphan_unif_re.search(stripped)) and not cleaned_tag.startswith("@note"):
+            elif (slop_unify_re.search(stripped) or orphan_unif_re.search(stripped)) and not cleaned_tag.startswith(
+                "@note"
+            ):
                 violations.append((file_path, idx, stripped, "Orphaned refactoring note fragment"))
             elif slop_overlap_re.search(stripped) and not cleaned_tag.startswith("@note"):
                 violations.append((file_path, idx, stripped, "Orphaned structural overlap note"))
@@ -875,7 +946,7 @@ def check_no_cpp_struct_declarations():
             cleaned = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
             cleaned = re.sub(r"//.*$", "", cleaned, flags=re.MULTILINE)
             for m in struct_decl_re.finditer(cleaned):
-                line_num = content[:m.start()].count("\n") + 1
+                line_num = content[: m.start()].count("\n") + 1
                 violations.append((fpath, line_num, f"struct {m.group(1)}", m.group(1)))
     return violations
 
@@ -907,15 +978,11 @@ def check_cpp_structs_odr_safety():
             continue
         for m in type_decl_re.finditer(txt):
             s_name = m.group(1)
-            line_num = txt[:m.start()].count("\n") + 1
+            line_num = txt[: m.start()].count("\n") + 1
             cpp_structs.setdefault(s_name, []).append((fpath, line_num))
 
-    cross_collisions = [
-        (name, locs) for name, locs in cpp_structs.items() if len(locs) > 1
-    ]
-    header_collisions = [
-        (name, locs) for name, locs in cpp_structs.items() if name in h_struct_names
-    ]
+    cross_collisions = [(name, locs) for name, locs in cpp_structs.items() if len(locs) > 1]
+    header_collisions = [(name, locs) for name, locs in cpp_structs.items() if name in h_struct_names]
 
     return {
         "cross_collisions": cross_collisions,
@@ -938,7 +1005,7 @@ def check_no_stacked_doxygen_blocks():
         except Exception:
             continue
         for m in stacked_re.finditer(content):
-            line_num = content[:m.start()].count("\n") + 1
+            line_num = content[: m.start()].count("\n") + 1
             violations.append((fpath, line_num, "Stacked Doxygen comment blocks (*/ ... /**)"))
     return violations
 
@@ -1010,8 +1077,10 @@ def check_no_over_explained_doxygen_prose():
                 if cur_prose > max_in_block:
                     max_in_block = cur_prose
             if max_in_block >= 3:
-                line_no = content[:m.start()].count("\n") + 1
-                violations.append((fpath, line_no, f"Over-explained Doxygen prose paragraph ({max_in_block} consecutive lines)"))
+                line_no = content[: m.start()].count("\n") + 1
+                violations.append(
+                    (fpath, line_no, f"Over-explained Doxygen prose paragraph ({max_in_block} consecutive lines)")
+                )
     return violations
 
 
@@ -1109,11 +1178,13 @@ def check_no_ghost_aliases():
 
 def main():
     has_errors = False
-    
+
     root_climb_violations = check_no_root_climb_loops()
     if root_climb_violations:
         has_errors = True
-        print("[ERROR] AST upward climb loops detected outside parser/ASTUtils.h (use parser::FindAncestorWithSymbol, parser::ForEachAncestor, or NodeIndex):")
+        print(
+            "[ERROR] AST upward climb loops detected outside parser/ASTUtils.h (use parser::FindAncestorWithSymbol, parser::ForEachAncestor, or NodeIndex):"
+        )
         for f, line_num, line in root_climb_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1121,7 +1192,9 @@ def main():
     magic_depth_violations = check_no_magic_depth_comparisons()
     if magic_depth_violations:
         has_errors = True
-        print("[ERROR] Magic depth comparisons (depth < <number>) detected in server/src/ (use parser::FindAncestorWithSymbol or parser::ForEachAncestor in ASTUtils.h):")
+        print(
+            "[ERROR] Magic depth comparisons (depth < <number>) detected in server/src/ (use parser::FindAncestorWithSymbol or parser::ForEachAncestor in ASTUtils.h):"
+        )
         for f, line_num, line in magic_depth_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1161,7 +1234,9 @@ def main():
     concat_violations = check_no_symbol_lookup_concat()
     if concat_violations:
         has_errors = True
-        print("[ERROR] Heap string concatenation (+ '::' +) detected in SymbolTable lookups (use FindMemberSymbolPtr / FindMemberSymbols / HasScopedSymbol):")
+        print(
+            "[ERROR] Heap string concatenation (+ '::' +) detected in SymbolTable lookups (use FindMemberSymbolPtr / FindMemberSymbols / HasScopedSymbol):"
+        )
         for f, line_num, line in concat_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1169,7 +1244,9 @@ def main():
     scope_concat_violations = check_no_scope_string_concat_in_rules()
     if scope_concat_violations:
         has_errors = True
-        print("[ERROR] Scoped string concatenation (+ '::' or '::' +) detected in analysis rules (use utils::ScopedNameUtils or SymbolTable):")
+        print(
+            "[ERROR] Scoped string concatenation (+ '::' or '::' +) detected in analysis rules (use utils::ScopedNameUtils or SymbolTable):"
+        )
         for f, line_num, line in scope_concat_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1177,7 +1254,9 @@ def main():
     ts_node_type_violations = check_no_ts_node_type()
     if ts_node_type_violations:
         has_errors = True
-        print("[ERROR] Raw ts_node_type calls detected in Layer 2/3 (use ts_node_symbol and parser::GetGrammarSymbols()):")
+        print(
+            "[ERROR] Raw ts_node_type calls detected in Layer 2/3 (use ts_node_symbol and parser::GetGrammarSymbols()):"
+        )
         for f, line_num, line in ts_node_type_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1193,7 +1272,9 @@ def main():
     manual_scope_violations = check_no_manual_scope_find()
     if manual_scope_violations:
         has_errors = True
-        print("[ERROR] Manual .find('::') or .rfind('::') detected outside ScopedNameUtils (use utils::ScopedNameUtils):")
+        print(
+            "[ERROR] Manual .find('::') or .rfind('::') detected outside ScopedNameUtils (use utils::ScopedNameUtils):"
+        )
         for f, line_num, line in manual_scope_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1201,7 +1282,9 @@ def main():
     manual_scope_ops_violations = check_no_manual_scope_string_ops()
     if manual_scope_ops_violations:
         has_errors = True
-        print("[ERROR] Manual scope operations (+ '::', '::' +, .starts_with('::'), .ends_with('::')) detected outside ScopedNameUtils:")
+        print(
+            "[ERROR] Manual scope operations (+ '::', '::' +, .starts_with('::'), .ends_with('::')) detected outside ScopedNameUtils:"
+        )
         for f, line_num, line in manual_scope_ops_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1225,7 +1308,9 @@ def main():
     node_type_violations = check_no_node_type_wrapper()
     if node_type_violations:
         has_errors = True
-        print("[ERROR] Deprecated NodeType(node) wrapper calls detected in Layer 2/3/4 (use ts_node_symbol with parser::GetGrammarSymbols()):")
+        print(
+            "[ERROR] Deprecated NodeType(node) wrapper calls detected in Layer 2/3/4 (use ts_node_symbol with parser::GetGrammarSymbols()):"
+        )
         for f, line_num, line in node_type_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1233,7 +1318,9 @@ def main():
     modifier_violations = check_no_modifier_string_literals()
     if modifier_violations:
         has_errors = True
-        print("[ERROR] Modifier string literals ('class ', 'interface ', etc.) detected in server/src/analysis/ (use parser::keywords or AST grammar tokens):")
+        print(
+            "[ERROR] Modifier string literals ('class ', 'interface ', etc.) detected in server/src/analysis/ (use parser::keywords or AST grammar tokens):"
+        )
         for f, line_num, line in modifier_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1249,7 +1336,9 @@ def main():
     cursor_field_violations = check_no_cursor_field_name()
     if cursor_field_violations:
         has_errors = True
-        print("[ERROR] ts_tree_cursor_current_field_name detected in Layer 2/3/4 (use ts_tree_cursor_current_field_id):")
+        print(
+            "[ERROR] ts_tree_cursor_current_field_name detected in Layer 2/3/4 (use ts_tree_cursor_current_field_id):"
+        )
         for f, line_num, line in cursor_field_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1257,7 +1346,9 @@ def main():
     depth_violations = check_no_depth_number_comparisons()
     if depth_violations:
         has_errors = True
-        print("[ERROR] Magic depth comparisons or k_maxAstDepth detected in Layer 2/3/4 (use flat iterative worklists):")
+        print(
+            "[ERROR] Magic depth comparisons or k_maxAstDepth detected in Layer 2/3/4 (use flat iterative worklists):"
+        )
         for f, line_num, line in depth_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1265,7 +1356,9 @@ def main():
     duplicate_to_source_range_violations = check_no_duplicate_to_source_range()
     if duplicate_to_source_range_violations:
         has_errors = True
-        print("[ERROR] Duplicate ToSourceRange definition detected in .cpp files (use centralized SymbolTable.h ToSourceRange):")
+        print(
+            "[ERROR] Duplicate ToSourceRange definition detected in .cpp files (use centralized SymbolTable.h ToSourceRange):"
+        )
         for f, line_num, line in duplicate_to_source_range_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1273,7 +1366,9 @@ def main():
     descendant_violations = check_no_for_each_descendant_node()
     if descendant_violations:
         has_errors = True
-        print("[ERROR] ForEachDescendantNode detected in server/src/ (eradicated in favor of NodeIndex and flat cursors):")
+        print(
+            "[ERROR] ForEachDescendantNode detected in server/src/ (eradicated in favor of NodeIndex and flat cursors):"
+        )
         for f, line_num, line in descendant_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1305,7 +1400,9 @@ def main():
     qualifier_violations = check_no_manual_type_qualifier_parsing()
     if qualifier_violations:
         has_errors = True
-        print("[ERROR] Manual type qualifier reparsing detected in Layer 2 or Layer 3 (use precalculated Pass-1 flags or TypeSanitization.h):")
+        print(
+            "[ERROR] Manual type qualifier reparsing detected in Layer 2 or Layer 3 (use precalculated Pass-1 flags or TypeSanitization.h):"
+        )
         for f, line_num, line, reason in qualifier_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line} -> {reason}")
@@ -1321,7 +1418,9 @@ def main():
     using_violations = check_no_using_directives_or_declarations()
     if using_violations:
         has_errors = True
-        print("[ERROR] 'using namespace' or 'using <ns>::<symbol>;' detected in server/src/ (fully qualify namespaces or use type aliases):")
+        print(
+            "[ERROR] 'using namespace' or 'using <ns>::<symbol>;' detected in server/src/ (fully qualify namespaces or use type aliases):"
+        )
         for f, line_num, line in using_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1337,7 +1436,9 @@ def main():
     detail_ns_violations = check_no_detail_namespaces()
     if detail_ns_violations:
         has_errors = True
-        print("[ERROR] namespace *_detail detected in server/src/ (prohibited, all structs must reside in canonical headers or private class scopes):")
+        print(
+            "[ERROR] namespace *_detail detected in server/src/ (prohibited, all structs must reside in canonical headers or private class scopes):"
+        )
         for f, line_num, line in detail_ns_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
@@ -1353,7 +1454,9 @@ def main():
     cpp_struct_violations = check_no_cpp_struct_declarations()
     if cpp_struct_violations:
         has_errors = True
-        print("[ERROR] Direct struct declaration detected in .cpp in Layer 2 or Layer 3 (prohibited, move to canonical header):")
+        print(
+            "[ERROR] Direct struct declaration detected in .cpp in Layer 2 or Layer 3 (prohibited, move to canonical header):"
+        )
         for f, line_num, line, sname in cpp_struct_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: struct '{sname}'")
@@ -1411,7 +1514,9 @@ def main():
     include_violations = check_include_placement_and_ordering()
     if include_violations:
         has_errors = True
-        print("[ERROR] Include ordering/placement violation detected in server/src/ (project headers before system headers, no include after code):")
+        print(
+            "[ERROR] Include ordering/placement violation detected in server/src/ (project headers before system headers, no include after code):"
+        )
         for f, line_num, desc in include_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {desc}")
@@ -1435,8 +1540,10 @@ def main():
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays, 0 include ordering violations, 0 forward declarations, 0 ghost aliases, 0 direct navigation calls in indexed checkers, 0 direct LSP syntax producers outside ResolveSyntaxRevision).")
+    print(
+        "[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays, 0 include ordering violations, 0 forward declarations, 0 ghost aliases, 0 direct navigation calls in indexed checkers, 0 direct LSP syntax producers outside ResolveSyntaxRevision)."
+    )
+
 
 if __name__ == "__main__":
     main()
-

@@ -90,9 +90,7 @@ BANNED_TS_REGEX = re.compile(
     r"ASTUtils\.h|tree_sitter/api\.h|FindAncestorWithSymbol|GetParent)\b|->Root\s*\("
 )
 
-BANNED_STD_STRING_REGEX = re.compile(
-    r"\bstd::string\b"
-)
+BANNED_STD_STRING_REGEX = re.compile(r"\bstd::string\b")
 
 AVOIDABLE_COPY_PATTERNS = (
     (

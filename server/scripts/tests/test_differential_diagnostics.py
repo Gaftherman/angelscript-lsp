@@ -66,8 +66,9 @@ class DiagnosticReportTest(unittest.TestCase):
 
 
 class DifferentialComparisonTest(unittest.TestCase):
-    def run_case(self, compiler, server, source="  value;\n", *, show_unpaired=False,
-                 category="category", expect="reject"):
+    def run_case(
+        self, compiler, server, source="  value;\n", *, show_unpaired=False, category="category", expect="reject"
+    ):
         with TemporaryDirectory() as work:
             root = Path(work)
             case = root / category / "case"
@@ -88,22 +89,30 @@ class DifferentialComparisonTest(unittest.TestCase):
                 messages = []
                 for file, records in compiler.items():
                     for record in records:
-                        messages.append({
-                            "type": "ERROR", "section": "default arg" if file is None else str(kwargs["cwd"] / file),
-                            "row": record.get("row", 2), "col": record.get("col", 3),
-                            "message": "different compiler wording",
-                            "code": record.get("code"), "range": record.get("range"),
-                        })
-                return subprocess.CompletedProcess(args, int(bool(messages)),
-                                                   json.dumps({"hasError": bool(messages), "messages": messages}), "")
+                        messages.append(
+                            {
+                                "type": "ERROR",
+                                "section": "default arg" if file is None else str(kwargs["cwd"] / file),
+                                "row": record.get("row", 2),
+                                "col": record.get("col", 3),
+                                "message": "different compiler wording",
+                                "code": record.get("code"),
+                                "range": record.get("range"),
+                            }
+                        )
+                return subprocess.CompletedProcess(
+                    args, int(bool(messages)), json.dumps({"hasError": bool(messages), "messages": messages}), ""
+                )
 
             argv = ["differential-validate.py", "--cases", work, "--log", str(log)]
             if show_unpaired:
                 argv.append("--show-unpaired")
-            with (patch.object(sys, "argv", argv),
-                  patch.object(subprocess, "run", side_effect=compile_case),
-                  patch.dict(main.__globals__, {"McpClient": client_factory}),
-                  redirect_stdout(output)):
+            with (
+                patch.object(sys, "argv", argv),
+                patch.object(subprocess, "run", side_effect=compile_case),
+                patch.dict(main.__globals__, {"McpClient": client_factory}),
+                redirect_stdout(output),
+            ):
                 status = main()
             report = json.loads(log.read_text(encoding="utf-8"))
             self.output = output.getvalue()
@@ -123,7 +132,8 @@ class DifferentialComparisonTest(unittest.TestCase):
         for start, end in [((0, 2), (1, 3)), ((1, 1), (1, 3)), ((1, 2), (2, 3)), ((1, 2), (1, 4))]:
             with self.subTest(start=start, end=end):
                 status, summary, findings, _ = self.run_case(
-                    {"main.as": [diagnostic(1)]}, {"main.as": [diagnostic(1, start, end)]})
+                    {"main.as": [diagnostic(1)]}, {"main.as": [diagnostic(1, start, end)]}
+                )
                 self.assertEqual(status, 1)
                 self.assertEqual(summary["matched"], 0)
                 self.assertEqual(summary["range_file_mismatch"], 1)
@@ -133,7 +143,8 @@ class DifferentialComparisonTest(unittest.TestCase):
         for oracle_file in ("peer.as", "another.as"):
             with self.subTest(file=oracle_file):
                 status, summary, findings, _ = self.run_case(
-                    {oracle_file: [diagnostic(1)]}, {"main.as": [diagnostic(1)]})
+                    {oracle_file: [diagnostic(1)]}, {"main.as": [diagnostic(1)]}
+                )
                 self.assertEqual(status, 1)
                 self.assertEqual(summary["matched"], 0)
                 self.assertEqual(summary["range_file_mismatch"], 1)
@@ -151,23 +162,25 @@ class DifferentialComparisonTest(unittest.TestCase):
 
     def test_same_file_and_full_range_match_with_different_codes(self):
         status, summary, findings, _ = self.run_case(
-            {"main.as": [diagnostic(1)]}, {"main.as": [diagnostic(1, code="different-code")]})
+            {"main.as": [diagnostic(1)]}, {"main.as": [diagnostic(1, code="different-code")]}
+        )
         self.assertEqual(status, 0)
         self.assertEqual(summary["matched"], 1)
         self.assertEqual(findings, [])
 
     def test_equal_range_with_different_files_and_codes_does_not_match(self):
         status, summary, findings, _ = self.run_case(
-            {"peer.as": [diagnostic(1)]}, {"main.as": [diagnostic(1, code="different-code")]})
+            {"peer.as": [diagnostic(1)]}, {"main.as": [diagnostic(1, code="different-code")]}
+        )
         self.assertEqual(status, 1)
         self.assertEqual(summary["matched"], 0)
         self.assertEqual(summary["oracle_only"], 1)
-        self.assertEqual([finding["kind"] for finding in findings],
-                         ["ORACLE_ONLY", "VERDICT_MISMATCH", "SERVER_EXTRA_FILE"])
+        self.assertEqual(
+            [finding["kind"] for finding in findings], ["ORACLE_ONLY", "VERDICT_MISMATCH", "SERVER_EXTRA_FILE"]
+        )
 
     def test_oracle_only_file_fails_the_verdict(self):
-        status, summary, findings, _ = self.run_case(
-            {"main.as": [{"code": None, "range": None}]}, {"main.as": []})
+        status, summary, findings, _ = self.run_case({"main.as": [{"code": None, "range": None}]}, {"main.as": []})
         self.assertEqual(status, 1)
         self.assertEqual(summary["discrepancies"], 1)
         self.assertEqual(summary["verdict_mismatch"], 1)
@@ -178,7 +191,8 @@ class DifferentialComparisonTest(unittest.TestCase):
 
     def test_server_only_file_is_informational_after_position_match(self):
         status, summary, findings, _ = self.run_case(
-            {"main.as": [{}]}, {"main.as": [diagnostic(1)], "peer.as": [diagnostic(1)]})
+            {"main.as": [{}]}, {"main.as": [diagnostic(1)], "peer.as": [diagnostic(1)]}
+        )
         self.assertEqual(status, 0)
         self.assertEqual(summary["matched"], 1)
         self.assertEqual(summary["discrepancies"], 0)
@@ -189,28 +203,32 @@ class DifferentialComparisonTest(unittest.TestCase):
         self.assertIn("peer.as: server reports errors", findings[0]["detail"])
 
     def test_known_gap_findings_are_listed_and_do_not_fail(self):
-        status, summary, findings, _ = self.run_case(
-            {"missing.as": [diagnostic(1)]}, {}, category="_known_gaps")
+        status, summary, findings, _ = self.run_case({"missing.as": [diagnostic(1)]}, {}, category="_known_gaps")
         self.assertEqual(status, 0)
         self.assertEqual(summary["known_gaps"], 2)
         self.assertEqual(summary["discrepancies"], 0)
         self.assertEqual(summary["oracle_only"], 0)
         self.assertEqual(summary["verdict_mismatch"], 0)
-        self.assertEqual([(finding["kind"], finding["classification"]) for finding in findings],
-                         [("KNOWN_GAP_ORACLE_ONLY", "known_gap"), ("KNOWN_GAP_VERDICT_MISMATCH", "known_gap")])
+        self.assertEqual(
+            [(finding["kind"], finding["classification"]) for finding in findings],
+            [("KNOWN_GAP_ORACLE_ONLY", "known_gap"), ("KNOWN_GAP_VERDICT_MISMATCH", "known_gap")],
+        )
         self.assertIn("KNOWN_GAP_ORACLE_ONLY", self.output)
         self.assertIn("KNOWN_GAP_VERDICT_MISMATCH", self.output)
 
     def test_multiple_server_errors_in_an_extra_file_count_once(self):
         error = diagnostic(1)
         status, summary, findings, _ = self.run_case(
-            {"peer.as": [error]}, {"main.as": [error, error], "peer.as": [error]})
+            {"peer.as": [error]}, {"main.as": [error, error], "peer.as": [error]}
+        )
         self.assertEqual(status, 0)
         self.assertEqual(summary["matched"], 1)
         self.assertEqual(summary["server_extra_files"], 1)
         self.assertEqual(summary["discrepancies"], 0)
-        self.assertEqual([(finding["kind"], finding["classification"]) for finding in findings],
-                         [("SERVER_EXTRA_FILE", "informational")])
+        self.assertEqual(
+            [(finding["kind"], finding["classification"]) for finding in findings],
+            [("SERVER_EXTRA_FILE", "informational")],
+        )
 
     def test_server_error_fails_when_oracle_accepts_the_case(self):
         status, summary, findings, _ = self.run_case({}, {"peer.as": [diagnostic(1)]}, expect="accept")
@@ -222,8 +240,7 @@ class DifferentialComparisonTest(unittest.TestCase):
 
     def test_oracle_only_file_fails_even_when_another_file_matches(self):
         error = diagnostic(1)
-        status, summary, findings, _ = self.run_case(
-            {"main.as": [error], "peer.as": [{}]}, {"main.as": [error]})
+        status, summary, findings, _ = self.run_case({"main.as": [error], "peer.as": [{}]}, {"main.as": [error]})
         self.assertEqual(status, 1)
         self.assertEqual(summary["matched"], 1)
         self.assertEqual(summary["verdict_mismatch"], 1)
@@ -232,14 +249,14 @@ class DifferentialComparisonTest(unittest.TestCase):
 
     def test_identity_less_error_pairs_with_syntax_error_at_same_start(self):
         status, summary, findings, _ = self.run_case(
-            {"main.as": [{}]}, {"main.as": [diagnostic(1, end=(1, 7), code="as-syntax-error")]})
+            {"main.as": [{}]}, {"main.as": [diagnostic(1, end=(1, 7), code="as-syntax-error")]}
+        )
         self.assertEqual(status, 0)
         self.assertEqual(summary["matched"], 1)
         self.assertEqual(findings, [])
 
     def test_unpaired_positions_in_a_shared_error_file_are_informational(self):
-        status, summary, findings, _ = self.run_case(
-            {"main.as": [{"col": 4}]}, {"main.as": [diagnostic(1)]})
+        status, summary, findings, _ = self.run_case({"main.as": [{"col": 4}]}, {"main.as": [diagnostic(1)]})
         self.assertEqual(status, 0)
         self.assertEqual(summary["matched"], 0)
         self.assertEqual(summary["discrepancies"], 0)
@@ -258,14 +275,15 @@ class DifferentialComparisonTest(unittest.TestCase):
 
     def test_unmatched_oracle_identity_fails_even_when_positions_pair(self):
         status, summary, findings, _ = self.run_case(
-            {"main.as": [diagnostic(1), {}]},
-            {"main.as": [diagnostic(1, end=(1, 4), code="different-code")]})
+            {"main.as": [diagnostic(1), {}]}, {"main.as": [diagnostic(1, end=(1, 4), code="different-code")]}
+        )
         self.assertEqual(status, 1)
         self.assertEqual(summary["matched"], 1)
         self.assertEqual(summary["discrepancies"], 1)
         self.assertEqual(summary["position_unpaired"], 0)
-        self.assertEqual([(finding["kind"], finding["classification"]) for finding in findings],
-                         [("ORACLE_ONLY", "failing")])
+        self.assertEqual(
+            [(finding["kind"], finding["classification"]) for finding in findings], [("ORACLE_ONLY", "failing")]
+        )
 
     def test_identity_less_error_does_not_pair_in_another_file(self):
         status, summary, findings, _ = self.run_case({"peer.as": [{}]}, {"main.as": [diagnostic(1)]})
@@ -285,8 +303,7 @@ class DifferentialComparisonTest(unittest.TestCase):
                 self.assertEqual(summary["position_unpaired"], 0)
 
     def test_synthetic_section_does_not_override_attributed_verdict(self):
-        status, summary, _, _ = self.run_case(
-            {None: [{}], "main.as": [{}]}, {"peer.as": [diagnostic(1)]})
+        status, summary, _, _ = self.run_case({None: [{}], "main.as": [{}]}, {"peer.as": [diagnostic(1)]})
         self.assertEqual(status, 1)
         self.assertEqual(summary["verdict_mismatch"], 1)
         self.assertEqual(summary["server_extra_files"], 1)
@@ -294,8 +311,8 @@ class DifferentialComparisonTest(unittest.TestCase):
 
     def test_identity_less_error_converts_utf8_bytes_to_utf16_units(self):
         status, summary, findings, _ = self.run_case(
-            {"peer.as": [{"col": 7}]}, {"peer.as": [diagnostic(1, (1, 3), (1, 4))]},
-            source="é😀value;\n")
+            {"peer.as": [{"col": 7}]}, {"peer.as": [diagnostic(1, (1, 3), (1, 4))]}, source="é😀value;\n"
+        )
         self.assertEqual(status, 0)
         self.assertEqual(summary["matched"], 1)
         self.assertEqual(findings, [])
@@ -303,7 +320,8 @@ class DifferentialComparisonTest(unittest.TestCase):
     def test_position_matches_consume_each_diagnostic_once(self):
         extra = diagnostic(1, (1, 3), (1, 4))
         status, summary, findings, _ = self.run_case(
-            {"main.as": [{}, {}, {"col": 4}]}, {"main.as": [diagnostic(1), extra, extra]})
+            {"main.as": [{}, {}, {"col": 4}]}, {"main.as": [diagnostic(1), extra, extra]}
+        )
         self.assertEqual(status, 0)
         self.assertEqual(summary["matched"], 2)
         self.assertEqual(summary["position_unpaired"], 2)
@@ -323,17 +341,21 @@ class DifferentialComparisonTest(unittest.TestCase):
 
     def test_full_range_is_reserved_before_position_matching(self):
         status, summary, findings, _ = self.run_case(
-            {"main.as": [{}, diagnostic(1)]}, {"main.as": [diagnostic(1, code="different-code")]})
+            {"main.as": [{}, diagnostic(1)]}, {"main.as": [diagnostic(1, code="different-code")]}
+        )
         self.assertEqual(status, 0)
         self.assertEqual(summary["matched"], 1)
         self.assertEqual(summary["position_unpaired"], 1)
-        self.assertEqual([(finding["kind"], finding["classification"]) for finding in findings],
-                         [("ORACLE_ONLY", "informational")])
+        self.assertEqual(
+            [(finding["kind"], finding["classification"]) for finding in findings], [("ORACLE_ONLY", "informational")]
+        )
 
     def test_oracle_failures_are_neither_discrepancies_nor_contradictions(self):
-        for failure in (subprocess.CompletedProcess([], -11, "", "crash"),
-                        subprocess.TimeoutExpired([], 60),
-                        subprocess.CompletedProcess([], 1, "non-JSON output", "")):
+        for failure in (
+            subprocess.CompletedProcess([], -11, "", "crash"),
+            subprocess.TimeoutExpired([], 60),
+            subprocess.CompletedProcess([], 1, "non-JSON output", ""),
+        ):
             with self.subTest(failure=failure):
                 status, summary, findings, client = self.run_case(failure, {"main.as": [diagnostic(1)]})
                 self.assertEqual(status, 1)

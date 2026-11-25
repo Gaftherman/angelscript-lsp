@@ -27,29 +27,30 @@ from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent.parent
 REPO_ROOT = SERVER.parent
-CMAKE = SERVER / 'cmake' / 'TreeSitter.cmake'
+CMAKE = SERVER / "cmake" / "TreeSitter.cmake"
 
 
 def pinned_commit():
     """The commit TreeSitter.cmake asks FetchContent for."""
-    text = CMAKE.read_text(encoding='utf-8')
+    text = CMAKE.read_text(encoding="utf-8")
     match = re.search(
-        r'FetchContent_Declare\(\s*tree_sitter_angelscript\b[^)]*?GIT_TAG\s+([0-9a-fA-F]{7,40})',
-        text, re.DOTALL)
+        r"FetchContent_Declare\(\s*tree_sitter_angelscript\b[^)]*?GIT_TAG\s+([0-9a-fA-F]{7,40})", text, re.DOTALL
+    )
     return match.group(1).lower() if match else None
 
 
 def checkouts():
     """Every fetched grammar checkout under a build tree - checking server/ and repo root."""
-    found = set(SERVER.glob('build*/_deps/tree_sitter_angelscript-src'))
-    found.update(REPO_ROOT.glob('build*/_deps/tree_sitter_angelscript-src'))
+    found = set(SERVER.glob("build*/_deps/tree_sitter_angelscript-src"))
+    found.update(REPO_ROOT.glob("build*/_deps/tree_sitter_angelscript-src"))
     return sorted(found)
 
 
 def head_of(path):
     try:
-        result = subprocess.run(['git', '-C', str(path), 'rev-parse', 'HEAD'],
-                                capture_output=True, text=True, timeout=30)
+        result = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout.strip().lower() if result.returncode == 0 else None
@@ -59,19 +60,22 @@ def main():
     parser = argparse.ArgumentParser(description="Audit Tree-Sitter grammar pin against TreeSitter.cmake.")
     parser.add_argument("--strict", action="store_true", help="Fail if no build checkout is found (mandatory in CI).")
     args = parser.parse_args()
-    strict = args.strict or os.environ.get('CI') == 'true'
+    strict = args.strict or os.environ.get("CI") == "true"
 
     pinned = pinned_commit()
     if pinned is None:
-        print('check-grammar-pin: no GIT_TAG found for tree_sitter_angelscript in '
-              + CMAKE.relative_to(SERVER).as_posix(), file=sys.stderr)
+        print(
+            "check-grammar-pin: no GIT_TAG found for tree_sitter_angelscript in "
+            + CMAKE.relative_to(SERVER).as_posix(),
+            file=sys.stderr,
+        )
         return 2
 
     found = checkouts()
     if not found:
-        msg = 'check-grammar-pin: no grammar checkout under server/build*/ or build*/ - configure CMake first.'
+        msg = "check-grammar-pin: no grammar checkout under server/build*/ or build*/ - configure CMake first."
         if strict:
-            print(f'ERROR: {msg}', file=sys.stderr)
+            print(f"ERROR: {msg}", file=sys.stderr)
             return 1
         print(msg)
         return 0
@@ -88,27 +92,29 @@ def main():
         if head is None:
             # A checkout with no git metadata cannot be compared. That is what a local grammar
             # checkout copied into place looks like, and it is not a failure.
-            print(f'  {where}: no git metadata, not compared')
+            print(f"  {where}: no git metadata, not compared")
             continue
 
         if head.startswith(pinned) or pinned.startswith(head):
-            print(f'  {where}: at the pinned commit {pinned[:12]}')
+            print(f"  {where}: at the pinned commit {pinned[:12]}")
         else:
             problems.append((where, head))
 
     if problems:
-        print(f'\nThe pin in {CMAKE.relative_to(SERVER).as_posix()} names {pinned[:12]}, but:',
-              file=sys.stderr)
+        print(f"\nThe pin in {CMAKE.relative_to(SERVER).as_posix()} names {pinned[:12]}, but:", file=sys.stderr)
         for where, head in problems:
-            print(f'  - {where} is at {head[:12]}', file=sys.stderr)
-        print('  The build is compiling a grammar nobody chose. Either reconfigure so FetchContent'
-              '\n  moves the checkout to the pin, or - if the checkout is what you want - bump the'
-              '\n  pin and say in the commit what the new commit changes, the way the three'
-              '\n  previous bumps are recorded in that file.', file=sys.stderr)
+            print(f"  - {where} is at {head[:12]}", file=sys.stderr)
+        print(
+            "  The build is compiling a grammar nobody chose. Either reconfigure so FetchContent"
+            "\n  moves the checkout to the pin, or - if the checkout is what you want - bump the"
+            "\n  pin and say in the commit what the new commit changes, the way the three"
+            "\n  previous bumps are recorded in that file.",
+            file=sys.stderr,
+        )
         return 1
 
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

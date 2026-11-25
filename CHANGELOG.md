@@ -9,6 +9,11 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 - Added an optional `engine` section to `angelscript.rules.json` with `version`, `source` (`official` or `custom`) and `name`. The default is AngelScript 2.39.0, the latest release and the one fully supported. The server logs every `engineProperties` key that is newer than the declared version, and a `custom` engine keeps `engineProperties` as the source of truth.
 - The MCP `engine_rules` tool returns the engine profile with its warnings, and `workspace_info` returns `warnings` and `nextSteps` when the rules file, the predefined stub or the module entry point is missing, each with the question to ask the user.
 
+### Changed
+
+- The debugger now lives in [angelscript-dap](https://github.com/Gaftherman/angelscript-dap), with the [example project](https://github.com/Gaftherman/angelscript-debugger-example) and the [AngelScript CLI](https://github.com/Gaftherman/angelscript-cli). The README and the guides point to them, the debugger demo recorders moved with it, and debugger reports go to the angelscript-dap issues.
+- Added `CONTRIBUTING.md` and `docs/CONTRIBUTING.es.md`. Markdown other than the README, the changelog, the contributing guide and `AGENTS.md` lives in `docs/`, and Python scripts live in `scripts/` folders.
+
 ## [1.2.3] - 2026-11-24
 
 ### Added

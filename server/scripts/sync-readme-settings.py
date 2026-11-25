@@ -66,6 +66,7 @@ def format_default_value(val: object) -> str:
 def resolve_string(raw: str, nls_dict: dict) -> str:
     if not isinstance(raw, str):
         return ""
+
     # Replace any %key% placeholders with translation
     def replace_placeholder(m: re.Match[str]) -> str:
         k = m.group(1)

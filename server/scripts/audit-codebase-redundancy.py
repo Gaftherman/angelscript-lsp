@@ -88,8 +88,18 @@ def has_doxygen_before(lines: list[str], start_line_1_based: int) -> bool:
     """Checks if a declaration has a /** ... */ Doxygen comment immediately preceding it."""
     idx = start_line_1_based - 2  # 0-based index right above
     modifiers = (
-        "[[", "template", "inline", "constexpr", "explicit", "static",
-        "virtual", "friend", "extern", "const", "override", "final"
+        "[[",
+        "template",
+        "inline",
+        "constexpr",
+        "explicit",
+        "static",
+        "virtual",
+        "friend",
+        "extern",
+        "const",
+        "override",
+        "final",
     )
     while idx >= 0:
         line = lines[idx].strip()
@@ -117,8 +127,18 @@ def has_refactor_candidate_note(lines: list[str], start_line_1_based: int) -> bo
     """Checks if a preceding Doxygen comment contains @note [REFACTOR-CANDIDATE]."""
     idx = start_line_1_based - 2
     modifiers = (
-        "[[", "template", "inline", "constexpr", "explicit", "static",
-        "virtual", "friend", "extern", "const", "override", "final"
+        "[[",
+        "template",
+        "inline",
+        "constexpr",
+        "explicit",
+        "static",
+        "virtual",
+        "friend",
+        "extern",
+        "const",
+        "override",
+        "final",
     )
     while idx >= 0:
         line = lines[idx].strip()
@@ -133,7 +153,7 @@ def has_refactor_candidate_note(lines: list[str], start_line_1_based: int) -> bo
             while c_idx >= 0:
                 c_line = lines[c_idx].strip()
                 if "/**" in c_line:
-                    comment = "\n".join(lines[c_idx:idx + 1])
+                    comment = "\n".join(lines[c_idx : idx + 1])
                     return "@note [REFACTOR-CANDIDATE]" in comment
                 if "/*" in c_line:
                     return False
@@ -151,10 +171,15 @@ SEMANTIC_CONCEPT_PATTERNS = {
     "isConst": re.compile(r"\b(?:isConst|constness|isConstant)\b", re.I),
     "isHandle": re.compile(r"\b(?:isHandle|handle|isHandleType|hasPrimitiveHandle)\b", re.I),
     "isRef": re.compile(r"\b(?:isRef|isReference|isReturnReference|isOutRef|isInOutRef|isStandaloneRef)\b", re.I),
-    "typeName": re.compile(r"\b(?:typeName|baseTypeName|returnType|targetType|declaringClass|declaredType|objectType|argTypes|valueType)\b", re.I),
+    "typeName": re.compile(
+        r"\b(?:typeName|baseTypeName|returnType|targetType|declaringClass|declaredType|objectType|argTypes|valueType)\b",
+        re.I,
+    ),
     "scope": re.compile(r"\b(?:scope|containerScope|enclosingScope|declaringClass)\b", re.I),
     "node": re.compile(r"\b(?:node|targetNode|callNode|argNode|argNodes|exprNode|rootNode)\b", re.I),
-    "startByte": re.compile(r"\b(?:startByte|byteOffset|startOffset|offset|startLine|startCharacter|startChar)\b", re.I),
+    "startByte": re.compile(
+        r"\b(?:startByte|byteOffset|startOffset|offset|startLine|startCharacter|startChar)\b", re.I
+    ),
     "endByte": re.compile(r"\b(?:endByte|endOffset|endLine|endCharacter|endChar)\b", re.I),
     "access": re.compile(r"\b(?:access|accessModifier)\b", re.I),
     "isArray": re.compile(r"\b(?:isArray|arrayDepth)\b", re.I),
@@ -214,15 +239,17 @@ def scan_local_cpp_structs():
                             concepts.add(concept)
 
                 s_line = txt[: m.start()].count("\n") + 1
-                e_line = txt[: close_pos].count("\n") + 1
-                structs.append({
-                    "file": rel_path(fpath),
-                    "startLine": s_line,
-                    "endLine": e_line,
-                    "structName": s_name,
-                    "fields": flds,
-                    "semanticConcepts": sorted(concepts),
-                })
+                e_line = txt[:close_pos].count("\n") + 1
+                structs.append(
+                    {
+                        "file": rel_path(fpath),
+                        "startLine": s_line,
+                        "endLine": e_line,
+                        "structName": s_name,
+                        "fields": flds,
+                        "semanticConcepts": sorted(concepts),
+                    }
+                )
 
     cluster_definitions = [
         {
@@ -269,24 +296,28 @@ def scan_local_cpp_structs():
         for s in structs:
             intersection = set(s["semanticConcepts"]) & cdef["requiredConcepts"]
             if len(intersection) >= cdef["minMatches"]:
-                matched_structs.append({
-                    "file": s["file"],
-                    "structName": s["structName"],
-                    "startLine": s["startLine"],
-                    "endLine": s["endLine"],
-                    "matchedConcepts": sorted(intersection),
-                })
+                matched_structs.append(
+                    {
+                        "file": s["file"],
+                        "structName": s["structName"],
+                        "startLine": s["startLine"],
+                        "endLine": s["endLine"],
+                        "matchedConcepts": sorted(intersection),
+                    }
+                )
         if matched_structs:
-            clusters.append({
-                "clusterId": cdef["clusterId"],
-                "clusterName": cdef["clusterName"],
-                "sharedSemanticConcepts": sorted(cdef["requiredConcepts"]),
-                "structCount": len(matched_structs),
-                "whyInThatCpp": cdef["whyInThatCpp"],
-                "canonicalTargetHeader": cdef["canonicalTargetHeader"],
-                "canonicalTargetSymbol": cdef["canonicalTargetSymbol"],
-                "structs": matched_structs,
-            })
+            clusters.append(
+                {
+                    "clusterId": cdef["clusterId"],
+                    "clusterName": cdef["clusterName"],
+                    "sharedSemanticConcepts": sorted(cdef["requiredConcepts"]),
+                    "structCount": len(matched_structs),
+                    "whyInThatCpp": cdef["whyInThatCpp"],
+                    "canonicalTargetHeader": cdef["canonicalTargetHeader"],
+                    "canonicalTargetSymbol": cdef["canonicalTargetSymbol"],
+                    "structs": matched_structs,
+                }
+            )
 
     return {
         "totalLocalStructs": len(structs),
@@ -299,32 +330,57 @@ def scan_local_cpp_structs():
 # 2. pass1FlagReparsing: Manual Reparsing Detection
 # ==============================================================================
 
+
 def scan_pass1_flag_reparsing():
     violations = []
     # Only scan implementation files (.cpp) where runtime parsing logic executes
-    scan_files = sorted(
-        list((SERVER_SRC / "analysis").rglob("*.cpp")) +
-        list((SERVER_SRC / "features").rglob("*.cpp"))
-    )
+    scan_files = sorted(list((SERVER_SRC / "analysis").rglob("*.cpp")) + list((SERVER_SRC / "features").rglob("*.cpp")))
     scan_files = [
-        f for f in scan_files
-        if "TypeExtraction.cpp" not in f.name and "TypeExtraction.h" not in f.name
-        and "TypeSanitization.h" not in f.name and "TypeSanitization.cpp" not in f.name
+        f
+        for f in scan_files
+        if "TypeExtraction.cpp" not in f.name
+        and "TypeExtraction.h" not in f.name
+        and "TypeSanitization.h" not in f.name
+        and "TypeSanitization.cpp" not in f.name
     ]
 
     patterns = [
-        ("isConst", re.compile(r'(\.starts_with\(\s*"const[\s"]|\.find\(\s*"const"|\b==\s*"const")'),
-         "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"),
-        ("isConst", re.compile(r'\bbool\s+isConst\s*=\s*(?!.*(?:modifiers\.isConst|\.isConst|->isConst|qualifiers\.isConst))'),
-         "Symbol::modifiers.isConst / ParameterInformation::isConst"),
-        ("isHandle", re.compile(r'(\.back\(\)\s*==\s*[\'"]@[\'"]|\.ends_with\(\s*[\'"]@[\'"]|\.find\(\s*[\'"]@[\'"])'),
-         "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"),
-        ("isHandle", re.compile(r'\bbool\s+isHandle\s*=\s*(?!.*(?:modifiers\.isHandle|\.isHandle|->isHandle|qualifiers\.isHandle))'),
-         "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"),
-        ("isRef", re.compile(r'(\.back\(\)\s*==\s*[\'"]&[\'"]|\.ends_with\(\s*[\'"]&(?:in|out|inout)?[\'"]|\.find\(\s*[\'"]&(?:in|out|inout)?[\'"]|\.starts_with\(\s*[\'"]&(?:in|out|inout)[\s"\']|\b==\s*[\'"]&(?:in|out|inout)?[\'"])'),
-         "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"),
-        ("isRef", re.compile(r'\bbool\s+isRef(?:erence)?\s*=\s*(?!.*(?:modifiers\.isReturnReference|\.isReference|->isReference|qualifiers\.isReference))'),
-         "ParameterInformation::isReference / Symbol::modifiers.isReturnReference"),
+        (
+            "isConst",
+            re.compile(r'(\.starts_with\(\s*"const[\s"]|\.find\(\s*"const"|\b==\s*"const")'),
+            "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst",
+        ),
+        (
+            "isConst",
+            re.compile(r"\bbool\s+isConst\s*=\s*(?!.*(?:modifiers\.isConst|\.isConst|->isConst|qualifiers\.isConst))"),
+            "Symbol::modifiers.isConst / ParameterInformation::isConst",
+        ),
+        (
+            "isHandle",
+            re.compile(r'(\.back\(\)\s*==\s*[\'"]@[\'"]|\.ends_with\(\s*[\'"]@[\'"]|\.find\(\s*[\'"]@[\'"])'),
+            "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType",
+        ),
+        (
+            "isHandle",
+            re.compile(
+                r"\bbool\s+isHandle\s*=\s*(?!.*(?:modifiers\.isHandle|\.isHandle|->isHandle|qualifiers\.isHandle))"
+            ),
+            "Symbol::modifiers.isHandle / LocalDefinition::isHandleType",
+        ),
+        (
+            "isRef",
+            re.compile(
+                r'(\.back\(\)\s*==\s*[\'"]&[\'"]|\.ends_with\(\s*[\'"]&(?:in|out|inout)?[\'"]|\.find\(\s*[\'"]&(?:in|out|inout)?[\'"]|\.starts_with\(\s*[\'"]&(?:in|out|inout)[\s"\']|\b==\s*[\'"]&(?:in|out|inout)?[\'"])'
+            ),
+            "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference",
+        ),
+        (
+            "isRef",
+            re.compile(
+                r"\bbool\s+isRef(?:erence)?\s*=\s*(?!.*(?:modifiers\.isReturnReference|\.isReference|->isReference|qualifiers\.isReference))"
+            ),
+            "ParameterInformation::isReference / Symbol::modifiers.isReturnReference",
+        ),
     ]
 
     for fpath in scan_files:
@@ -342,13 +398,15 @@ def scan_pass1_flag_reparsing():
             for flag_kind, pat, canon_src in patterns:
                 m = pat.search(line)
                 if m:
-                    violations.append({
-                        "file": rel_path(fpath),
-                        "line": idx,
-                        "flagKind": flag_kind,
-                        "codeSnippet": s[:100],
-                        "canonicalPass1Source": canon_src,
-                    })
+                    violations.append(
+                        {
+                            "file": rel_path(fpath),
+                            "line": idx,
+                            "flagKind": flag_kind,
+                            "codeSnippet": s[:100],
+                            "canonicalPass1Source": canon_src,
+                        }
+                    )
                     break
 
     return {
@@ -362,9 +420,33 @@ def scan_pass1_flag_reparsing():
 # ==============================================================================
 
 RESERVED_KEYWORDS = {
-    "if", "else", "for", "while", "do", "switch", "case", "default", "return",
-    "break", "continue", "try", "catch", "throw", "auto", "const", "void", "bool",
-    "int", "float", "double", "true", "false", "nullptr", "sizeof", "new", "delete"
+    "if",
+    "else",
+    "for",
+    "while",
+    "do",
+    "switch",
+    "case",
+    "default",
+    "return",
+    "break",
+    "continue",
+    "try",
+    "catch",
+    "throw",
+    "auto",
+    "const",
+    "void",
+    "bool",
+    "int",
+    "float",
+    "double",
+    "true",
+    "false",
+    "nullptr",
+    "sizeof",
+    "new",
+    "delete",
 }
 
 
@@ -429,10 +511,7 @@ def describe_function_task(name: str, calls: list[str]) -> str:
 
 def scan_similar_functions():
     functions = []
-    scan_files = sorted(
-        list((SERVER_SRC / "analysis").rglob("*.cpp")) +
-        list((SERVER_SRC / "features").rglob("*.cpp"))
-    )
+    scan_files = sorted(list((SERVER_SRC / "analysis").rglob("*.cpp")) + list((SERVER_SRC / "features").rglob("*.cpp")))
     func_head_re = re.compile(
         r"(?:^|\n)[ \t]{0,4}(?P<decl>(?:(?:static|inline|virtual|explicit|constexpr|template\s*<[^>]+>)\s+)*(?P<ret>[A-Za-z0-9_:]+(?:<[^;{}>]+>)?(?:\s*[*&]+)?)\s+(?P<name>(?:[A-Za-z0-9_]+::)*[A-Za-z0-9_~]+)\s*\([^;{}[\]]*\)\s*(?:const\s*)?(?:noexcept\s*)?)\s*\{"
     )
@@ -463,17 +542,19 @@ def scan_similar_functions():
             nloc = e_line - s_line + 1
             if len(tokens) >= 15 and nloc >= 5:
                 grams = set(tuple(tokens[k : k + 3]) for k in range(len(tokens) - 2))
-                functions.append({
-                    "file": rel_path(fpath),
-                    "startLine": s_line,
-                    "endLine": e_line,
-                    "name": func_name,
-                    "signature": decl_text.split("{")[0].strip()[:80],
-                    "tokens": tokens,
-                    "grams": grams,
-                    "calls": calls,
-                    "len": len(tokens),
-                })
+                functions.append(
+                    {
+                        "file": rel_path(fpath),
+                        "startLine": s_line,
+                        "endLine": e_line,
+                        "name": func_name,
+                        "signature": decl_text.split("{")[0].strip()[:80],
+                        "tokens": tokens,
+                        "grams": grams,
+                        "calls": calls,
+                        "len": len(tokens),
+                    }
+                )
 
     # Inverted index of grams
     inv_index = collections.defaultdict(list)
@@ -510,7 +591,11 @@ def scan_similar_functions():
         sim = difflib.SequenceMatcher(None, fA["tokens"], fB["tokens"]).ratio()
         if sim >= 0.60:
             shared_calls = sorted(set(fA["calls"]) & set(fB["calls"]))
-            is_cross_feature = "features/" in fA["file"] and "features/" in fB["file"] and fA["file"].split("/")[3] != fB["file"].split("/")[3]
+            is_cross_feature = (
+                "features/" in fA["file"]
+                and "features/" in fB["file"]
+                and fA["file"].split("/")[3] != fB["file"].split("/")[3]
+            )
             is_analysis_dupe = "analysis/" in fA["file"] and "analysis/" in fB["file"]
 
             task_desc_A = describe_function_task(fA["name"], fA["calls"])
@@ -532,26 +617,28 @@ def scan_similar_functions():
             else:
                 what = f"{fA['name']} ({task_desc_A}) and {fB['name']} ({task_desc_B}) share algorithmic structure. Separated due to {sep_reason}."
 
-            matrix.append({
-                "funcA": {
-                    "file": fA["file"],
-                    "startLine": fA["startLine"],
-                    "endLine": fA["endLine"],
-                    "name": fA["name"],
-                    "signature": fA["signature"],
-                },
-                "funcB": {
-                    "file": fB["file"],
-                    "startLine": fB["startLine"],
-                    "endLine": fB["endLine"],
-                    "name": fB["name"],
-                    "signature": fB["signature"],
-                },
-                "similarityScore": round(sim, 3),
-                "sharedCalls": shared_calls,
-                "whatTheyDo": what,
-                "unificationPlan": unif_plan,
-            })
+            matrix.append(
+                {
+                    "funcA": {
+                        "file": fA["file"],
+                        "startLine": fA["startLine"],
+                        "endLine": fA["endLine"],
+                        "name": fA["name"],
+                        "signature": fA["signature"],
+                    },
+                    "funcB": {
+                        "file": fB["file"],
+                        "startLine": fB["startLine"],
+                        "endLine": fB["endLine"],
+                        "name": fB["name"],
+                        "signature": fB["signature"],
+                    },
+                    "similarityScore": round(sim, 3),
+                    "sharedCalls": shared_calls,
+                    "whatTheyDo": what,
+                    "unificationPlan": unif_plan,
+                }
+            )
 
     matrix.sort(key=lambda x: x["similarityScore"], reverse=True)
     return {
@@ -564,6 +651,7 @@ def scan_similar_functions():
 # ==============================================================================
 # 4. memoryLayoutAudit: Hot Structure Layout & RAM Compaction
 # ==============================================================================
+
 
 def compute_memory_layout_audit():
     structs_audit = [
@@ -709,9 +797,7 @@ def compute_memory_layout_audit():
         if hpath.is_file():
             try:
                 txt = hpath.read_text(encoding="utf-8", errors="ignore")
-                target_re = re.compile(
-                    r"\b(?:struct|class)\s+" + re.escape(item["structName"]) + r"\b[^{]*\{"
-                )
+                target_re = re.compile(r"\b(?:struct|class)\s+" + re.escape(item["structName"]) + r"\b[^{]*\{")
                 m = target_re.search(txt)
                 if m:
                     open_pos = txt.find("{", m.start())
@@ -738,9 +824,18 @@ def compute_memory_layout_audit():
                 pass
 
     compacted_names = {
-        "Symbol", "FunctionSignature", "VariableSignature", "LocalDefinition",
-        "LocalReference", "SymbolModifiers", "ParameterInformation", "FuncdefSignature",
-        "ClassSignature", "Scope", "IndexedContainerSpan", "NodeIndex"
+        "Symbol",
+        "FunctionSignature",
+        "VariableSignature",
+        "LocalDefinition",
+        "LocalReference",
+        "SymbolModifiers",
+        "ParameterInformation",
+        "FuncdefSignature",
+        "ClassSignature",
+        "Scope",
+        "IndexedContainerSpan",
+        "NodeIndex",
     }
     uncompacted = []
     for item in structs_audit:
@@ -844,9 +939,17 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
         "server/src/analysis/index/NodeIndex.h",
     ]
     core_struct_names = {
-        "Symbol", "SymbolModifiers", "VariableSignature", "FunctionSignature",
-        "FuncdefSignature", "ClassSignature", "ParameterInformation",
-        "LocalDefinition", "Scope", "IndexedContainerSpan", "NodeIndex"
+        "Symbol",
+        "SymbolModifiers",
+        "VariableSignature",
+        "FunctionSignature",
+        "FuncdefSignature",
+        "ClassSignature",
+        "ParameterInformation",
+        "LocalDefinition",
+        "Scope",
+        "IndexedContainerSpan",
+        "NodeIndex",
     }
 
     struct_decl_re = re.compile(r"\b(?:struct|class)\s+([A-Za-z0-9_]+)\b[^{]*\{")
@@ -887,12 +990,14 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
                 if sym_name and check_header_doxygen(f_rel, sym_name):
                     continue
                 kind = "struct" if "struct" in sym_line or "class" in sym_line else "function"
-                missing.append({
-                    "file": f_rel,
-                    "line": tline,
-                    "symbolOrSnippet": sym_line[:80],
-                    "kind": kind,
-                })
+                missing.append(
+                    {
+                        "file": f_rel,
+                        "line": tline,
+                        "symbolOrSnippet": sym_line[:80],
+                        "kind": kind,
+                    }
+                )
 
     return {
         "missingCount": len(missing),
@@ -904,11 +1009,15 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
 # Main Orchestrator
 # ==============================================================================
 
+
 def main():
     t0 = time.time()
     print("[1/5] Auditing local structs declared in .cpp files...", flush=True)
     local_structs = scan_local_cpp_structs()
-    print(f"      Found {local_structs['totalLocalStructs']} local structs clustered in {len(local_structs['clusters'])} clusters.", flush=True)
+    print(
+        f"      Found {local_structs['totalLocalStructs']} local structs clustered in {len(local_structs['clusters'])} clusters.",
+        flush=True,
+    )
 
     print("[2/5] Auditing Pass-1 flag reparsing occurrences...", flush=True)
     pass1_reparse = scan_pass1_flag_reparsing()
@@ -920,13 +1029,19 @@ def main():
 
     print("[4/5] Auditing memory layout and compaction opportunities for 11 hot structures...", flush=True)
     memory_audit = compute_memory_layout_audit()
-    print(f"      Identified potential saving of {memory_audit['aggregateSavedMbPer100kSymbols']} MB per 100k symbols.", flush=True)
+    print(
+        f"      Identified potential saving of {memory_audit['aggregateSavedMbPer100kSymbols']} MB per 100k symbols.",
+        flush=True,
+    )
 
     print("[5/5] Auditing Doxygen coverage on refactoring targets...", flush=True)
     doxygen_audit = scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse)
     print(f"      Found {doxygen_audit['missingCount']} targets missing Doxygen documentation.", flush=True)
-    if doxygen_audit['missingCount'] > 0:
-        print(f"[ERROR] Found {doxygen_audit['missingCount']} targets missing Doxygen documentation! Must be strictly 0.", file=sys.stderr)
+    if doxygen_audit["missingCount"] > 0:
+        print(
+            f"[ERROR] Found {doxygen_audit['missingCount']} targets missing Doxygen documentation! Must be strictly 0.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print("[Gate] Auditing zero anonymous namespaces (namespace {)...", flush=True)
@@ -947,7 +1062,9 @@ def main():
             print(f"  {rel_path(f)}:{idx}: {line}", file=sys.stderr)
         sys.exit(1)
 
-    print("[Gate] Auditing zero using directives or declarations (using namespace / using <ns>::<symbol>)...", flush=True)
+    print(
+        "[Gate] Auditing zero using directives or declarations (using namespace / using <ns>::<symbol>)...", flush=True
+    )
     using_violations = []
     using_ns_re = re.compile(r"\busing\s+namespace\b")
     using_sym_re = re.compile(r"\busing\s+(?![^;=]*=)[a-zA-Z0-9_:,\s]+;")
@@ -960,7 +1077,12 @@ def main():
             continue
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
+            if (
+                stripped.startswith("//")
+                or stripped.startswith("*")
+                or stripped.startswith("/*")
+                or stripped.startswith(";")
+            ):
                 continue
             if using_ns_re.search(stripped) or using_sym_re.search(stripped):
                 using_violations.append((fpath, idx, stripped))
@@ -998,12 +1120,21 @@ def main():
                 slop_violations.append((fpath, idx, stripped))
             elif orphan_reeval_re.search(stripped) or orphan_pass1_re.search(stripped):
                 slop_violations.append((fpath, idx, stripped))
-            elif is_comment and (orphan_type_extract_re.search(stripped) or orphan_handle_type_re.search(stripped) or orphan_symbol_mod_re.search(stripped)):
+            elif is_comment and (
+                orphan_type_extract_re.search(stripped)
+                or orphan_handle_type_re.search(stripped)
+                or orphan_symbol_mod_re.search(stripped)
+            ):
                 slop_violations.append((fpath, idx, stripped))
-            elif (slop_unify_re.search(stripped) or orphan_unif_re.search(stripped) or slop_overlap_re.search(stripped)) and not cleaned_tag.startswith("@note"):
+            elif (
+                slop_unify_re.search(stripped) or orphan_unif_re.search(stripped) or slop_overlap_re.search(stripped)
+            ) and not cleaned_tag.startswith("@note"):
                 slop_violations.append((fpath, idx, stripped))
     if slop_violations:
-        print(f"[ERROR] Found {len(slop_violations)} mechanical Doxygen slop template comments in server/src/:", file=sys.stderr)
+        print(
+            f"[ERROR] Found {len(slop_violations)} mechanical Doxygen slop template comments in server/src/:",
+            file=sys.stderr,
+        )
         for f, idx, line in slop_violations:
             print(f"  {rel_path(f)}:{idx}: {line}", file=sys.stderr)
         sys.exit(1)

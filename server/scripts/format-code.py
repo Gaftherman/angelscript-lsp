@@ -15,11 +15,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 TARGET_DIRS = [
-    REPO_ROOT / 'server' / 'src',
-    REPO_ROOT / 'server' / 'include',
-    REPO_ROOT / 'server' / 'tests',
+    REPO_ROOT / "server" / "src",
+    REPO_ROOT / "server" / "include",
+    REPO_ROOT / "server" / "tests",
 ]
-EXTENSIONS = {'.cpp', '.h', '.hpp'}
+EXTENSIONS = {".cpp", ".h", ".hpp"}
+
 
 def find_files() -> list[Path]:
     files = []
@@ -32,6 +33,7 @@ def find_files() -> list[Path]:
                 if p.suffix in EXTENSIONS:
                     files.append(p)
     return sorted(files)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Format AngelLSP C++ code with clang-format.")
@@ -48,7 +50,9 @@ def main() -> int:
         print("[INFO] No C++ files found to format.")
         return 0
 
-    style_flag = f"--style=file:{REPO_ROOT / '.clang-format'}" if (REPO_ROOT / '.clang-format').exists() else "--style=file"
+    style_flag = (
+        f"--style=file:{REPO_ROOT / '.clang-format'}" if (REPO_ROOT / ".clang-format").exists() else "--style=file"
+    )
 
     if args.check:
         print(f"[CHECKING] Checking clang-format style on {len(files)} files...")
@@ -73,7 +77,7 @@ def main() -> int:
         print(f"[FORMATTING] In-place formatting {len(files)} C++ files...")
         batch_size = 50
         for i in range(0, len(files), batch_size):
-            batch = [str(f) for f in files[i:i + batch_size]]
+            batch = [str(f) for f in files[i : i + batch_size]]
             cmd = [clang_format, style_flag, "-i"] + batch
             res = subprocess.run(cmd, cwd=REPO_ROOT)
             if res.returncode != 0:
@@ -81,6 +85,7 @@ def main() -> int:
                 return res.returncode
         print(f"[DONE] Formatted {len(files)} files successfully.")
         return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

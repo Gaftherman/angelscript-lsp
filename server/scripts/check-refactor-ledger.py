@@ -19,7 +19,56 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LEDGER_PATH = REPO_ROOT / "docs" / "REFACTOR_LEDGER.json"
 
-VALID_PHASES = {"R0", "R1", "R2", "R3", "R4", "R5", "S1", "S2", "S3", "S4", "S5", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14", "M15", "M16", "M17", "M18", "M19", "M20", "M21", "M22", "M23", "M24", "M24B", "M24C", "M24D", "M24D2", "M24E", "M24F", "M25", "M26", "M27", "M28", "M29", "M30", "M31"}
+VALID_PHASES = {
+    "R0",
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "M1",
+    "M2",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "M7",
+    "M8",
+    "M9",
+    "M10",
+    "M11",
+    "M12",
+    "M13",
+    "M14",
+    "M15",
+    "M16",
+    "M17",
+    "M18",
+    "M19",
+    "M20",
+    "M21",
+    "M22",
+    "M23",
+    "M24",
+    "M24B",
+    "M24C",
+    "M24D",
+    "M24D2",
+    "M24E",
+    "M24F",
+    "M25",
+    "M26",
+    "M27",
+    "M28",
+    "M29",
+    "M30",
+    "M31",
+}
 VALID_ACTIONS = {
     "UNIFY_FUNCTIONS",
     "UNIFY_STRUCT",
@@ -110,9 +159,7 @@ def validate_ledger_schema():
                 try:
                     content = canon_file.read_text(encoding="utf-8", errors="ignore")
                     if canon_sym not in content:
-                        violations.append(
-                            f"{prefix} canonical symbol '{canon_sym}' not found in '{canon_file_rel}'"
-                        )
+                        violations.append(f"{prefix} canonical symbol '{canon_sym}' not found in '{canon_file_rel}'")
                 except Exception as exc:
                     violations.append(f"{prefix} failed to read '{canon_file_rel}': {exc}")
 

@@ -27,31 +27,31 @@ import sys
 from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent.parent
-SRC = SERVER / 'src'
+SRC = SERVER / "src"
 
 # Protocol isolation rules
-GUARDED_DIRS = ('core', 'config', 'document', 'parser', 'i18n', 'analysis')
-FORBIDDEN_ANGLED = re.compile(r'^[ \t]*#[ \t]*include[ \t]*<[ \t]*lsp/', re.MULTILINE)
+GUARDED_DIRS = ("core", "config", "document", "parser", "i18n", "analysis")
+FORBIDDEN_ANGLED = re.compile(r"^[ \t]*#[ \t]*include[ \t]*<[ \t]*lsp/", re.MULTILINE)
 FORBIDDEN_QUOTED = set()
 
 # Layer classification
 LAYER_MAP = {
-    'core': 1,
-    'config': 1,
-    'document': 1,
-    'parser': 1,
-    'utils': 1,
-    'i18n': 1,
-    'analysis': 2,
-    'features': 3,
-    'lsp': 4,
+    "core": 1,
+    "config": 1,
+    "document": 1,
+    "parser": 1,
+    "utils": 1,
+    "i18n": 1,
+    "analysis": 2,
+    "features": 3,
+    "lsp": 4,
 }
 
 DECOUPLED_LSP_MODULES = {
-    'lsp/state/DocumentStore.h',
-    'lsp/pipeline/AnalysisScheduler.h',
-    'lsp/state/PredefinedStubManager.h',
-    'lsp/state/ModuleIndex.h',
+    "lsp/state/DocumentStore.h",
+    "lsp/pipeline/AnalysisScheduler.h",
+    "lsp/state/PredefinedStubManager.h",
+    "lsp/state/ModuleIndex.h",
 }
 
 QUOTED_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*"([^"\r\n]+)"', re.MULTILINE)
@@ -59,7 +59,7 @@ QUOTED_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*"([^"\r\n]+)"', re.MULT
 
 def resolve(include: str, origin: Path) -> Path | None:
     """A quoted include is written either from src/ or beside the including file."""
-    if '\n' in include or '\r' in include or len(include) > 255:
+    if "\n" in include or "\r" in include or len(include) > 255:
         return None
     try:
         for candidate in (SRC / include, origin.parent / include):
@@ -76,7 +76,7 @@ def reaches_protocol(header: Path, seen: set[Path]) -> list[str] | None:
         return None
     seen.add(header)
 
-    text = header.read_text(encoding='utf-8', errors='replace')
+    text = header.read_text(encoding="utf-8", errors="replace")
 
     if FORBIDDEN_ANGLED.search(text):
         return [header.name]
@@ -86,7 +86,7 @@ def reaches_protocol(header: Path, seen: set[Path]) -> list[str] | None:
             return [header.name, include]
 
         target = resolve(include, header)
-        if target is None or target.suffix != '.h':
+        if target is None or target.suffix != ".h":
             continue
 
         chain = reaches_protocol(target, seen)
@@ -99,20 +99,20 @@ def reaches_protocol(header: Path, seen: set[Path]) -> list[str] | None:
 def get_layer_info(file_path: Path) -> tuple[int | None, str, str]:
     """Returns (layer_number, top_dir, relative_path_from_src)."""
     rel = file_path.resolve().relative_to(SRC.resolve()).as_posix()
-    top = rel.split('/')[0]
+    top = rel.split("/")[0]
     return LAYER_MAP.get(top, None), top, rel
 
 
 def check_layer_matrix() -> list[str]:
     """Validates layer hierarchy and intra-feature encapsulation rules across headers and sources."""
     violations = []
-    source_files = sorted(list(SRC.rglob('*.h')) + list(SRC.rglob('*.cpp')))
+    source_files = sorted(list(SRC.rglob("*.h")) + list(SRC.rglob("*.cpp")))
     for file_path in source_files:
         l_from, top_from, rel_from = get_layer_info(file_path)
         if l_from is None:
             continue
 
-        text = file_path.read_text(encoding='utf-8', errors='replace')
+        text = file_path.read_text(encoding="utf-8", errors="replace")
         for inc in QUOTED_INCLUDE.findall(text):
             target = resolve(inc, file_path)
             if target is None:
@@ -123,24 +123,20 @@ def check_layer_matrix() -> list[str]:
 
             # Check layer hierarchy (lower layer cannot include higher layer)
             if l_from < l_to:
-                violations.append(
-                    f"Layer violation: {rel_from} (Layer {l_from}) includes {rel_to} (Layer {l_to})"
-                )
+                violations.append(f"Layer violation: {rel_from} (Layer {l_from}) includes {rel_to} (Layer {l_to})")
             elif l_from == 3 and l_to == 3:
                 # Check cross-feature isolation in features/
-                parts_from = rel_from.split('/')
-                parts_to = rel_to.split('/')
-                feat_from = parts_from[1] if len(parts_from) > 1 else ''
-                feat_to = parts_to[1] if len(parts_to) > 1 else ''
-                if feat_from and feat_to and feat_from != feat_to and feat_to != 'common':
+                parts_from = rel_from.split("/")
+                parts_to = rel_to.split("/")
+                feat_from = parts_from[1] if len(parts_from) > 1 else ""
+                feat_to = parts_to[1] if len(parts_to) > 1 else ""
+                if feat_from and feat_to and feat_from != feat_to and feat_to != "common":
                     violations.append(
                         f"Cross-feature violation: {rel_from} (feature '{feat_from}') includes {rel_to} (feature '{feat_to}')"
                     )
-            elif top_from == 'lsp' and rel_from in DECOUPLED_LSP_MODULES:
-                if rel_to == 'lsp/Server.h':
-                    violations.append(
-                        f"Encapsulation violation: decoupled module {rel_from} includes {rel_to}"
-                    )
+            elif top_from == "lsp" and rel_from in DECOUPLED_LSP_MODULES:
+                if rel_to == "lsp/Server.h":
+                    violations.append(f"Encapsulation violation: decoupled module {rel_from} includes {rel_to}")
 
     return violations
 
@@ -153,41 +149,43 @@ def main() -> int:
         layer_dir = SRC / layer
         if not layer_dir.exists():
             continue
-        for header in sorted(layer_dir.rglob('*.h')):
+        for header in sorted(layer_dir.rglob("*.h")):
             chain = reaches_protocol(header.resolve(), set())
             if chain is not None:
-                problems.append((header.relative_to(SERVER), ' -> '.join(chain)))
-        for cpp_file in sorted(layer_dir.rglob('*.cpp')):
+                problems.append((header.relative_to(SERVER), " -> ".join(chain)))
+        for cpp_file in sorted(layer_dir.rglob("*.cpp")):
             chain = reaches_protocol(cpp_file.resolve(), set())
             if chain is not None:
-                problems.append((cpp_file.relative_to(SERVER), ' -> '.join(chain)))
+                problems.append((cpp_file.relative_to(SERVER), " -> ".join(chain)))
 
     if problems:
-        print('Files in analysis/ or parser/ that pull in the LSP protocol library:')
+        print("Files in analysis/ or parser/ that pull in the LSP protocol library:")
         for path, chain in problems:
-            print(f'  - {path}\n      {chain}')
+            print(f"  - {path}\n      {chain}")
         print()
-        print('Hold the logger by a forward declaration and move the include into the .cpp:')
-        print('    namespace angel_lsp::utils { class LspLogger; }')
+        print("Hold the logger by a forward declaration and move the include into the .cpp:")
+        print("    namespace angel_lsp::utils { class LspLogger; }")
         print()
-        print('These layers are meant to be usable, and testable, without the protocol.')
+        print("These layers are meant to be usable, and testable, without the protocol.")
         return 1
 
     # 2. Layer Matrix and modular encapsulation check
     matrix_violations = check_layer_matrix()
     if matrix_violations:
-        print('Layer matrix or modular encapsulation violations:')
+        print("Layer matrix or modular encapsulation violations:")
         for violation in matrix_violations:
-            print(f'  - {violation}')
+            print(f"  - {violation}")
         return 1
 
-    guarded_headers = sum(len(list((SRC / layer).rglob('*.h'))) for layer in GUARDED_DIRS)
-    guarded_sources = sum(len(list((SRC / layer).rglob('*.cpp'))) for layer in GUARDED_DIRS)
-    total_files = len(list(SRC.rglob('*.h'))) + len(list(SRC.rglob('*.cpp')))
-    print(f'{guarded_headers} headers and {guarded_sources} sources in analysis/ and parser/ compile without the LSP protocol library.')
-    print(f'{total_files} total files (.h and .cpp) conform to the Layer Matrix and modular encapsulation rules.')
+    guarded_headers = sum(len(list((SRC / layer).rglob("*.h"))) for layer in GUARDED_DIRS)
+    guarded_sources = sum(len(list((SRC / layer).rglob("*.cpp"))) for layer in GUARDED_DIRS)
+    total_files = len(list(SRC.rglob("*.h"))) + len(list(SRC.rglob("*.cpp")))
+    print(
+        f"{guarded_headers} headers and {guarded_sources} sources in analysis/ and parser/ compile without the LSP protocol library."
+    )
+    print(f"{total_files} total files (.h and .cpp) conform to the Layer Matrix and modular encapsulation rules.")
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

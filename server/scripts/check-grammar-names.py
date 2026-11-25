@@ -46,7 +46,7 @@ from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent.parent
 REPO_ROOT = SERVER.parent
-SRC = SERVER / 'src'
+SRC = SERVER / "src"
 
 # Deciding whether a string is in "node type position" cannot be done by naming the variables that
 # hold one - they are called nodeType, parentType, pType, pt, type, currType and half a dozen other
@@ -56,8 +56,7 @@ SRC = SERVER / 'src'
 # define is a line about node types, and every other string it compares is in the same position.
 # `if (pt == "lambda_expression" || pt == "anonymous_function")` gives itself away, which is exactly
 # the shape all twenty had - a real name and a wrong one, side by side.
-NODE_TYPE_HOLDERS = re.compile(
-    r'\b(?:ts_node_type\s*\(|NodeType\s*\()')
+NODE_TYPE_HOLDERS = re.compile(r"\b(?:ts_node_type\s*\(|NodeType\s*\()")
 COMPARISON = re.compile(r'(?:==|!=)\s*"([a-z][a-z_]*)"|"([a-z][a-z_]*)"\s*(?:==|!=)')
 
 # `ts_node_type` returns a `const char *`, so the other natural spelling of the same comparison puts
@@ -74,11 +73,12 @@ STRCMP_COMPARISON = re.compile(r'\bstrcmp\s*\(\s*([A-Za-z_]\w*)\s*,\s*"([a-z_][a
 # no node type the grammar defines, so nothing on that line gives it away as being about node types.
 # What gives it away is one line earlier - `const char *type = ts_node_type(child);` - so the
 # variable is what carries the calibration here, and it is collected per file.
-NODE_TYPE_VARIABLE = re.compile(r'\b([A-Za-z_]\w*)\s*=\s*ts_node_type\s*\(')
-COMMENT = re.compile(r'^\s*(?://|\*|/\*)')
+NODE_TYPE_VARIABLE = re.compile(r"\b([A-Za-z_]\w*)\s*=\s*ts_node_type\s*\(")
+COMMENT = re.compile(r"^\s*(?://|\*|/\*)")
 
 FIELD_LOOKUP = re.compile(
-    r'(?:ts_node_child_by_field_name|GetChildByFieldName|GetChildByField)\s*\(\s*[^,]+,\s*"([a-z_]+)"')
+    r'(?:ts_node_child_by_field_name|GetChildByFieldName|GetChildByField)\s*\(\s*[^,]+,\s*"([a-z_]+)"'
+)
 
 # The same mistake in the other syntax. `ts_language_symbol_for_name(lang, "block", ...)` returns 0
 # for a name the grammar does not have, and 0 matches nothing - so the TSSymbol comparison that was
@@ -89,13 +89,62 @@ SYMBOL_LOOKUP = re.compile(r'ts_language_symbol_for_name\s*\(\s*[^,]+,\s*(?:SYM_
 # Words that appear in a comparison next to a node-type variable but are not node types: keyword
 # text, modifier names, type names the analyzer compares by spelling.
 NOT_NODE_TYPES = {
-    'true', 'false', 'null', 'const', 'auto', 'void', 'this', 'super', 'shared', 'external',
-    'final', 'abstract', 'override', 'explicit', 'property', 'delete', 'in', 'out', 'inout',
-    'array', 'string', 'dictionary', 'get', 'set', 'value', 'name', 'public', 'private',
-    'protected', 'bool', 'int', 'uint', 'float', 'double', 'mixin', 'enum', 'class', 'interface',
-    'namespace', 'funcdef', 'typedef', 'import', 'from', 'module',
-    'endcode', 'verbatim', 'endverbatim',
-    'parameter', 'variable', 'method', 'comment', 'operator', 'type', 'function', 'left', 'right',
+    "true",
+    "false",
+    "null",
+    "const",
+    "auto",
+    "void",
+    "this",
+    "super",
+    "shared",
+    "external",
+    "final",
+    "abstract",
+    "override",
+    "explicit",
+    "property",
+    "delete",
+    "in",
+    "out",
+    "inout",
+    "array",
+    "string",
+    "dictionary",
+    "get",
+    "set",
+    "value",
+    "name",
+    "public",
+    "private",
+    "protected",
+    "bool",
+    "int",
+    "uint",
+    "float",
+    "double",
+    "mixin",
+    "enum",
+    "class",
+    "interface",
+    "namespace",
+    "funcdef",
+    "typedef",
+    "import",
+    "from",
+    "module",
+    "endcode",
+    "verbatim",
+    "endverbatim",
+    "parameter",
+    "variable",
+    "method",
+    "comment",
+    "operator",
+    "type",
+    "function",
+    "left",
+    "right",
 }
 
 
@@ -116,15 +165,15 @@ def logical_lines(text):
         pending_parts.append(stripped)
 
         # A line that ends mid-expression continues into the next one.
-        if stripped.endswith(('||', '&&', '(', ',', '?', ':', '==')):
+        if stripped.endswith(("||", "&&", "(", ",", "?", ":", "==")):
             continue
 
-        yield pending_number, ' '.join(pending_parts)
+        yield pending_number, " ".join(pending_parts)
         pending_number = None
         pending_parts = []
 
     if pending_parts:
-        yield pending_number, ' '.join(pending_parts)
+        yield pending_number, " ".join(pending_parts)
 
 
 # This server parses two languages, and a name that is real in one is imaginary in the other.
@@ -137,21 +186,21 @@ def logical_lines(text):
 # So each file is checked against the grammar it actually parses. A file that reaches for
 # DoxygenParser, or names the doxygen language entry point, is talking about doxygen nodes.
 GRAMMARS = {
-    'angelscript': 'tree_sitter_angelscript-src',
-    'doxygen': 'tree_sitter_doxygen-src',
+    "angelscript": "tree_sitter_angelscript-src",
+    "doxygen": "tree_sitter_doxygen-src",
 }
-DOXYGEN_MARKERS = ('parser/DoxygenParser.h', 'tree_sitter_doxygen')
+DOXYGEN_MARKERS = ("parser/DoxygenParser.h", "tree_sitter_doxygen")
 
 
 def find_node_types_json(checkout, binary_dir=None):
     """The grammar checkout lives wherever the build tree is; find it rather than assume one."""
     if binary_dir:
-        direct = Path(binary_dir) / '_deps' / checkout / 'src' / 'node-types.json'
+        direct = Path(binary_dir) / "_deps" / checkout / "src" / "node-types.json"
         if direct.exists():
             return direct
-    candidates = sorted(SERVER.glob('build*/_deps/%s/src/node-types.json' % checkout))
+    candidates = sorted(SERVER.glob("build*/_deps/%s/src/node-types.json" % checkout))
     if not candidates:
-        candidates = sorted(REPO_ROOT.glob('build*/_deps/%s/src/node-types.json' % checkout))
+        candidates = sorted(REPO_ROOT.glob("build*/_deps/%s/src/node-types.json" % checkout))
     return candidates[0] if candidates else None
 
 
@@ -168,36 +217,40 @@ def load_grammar(path):
     They are accepted, not trusted: a hidden name may be compared against but may never calibrate a
     line, for the same reason the anonymous tokens may not.
     """
-    grammar = json.loads(path.read_text(encoding='utf-8'))
+    grammar = json.loads(path.read_text(encoding="utf-8"))
     fields = set()
     for entry in grammar:
-        fields.update(entry.get('fields') or {})
+        fields.update(entry.get("fields") or {})
 
     hidden = set()
-    grammar_json = path.parent / 'grammar.json'
+    grammar_json = path.parent / "grammar.json"
     if grammar_json.exists():
-        rules = json.loads(grammar_json.read_text(encoding='utf-8')).get('rules') or {}
-        hidden = {name for name in rules if name.startswith('_')}
+        rules = json.loads(grammar_json.read_text(encoding="utf-8")).get("rules") or {}
+        hidden = {name for name in rules if name.startswith("_")}
 
     return {
-        'nodes': {entry['type'] for entry in grammar} | hidden,
-        'named': {entry['type'] for entry in grammar if entry.get('named')},
-        'fields': fields,
-        'path': path,
+        "nodes": {entry["type"] for entry in grammar} | hidden,
+        "named": {entry["type"] for entry in grammar if entry.get("named")},
+        "fields": fields,
+        "path": path,
     }
 
 
 def grammar_for(text):
     """Which grammar's names a file is entitled to use, decided by what it parses."""
-    return 'doxygen' if any(marker in text for marker in DOXYGEN_MARKERS) else 'angelscript'
+    return "doxygen" if any(marker in text for marker in DOXYGEN_MARKERS) else "angelscript"
 
 
 def main():
     parser = argparse.ArgumentParser(description="Audit C++ source code for invalid Tree-Sitter grammar names.")
-    parser.add_argument("--strict", action="store_true", help="Fail if grammar definitions are not found (mandatory in CI).")
-    parser.add_argument("--binary-dir", type=str, default=None, help="Path to CMake binary/build directory containing _deps.")
+    parser.add_argument(
+        "--strict", action="store_true", help="Fail if grammar definitions are not found (mandatory in CI)."
+    )
+    parser.add_argument(
+        "--binary-dir", type=str, default=None, help="Path to CMake binary/build directory containing _deps."
+    )
     args = parser.parse_args()
-    strict = args.strict or os.environ.get('CI') == 'true'
+    strict = args.strict or os.environ.get("CI") == "true"
 
     # Two different sets per grammar, and the difference matters. Every entry is a legitimate thing
     # to compare a node type against - `ts_node_type(x) == ";"` is how you spot an empty statement,
@@ -210,9 +263,9 @@ def main():
         if found is not None:
             loaded[name] = load_grammar(found)
 
-    if 'angelscript' not in loaded:
-        print('check-grammar-names: no node-types.json found under server/build*/ or build*/', file=sys.stderr)
-        print('  Configure CMake first - this guard reads the grammar CMake fetches.', file=sys.stderr)
+    if "angelscript" not in loaded:
+        print("check-grammar-names: no node-types.json found under server/build*/ or build*/", file=sys.stderr)
+        print("  Configure CMake first - this guard reads the grammar CMake fetches.", file=sys.stderr)
         return 1 if strict else 0
 
     bad_nodes = []
@@ -225,16 +278,16 @@ def main():
     duplicate_to_source_range = []
     unchecked = set()
 
-    for path in sorted(SRC.rglob('*')):
-        if path.suffix not in ('.cpp', '.h'):
+    for path in sorted(SRC.rglob("*")):
+        if path.suffix not in (".cpp", ".h"):
             continue
 
-        text = path.read_text(encoding='utf-8', errors='replace')
-        is_layer_2_3 = any(part in ('analysis', 'features') for part in path.parts)
-        is_layer_2_3_4 = is_layer_2_3 or 'lsp' in path.parts
+        text = path.read_text(encoding="utf-8", errors="replace")
+        is_layer_2_3 = any(part in ("analysis", "features") for part in path.parts)
+        is_layer_2_3_4 = is_layer_2_3 or "lsp" in path.parts
 
         # Files outside Layers 2, 3, and 4 that never touch a node cannot be comparing node types.
-        if not is_layer_2_3_4 and 'ts_node' not in text:
+        if not is_layer_2_3_4 and "ts_node" not in text:
             continue
 
         # A file whose grammar this checkout has not fetched cannot be checked. Skipping it is the
@@ -244,9 +297,9 @@ def main():
             unchecked.add(wanted)
             continue
 
-        grammar_nodes = loaded[wanted]['nodes']
-        grammar_named = loaded[wanted]['named']
-        grammar_fields = loaded[wanted]['fields']
+        grammar_nodes = loaded[wanted]["nodes"]
+        grammar_named = loaded[wanted]["named"]
+        grammar_fields = loaded[wanted]["fields"]
 
         node_type_vars = set(NODE_TYPE_VARIABLE.findall(text))
 
@@ -255,19 +308,21 @@ def main():
             if COMMENT.match(line):
                 continue
 
-            if is_layer_2_3_4 and re.search(r'\bparser::nodes::', line):
+            if is_layer_2_3_4 and re.search(r"\bparser::nodes::", line):
                 bad_parser_nodes.append((rel, number))
 
-            if is_layer_2_3_4 and re.search(r'\bts_tree_cursor_current_field_name\b', line):
+            if is_layer_2_3_4 and re.search(r"\bts_tree_cursor_current_field_name\b", line):
                 bad_cursor_field_names.append((rel, number))
 
-            if is_layer_2_3_4 and re.search(r'\bk_maxAstDepth\b|\bdepth\s*(?:>=?|>|<=)\s*(?:[1-9]\d*|k_maxAstDepth)', line):
+            if is_layer_2_3_4 and re.search(
+                r"\bk_maxAstDepth\b|\bdepth\s*(?:>=?|>|<=)\s*(?:[1-9]\d*|k_maxAstDepth)", line
+            ):
                 bad_depth_comparisons.append((rel, number))
 
-            if is_layer_2_3_4 and path.suffix == '.cpp' and re.search(r'\bSourceRange\s+ToSourceRange\s*\(', line):
+            if is_layer_2_3_4 and path.suffix == ".cpp" and re.search(r"\bSourceRange\s+ToSourceRange\s*\(", line):
                 duplicate_to_source_range.append((rel, number))
 
-            if is_layer_2_3_4 and re.search(r'(?<!\w)NodeType\s*\(', line):
+            if is_layer_2_3_4 and re.search(r"(?<!\w)NodeType\s*\(", line):
                 bad_node_type_calls.append((rel, number))
 
             for match in FIELD_LOOKUP.finditer(line):
@@ -280,7 +335,7 @@ def main():
                 if symbol not in grammar_nodes:
                     bad_nodes.append((rel, number, symbol))
 
-            if 'child_by_field' in line:
+            if "child_by_field" in line:
                 continue
 
             compared = []
@@ -288,13 +343,12 @@ def main():
                 cand = match.group(1) or match.group(2)
                 if cand:
                     compared.append(cand)
-            strcmp_hits = [(match.group(1), match.group(2))
-                           for match in STRCMP_COMPARISON.finditer(line)]
+            strcmp_hits = [(match.group(1), match.group(2)) for match in STRCMP_COMPARISON.finditer(line)]
             compared += [name for _, name in strcmp_hits]
             if not compared:
                 continue
 
-            if is_layer_2_3 and path.name != 'DoxygenMarkdown.cpp':
+            if is_layer_2_3 and path.name != "DoxygenMarkdown.cpp":
                 for candidate in compared:
                     if candidate in grammar_named and candidate not in NOT_NODE_TYPES:
                         banned_node_comparisons.append((rel, number, candidate))
@@ -302,9 +356,11 @@ def main():
             # Either the line reads a node type outright, one of the names it compares is a real
             # node type, or it strcmps a variable this file filled from ts_node_type - all three
             # mean the rest of the line is talking about node types too.
-            about_node_types = (NODE_TYPE_HOLDERS.search(line) is not None
-                                or any(name in grammar_named for name in compared)
-                                or any(var in node_type_vars for var, _ in strcmp_hits))
+            about_node_types = (
+                NODE_TYPE_HOLDERS.search(line) is not None
+                or any(name in grammar_named for name in compared)
+                or any(var in node_type_vars for var, _ in strcmp_hits)
+            )
             if not about_node_types:
                 continue
 
@@ -314,49 +370,68 @@ def main():
                 bad_nodes.append((rel, number, candidate))
 
     for rel, number, name in bad_nodes:
-        print('%s:%d: node type "%s" is not in the grammar - this comparison is never true' %
-              (rel, number, name))
+        print('%s:%d: node type "%s" is not in the grammar - this comparison is never true' % (rel, number, name))
     for rel, number, name in bad_fields:
-        print('%s:%d: field "%s" is not in the grammar - this lookup always returns null' %
-              (rel, number, name))
+        print('%s:%d: field "%s" is not in the grammar - this lookup always returns null' % (rel, number, name))
     for rel, number in bad_node_type_calls:
-        print('%s:%d: NodeType(TSNode) wrapper is banned in Layers 2/3/4 - use ts_node_symbol with parser::GetGrammarSymbols()' %
-              (rel, number))
+        print(
+            "%s:%d: NodeType(TSNode) wrapper is banned in Layers 2/3/4 - use ts_node_symbol with parser::GetGrammarSymbols()"
+            % (rel, number)
+        )
     for rel, number, name in banned_node_comparisons:
-        print('%s:%d: comparison against node type "%s" is banned in Layers 2 and 3 - use ts_node_symbol with parser::GetGrammarSymbols()' %
-              (rel, number, name))
+        print(
+            '%s:%d: comparison against node type "%s" is banned in Layers 2 and 3 - use ts_node_symbol with parser::GetGrammarSymbols()'
+            % (rel, number, name)
+        )
     for rel, number in bad_parser_nodes:
-        print('%s:%d: parser::nodes:: is banned in Layers 2/3/4 - use gs.sym* from parser::GetGrammarSymbols()' %
-              (rel, number))
+        print(
+            "%s:%d: parser::nodes:: is banned in Layers 2/3/4 - use gs.sym* from parser::GetGrammarSymbols()"
+            % (rel, number)
+        )
     for rel, number in bad_cursor_field_names:
-        print('%s:%d: ts_tree_cursor_current_field_name is banned in Layers 2/3/4 - use ts_tree_cursor_current_field_id' %
-              (rel, number))
+        print(
+            "%s:%d: ts_tree_cursor_current_field_name is banned in Layers 2/3/4 - use ts_tree_cursor_current_field_id"
+            % (rel, number)
+        )
     for rel, number in bad_depth_comparisons:
-        print('%s:%d: magic depth comparison or k_maxAstDepth is banned in Layers 2/3/4 - use flat iterative worklists' %
-              (rel, number))
+        print(
+            "%s:%d: magic depth comparison or k_maxAstDepth is banned in Layers 2/3/4 - use flat iterative worklists"
+            % (rel, number)
+        )
     for rel, number in duplicate_to_source_range:
-        print('%s:%d: duplicate ToSourceRange definition in .cpp - use centralized SymbolTable.h ToSourceRange' %
-              (rel, number))
+        print(
+            "%s:%d: duplicate ToSourceRange definition in .cpp - use centralized SymbolTable.h ToSourceRange"
+            % (rel, number)
+        )
 
-    total = (len(bad_nodes) + len(bad_fields) + len(bad_node_type_calls) +
-             len(banned_node_comparisons) + len(bad_parser_nodes) +
-             len(bad_cursor_field_names) + len(bad_depth_comparisons) +
-             len(duplicate_to_source_range))
+    total = (
+        len(bad_nodes)
+        + len(bad_fields)
+        + len(bad_node_type_calls)
+        + len(banned_node_comparisons)
+        + len(bad_parser_nodes)
+        + len(bad_cursor_field_names)
+        + len(bad_depth_comparisons)
+        + len(duplicate_to_source_range)
+    )
     if total:
         print()
-        print('%d error(s) found in grammar name usage or banned wrappers. Either the name is wrong, or the grammar needs it - '
-              'check %s.' % (total, ', '.join(sorted(
-                  loaded[name]['path'].relative_to(SERVER).as_posix() for name in loaded))))
+        print(
+            "%d error(s) found in grammar name usage or banned wrappers. Either the name is wrong, or the grammar needs it - "
+            "check %s."
+            % (total, ", ".join(sorted(loaded[name]["path"].relative_to(SERVER).as_posix() for name in loaded)))
+        )
         return 1
 
     for name in sorted(unchecked):
-        print('check-grammar-names: the %s grammar is not in this build tree; files that parse it '
-              'went unchecked.' % name, file=sys.stderr)
+        print(
+            "check-grammar-names: the %s grammar is not in this build tree; files that parse it went unchecked." % name,
+            file=sys.stderr,
+        )
 
-    print('Every node type and field named in src/ exists in the grammar it parses (%s).'
-          % ', '.join(sorted(loaded)))
+    print("Every node type and field named in src/ exists in the grammar it parses (%s)." % ", ".join(sorted(loaded)))
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
