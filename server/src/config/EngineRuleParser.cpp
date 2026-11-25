@@ -1,5 +1,6 @@
 #include "config/EngineRuleParser.h"
 
+#include "config/EngineVersionFeatures.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <cctype>
@@ -47,6 +48,32 @@ static void ReadPropertyWithFallback(const nlohmann::json& j, std::string_view c
     if (!target.has_value())
     {
         ReadOptionalField(j, epKey, target);
+    }
+}
+
+/**
+ * @brief Reads the optional "engine" section: name, version and source.
+ * @param[in] j Root JSON object of the rules file.
+ * @param[in,out] config Configuration receiving the profile; engine.name fills an empty ruleset name.
+ */
+static void ParseEngineProfile(const nlohmann::json& j, EngineRuleConfig& config)
+{
+    if (!j.contains("engine") || !j["engine"].is_object())
+    {
+        return;
+    }
+    const auto& engine = j["engine"];
+    config.profile.declared = true;
+    const std::string version = engine.value("version", "");
+    if (IsEngineVersionString(version))
+    {
+        config.profile.version = version;
+    }
+    const std::string source = engine.value("source", "official");
+    config.profile.source = source == "custom" ? "custom" : "official";
+    if (config.name.empty())
+    {
+        config.name = engine.value("name", "");
     }
 }
 
@@ -486,6 +513,7 @@ std::optional<EngineRuleConfig> ParseEngineRuleConfigJson(std::string_view jsonT
 
         EngineRuleConfig config;
         config.name = parsed.value("name", "");
+        ParseEngineProfile(parsed, config);
 
         if (!ParseNoHandleTypes(parsed, config.noHandleTypes))
         {

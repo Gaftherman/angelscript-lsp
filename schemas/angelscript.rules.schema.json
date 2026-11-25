@@ -13,6 +13,29 @@
       "type": "string",
       "description": "Friendly human-readable display name for this engine ruleset."
     },
+    "engine": {
+      "type": "object",
+      "description": "The AngelScript engine the host embeds. Settings newer than this version are reported in the server log and by the MCP engine_rules tool.",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the host application or engine build."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "default": "2.39.0",
+          "description": "AngelScript release the host embeds, such as 2.36.1. Defaults to 2.39.0, the latest release, which the server fully supports."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["official", "custom"],
+          "default": "official",
+          "description": "official is an unmodified release from angelcode.com. custom is a modified engine: engineProperties stay the source of truth and are not compared with the version."
+        }
+      }
+    },
     "noHandleTypes": {
       "type": "array",
       "items": {

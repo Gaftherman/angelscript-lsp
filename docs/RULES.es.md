@@ -92,6 +92,7 @@ Las listas, los mapas y las cadenas opcionales están vacíos de forma predeterm
 | `$schema` | Activa la validación y las sugerencias de propiedades JSON en VS Code. | Usa la URL del primer ejemplo. |
 | `name` | Da un nombre descriptivo al conjunto de reglas. | `"Reglas del motor del juego"` |
 | `noHandleTypes` | Genera `E261` (`as-err-handle-on-no-handle-type`) al usar handles con los tipos de la lista, incluidos sus alias `typedef`. Se combina con `angelscript.engine.noHandleTypes` y `--no-handle-type=<name>`. | `["string", "Game::Value"]` |
+| `engine` | Declara el motor AngelScript que usa el host: `version` (por defecto `2.39.0`, la última versión y la que tiene soporte completo), `source` (`official` para una versión sin modificar, `custom` para un motor modificado) y `name`. El servidor registra cada clave de `engineProperties` más reciente que `version` y la herramienta MCP `engine_rules` devuelve el perfil. Un motor `custom` conserva `engineProperties` como fuente de verdad. | `{"version": "2.36.1", "source": "official"}` |
 | `engineProperties` | Da prioridad a las opciones del motor indicadas en el archivo sobre los ajustes del editor. | `{"requireEnumScope": true}` |
 | `storageRules` | Señala dónde se guardan los tipos o handles que coinciden con la regla. | `[{"id": "member", "types": ["Entity"], "disallowInMembers": true}]` |
 | `typeSuggestions` | Recomienda un tipo alternativo para una declaración de variable. | `[{"id": "prefer-string", "fromType": "string_t", "toType": "string"}]` |

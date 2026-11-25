@@ -1,4 +1,5 @@
 #include "config/EngineRuleParser.h"
+#include "config/EngineVersionFeatures.h"
 #include "i18n/i18n.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
@@ -232,5 +233,22 @@ void Server::LoadWorkspaceEngineRules(std::span<const std::string> workspaceRoot
                         m_config.engineRules.schedulerRules.size()));
 
     ApplyEngineProperties(m_config.engineRules.engineProperties, m_config.engine);
+
+    for (const config::EngineProfileIssue& issue : config::CheckEngineProfile(m_config.engineRules))
+    {
+        LogWarning(
+            i18n::FormatMessage(m_i18n.get(), "warn-engine-property-too-new",
+                                "engineProperties.{} needs AngelScript {} or later, but the engine profile is {}.",
+                                issue.key, issue.sinceVersion, issue.version));
+    }
+    const config::EngineProfile& profile = m_config.engineRules.profile;
+    if (profile.source != "custom" && config::EngineVersionNumber(profile.version) !=
+                                          config::EngineVersionNumber(config::LATEST_SUPPORTED_ENGINE_VERSION))
+    {
+        LogInfo(i18n::FormatMessage(m_i18n.get(), "info-engine-profile-not-latest",
+                                    "Engine profile is AngelScript {}. Version {} is fully supported; other releases "
+                                    "are checked against the profile only.",
+                                    profile.version, config::LATEST_SUPPORTED_ENGINE_VERSION));
+    }
 }
 } // namespace angel_lsp

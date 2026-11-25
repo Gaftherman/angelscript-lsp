@@ -179,11 +179,22 @@ struct UnusedSymbolRules
 };
 
 /**
+ * @brief Engine profile declared by the optional "engine" section of the rules file.
+ */
+struct EngineProfile
+{
+    std::string version = "2.39.0";  ///< AngelScript release the host embeds (x.y.z).
+    std::string source = "official"; ///< "official" for a release from angelcode.com, "custom" for a modified engine.
+    bool declared = false;           ///< True when the rules file has an "engine" section.
+};
+
+/**
  * @brief Complete engine rule configuration loaded from angelscript.rules.json.
  */
 struct EngineRuleConfig
 {
     std::string name;                                ///< Friendly name of the ruleset.
+    EngineProfile profile;                           ///< Engine release and origin declared by the rules file.
     NativeEngineProperties engineProperties;         ///< Native engine properties.
     TransparentStringSet noHandleTypes;              ///< Value types that do not support object handles ('@').
     std::vector<StorageRule> storageRules;           ///< Storage safety rules.

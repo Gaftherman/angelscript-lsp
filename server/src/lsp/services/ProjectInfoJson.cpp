@@ -1,5 +1,6 @@
 #include "lsp/services/ProjectInfoJson.h"
 
+#include "config/EngineVersionFeatures.h"
 #include "lsp/mcp/McpJson.h"
 
 #include <filesystem>
@@ -68,6 +69,23 @@ static lsp::json::Value ModulesJson(std::string_view root,
     return lsp::json::Value(std::move(array));
 }
 
+/**
+ * @brief Adds one machine-readable warning with the question an agent should ask the user.
+ * @param[in,out] warnings Array receiving the warning object.
+ * @param[in] code Stable warning code such as no-rules-file.
+ * @param[in] message What is missing and what the agent cannot know without it.
+ * @param[in] ask What to ask the user before writing code.
+ */
+static void AddWorkspaceWarning(lsp::json::Array& warnings, std::string_view code, std::string_view message,
+                                std::string_view ask)
+{
+    lsp::json::Value warning = mcp::json::MakeObject();
+    warning.object()["code"] = std::string(code);
+    warning.object()["message"] = std::string(message);
+    warning.object()["ask"] = std::string(ask);
+    warnings.push_back(std::move(warning));
+}
+
 lsp::json::Value BuildWorkspaceInfoJson(const WorkspaceInfoView& view)
 {
     lsp::json::Value info = mcp::json::MakeObject();
@@ -77,6 +95,38 @@ lsp::json::Value BuildWorkspaceInfoJson(const WorkspaceInfoView& view)
     info.object()["rulesFile"] = OptionalPath(view.root, view.rulesFile);
     info.object()["includeRoots"] = PathArray(view.root, view.includeRoots);
     info.object()["modules"] = ModulesJson(view.root, view.modules);
+
+    lsp::json::Array warnings;
+    if (view.rulesFile.empty())
+    {
+        AddWorkspaceWarning(warnings, "no-rules-file",
+                            "No angelscript.rules.json was found, so the engine version, engine properties and "
+                            "host-specific checks are unknown.",
+                            "Ask which AngelScript version the host embeds and whether a rules file exists. Offer to "
+                            "create a minimal angelscript.rules.json with an engine section.");
+    }
+    if (view.activePredefined.empty())
+    {
+        AddWorkspaceWarning(warnings, "no-predefined",
+                            "No .as.predefined stub is loaded, so the host API (types, functions, callbacks) is "
+                            "unknown.",
+                            "Ask for the host's .as.predefined stub or the API reference. Do not invent host "
+                            "functions or types.");
+    }
+    if (view.moduleEntryPoint.empty() && view.modules.empty())
+    {
+        AddWorkspaceWarning(warnings, "no-module-entry-point",
+                            "No module entry point is configured, so the script's callbacks cannot be inferred.",
+                            "Ask which script is the entry point and which callbacks the host calls.");
+    }
+    lsp::json::Array nextSteps;
+    if (!warnings.empty())
+    {
+        nextSteps.push_back(lsp::json::Value(std::string(
+            "Ask the user about each warning before writing code that depends on the missing information.")));
+    }
+    info.object()["warnings"] = lsp::json::Value(std::move(warnings));
+    info.object()["nextSteps"] = lsp::json::Value(std::move(nextSteps));
     return info;
 }
 
@@ -217,6 +267,23 @@ static lsp::json::Value UnusedSymbolRulesJson(const config::UnusedSymbolRules& r
     return json;
 }
 
+static lsp::json::Value EngineProfileJson(const config::EngineRuleConfig& rules)
+{
+    lsp::json::Value json = mcp::json::MakeObject();
+    json.object()["version"] = std::string(rules.profile.version);
+    json.object()["source"] = std::string(rules.profile.source);
+    json.object()["declared"] = rules.profile.declared;
+    json.object()["latestSupported"] = std::string(config::LATEST_SUPPORTED_ENGINE_VERSION);
+    lsp::json::Array warnings;
+    for (const config::EngineProfileIssue& issue : config::CheckEngineProfile(rules))
+    {
+        warnings.push_back(lsp::json::Value("engineProperties." + issue.key + " needs AngelScript " +
+                                            issue.sinceVersion + " or later"));
+    }
+    json.object()["warnings"] = lsp::json::Value(std::move(warnings));
+    return json;
+}
+
 lsp::json::Value BuildEngineRulesJson(const config::EngineRuleConfig& rules, std::span<const std::string> noHandleTypes,
                                       std::string_view rulesFile)
 {
@@ -224,6 +291,7 @@ lsp::json::Value BuildEngineRulesJson(const config::EngineRuleConfig& rules, std
     json.object()["name"] = std::string(rules.name);
     json.object()["rulesFile"] =
         rulesFile.empty() ? lsp::json::Value(lsp::json::Null{}) : lsp::json::Value(std::string(rulesFile));
+    json.object()["engine"] = EngineProfileJson(rules);
     json.object()["engineProperties"] = EnginePropertiesJson(rules.engineProperties);
     json.object()["noHandleTypes"] = StringArray(noHandleTypes);
     json.object()["storageRules"] = StorageRulesJson(rules.storageRules);

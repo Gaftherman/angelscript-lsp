@@ -295,10 +295,12 @@
   "mcp-tool-document-symbols": "Returns the symbol outline of a document.",
   "mcp-tool-references": "Returns every reference to the symbol at a zero-based line and character, optionally with its declaration.",
   "mcp-tool-workspace-symbols": "Searches the symbols of the whole workspace and the predefined stubs by name.",
-  "mcp-tool-workspace-info": "Returns the workspace root, the module entry point, the active predefined stubs, the engine rules file and the include roots.",
+  "mcp-tool-workspace-info": "Returns the workspace root, the module entry point, the active predefined stubs, the engine rules file and the include roots, plus warnings for anything missing. When a warning is present, ask the user the question it carries before writing code.",
   "mcp-tool-engine-rules": "Returns the host engine rules in effect: engine properties, types without handles, storage, type and call rules, and unused-symbol exemptions.",
   "mcp-tool-module-graph": "Returns the files reachable from the module entry point, or from a given script, and the configured modules.",
   "mcp-tool-predefined-lookup": "Finds a host type, function, namespace or enum by its name in the predefined stubs and returns its declaration, file and documentation.",
   "suppression-explanation-placeholder": "explain why",
-  "warn-invalid-no-handle-type": "Ignoring invalid angelscript.engine.noHandleTypes entry '{}': expected a non-empty identifier or scoped name."
+  "warn-invalid-no-handle-type": "Ignoring invalid angelscript.engine.noHandleTypes entry '{}': expected a non-empty identifier or scoped name.",
+  "warn-engine-property-too-new": "engineProperties.{} needs AngelScript {} or later, but the engine profile is {}.",
+  "info-engine-profile-not-latest": "Engine profile is AngelScript {}. Version {} is fully supported; other releases are checked against the profile only."
 }

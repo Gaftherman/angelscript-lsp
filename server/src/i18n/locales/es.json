@@ -295,10 +295,12 @@
   "mcp-tool-document-symbols": "Devuelve el esquema de símbolos de un documento.",
   "mcp-tool-references": "Devuelve todas las referencias al símbolo en una línea y un carácter con base cero, con su declaración si se pide.",
   "mcp-tool-workspace-symbols": "Busca por nombre los símbolos de todo el espacio de trabajo y de los stubs predefinidos.",
-  "mcp-tool-workspace-info": "Devuelve la raíz del espacio de trabajo, el punto de entrada del módulo, los stubs predefinidos activos, el archivo de reglas del motor y las raíces de include.",
+  "mcp-tool-workspace-info": "Devuelve la raíz del espacio de trabajo, el punto de entrada del módulo, los stubs predefinidos activos, el archivo de reglas del motor y las raíces de inclusión, más avisos de lo que falte. Si hay un aviso, haz al usuario la pregunta que incluye antes de escribir código.",
   "mcp-tool-engine-rules": "Devuelve las reglas del motor del host en vigor: propiedades del motor, tipos sin handles, reglas de almacenamiento, de tipos y de llamadas, y exenciones de símbolos sin usar.",
   "mcp-tool-module-graph": "Devuelve los archivos alcanzables desde el punto de entrada del módulo, o desde un script dado, y los módulos configurados.",
   "mcp-tool-predefined-lookup": "Busca por nombre un tipo, función, namespace o enum del host en los stubs predefinidos y devuelve su declaración, archivo y documentación.",
   "suppression-explanation-placeholder": "explica por qué",
-  "warn-invalid-no-handle-type": "Ignorando entrada inválida '{}' en angelscript.engine.noHandleTypes: se esperaba un identificador o nombre calificado no vacío."
+  "warn-invalid-no-handle-type": "Ignorando entrada inválida '{}' en angelscript.engine.noHandleTypes: se esperaba un identificador o nombre calificado no vacío.",
+  "warn-engine-property-too-new": "engineProperties.{} necesita AngelScript {} o posterior, pero el perfil del motor es {}.",
+  "info-engine-profile-not-latest": "El perfil del motor es AngelScript {}. La versión {} tiene soporte completo; las demás se comprueban solo contra el perfil."
 }

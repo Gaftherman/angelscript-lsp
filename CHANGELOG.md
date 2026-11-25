@@ -4,6 +4,11 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+### Added
+
+- Added an optional `engine` section to `angelscript.rules.json` with `version`, `source` (`official` or `custom`) and `name`. The default is AngelScript 2.39.0, the latest release and the one fully supported. The server logs every `engineProperties` key that is newer than the declared version, and a `custom` engine keeps `engineProperties` as the source of truth.
+- The MCP `engine_rules` tool returns the engine profile with its warnings, and `workspace_info` returns `warnings` and `nextSteps` when the rules file, the predefined stub or the module entry point is missing, each with the question to ask the user.
+
 ## [1.2.3] - 2026-11-24
 
 ### Added

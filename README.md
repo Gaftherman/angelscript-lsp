@@ -161,7 +161,7 @@ In `.vscode/settings.json`, set `"angelscript.predefined.active": "${workspaceFo
 
 ## Engine rules
 
-Save `angelscript.rules.json` in the project root. Use the [Engine Rules Guide](docs/RULES.md) to configure your project's checks.
+Save `angelscript.rules.json` in the project root. Use the [Engine Rules Guide](docs/RULES.md) to configure your project's checks. AngelScript **2.39.0**, the latest release, is the supported engine version. If your host embeds another release, declare it with the `engine` section (`{"engine": {"version": "2.36.1"}}`) and the server reports engine properties that release does not have. The [CLI](https://github.com/Gaftherman/angelscript-cli/blob/main/docs/ENGINE_VERSIONS.md) lists which official releases it builds and tests against.
 
 ## Engine options
 

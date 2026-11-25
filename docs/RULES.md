@@ -92,6 +92,7 @@ Optional lists, maps and strings start empty unless a row gives a different defa
 | `$schema` | Enables JSON property suggestions and validation in VS Code. | Use the URL in the first example. |
 | `name` | Gives the ruleset a descriptive name. | `"Game engine rules"` |
 | `noHandleTypes` | Reports `E261` (`as-err-handle-on-no-handle-type`) for handles to listed types, including through typedefs. Merges with `angelscript.engine.noHandleTypes` and `--no-handle-type=<name>`. | `["string", "Game::Value"]` |
+| `engine` | Declares the AngelScript engine the host embeds: `version` (default `2.39.0`, the latest release and the one fully supported), `source` (`official` for an unmodified release, `custom` for a modified engine) and `name`. The server logs every `engineProperties` key that is newer than `version`, and the MCP `engine_rules` tool returns the profile. A `custom` engine keeps `engineProperties` as the source of truth. | `{"version": "2.36.1", "source": "official"}` |
 | `engineProperties` | Overrides the editor's engine options for the properties you supply. | `{"requireEnumScope": true}` |
 | `storageRules` | Flags where matching types or handles are stored. | `[{"id": "member", "types": ["Entity"], "disallowInMembers": true}]` |
 | `typeSuggestions` | Recommends a replacement for a type used in a variable declaration. | `[{"id": "prefer-string", "fromType": "string_t", "toType": "string"}]` |

@@ -161,7 +161,7 @@ En `.vscode/settings.json`, pon `"angelscript.predefined.active": "${workspaceFo
 
 ## Reglas del motor
 
-Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) para configurar las comprobaciones de tu proyecto.
+Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) para configurar las comprobaciones de tu proyecto. AngelScript **2.39.0**, la última versión, es la versión del motor con soporte. Si tu host usa otra, decláralo con la sección `engine` (`{"engine": {"version": "2.36.1"}}`) y el servidor avisa de las propiedades del motor que esa versión no tiene. La [CLI](https://github.com/Gaftherman/angelscript-cli/blob/main/docs/ENGINE_VERSIONS.md) indica con qué versiones oficiales compila y prueba.
 
 ## Opciones del motor
 

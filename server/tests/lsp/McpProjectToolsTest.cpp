@@ -3,11 +3,13 @@
 #include "lsp/mcp/McpBridge.h"
 #include "lsp/mcp/McpJson.h"
 
+#include <algorithm>
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <lsp/json/json.h>
 #include <string>
+#include <vector>
 
 /**
  * The project tools tell an agent what the workspace looks like before it edits: entry point, engine rules,
@@ -75,6 +77,64 @@ TEST_SUITE("lsp/McpProjectTools")
         CHECK(payload.object().get("includeRoots").isArray());
         CHECK(payload.object().get("rulesFile").isString());
         CHECK(payload.object().get("rulesFile").string() == rulesName);
+    }
+
+    TEST_CASE("McpProjectTools - Good - workspace_info warns about every missing piece in an empty workspace")
+    {
+        angel_lsp::test::McpTestSession session;
+        const int info = session.Call("workspace_info", angel_lsp::mcp::json::MakeObject());
+        const auto replies = session.Run();
+        const auto payload = angel_lsp::test::McpPayload(replies.at(info));
+
+        std::vector<std::string> codes;
+        for (const auto& warning : payload.object().get("warnings").array())
+        {
+            codes.push_back(warning.object().get("code").string());
+            CHECK_FALSE(warning.object().get("message").string().empty());
+            CHECK_FALSE(warning.object().get("ask").string().empty());
+        }
+        CHECK(std::find(codes.begin(), codes.end(), "no-rules-file") != codes.end());
+        CHECK(std::find(codes.begin(), codes.end(), "no-predefined") != codes.end());
+        CHECK(std::find(codes.begin(), codes.end(), "no-module-entry-point") != codes.end());
+        CHECK_FALSE(payload.object().get("nextSteps").array().empty());
+    }
+
+    TEST_CASE("McpProjectTools - Good - workspace_info drops the rules and predefined warnings once they exist")
+    {
+        angel_lsp::test::McpTestSession session;
+        const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("Host");
+        WriteFile(session.root / "host.angelscript.rules.json", R"({"name":"generated"})");
+        WriteFile(session.root / "host.as.predefined", "class " + typeName + " {}\n");
+
+        const int info = session.Call("workspace_info", angel_lsp::mcp::json::MakeObject());
+        const auto replies = session.Run();
+        const auto payload = angel_lsp::test::McpPayload(replies.at(info));
+
+        for (const auto& warning : payload.object().get("warnings").array())
+        {
+            const std::string code = warning.object().get("code").string();
+            CHECK(code != "no-rules-file");
+            CHECK(code != "no-predefined");
+        }
+    }
+
+    TEST_CASE("McpProjectTools - Good - engine_rules returns the engine profile and warns about newer properties")
+    {
+        angel_lsp::test::McpTestSession session;
+        WriteFile(session.root / "host.angelscript.rules.json",
+                  R"({"engine":{"name":"host","version":"2.36.1"},"engineProperties":{"foreachSupport":true}})");
+
+        const int rules = session.Call("engine_rules", angel_lsp::mcp::json::MakeObject());
+        const auto replies = session.Run();
+        const auto payload = angel_lsp::test::McpPayload(replies.at(rules));
+
+        const auto& engine = payload.object().get("engine").object();
+        CHECK(engine.get("version").string() == "2.36.1");
+        CHECK(engine.get("source").string() == "official");
+        CHECK(engine.get("declared").boolean());
+        CHECK(engine.get("latestSupported").string() == "2.39.0");
+        REQUIRE(engine.get("warnings").array().size() == 1);
+        CHECK(engine.get("warnings").array().front().string().find("foreachSupport") != std::string::npos);
     }
 
     TEST_CASE("McpProjectTools - Good - engine_rules returns the properties and the storage rule that were written")
