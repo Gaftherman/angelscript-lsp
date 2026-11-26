@@ -14,7 +14,17 @@ Games and applications that embed AngelScript use it to run plugin and mod code.
 The C++20 language server uses Tree-Sitter to parse scripts and index their symbols.
 
 <p align="center"><img src="client/images/hover.gif" alt="Hover documentation on a method call" width="720"></p>
-<p align="center"><em>Hover over a method call to see its documentation.</em></p>
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="client/assets/as-file-icon.svg" alt="AngelScript file icon" width="64"></td>
+    <td align="center"><img src="client/assets/as-predefined-icon.svg" alt="AngelScript predefined file icon" width="64"></td>
+  </tr>
+  <tr>
+    <td align="center"><code>.as</code><br>script</td>
+    <td align="center"><code>.as.predefined</code><br>host API stub</td>
+  </tr>
+</table>
 
 ## Installation
 
@@ -175,6 +185,15 @@ Add an `attach` or `launch` configuration of type `angelscript` to `launch.json`
 
 <p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code attached to a script running in Command Prompt" width="720"></p>
 
+## Building from source
+
+```bash
+cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
+cmake --build server/build --config Release
+ctest --test-dir server/build -C Release --output-on-failure
+cd client && npm install && npm run compile && npm run bundle
+```
+
 ## Documentation
 
 - [Detailed Guide](docs/GUIDE.md) — workspace examples, predefined files, engine options, and commands.
@@ -182,21 +201,35 @@ Add an `attach` or `launch` configuration of type `angelscript` to `launch.json`
 - [Engine Rules Guide](docs/RULES.md) — custom checks and shared engine settings.
 - [CHANGELOG.md](CHANGELOG.md) — release history and changes.
 
-## Other Clients
+## Roadmap
 
-This extension is also available on Open VSX: [AngelScript Language Server (Open VSX)](https://open-vsx.org/extension/Gaftherman/angelscript-gaftherman).
+- Close the code audit and pass the quality gates on the architecture refactor branch.
+- Keep diagnostics in step with the official AngelScript compiler.
+- Support more hosts through `.as.predefined` stubs.
 
-Other AngelScript language servers exist. If this one does not fit your project, we openly recommend trying them:
+Progress is recorded in [CHANGELOG.md](CHANGELOG.md).
 
-- [sashi0034/angel-lsp](https://github.com/sashi0034/angel-lsp): another AngelScript language server for VS Code. It is still in development and also has an implementation for IntelliJ.
-
-## Issues and Contributions
+## Support
 
 Bug reports and feature requests are welcome via [GitHub Issues](https://github.com/Gaftherman/angelscript-lsp/issues). When the server fails, run **AngelScript: Report Issue** (or press **Report Issue** in the error message). It opens the issue form with your versions, the log and a small anonymized sample of your code already filled in, so you can review everything before it is sent.
 
-If you fix a small bug or add an enhancement, feel free to submit a pull request. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to build and check a change.
+If you fix a small bug or add an enhancement, feel free to submit a pull request. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to build and check a change. If you create an `.as.predefined` file for your application, contributing it as an example would be greatly appreciated.
 
-If you create an `.as.predefined` file for your application, contributing it as an example would be greatly appreciated and could be helpful to others.
+## Related
+
+| Project | Use |
+| --- | --- |
+| [angelscript-cli](https://github.com/Gaftherman/angelscript-cli) | Run, check and debug scripts from the terminal |
+| [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) | Debugger core |
+| [angelscript-debugger-example](https://github.com/Gaftherman/angelscript-debugger-example) | A host that shows how to use the debugger |
+| [angelscript-jit](https://github.com/Gaftherman/angelscript-jit) | Optional JIT compiler |
+| [angelscript-engine](https://github.com/Gaftherman/angelscript-engine) | Support for older AngelScript releases |
+
+### Similar projects
+
+Other AngelScript tools exist. If this one does not fit your project, we openly recommend trying them:
+
+- [sashi0034/angel-lsp](https://github.com/sashi0034/angel-lsp): another AngelScript language server for VS Code, with an IntelliJ implementation. Its [examples](https://github.com/sashi0034/angel-lsp/tree/main/examples) include host stubs.
 
 ## Credits
 
@@ -214,13 +247,6 @@ Angelscript for VS Code is built on the work of these projects. Their licenses a
 | [unordered_dense](https://github.com/martinus/unordered_dense) | MIT | Hash containers. |
 | [doctest](https://github.com/doctest/doctest) | MIT | Test framework. |
 
-## Building from source
+## License
 
-```bash
-cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
-cmake --build server/build --config Release
-ctest --test-dir server/build -C Release --output-on-failure
-cd client && npm install && npm run compile && npm run bundle
-```
-
-Licensed under the [MIT License](LICENSE).
+This repository is licensed under the [MIT License](LICENSE).
