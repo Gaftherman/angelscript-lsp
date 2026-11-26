@@ -1004,7 +1004,7 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
             do
             {
                 TSNode child = ts_tree_cursor_current_node(&cursor);
-                if (ts_node_is_named(child))
+                if (ts_tree_cursor_current_field_id(&cursor) == m_gs.fieldParam)
                 {
                     std::string paramName(parser::NodeText(child, sCtx.request.sourceCode));
                     if (!paramName.empty())

@@ -4,6 +4,10 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+### Fixed
+
+- A predefined stub that spells template parameters with the `class` keyword, such as `class array<class T>` and `class map<class K, class V>`, no longer reports E260 ("Template 'array' expects 2 sub type(s)"). The engine accepts that spelling in `RegisterObjectType`, and `angelscript --dump-predefined` writes it. The grammar now accepts the optional `class`, and the symbol collector counts only the `param` fields.
+
 ## [1.2.4] - 2026-11-25
 
 ### Added

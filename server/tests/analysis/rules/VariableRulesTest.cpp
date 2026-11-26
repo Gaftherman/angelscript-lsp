@@ -876,6 +876,46 @@ TEST_SUITE("analysis/rules/VariableRules")
                             "as-err-template-arg-count"));
     }
 
+    TEST_CASE("VariableRules - Stub template parameters spelled with the class keyword count once each")
+    {
+        const std::string tmpl1 = angel_lsp::test::GenerateRandomSymbolName("Box");
+        const std::string tmpl2 = angel_lsp::test::GenerateRandomSymbolName("Pair");
+        const std::string fn = angel_lsp::test::GenerateRandomSymbolName("main");
+        const std::string v = angel_lsp::test::GenerateRandomSymbolName("item");
+
+        const std::string stub = "class " + tmpl1 + "<class T> {}\nclass " + tmpl2 + "<class K, class V> {}\n";
+        auto analyzeWithStub = [&stub](const std::string& code)
+        {
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            LocalScopeCollector scopes(nullptr);
+            SymbolTable table;
+            static angel_lsp::i18n::I18n i18n;
+
+            (void)collector.CollectSymbols("file:///stub.as.predefined", stub, parser, table);
+            auto diags = collector.CollectSymbols("file:///test_tmpl.as", code, parser, table);
+
+            SemanticAnalysisRequest request{table, "file:///test_tmpl.as", ".as.predefined", &i18n};
+            request.scopeRoot = scopes.CollectScopes(code, parser);
+            request.sourceCode = code;
+
+            SemanticAnalyzer analyzer(nullptr);
+            auto semDiags = analyzer.Analyze(request);
+            diags.insert(diags.end(), std::make_move_iterator(semDiags.begin()),
+                         std::make_move_iterator(semDiags.end()));
+            return diags;
+        };
+
+        CHECK_FALSE(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl1 + "<int> " + v + "; }\n"),
+                            "as-err-template-arg-count"));
+        CHECK_FALSE(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl2 + "<int, float> " + v + "; }\n"),
+                            "as-err-template-arg-count"));
+        CHECK(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl1 + "<int, int> " + v + "; }\n"),
+                      "as-err-template-arg-count"));
+        CHECK(HasCode(analyzeWithStub("void " + fn + "() { " + tmpl2 + "<int> " + v + "; }\n"),
+                      "as-err-template-arg-count"));
+    }
+
     TEST_CASE("VariableRules - Predefined template accepts any declared template subtype name (U and random)")
     {
         const std::string boxU = angel_lsp::test::GenerateRandomSymbolName("BoxU");
