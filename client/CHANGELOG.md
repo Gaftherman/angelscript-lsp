@@ -6,9 +6,17 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-11-27
+
 ### Fixed
 
 - A predefined stub that spells template parameters with the `class` keyword, such as `class array<class T>` and `class map<class K, class V>`, no longer reports E260 ("Template 'array' expects 2 sub type(s)"). The engine accepts that spelling in `RegisterObjectType`, and `angelscript --dump-predefined` writes it. The grammar now accepts the optional `class`, and the symbol collector counts only the `param` fields.
+
+### Changed
+
+- Restructured the root, client and Spanish READMEs and pinned `tree-sitter-angelscript` to the class template parameter fix (`2ef4464`).
+
+**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.4...v1.2.5
 
 ## [1.2.4] - 2026-11-25
 
