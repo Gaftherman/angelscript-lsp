@@ -18,8 +18,8 @@ The C++20 language server uses Tree-Sitter to parse scripts and index their symb
 
 <table align="center">
   <tr>
-    <td align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/assets/as-file-icon.svg" alt="AngelScript file icon" width="64"></td>
-    <td align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/assets/as-predefined-icon.svg" alt="AngelScript predefined file icon" width="64"></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/as-file-icon.png" alt="AngelScript file icon" width="64"></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/as-predefined-icon.png" alt="AngelScript predefined file icon" width="64"></td>
   </tr>
   <tr>
     <td align="center"><code>.as</code><br>script</td>
