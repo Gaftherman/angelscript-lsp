@@ -1012,11 +1012,10 @@ export async function setActiveStubFiles(paths: string[]): Promise<void> {
  * @brief Reads configured modules, prioritizing local session state when configured.
  */
 export function getConfiguredModules(): ModuleConfig[] {
-    if (getConfigurationTarget() === 'localState' && extensionContext) {
-        const local = extensionContext.workspaceState.get<ModuleConfig[]>('angelscript.local.modules');
-        if (local !== undefined) {
-            return local;
-        }
+    // Switch Active Module isolates a module for the session whatever the configuration target is.
+    const local = extensionContext?.workspaceState.get<ModuleConfig[]>('angelscript.local.modules');
+    if (local !== undefined) {
+        return local;
     }
     return workspace.getConfiguration('angelscript').get<ModuleConfig[]>('modules', []);
 }
@@ -1031,6 +1030,8 @@ export async function setConfiguredModules(modules: ModuleConfig[]): Promise<voi
         await applyLocalStateChanges();
     } else {
         const vsTarget = target === 'user' ? ConfigurationTarget.Global : ConfigurationTarget.Workspace;
+        // An isolated module would otherwise hide the modules the user has just defined.
+        await extensionContext?.workspaceState.update('angelscript.local.modules', undefined);
         await workspace.getConfiguration('angelscript').update('modules', modules, vsTarget);
     }
 }
@@ -1935,6 +1936,7 @@ export async function activate(context: ExtensionContext) {
 
             if (event.affectsConfiguration('angelscript.stubs') ||
                 event.affectsConfiguration('angelscript.predefined') ||
+                event.affectsConfiguration('angelscript.modules') ||
                 event.affectsConfiguration('angelscript.configurationTarget')) {
                 updateLanguageStatus();
             }
@@ -2296,11 +2298,10 @@ function getEffectiveAngelscriptConfig(): Record<string, unknown> {
             nested['activeFiles'] = localStubsActiveFiles;
             copy['stubs'] = nested;
         }
-
-        const localModules = extensionContext.workspaceState.get<ModuleConfig[]>('angelscript.local.modules');
-        if (localModules !== undefined) {
-            copy['modules'] = localModules;
-        }
+    }
+    const localModules = extensionContext?.workspaceState.get<ModuleConfig[]>('angelscript.local.modules');
+    if (localModules !== undefined) {
+        copy['modules'] = localModules;
     }
     return copy;
 }

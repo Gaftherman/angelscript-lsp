@@ -1,0 +1,120 @@
+{
+  "name": "module-diagnostics",
+  "file": "MedkitPlugin.as",
+  "layout": "workbench",
+  "zoomIn": 1,
+  "editorSettings": {
+    "window.zoomLevel": 2,
+    "window.titleBarStyle": "custom",
+    "window.customTitleBarVisibility": "auto",
+    "window.menuStyle": "custom",
+    "workbench.statusBar.visible": true,
+    "workbench.activityBar.location": "hidden",
+    "workbench.sideBar.location": "left",
+    "workbench.tree.indent": 14,
+    "editor.fontSize": 16,
+    "editor.lineHeight": 24,
+    "editor.padding.top": 14,
+    "editor.padding.bottom": 14,
+    "editor.codeLens": true,
+    "editor.codeLensFontSize": 13,
+    "editor.inlayHints.enabled": "off",
+    "editor.quickSuggestions": false,
+    "angelscript.modules": [
+      {
+        "name": "Core",
+        "folder": "core"
+      },
+      {
+        "name": "Plugins",
+        "folder": "plugins"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "action": "wait",
+      "ms": 500
+    },
+    {
+      "action": "problemsPanel",
+      "expect": [
+        "Shop.as"
+      ]
+    },
+    {
+      "action": "hold",
+      "ms": 1400
+    },
+    {
+      "action": "command",
+      "title": "Switch Active Module",
+      "pickLabel": "Core",
+      "holdMs": 150,
+      "listHoldMs": 300
+    },
+    {
+      "action": "wait",
+      "ms": 1000
+    },
+    {
+      "action": "problemsPanel",
+      "expect": [
+        "Wallet.as"
+      ],
+      "expectAbsent": [
+        "ShieldPlugin.as"
+      ]
+    },
+    {
+      "action": "hold",
+      "ms": 900
+    },
+    {
+      "action": "command",
+      "title": "Switch Active Module",
+      "pickLabel": "Plugins",
+      "holdMs": 150,
+      "listHoldMs": 300
+    },
+    {
+      "action": "wait",
+      "ms": 1000
+    },
+    {
+      "action": "problemsPanel",
+      "expect": [
+        "ShieldPlugin.as"
+      ],
+      "expectAbsent": [
+        "Wallet.as"
+      ]
+    },
+    {
+      "action": "hold",
+      "ms": 900
+    },
+    {
+      "action": "command",
+      "title": "Switch Active Module",
+      "pickLabel": "All Modules",
+      "holdMs": 150,
+      "listHoldMs": 300
+    },
+    {
+      "action": "wait",
+      "ms": 1000
+    },
+    {
+      "action": "problemsPanel",
+      "expect": [
+        "Wallet.as"
+      ]
+    },
+    {
+      "action": "hold",
+      "ms": 1200
+    }
+  ],
+  "sidebar": false
+}

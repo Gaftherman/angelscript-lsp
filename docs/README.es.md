@@ -31,7 +31,7 @@ El servidor de lenguaje, escrito en C++20, usa Tree-Sitter para analizar los scr
 
 Instala la extensión desde [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman) o busca **Angelscript** de Gaftherman en Extensiones (`Ctrl+Shift+X`). También puedes pulsar `Ctrl+P`, pegar `ext install Gaftherman.angelscript-gaftherman` y pulsar Intro.
 
-Para instalar un VSIX, pulsa `Ctrl+Shift+P`, ejecuta **Extensiones: Instalar desde VSIX...** (**Extensions: Install from VSIX...**) y elige `angelscript-*.vsix`.
+Para instalar un VSIX, pulsa `Ctrl+Shift+P`, ejecuta **Extensiones: Instalar desde VSIX...** (**Extensions: Install from VSIX...**) y elige `angelscript.vsix` del [último release](https://github.com/angelscript-tools/angelscript-lsp/releases/latest).
 
 ### Pruébalo en 30 segundos
 
@@ -67,6 +67,31 @@ Plataformas: `windows-x64`, `windows-x86`, `linux-x64`, `linux-x86`, `macos-x64`
 Agentes de IA: el servidor MCP es un proyecto aparte, [angelscript-mcp](https://github.com/angelscript-tools/angelscript-mcp). `angel_lsp --mcp` está obsoleto.
 
 ## Funciones
+
+### Módulos
+
+<p align="center"><img src="../client/images/modules.gif" alt="Definir el punto de entrada y la carpeta de un módulo desde el Explorador y ver los módulos activos en la barra de estado" width="720"></p>
+<p align="center"><em>Haz clic derecho en un script o en una carpeta del Explorador para definir un módulo.</em></p>
+
+Una aplicación anfitriona suele ejecutar varios conjuntos de scripts como módulos separados. Indica al servidor de lenguaje qué archivos pertenecen a cada módulo:
+
+- Haz clic derecho en un archivo `.as` del Explorador y elige **Definir como punto de entrada del módulo**. El archivo es el punto de entrada de compilación del módulo.
+- Haz clic derecho en una carpeta y elige **Definir como carpeta del módulo**. Todos los scripts de la carpeta pertenecen al módulo.
+- Ambas opciones piden un nombre de módulo y escriben `angelscript.modules` en tu configuración, así que también puedes editarlo a mano.
+
+El elemento de estado del lenguaje, el icono `{}` junto al nombre del lenguaje en la barra de estado, muestra el estado del servidor, los stubs del anfitrión activos, el módulo activo y el archivo de reglas del motor. Haz clic en el módulo, o ejecuta **Cambiar módulo activo**, para comprobar un módulo cada vez o todos.
+
+<p align="center"><img src="../client/images/module-diagnostics.gif" alt="Cambiar el módulo activo mientras el panel Problemas lista los errores de cada archivo del módulo" width="720"></p>
+<p align="center"><em>El panel Problemas lista los errores de cada archivo de un módulo, esté abierto o no.</em></p>
+
+Definir un módulo comprueba todos sus archivos, no solo los que tienes abiertos. Ejecuta **Cambiar módulo activo** para aislar un módulo, o para volver a todos: el panel Problemas lo sigue.
+
+### Stubs del anfitrión
+
+<p align="center"><img src="../client/images/stubs.gif" alt="Seleccionar dos stubs predefinidos quita el error de la llamada del complemento y muestra su documentación" width="720"></p>
+<p align="center"><em>Selecciona varios stubs predefinidos y la API del complemento se resuelve.</em></p>
+
+Un anfitrión suele entregar su API en más de un stub predefinido, por ejemplo la API base y un complemento. **Seleccionar stubs predefinidos** marca los stubs que se cargan juntos, **Seleccionar stub predefinido** elige uno solo, y el elemento de estado del lenguaje indica cuántos están activos.
 
 ### Información al pasar el cursor
 
@@ -160,11 +185,17 @@ Agentes de IA: el servidor MCP es un proyecto aparte, [angelscript-mcp](https://
 |  | Pistas en línea | Muestra nombres de parámetros y tipos inferidos. |
 |  | Acciones de código | Ofrece correcciones rápidas y refactorizaciones. |
 |  | Formato del documento y de la selección | Formatea el script completo o las líneas seleccionadas. |
+|  | Plegado de código | Pliega clases, funciones y bloques. |
+|  | Rangos de selección | Amplía y reduce la selección según la sintaxis. |
 | 🧭 Navegación | Definición, declaración y definición de tipo | Abre declaraciones, definiciones o definiciones de tipo. |
 |  | Referencias | Encuentra dónde se usa un símbolo. |
 |  | Símbolos del documento y del espacio de trabajo | Enumera símbolos del archivo o espacio de trabajo. |
+|  | Implementación | Salta a las implementaciones de un método o una interfaz. |
+|  | Resaltado del símbolo | Resalta cada uso del símbolo bajo el cursor. |
+|  | Enlaces de documento | Hace clicables las rutas de `#include` e indica los includes que no se resuelven. |
 | 🔎 Análisis | Tokens semánticos | Resalta los símbolos según su función. |
 |  | Diagnósticos enviados por el servidor y bajo demanda | Notifica errores y avisos automáticamente o bajo demanda. |
+|  | Código inactivo | Atenúa el código dentro de un bloque `#if` que el preprocesador descarta. |
 
 </details>
 
@@ -186,11 +217,30 @@ En `.vscode/settings.json`, pon `"angelscript.predefined.active": "${workspaceFo
 
 ## Reglas del motor
 
-Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](RULES.es.md) para configurar las comprobaciones de tu proyecto. AngelScript **2.39.0**, la última versión, es la versión del motor con soporte. Si tu host usa otra, decláralo con la sección `engine` (`{"engine": {"version": "2.36.1"}}`) y el servidor avisa de las propiedades del motor que esa versión no tiene. La [CLI](https://github.com/angelscript-tools/angelscript-cli/blob/main/docs/ENGINE_VERSIONS.md) indica con qué versiones oficiales compila y prueba.
+Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](RULES.es.md) para configurar las comprobaciones de tu proyecto. AngelScript **2.39.0**, la última versión, es la versión del motor con soporte. Si tu host usa otra, decláralo con la sección `engine` (`{"engine": {"version": "2.36.1"}}`) y el servidor avisa de las propiedades del motor que esa versión no tiene. El [repositorio del motor](https://github.com/angelscript-tools/angelscript-engine/blob/main/docs/ENGINE_VERSIONS.md) indica con qué versiones oficiales compila y prueba.
 
 ## Opciones del motor
 
 Usa los ajustes `angelscript.engine.*` de VS Code para que coincidan con las opciones de tu motor. Por ejemplo, pon `angelscript.engine.foreachSupport` en `false` si tu motor desactiva `foreach`.
+
+## Comandos
+
+Ejecútalos desde la paleta de comandos (`Ctrl+Shift+P`) o desde el menú que se abre al hacer clic en el elemento de estado de AngelScript.
+
+| Comando | Qué hace |
+| --- | --- |
+| **Menú de estado de AngelScript** | Abre un menú rápido con las acciones de abajo. |
+| **Cambiar módulo activo** | Aísla un módulo, o vuelve a todos los módulos. |
+| **Volver a examinar el espacio de trabajo** | Vuelve a indexar los módulos y las rutas de inclusión. |
+| **Seleccionar stub predefinido** / **Seleccionar stubs predefinidos** | Activa o desactiva archivos `.as.predefined`. |
+| **Configurar reglas del motor y API predefinida...** | Un asistente para las reglas del motor y los stubs predefinidos. |
+| **Ignorar símbolo no usado (marcar como punto de entrada / callback)** | Quita el aviso de no usado en una función que llama el anfitrión. |
+| **Formatear stub predefinido** | Da formato a un archivo `.as.predefined`. También en sus menús del Explorador y del editor. |
+| **Definir como punto de entrada del módulo** / **Definir como carpeta del módulo** | Define un módulo. Solo en el menú del Explorador: consulta [Módulos](#módulos). |
+| **Limpiar anulaciones de sesión local** | Descarta las elecciones de módulo y de stub guardadas para esta sesión. |
+| **Reiniciar servidor** | Reinicia el servidor de lenguaje. |
+| **Mostrar registro del servidor** / **Abrir carpeta de registros** | Muestra la salida del servidor, o abre la carpeta con los archivos de registro. |
+| **Reportar problema** | Abre un informe de error con tus versiones, el registro y una muestra anonimizada ya rellenados. |
 
 ## Depurador
 
@@ -235,10 +285,13 @@ Si corriges un error pequeño o añades una mejora, puedes enviar un pull reques
 | Proyecto | Uso |
 | --- | --- |
 | [angelscript-cli](https://github.com/angelscript-tools/angelscript-cli) | Ejecuta, comprueba y depura scripts desde la terminal |
+| [angelscript-mcp](https://github.com/angelscript-tools/angelscript-mcp) | Servidor MCP para que los agentes de IA comprueben y naveguen scripts |
+| [angelscript-agent-kit](https://github.com/angelscript-tools/angelscript-agent-kit) | Skill e instalación en un paso para Claude Code, Codex, Gemini CLI y Antigravity |
 | [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap) | Núcleo del depurador |
 | [angelscript-debugger-example](https://github.com/angelscript-tools/angelscript-debugger-example) | Un host que muestra cómo usar el depurador |
 | [angelscript-jit](https://github.com/angelscript-tools/angelscript-jit) | Compilador JIT opcional |
 | [angelscript-engine](https://github.com/angelscript-tools/angelscript-engine) | Soporte de versiones antiguas de AngelScript |
+| [tree-sitter-angelscript](https://github.com/angelscript-tools/tree-sitter-angelscript) | Gramática de Tree-sitter que usa el servidor de lenguaje |
 
 ### Proyectos similares
 

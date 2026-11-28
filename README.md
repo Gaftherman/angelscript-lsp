@@ -31,7 +31,7 @@ The C++20 language server uses Tree-Sitter to parse scripts and index their symb
 
 Install from the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman) or search for **Angelscript** by Gaftherman in Extensions (`Ctrl+Shift+X`). You can also press `Ctrl+P`, paste `ext install Gaftherman.angelscript-gaftherman`, and press Enter.
 
-To install a VSIX, press `Ctrl+Shift+P`, run **Extensions: Install from VSIX...**, and select `angelscript-*.vsix`.
+To install a VSIX, press `Ctrl+Shift+P`, run **Extensions: Install from VSIX...**, and select `angelscript.vsix` from the [latest release](https://github.com/angelscript-tools/angelscript-lsp/releases/latest).
 
 ### Try it in 30 seconds
 
@@ -67,6 +67,31 @@ Platforms: `windows-x64`, `windows-x86`, `linux-x64`, `linux-x86`, `macos-x64`, 
 AI agents: the MCP server is a separate project, [angelscript-mcp](https://github.com/angelscript-tools/angelscript-mcp). `angel_lsp --mcp` is deprecated.
 
 ## Features
+
+### Modules
+
+<p align="center"><img src="client/images/modules.gif" alt="Setting a module entry point and a module folder from the Explorer, then reading the active modules in the status bar" width="720"></p>
+<p align="center"><em>Right-click a script or a folder in the Explorer to define a module.</em></p>
+
+A host often runs several sets of scripts as separate modules. Tell the language server which files belong to which module:
+
+- Right-click a `.as` file in the Explorer and choose **Set as Module Entry Point**. The file is the compilation entry point of the module.
+- Right-click a folder and choose **Set as Module Folder**. Every script under the folder belongs to the module.
+- Both ask for a module name and write `angelscript.modules` to your settings, so you can also edit them by hand.
+
+The language status item, the `{}` icon next to the language name in the status bar, shows the server state, the active host stubs, the active module and the engine rules file. Click the module entry, or run **Switch Active Module**, to check one module at a time or all of them.
+
+<p align="center"><img src="client/images/module-diagnostics.gif" alt="Switching the active module while the Problems panel lists the errors of every file in the module" width="720"></p>
+<p align="center"><em>The Problems panel lists the errors of every file in a module, open or not.</em></p>
+
+Defining a module checks all of its files, not only the ones you have open. Run **Switch Active Module** to isolate one module, or to go back to all of them: the Problems panel follows.
+
+### Host stubs
+
+<p align="center"><img src="client/images/stubs.gif" alt="Selecting two predefined stubs removes the unresolved add-on call error and shows its documentation" width="720"></p>
+<p align="center"><em>Select several predefined stubs and the add-on API resolves.</em></p>
+
+A host often ships its API as more than one predefined stub, for example the core API and an add-on. **Select Predefined Stubs** ticks the stubs to load together, **Select Predefined Stub** picks a single one, and the language status item shows how many are active.
 
 ### Hover
 
@@ -160,11 +185,17 @@ AI agents: the MCP server is a separate project, [angelscript-mcp](https://githu
 |  | Inlay hints | Shows inline parameter names and inferred types. |
 |  | Code actions | Offers quick fixes and refactorings. |
 |  | Document and range formatting | Formats the entire script or selected lines. |
+|  | Folding ranges | Folds classes, functions and blocks. |
+|  | Selection ranges | Expands and shrinks the selection by syntax. |
 | 🧭 Navigation | Definition, declaration, and type definition | Jumps to declarations, definitions, or type definitions. |
 |  | References | Finds where a symbol is used. |
 |  | Document and workspace symbols | Lists symbols in a file or workspace. |
+|  | Implementation | Jumps to the implementations of a method or interface. |
+|  | Document highlight | Highlights every use of the symbol under the cursor. |
+|  | Document links | Makes `#include` paths clickable, and reports includes that do not resolve. |
 | 🔎 Analysis | Semantic tokens | Highlights symbols by their role in code. |
 |  | Push and pull diagnostics | Reports issues automatically or on request. |
+|  | Inactive code | Dims the code inside a `#if` block the preprocessor drops. |
 
 </details>
 
@@ -186,11 +217,30 @@ In `.vscode/settings.json`, set `"angelscript.predefined.active": "${workspaceFo
 
 ## Engine rules
 
-Save `angelscript.rules.json` in the project root. Use the [Engine Rules Guide](docs/RULES.md) to configure your project's checks. AngelScript **2.39.0**, the latest release, is the supported engine version. If your host embeds another release, declare it with the `engine` section (`{"engine": {"version": "2.36.1"}}`) and the server reports engine properties that release does not have. The [CLI](https://github.com/angelscript-tools/angelscript-cli/blob/main/docs/ENGINE_VERSIONS.md) lists which official releases it builds and tests against.
+Save `angelscript.rules.json` in the project root. Use the [Engine Rules Guide](docs/RULES.md) to configure your project's checks. AngelScript **2.39.0**, the latest release, is the supported engine version. If your host embeds another release, declare it with the `engine` section (`{"engine": {"version": "2.36.1"}}`) and the server reports engine properties that release does not have. The [engine repository](https://github.com/angelscript-tools/angelscript-engine/blob/main/docs/ENGINE_VERSIONS.md) lists which official releases it builds and tests against.
 
 ## Engine options
 
 Use `angelscript.engine.*` in VS Code to match your host's language options. For example, set `angelscript.engine.foreachSupport` to `false` if your host disables `foreach`.
+
+## Commands
+
+Run them from the Command Palette (`Ctrl+Shift+P`), or from the menu that opens when you click the AngelScript status item.
+
+| Command | What it does |
+| --- | --- |
+| **AngelScript Status Menu** | Opens a quick menu with the actions below. |
+| **Switch Active Module** | Isolates one module, or goes back to all modules. |
+| **Rescan Workspace** | Re-indexes the modules and include paths. |
+| **Select Predefined Stub** / **Select Predefined Stubs** | Enables or disables `.as.predefined` files. |
+| **Configure Host Rules & Predefined API...** | A wizard for the engine rules and the predefined stubs. |
+| **Ignore Unused Symbol (Mark as Entry Point / Callback)** | Stops the unused warning for a function the host calls. |
+| **Format Predefined Stub** | Formats a `.as.predefined` file. Also in its Explorer and editor menus. |
+| **Set as Module Entry Point** / **Set as Module Folder** | Defines a module. Only in the Explorer menu: see [Modules](#modules). |
+| **Clear Local Session Overrides** | Discards the module and stub choices kept for this session. |
+| **Restart Server** | Restarts the language server. |
+| **Show Server Log** / **Open Logs Folder** | Shows the server output, or opens the folder with the log files. |
+| **Report Issue** | Opens a bug report with your versions, the log and an anonymized sample already filled in. |
 
 ## Debugger
 
@@ -235,10 +285,13 @@ If you fix a small bug or add an enhancement, feel free to submit a pull request
 | Project | Use |
 | --- | --- |
 | [angelscript-cli](https://github.com/angelscript-tools/angelscript-cli) | Run, check and debug scripts from the terminal |
+| [angelscript-mcp](https://github.com/angelscript-tools/angelscript-mcp) | MCP server so AI agents check and navigate scripts |
+| [angelscript-agent-kit](https://github.com/angelscript-tools/angelscript-agent-kit) | Skill and one-step installs for Claude Code, Codex, Gemini CLI and Antigravity |
 | [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap) | Debugger core |
 | [angelscript-debugger-example](https://github.com/angelscript-tools/angelscript-debugger-example) | A host that shows how to use the debugger |
 | [angelscript-jit](https://github.com/angelscript-tools/angelscript-jit) | Optional JIT compiler |
 | [angelscript-engine](https://github.com/angelscript-tools/angelscript-engine) | Support for older AngelScript releases |
+| [tree-sitter-angelscript](https://github.com/angelscript-tools/tree-sitter-angelscript) | Tree-sitter grammar the language server uses |
 
 ### Similar projects
 

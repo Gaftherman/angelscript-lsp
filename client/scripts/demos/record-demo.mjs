@@ -12,6 +12,7 @@ import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 import path from 'path';
 import fs from 'fs';
 import { execFileSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +61,9 @@ if (!runAll && onlyFeatures.length === 0) {
 
 // Feature demos in recording order.
 const ALL_FEATURES = [
+  'modules',
+  'module-diagnostics',
+  'stubs',
   'hover',
   'autocomplete',
   'diagnostics',
@@ -193,7 +197,21 @@ async function runScenario(featureName) {
     await win.setViewportSize({ width: 1280, height: 720 });
   } catch {}
 
+  // `layout: "workbench"` keeps the Explorer and the status bar, for scenarios that click the workbench itself.
+  const workbench = scenario.layout === 'workbench';
+  if (workbench && scenario.sidebar === false) {
+    // A workbench scenario that never touches the Explorer: close it, so less of the frame changes.
+    const sidebarOpen = await win.evaluate(() => !!document.querySelector('.part.sidebar') &&
+      document.querySelector('.part.sidebar').offsetWidth > 0);
+    if (sidebarOpen) await win.keyboard.press('Control+b');
+    await win.waitForTimeout(500);
+  } else if (workbench) {
+    await win.keyboard.press('Control+Shift+E');
+    await win.waitForTimeout(500);
+  }
+
   // Close primary and secondary sidebars cleanly via VS Code command palette
+  if (!workbench) {
   await win.keyboard.press('Control+Shift+P');
   await win.waitForTimeout(150);
   await win.keyboard.type('View: Close Primary Side Bar');
@@ -205,9 +223,10 @@ async function runScenario(featureName) {
   await win.keyboard.type('View: Close Secondary Side Bar');
   await win.keyboard.press('Enter');
   await win.waitForTimeout(200);
+  }
 
   // Close the real side bars so VS Code relayouts the editor at full width (CSS alone leaves stale layout widths)
-  for (const _ of [0, 1]) {
+  for (const _ of workbench ? [] : [0, 1]) {
     const sidebarOpen = await win.evaluate(() => {
       const el = document.querySelector('.part.sidebar');
       return !!el && el.offsetWidth > 0 && getComputedStyle(el).display !== 'none';
@@ -217,7 +236,7 @@ async function runScenario(featureName) {
     await win.keyboard.press('Control+b');
     await win.waitForTimeout(400);
   }
-  for (const _ of [0, 1]) {
+  for (const _ of workbench ? [] : [0, 1]) {
     const auxOpen = await win.evaluate(() => { const e = document.querySelector('.part.auxiliarybar'); return !!e && e.getBoundingClientRect().width > 10; });
     if (!auxOpen) break;
     await win.keyboard.press('Control+Alt+b');
@@ -225,14 +244,15 @@ async function runScenario(featureName) {
   }
   console.log('layout=' + JSON.stringify(await win.evaluate(() => ['.part.sidebar','.part.auxiliarybar','.part.activitybar','.part.editor'].map(q => { const e=document.querySelector(q); return e? q+':'+Math.round(e.getBoundingClientRect().width)+'@'+getComputedStyle(e).display : q+':none'; }))));
   // Setup pristine UI layout filling 1280x720 without any black borders
-  await win.evaluate(({ initZoom, origin, hideHover, isSplit, isSnap, suggestWidth, wholeLineMargin, cropHeight, actionMenuFontSize }) => {
+  await win.evaluate(({ initZoom, origin, hideHover, isSplit, isSnap, suggestWidth, wholeLineMargin, cropHeight, actionMenuFontSize, workbench }) => {
     const style = document.createElement('style');
     style.textContent = `
-      .part.auxiliarybar, .part.sidebar, .notifications-toasts, .part.statusbar, .part.titlebar, .part.activitybar {
+      ${workbench ? '.part.auxiliarybar, .part.titlebar, .part.activitybar' :
+        '.part.auxiliarybar, .part.sidebar, .notifications-toasts, .part.statusbar, .part.titlebar, .part.activitybar'} {
         display: none !important;
       }
       .part.editor .title.tabs {
-        ${isSplit ? 'display: flex !important;' : 'display: none !important;'}
+        ${isSplit || workbench ? 'display: flex !important;' : 'display: none !important;'}
       }
       .part.editor .tab {
         font-size: 16px !important;
@@ -246,6 +266,7 @@ async function runScenario(featureName) {
         height: 720px !important;
         overflow: hidden !important;
       }
+      ${workbench ? '' : `
       .part.editor {
         position: fixed !important;
         top: 0 !important;
@@ -253,7 +274,8 @@ async function runScenario(featureName) {
         width: 1280px !important;
         height: 720px !important;
       }
-      ${isSplit ? '' : `
+      `}
+      ${isSplit || workbench ? '' : `
         .monaco-editor, .monaco-editor .overflow-guard { width: 1280px !important; }
       `}
       /* Tooltip width and margin protection */
@@ -273,7 +295,7 @@ async function runScenario(featureName) {
       .quick-input-widget {
         top: 36px !important;
         max-height: 480px !important;
-        width: 760px !important;
+        width: ${workbench ? 520 : 760}px !important;
       }
       .quick-input-list .monaco-list-row {
         font-size: 17px !important;
@@ -497,6 +519,7 @@ async function runScenario(featureName) {
     wholeLineMargin: scenario.wholeLineMargin,
     cropHeight,
     actionMenuFontSize: scenario.actionMenuFontSize,
+    workbench,
   });
 
   // Ensure an editor with content is loaded
@@ -715,6 +738,38 @@ async function runScenario(featureName) {
   });
 
   let preShownKeys;
+  // Walk a quick pick with the arrow keys. A multi pick toggles each label with Space, a single pick takes
+  // the last label with Enter; the list stays visible for `holdMs` before the choice is accepted.
+  const pickQuickInputRows = async ({ pick, multi = false, holdMs = 700, cancel = false, listWaitMs = 300 }) => {
+    const rows = win.locator('.quick-input-widget .monaco-list-row');
+    await rows.first().waitFor({ timeout: 4000 });
+    await win.waitForTimeout(listWaitMs);
+    const focusedLabel = async () => {
+      const focused = win.locator('.quick-input-widget .monaco-list-row.focused').first();
+      return (await focused.count()) ? (await focused.innerText()).replace(/\s+/g, ' ') : '';
+    };
+    for (const label of pick) {
+      let found = false;
+      for (let i = 0; i < 24; i++) {
+        if ((await focusedLabel()).includes(label)) { found = true; break; }
+        await win.keyboard.press('ArrowDown');
+        await win.waitForTimeout(160);
+      }
+      if (!found) {
+        console.log('Quick pick debug: ' + JSON.stringify(await rows.allInnerTexts()));
+        throw new Error('Quick pick row not found: ' + label);
+      }
+      await win.waitForTimeout(350);
+      if (multi) {
+        await win.keyboard.press('Space');
+        await win.waitForTimeout(450);
+      }
+    }
+    await win.waitForTimeout(holdMs);
+    await win.keyboard.press(cancel ? 'Escape' : 'Enter');
+    await win.waitForTimeout(300);
+  };
+
   const press = async (key, waitForResult) => {
     const labels = keyLabels(key);
     const shown = labels.join('+') === preShownKeys;
@@ -778,7 +833,12 @@ async function runScenario(featureName) {
         matchingHover = matchingHover.filter({ hasText: text });
       }
       const hover = matchingHover.first();
-      await hover.waitFor({ timeout: 3500 });
+      try {
+        await hover.waitFor({ timeout: 3500 });
+      } catch (error) {
+        console.log('Hover debug: ' + JSON.stringify(await win.locator('.monaco-hover:visible').allInnerTexts()));
+        throw error;
+      }
       if (step.above) {
         const bounds = await hover.boundingBox();
         const cursorY = await win.evaluate(() => window.__cursorY);
@@ -803,6 +863,12 @@ async function runScenario(featureName) {
         coords.y = lastTokenCoords.y * ratio;
       }
       await animMoveMouse(coords, step.duration || 650);
+      if (process.env.DEMO_DEBUG_MOVE) {
+        console.log('Move debug: ' + JSON.stringify({ coords, at: await win.evaluate(({ x, y }) => {
+          const el = document.elementFromPoint(x, y);
+          return el ? el.tagName + '.' + String(el.className).slice(0, 60) + ' | ' + (el.textContent || '').slice(0, 40) : null;
+        }, coords) }));
+      }
     } else if (step.action === 'click') {
       const coords = step.toToken ? await findTokenCoords(step) :
         (step.x === undefined ? null : { x: step.x, y: step.y });
@@ -824,6 +890,93 @@ async function runScenario(featureName) {
       if (!target || Math.abs(target.y - step.targetY) > 60) {
         throw new Error('Scroll did not frame ' + step.toToken);
       }
+    } else if (step.action === 'explorerMenu') {
+      // Right-click an Explorer entry, then choose an item of its context menu.
+      const row = win.locator('.explorer-viewlet .monaco-list-row', { has: win.getByText(step.label, { exact: true }) }).first();
+      const rowBox = await row.boundingBox();
+      if (!rowBox) throw new Error('Explorer entry not found: ' + step.label);
+      const at = { x: rowBox.x + Math.min(rowBox.width / 2, 90), y: rowBox.y + rowBox.height / 2 };
+      await animMoveMouse(at, step.duration || 650);
+      await win.evaluate(() => window.__clickRipple());
+      await win.mouse.click(at.x, at.y, { button: 'right' });
+      const entry = win.locator('.monaco-menu .action-label', { hasText: step.item }).first();
+      try {
+        await entry.waitFor({ timeout: 3000 });
+      } catch (error) {
+        console.log('Context menu debug: ' + JSON.stringify(await win.evaluate(() => ({
+          menus: document.querySelectorAll('.monaco-menu').length,
+          labels: [...document.querySelectorAll('.monaco-menu .action-label')].map(e => e.textContent.trim()).slice(0, 20),
+          rows: document.querySelectorAll('.explorer-viewlet .monaco-list-row').length,
+          sidebar: document.querySelector('.part.sidebar')?.getBoundingClientRect().width,
+        }))));
+        throw error;
+      }
+      await win.waitForTimeout(step.menuHoldMs ?? 600);
+      const entryBox = await entry.boundingBox();
+      await animMoveMouse({ x: entryBox.x + Math.min(entryBox.width / 2, 120), y: entryBox.y + entryBox.height / 2 }, 600);
+      await win.waitForTimeout(250);
+      await win.evaluate(() => window.__clickRipple());
+      await win.mouse.click(entryBox.x + Math.min(entryBox.width / 2, 120), entryBox.y + entryBox.height / 2);
+    } else if (step.action === 'statusItem') {
+      // Open the language status popup of the status bar.
+      const item = win.locator('#status\\.languageStatus').first();
+      const box = await item.boundingBox();
+      if (!box) throw new Error('Language status item not found');
+      await animMoveMouse({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, step.duration || 700);
+      await win.evaluate(() => window.__clickRipple());
+      await win.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      if (step.expect) {
+        let popup = win.locator('.monaco-hover:visible');
+        for (const text of [step.expect].flat()) popup = popup.filter({ hasText: text });
+        try {
+          await popup.first().waitFor({ timeout: 4000 });
+        } catch (error) {
+          console.log('Status popup debug: ' + JSON.stringify(await win.evaluate(() => ({
+            hovers: [...document.querySelectorAll('.monaco-hover, .hover-language-status, .workbench-hover')].map(e => e.className.slice(0, 60) + ' | ' + e.textContent.trim().slice(0, 700)),
+            status: document.querySelector('#status\\.languageStatus')?.getAttribute('aria-label')?.slice(0, 300),
+          }))));
+          throw error;
+        }
+      }
+    } else if (step.action === 'command') {
+      // Run a command by its title from the palette; `pickLabel` then picks one row of the list it opens.
+      await win.keyboard.press('Control+Shift+P');
+      await win.waitForTimeout(250);
+      await win.keyboard.type(step.title, { delay: step.delay ?? 20 });
+      await win.locator('.quick-input-widget .monaco-list-row.focused').filter({ hasText: step.title }).first()
+        .waitFor({ timeout: 4000 });
+      await win.waitForTimeout(step.holdMs ?? 500);
+      await win.keyboard.press('Enter');
+      if (step.pickLabel) await pickQuickInputRows({ pick: [step.pickLabel], holdMs: step.listHoldMs, cancel: step.cancel });
+    } else if (step.action === 'quickPick') {
+      await pickQuickInputRows({ pick: step.toggle ?? [step.pick], multi: !!step.toggle, holdMs: step.holdMs, cancel: step.cancel });
+    } else if (step.action === 'problemsPanel') {
+      // Show or hide the Problems panel and wait until the expected rows are listed.
+      if (step.close) {
+        await win.keyboard.press('Control+j');
+        await win.waitForTimeout(400);
+      } else {
+        const panel = win.locator('.part.panel:visible');
+        if (!(await panel.count())) await win.keyboard.press('Control+Shift+M');
+        let rows = win.locator('.part.panel .monaco-list-row');
+        for (const text of [step.expect ?? []].flat()) rows = rows.filter({ hasText: text });
+        try {
+          await rows.first().waitFor({ timeout: step.timeout || 6000 });
+        } catch (error) {
+          console.log('Problems debug: ' + JSON.stringify(await win.evaluate(() => ({
+            rows: [...document.querySelectorAll('.part.panel .monaco-list-row')].map(e => e.textContent.trim().slice(0, 120)),
+          }))));
+          throw error;
+        }
+        for (const text of [step.expectAbsent ?? []].flat()) {
+          if (await win.locator('.part.panel .monaco-list-row').filter({ hasText: text }).count()) {
+            const listed = await win.locator('.part.panel .monaco-list-row').allInnerTexts();
+            throw new Error('Problems still lists: ' + text + ' | ' + JSON.stringify(listed.map(row => row.replace(/\s+/g, ' ').slice(0, 100))));
+          }
+        }
+      }
+    } else if (step.action === 'waitForText') {
+      await win.getByText(step.text).first().waitFor({ timeout: step.timeout || 5000 });
     } else if (step.action === 'type') {
       await win.keyboard.type(step.text, { delay: step.delay ?? 75 });
     } else if (step.action === 'press') {
@@ -944,7 +1097,7 @@ async function runScenario(featureName) {
   await win.waitForTimeout(Math.max(650, (minimumDuration - elapsed) * 1000));
   const sceneDuration = (Date.now() - firstActionTime) / 1000;
   const maximumDuration = {
-    'code-actions': 38, 'signature-help': 11 }[featureName] ?? 10;
+    'code-actions': 38, 'signature-help': 11, modules: 18, 'module-diagnostics': 38, stubs: 22 }[featureName] ?? 10;
   if (sceneDuration > maximumDuration) {
     throw new Error('Scenario took ' + sceneDuration.toFixed(2) + ' s (limit ' + maximumDuration + ' s).');
   }
@@ -960,19 +1113,14 @@ async function runScenario(featureName) {
   const gifOut = path.join(outputDir, featureName + '.gif');
   const reviewGif = path.join(REVIEW_DIR, featureName + '.gif');
   const palette = path.join(TEMP_VIDEOS_DIR, featureName + '-palette.png');
-  const candidates = featureName === 'code-actions' ? [
-    { width: 960, fps: 10, colors: 96, dither: 'none' },
-    { width: 960, fps: 10, colors: 64, dither: 'none' },
-    { width: 960, fps: 8, colors: 64, dither: 'none' },
-    { width: 880, fps: 10, colors: 64, dither: 'none' },
-    { width: 880, fps: 8, colors: 48, dither: 'none' },
-  ] : [
+  // One ladder for every GIF: always 960 px wide, losing frame rate and colors before size.
+  const candidates = [
     { width: 960, fps: 15, colors: 128 },
     { width: 960, fps: 12, colors: 96 },
     { width: 960, fps: 12, colors: 64, dither: 'none' },
+    { width: 960, fps: 12, colors: 48, dither: 'none' },
     { width: 960, fps: 10, colors: 64, dither: 'none' },
-    { width: 800, fps: 12, colors: 64 },
-    { width: 768, fps: 10, colors: 64 },
+    { width: 960, fps: 8, colors: 64, dither: 'none' },
   ];
 
   const sizeLimit = 3_000_000;
@@ -985,6 +1133,7 @@ async function runScenario(featureName) {
       '[0:v]' + filter + '[scene];[scene][1:v]paletteuse=dither=' + dither + ':diff_mode=rectangle',
       '-loop', '0', reviewGif]);
     size = fs.statSync(reviewGif).size;
+    console.log(`  ${width}px ${fps}fps ${colors} colors: ${(size / 1024).toFixed(0)} KiB`);
     if (size <= sizeLimit) break;
   }
   if (size > sizeLimit) throw new Error(`GIF exceeded ${sizeLimit / 1_000_000} MB after encoding.`);
@@ -1007,11 +1156,13 @@ async function runScenario(featureName) {
 } finally {
   if (app) {
     try {
+      if (process.env.DEMO_KEEP_PROFILE) await new Promise(resolve => setTimeout(resolve, 4000));
       await app.close();
     } catch {}
   }
   try {
-    fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });
+    if (process.env.DEMO_KEEP_PROFILE) console.log('Profile kept at ' + userDataDir);
+    else fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });
   } catch (err) {
     console.warn('Could not clean up the isolated VS Code profile:', err.code);
   }
@@ -1024,7 +1175,7 @@ async function runScenario(featureName) {
 
   for (const feat of targetFeatures) {
     let success = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= (process.env.DEMO_KEEP_PROFILE ? 1 : 3); attempt++) {
       try {
         const res = await runScenario(feat);
         if (res) {

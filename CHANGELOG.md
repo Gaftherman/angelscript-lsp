@@ -4,6 +4,11 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## [Unreleased]
 
+### Fixed
+
+- Refresh the active module in the language status item when `angelscript.modules` changes, for example after **Set as Module Entry Point** or **Set as Module Folder** in the Explorer. It kept showing "No modules" until the server restarted.
+
+- **Switch Active Module** now reaches the server with the default `angelscript.configurationTarget`. The status item showed the isolated module, but the server kept checking every module and kept the diagnostics of the others. Setting a module from the Explorer also drops a stale isolation, so the new module is not hidden.
 ## [1.2.7] - 2026-11-28
 
 ### Changed

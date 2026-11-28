@@ -1,0 +1,92 @@
+{
+  "name": "stubs",
+  "file": "StubsDemo.as",
+  "layout": "workbench",
+  "zoomIn": 1,
+  "editorSettings": {
+    "window.zoomLevel": 2,
+    "window.titleBarStyle": "custom",
+    "window.customTitleBarVisibility": "auto",
+    "window.menuStyle": "custom",
+    "workbench.statusBar.visible": true,
+    "workbench.activityBar.location": "hidden",
+    "workbench.sideBar.location": "left",
+    "workbench.tree.indent": 14,
+    "editor.fontSize": 16,
+    "editor.lineHeight": 24,
+    "editor.padding.top": 14,
+    "editor.padding.bottom": 14,
+    "editor.codeLens": true,
+    "editor.codeLensFontSize": 13,
+    "editor.inlayHints.enabled": "off",
+    "editor.quickSuggestions": false
+  },
+  "steps": [
+    {
+      "action": "wait",
+      "ms": 800
+    },
+    {
+      "action": "moveCursor",
+      "toToken": "GetRoundTimeLeft",
+      "duration": 600
+    },
+    {
+      "action": "ensureHover",
+      "expect": [
+        "GetRoundTimeLeft"
+      ]
+    },
+    {
+      "action": "hold",
+      "ms": 1800
+    },
+    {
+      "action": "command",
+      "title": "Select Predefined Stubs"
+    },
+    {
+      "action": "quickPick",
+      "toggle": [
+        "sven_coop.as.predefined",
+        "medkit_addon.as.predefined"
+      ],
+      "holdMs": 900
+    },
+    {
+      "action": "wait",
+      "ms": 2200
+    },
+    {
+      "action": "moveCursor",
+      "x": 760,
+      "y": 420,
+      "duration": 350
+    },
+    {
+      "action": "moveCursor",
+      "toToken": "GetRoundTimeLeft",
+      "duration": 600
+    },
+    {
+      "action": "ensureHover",
+      "expect": [
+        "Seconds left in the current round"
+      ]
+    },
+    {
+      "action": "hold",
+      "ms": 2000
+    },
+    {
+      "action": "statusItem",
+      "expect": "2 active stubs",
+      "duration": 560
+    },
+    {
+      "action": "hold",
+      "ms": 2000
+    }
+  ],
+  "sidebar": false
+}

@@ -19,8 +19,8 @@
       "action": "cycleCodeActions",
       "toToken": "healthReading",
       "lineIncludes": "float healthReading",
-      "menuHoldMs": 1000,
-      "resultHoldMs": 1200,
+      "menuHoldMs": 650,
+      "resultHoldMs": 850,
       "picks": [
         { "title": "Remove unused variable 'healthReading'", "removes": "float healthReading" },
         { "title": "Disable W103 for this line", "shows": ["// disable-line W103"] },

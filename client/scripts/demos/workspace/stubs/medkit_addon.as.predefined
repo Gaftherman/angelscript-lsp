@@ -1,0 +1,4 @@
+/* Medkit add-on API stubs */
+
+/** Seconds left in the current round, as reported by the add-on. */
+float GetRoundTimeLeft();
