@@ -14,6 +14,7 @@ Los juegos y las aplicaciones que integran AngelScript lo usan para ejecutar có
 El servidor de lenguaje, escrito en C++20, usa Tree-Sitter para analizar los scripts e indexar sus símbolos.
 
 <p align="center"><img src="../client/images/hover.gif" alt="Documentación al pasar el cursor sobre una llamada a un método" width="720"></p>
+<p align="center"><em>Pasa el cursor sobre una llamada a un método para ver su documentación.</em></p>
 
 <table align="center">
   <tr>
@@ -159,7 +160,7 @@ En AngelScript, la aplicación anfitriona registra su API de C++ para que tus sc
 
 | Host | Stub | Notas |
 | :--- | :--- | :--- |
-| Sven Co-op | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recomendado**. Se mantiene al día para la API de Sven Co-op 5.26 y posteriores. Incluye declaraciones con `const` donde corresponde, calificadores de referencia y estructuras matemáticas y del motor. |
+| Sven Co-op | [Sven Co-op - Gaftherman](https://github.com/angelscript-tools/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recomendado**. Se mantiene al día para la API de Sven Co-op 5.26 y posteriores. Incluye declaraciones con `const` donde corresponde, calificadores de referencia y estructuras matemáticas y del motor. |
 | Sven Co-op | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Antiguo**. Se conserva para proyectos anteriores. Sus declaraciones están desactualizadas con respecto a las versiones actuales del motor. |
 | Trackmania Nations Forever | [Trackmania Nations Forever - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Trackmania%20Nations%20Forever/as.predefined) | Compatible. Incluye declaraciones para `CGameCtnApp` y `MwFastBuffer`. |
 | OpenSiv3D | [OpenSiv3D - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/OpenSiv3D/as.predefined) | Compatible. Incluye declaraciones para `Vec2`, `ColorF` y `Circle`. |
@@ -171,7 +172,7 @@ En `.vscode/settings.json`, pon `"angelscript.predefined.active": "${workspaceFo
 
 ## Reglas del motor
 
-Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](RULES.es.md) para configurar las comprobaciones de tu proyecto. AngelScript **2.39.0**, la última versión, es la versión del motor con soporte. Si tu host usa otra, decláralo con la sección `engine` (`{"engine": {"version": "2.36.1"}}`) y el servidor avisa de las propiedades del motor que esa versión no tiene. La [CLI](https://github.com/Gaftherman/angelscript-cli/blob/main/docs/ENGINE_VERSIONS.md) indica con qué versiones oficiales compila y prueba.
+Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](RULES.es.md) para configurar las comprobaciones de tu proyecto. AngelScript **2.39.0**, la última versión, es la versión del motor con soporte. Si tu host usa otra, decláralo con la sección `engine` (`{"engine": {"version": "2.36.1"}}`) y el servidor avisa de las propiedades del motor que esa versión no tiene. La [CLI](https://github.com/angelscript-tools/angelscript-cli/blob/main/docs/ENGINE_VERSIONS.md) indica con qué versiones oficiales compila y prueba.
 
 ## Opciones del motor
 
@@ -179,11 +180,11 @@ Usa los ajustes `angelscript.engine.*` de VS Code para que coincidan con las opc
 
 ## Depurador
 
-La depuración vive en sus propios proyectos, para que cualquier aplicación pueda usarla. [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) es el depurador, el [proyecto de ejemplo](https://github.com/Gaftherman/angelscript-debugger-example) muestra una aplicación completa y la configuración de VS Code, y la [CLI de AngelScript](https://github.com/Gaftherman/angelscript-cli) ejecuta y depura scripts desde la terminal con `angelscript --dap-port 9002 script.as`.
+La depuración vive en sus propios proyectos, para que cualquier aplicación pueda usarla. [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap) es el depurador, el [proyecto de ejemplo](https://github.com/angelscript-tools/angelscript-debugger-example) muestra una aplicación completa y la configuración de VS Code, y la [CLI de AngelScript](https://github.com/angelscript-tools/angelscript-cli) ejecuta y depura scripts desde la terminal con `angelscript --dap-port 9002 script.as`.
 
 Añade una configuración `attach` o `launch` de tipo `angelscript` a `launch.json`, pon puntos de interrupción en tus archivos `.as` y pulsa F5.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code conectado a un script que se ejecuta en el Símbolo del sistema" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code conectado a un script que se ejecuta en el Símbolo del sistema" width="720"></p>
 
 ## Compilar desde el código fuente
 
@@ -211,7 +212,7 @@ El avance se registra en [CHANGELOG.md](../CHANGELOG.md).
 
 ## Soporte
 
-Los reportes de errores y las sugerencias son bienvenidos en [GitHub Issues](https://github.com/Gaftherman/angelscript-lsp/issues). Cuando el servidor falla, ejecuta **AngelScript: Report Issue** (o pulsa **Report Issue** en el mensaje de error). Abre el formulario con tus versiones, el registro y una pequeña muestra anonimizada de tu código ya rellenos, para que revises todo antes de enviarlo.
+Los reportes de errores y las sugerencias son bienvenidos en [GitHub Issues](https://github.com/angelscript-tools/angelscript-lsp/issues). Cuando el servidor falla, ejecuta **AngelScript: Report Issue** (o pulsa **Report Issue** en el mensaje de error). Abre el formulario con tus versiones, el registro y una pequeña muestra anonimizada de tu código ya rellenos, para que revises todo antes de enviarlo.
 
 Si corriges un error pequeño o añades una mejora, puedes enviar un pull request. [CONTRIBUTING.es.md](CONTRIBUTING.es.md) explica cómo compilar y comprobar un cambio. Si creas un archivo `.as.predefined` para tu aplicación, contribuirlo como ejemplo se agradecería mucho.
 
@@ -219,11 +220,11 @@ Si corriges un error pequeño o añades una mejora, puedes enviar un pull reques
 
 | Proyecto | Uso |
 | --- | --- |
-| [angelscript-cli](https://github.com/Gaftherman/angelscript-cli) | Ejecuta, comprueba y depura scripts desde la terminal |
-| [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) | Núcleo del depurador |
-| [angelscript-debugger-example](https://github.com/Gaftherman/angelscript-debugger-example) | Un host que muestra cómo usar el depurador |
-| [angelscript-jit](https://github.com/Gaftherman/angelscript-jit) | Compilador JIT opcional |
-| [angelscript-engine](https://github.com/Gaftherman/angelscript-engine) | Soporte de versiones antiguas de AngelScript |
+| [angelscript-cli](https://github.com/angelscript-tools/angelscript-cli) | Ejecuta, comprueba y depura scripts desde la terminal |
+| [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap) | Núcleo del depurador |
+| [angelscript-debugger-example](https://github.com/angelscript-tools/angelscript-debugger-example) | Un host que muestra cómo usar el depurador |
+| [angelscript-jit](https://github.com/angelscript-tools/angelscript-jit) | Compilador JIT opcional |
+| [angelscript-engine](https://github.com/angelscript-tools/angelscript-engine) | Soporte de versiones antiguas de AngelScript |
 
 ### Proyectos similares
 
@@ -237,7 +238,7 @@ Angelscript para VS Code se apoya en el trabajo de estos proyectos. Sus licencia
 
 | Proyecto | Licencia | Uso |
 | --- | --- | --- |
-| [Relrin/tree-sitter-angelscript](https://github.com/Relrin/tree-sitter-angelscript) | BSD-3-Clause | Base de la gramática de AngelScript. Este proyecto mantiene un [fork](https://github.com/Gaftherman/tree-sitter-angelscript). |
+| [Relrin/tree-sitter-angelscript](https://github.com/Relrin/tree-sitter-angelscript) | BSD-3-Clause | Base de la gramática de AngelScript. Este proyecto mantiene un [fork](https://github.com/angelscript-tools/tree-sitter-angelscript). |
 | [AngelScript](https://github.com/anjo76/angelscript) by Andreas Jönsson | zlib | El lenguaje en sí. Su compilador es el oráculo de pruebas de los diagnósticos. |
 | [tree-sitter](https://github.com/tree-sitter/tree-sitter) | MIT | Análisis incremental. |
 | [tree-sitter-doxygen](https://github.com/tree-sitter-grammars/tree-sitter-doxygen) | MIT | Comentarios de documentación. |
