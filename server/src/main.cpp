@@ -78,6 +78,8 @@ int main(int argc, char** argv)
 
     if (config.info.mcpMode)
     {
+        std::cerr << "angel_lsp: warning: --mcp is deprecated and will be removed. Use the angelscript-mcp server "
+                     "instead: https://github.com/angelscript-tools/angelscript-mcp\n";
         try
         {
             return angel_lsp::mcp::RunMcpBridge(config, std::cin, std::cout);

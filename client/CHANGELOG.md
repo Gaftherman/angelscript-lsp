@@ -6,6 +6,18 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-11-28
+
+### Changed
+
+- Release assets now carry the version and use the CLI platform names: `angel_lsp-<version>-<platform>.zip` for Windows and `.tar.gz` elsewhere (`windows-x64`, `windows-x86`, `linux-x64`, `linux-x86`, `macos-x64`, `macos-arm64`). Each release also publishes a `SHA256SUMS` file covering the VSIX and every archive. The READMEs gain a Downloads section.
+
+### Deprecated
+
+- `angel_lsp --mcp` prints a deprecation warning. The MCP server moves to its own project, `angelscript-mcp`.
+
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.2.6...v1.2.7
+
 ## [1.2.6] - 2026-11-28
 
 ### Fixed

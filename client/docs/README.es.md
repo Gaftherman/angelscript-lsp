@@ -41,6 +41,20 @@ Pasa el cursor sobre `twice` en `calc.twice(21)` para ver la firma y el comentar
 
 La extensión no ejecuta scripts. Los scripts de AngelScript se ejecutan dentro de una aplicación anfitriona, como un juego. Consulta [Depurador](#depurador) para ejecutar y depurar scripts en esa aplicación.
 
+### Descargas
+
+Cada [release](https://github.com/angelscript-tools/angelscript-lsp/releases) incluye estos archivos:
+
+| Archivo | Para qué sirve |
+| --- | --- |
+| `angelscript.vsix` | VS Code. Incluye el servidor de todas las plataformas compatibles. |
+| `angel_lsp-<versión>-<plataforma>.zip` o `.tar.gz` | Otros editores (Neovim, Helix, Zed, Emacs). Cada archivo contiene el servidor `angel_lsp` de una plataforma. |
+| `SHA256SUMS` | Sumas de verificación de todos los archivos anteriores. |
+
+Plataformas: `windows-x64`, `windows-x86`, `linux-x64`, `linux-x86`, `macos-x64`, `macos-arm64`. Pon `angel_lsp` en el `PATH` y ejecútalo sin argumentos; habla el Language Server Protocol por stdio y se aplica a los archivos `.as`.
+
+Agentes de IA: el servidor MCP es un proyecto aparte, [angelscript-mcp](https://github.com/angelscript-tools/angelscript-mcp). `angel_lsp --mcp` está obsoleto.
+
 ## Funciones
 
 ### Información al pasar el cursor

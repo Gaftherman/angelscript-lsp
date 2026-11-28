@@ -326,11 +326,19 @@ jobs:
           set -euo pipefail
           mkdir -p release-assets
           cp client/angelscript.vsix release-assets/
-          for dir in client/bin/*/; do
-            name="$(basename "$dir")"
-            tar -czf "release-assets/angel_lsp-${name}.tar.gz" -C "$dir" .
+          version="$(node -p "require('./client/package.json').version")"
+          for pair in win32-x64:windows-x64 win32-ia32:windows-x86 linux-x64:linux-x64 linux-ia32:linux-x86 darwin-x64:macos-x64 darwin-arm64:macos-arm64; do
+            dir="client/bin/${pair%%:*}"
+            [ -d "$dir" ] || continue
+            base="angel_lsp-${version}-${pair##*:}"
+            case "${pair##*:}" in
+              windows-*) (cd "$dir" && zip -q -r "$GITHUB_WORKSPACE/release-assets/${base}.zip" .) ;;
+              *) tar -czf "release-assets/${base}.tar.gz" -C "$dir" . ;;
+            esac
           done
+          (cd release-assets && sha256sum angelscript.vsix angel_lsp-* > SHA256SUMS)
           ls -l release-assets
+          cat release-assets/SHA256SUMS
 
       - name: Upload Extension Package
         uses: actions/upload-artifact@v4

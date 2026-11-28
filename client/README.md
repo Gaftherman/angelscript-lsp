@@ -52,6 +52,20 @@ Hover over `twice` in `calc.twice(21)` to see its signature and doc comment. Typ
 
 The extension does not run scripts. AngelScript scripts run inside a host application such as a game. See [Debugger](#debugger) to run and debug scripts in a host.
 
+### Downloads
+
+Each [release](https://github.com/angelscript-tools/angelscript-lsp/releases) has these files:
+
+| File | Use it for |
+| --- | --- |
+| `angelscript.vsix` | VS Code. It bundles the server for every supported platform. |
+| `angel_lsp-<version>-<platform>.zip` or `.tar.gz` | Other editors (Neovim, Helix, Zed, Emacs). Each archive holds the `angel_lsp` server for one platform. |
+| `SHA256SUMS` | Checksums of every file above. |
+
+Platforms: `windows-x64`, `windows-x86`, `linux-x64`, `linux-x86`, `macos-x64`, `macos-arm64`. Put `angel_lsp` on your `PATH` and start it with no arguments; it speaks the Language Server Protocol over stdio and applies to `.as` files.
+
+AI agents: the MCP server is a separate project, [angelscript-mcp](https://github.com/angelscript-tools/angelscript-mcp). `angel_lsp --mcp` is deprecated.
+
 ## Features
 
 ### Hover
