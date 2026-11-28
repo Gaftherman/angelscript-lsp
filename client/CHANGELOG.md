@@ -6,6 +6,19 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-11-28
+
+### Fixed
+
+- The extension package no longer fails `vsce package` because the client README embedded SVG images. The file and predefined icons in the README now use PNG copies (`client/images/as-file-icon.png`, `client/images/as-predefined-icon.png`); the SVG icons stay in `client/assets/` for the icon theme.
+
+### Changed
+
+- Moved every repository link, the grammar pin source and the submodule URLs to the `angelscript-tools` organization. The license now lists both authors.
+- Restored the hover caption and the icon table in the READMEs.
+
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.2.5...v1.2.6
+
 ## [1.2.5] - 2026-11-27
 
 ### Fixed
