@@ -26,10 +26,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Gaftherman/angelscript-lsp.git"
+    "url": "https://github.com/angelscript-tools/angelscript-lsp.git"
   },
   "bugs": {
-    "url": "https://github.com/Gaftherman/angelscript-lsp/issues"
+    "url": "https://github.com/angelscript-tools/angelscript-lsp/issues"
   },
   "main": "./dist/extension.js",
   "l10n": "./l10n",

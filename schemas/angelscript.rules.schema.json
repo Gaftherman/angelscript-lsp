@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
+  "$id": "https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
   "title": "AngelScript Engine Rules Configuration",
   "description": "JSON schema for AngelScript data-driven engine safety rules and compiler property configurations (angelscript.rules.json).",
   "type": "object",

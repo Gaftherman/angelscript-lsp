@@ -5,7 +5,7 @@ Angelscript for VS Code uses the projects below. Each license text is reproduced
 
 ## tree-sitter-angelscript
 
-https://github.com/Gaftherman/tree-sitter-angelscript
+https://github.com/angelscript-tools/tree-sitter-angelscript
 
 Fork of Relrin/tree-sitter-angelscript (https://github.com/Relrin/tree-sitter-angelscript). Grammar used to parse scripts.
 

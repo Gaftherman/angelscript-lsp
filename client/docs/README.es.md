@@ -13,7 +13,7 @@ Los juegos y las aplicaciones que integran AngelScript lo usan para ejecutar có
 
 El servidor de lenguaje, escrito en C++20, usa Tree-Sitter para analizar los scripts e indexar sus símbolos.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/hover.gif" alt="Documentación al pasar el cursor sobre una llamada" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/hover.gif" alt="Documentación al pasar el cursor sobre una llamada" width="720"></p>
 <p align="center"><em>Pasa el cursor sobre una llamada para ver su documentación.</em></p>
 
 ## Instalación
@@ -45,82 +45,82 @@ La extensión no ejecuta scripts. Los scripts de AngelScript se ejecutan dentro 
 
 ### Información al pasar el cursor
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/hover.gif" alt="Información al pasar el cursor" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/hover.gif" alt="Información al pasar el cursor" width="720"></p>
 <p align="center"><em>Consulta la firma y la documentación de un símbolo.</em></p>
 
 ### Autocompletado
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/autocomplete.gif" alt="Autocompletado" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/autocomplete.gif" alt="Autocompletado" width="720"></p>
 <p align="center"><em>Escribe después de un punto para ver los miembros disponibles.</em></p>
 
 ### Ayuda de firma
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/signature-help.gif" alt="Ayuda de firma" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/signature-help.gif" alt="Ayuda de firma" width="720"></p>
 <p align="center"><em>Consulta qué parámetro estás completando mientras escribes una llamada.</em></p>
 
 ### Diagnósticos
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/diagnostics.gif" alt="Diagnósticos" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/diagnostics.gif" alt="Diagnósticos" width="720"></p>
 <p align="center"><em>Ve avisos en el editor, como los de variables sin usar.</em></p>
 
 ### Ir a la definición
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/go-to-definition.gif" alt="Ir a la definición" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/go-to-definition.gif" alt="Ir a la definición" width="720"></p>
 <p align="center"><em>Salta desde un nombre hasta su definición.</em></p>
 
 ### Buscar todas las referencias
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/find-references.gif" alt="Buscar todas las referencias" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/find-references.gif" alt="Buscar todas las referencias" width="720"></p>
 <p align="center"><em>Consulta dónde se usa un símbolo.</em></p>
 
 ### Cambiar nombre
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/rename.gif" alt="Cambiar nombre" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/rename.gif" alt="Cambiar nombre" width="720"></p>
 <p align="center"><em>Cambia el nombre de un símbolo del script y actualiza sus usos.</em></p>
 
 ### Acciones de código
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/code-actions.gif" alt="Acciones de código" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/code-actions.gif" alt="Acciones de código" width="720"></p>
 <p align="center"><em>Abre la bombilla para ver correcciones y refactorizaciones.</em></p>
 
 ### Formato
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/formatting.gif" alt="Formato" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/formatting.gif" alt="Formato" width="720"></p>
 <p align="center"><em>Da formato a todo el script o solo a las líneas seleccionadas.</em></p>
 
 ### Pistas en línea
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/inlay-hints.gif" alt="Pistas en línea" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/inlay-hints.gif" alt="Pistas en línea" width="720"></p>
 <p align="center"><em>Ve los nombres de los parámetros junto a los argumentos de una llamada.</em></p>
 
 ### CodeLens
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/code-lens.gif" alt="CodeLens" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/code-lens.gif" alt="CodeLens" width="720"></p>
 <p align="center"><em>Ve cuántas referencias hay encima de una declaración.</em></p>
 
 ### Esquema
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/outline.gif" alt="Esquema" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/outline.gif" alt="Esquema" width="720"></p>
 <p align="center"><em>Explora las clases, funciones y demás símbolos del script abierto.</em></p>
 
 ### Resaltado semántico
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/semantic-highlighting.gif" alt="Resaltado semántico" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/semantic-highlighting.gif" alt="Resaltado semántico" width="720"></p>
 <p align="center"><em>Distingue los parámetros y los campos por sus colores.</em></p>
 
 ### API del host
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/predefined-api.gif" alt="API del host" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/predefined-api.gif" alt="API del host" width="720"></p>
 <p align="center"><em>Obtén sugerencias para los tipos y funciones que declara tu stub.</em></p>
 
 ### Reglas del motor
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-rules.gif" alt="Reglas del motor" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/engine-rules.gif" alt="Reglas del motor" width="720"></p>
 <p align="center"><em>Ve en el editor los avisos de las comprobaciones de tu equipo.</em></p>
 
 ### Opciones del motor
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/engine-options.gif" alt="Opciones del motor" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/engine-options.gif" alt="Opciones del motor" width="720"></p>
 <p align="center"><em>Adapta las comprobaciones a las opciones de lenguaje de tu motor.</em></p>
 
 <details>
@@ -149,19 +149,19 @@ En AngelScript, la aplicación anfitriona registra su API de C++ para que tus sc
 
 | Host | Stub | Notas |
 | :--- | :--- | :--- |
-| Sven Co-op | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recomendado**. Se mantiene al día para la API de Sven Co-op 5.26 y posteriores. Incluye declaraciones con `const` donde corresponde, calificadores de referencia y estructuras matemáticas y del motor. |
+| Sven Co-op | [Sven Co-op - Gaftherman](https://github.com/angelscript-tools/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recomendado**. Se mantiene al día para la API de Sven Co-op 5.26 y posteriores. Incluye declaraciones con `const` donde corresponde, calificadores de referencia y estructuras matemáticas y del motor. |
 | Sven Co-op | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Antiguo**. Se conserva para proyectos anteriores. Sus declaraciones están desactualizadas con respecto a las versiones actuales del motor. |
 | Trackmania Nations Forever | [Trackmania Nations Forever - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Trackmania%20Nations%20Forever/as.predefined) | Compatible. Incluye declaraciones para `CGameCtnApp` y `MwFastBuffer`. |
 | OpenSiv3D | [OpenSiv3D - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/OpenSiv3D/as.predefined) | Compatible. Incluye declaraciones para `Vec2`, `ColorF` y `Circle`. |
 
 En `.vscode/settings.json`, pon `"angelscript.predefined.active": "${workspaceFolder}/path/to/stub.as.predefined"` o usa `"all"` para cargar todos los stubs que encuentre el servidor. El valor predeterminado es `""` y selecciona el primer stub por orden de ruta. También puedes ejecutar **AngelScript: Seleccionar stub predefinido** o abrir el indicador de estado **AngelScript IntelliSense** para elegir uno.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/client/images/predefined-file.png" alt="Ejemplo de archivo .as.predefined" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/client/images/predefined-file.png" alt="Ejemplo de archivo .as.predefined" width="720"></p>
 <p align="center"><em>Un stub declara una clase y sus métodos para el editor.</em></p>
 
 ## Reglas del motor
 
-Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) para configurar las comprobaciones de tu proyecto. AngelScript **2.39.0**, la última versión, es la versión del motor con soporte. Si tu host usa otra, decláralo con la sección `engine` (`{"engine": {"version": "2.36.1"}}`) y el servidor avisa de las propiedades del motor que esa versión no tiene. La [CLI](https://github.com/Gaftherman/angelscript-cli/blob/main/docs/ENGINE_VERSIONS.md) indica con qué versiones oficiales compila y prueba.
+Guarda `angelscript.rules.json` en la raíz del proyecto. Usa la [guía de reglas del motor](https://github.com/angelscript-tools/angelscript-lsp/blob/main/docs/RULES.es.md) para configurar las comprobaciones de tu proyecto. AngelScript **2.39.0**, la última versión, es la versión del motor con soporte. Si tu host usa otra, decláralo con la sección `engine` (`{"engine": {"version": "2.36.1"}}`) y el servidor avisa de las propiedades del motor que esa versión no tiene. La [CLI](https://github.com/angelscript-tools/angelscript-cli/blob/main/docs/ENGINE_VERSIONS.md) indica con qué versiones oficiales compila y prueba.
 
 ## Opciones del motor
 
@@ -169,17 +169,17 @@ Usa los ajustes `angelscript.engine.*` de VS Code para que coincidan con las opc
 
 ## Depurador
 
-La depuración vive en sus propios proyectos, para que cualquier aplicación pueda usarla. [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) es el depurador, el [proyecto de ejemplo](https://github.com/Gaftherman/angelscript-debugger-example) muestra una aplicación completa y la configuración de VS Code, y la [CLI de AngelScript](https://github.com/Gaftherman/angelscript-cli) ejecuta y depura scripts desde la terminal con `angelscript --dap-port 9002 script.as`.
+La depuración vive en sus propios proyectos, para que cualquier aplicación pueda usarla. [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap) es el depurador, el [proyecto de ejemplo](https://github.com/angelscript-tools/angelscript-debugger-example) muestra una aplicación completa y la configuración de VS Code, y la [CLI de AngelScript](https://github.com/angelscript-tools/angelscript-cli) ejecuta y depura scripts desde la terminal con `angelscript --dap-port 9002 script.as`.
 
 Añade una configuración `attach` o `launch` de tipo `angelscript` a `launch.json`, pon puntos de interrupción en tus archivos `.as` y pulsa F5.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code conectado a un script que se ejecuta en el Símbolo del sistema" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code conectado a un script que se ejecuta en el Símbolo del sistema" width="720"></p>
 
 ## Documentación
 
-- [Guía detallada](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/GUIDE.es.md) — ejemplos de espacio de trabajo, archivos predefinidos, opciones del motor y comandos.
-- [Guía de configuración](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/CONFIGURATION.es.md) — ajustes y ejemplos para editores.
-- [Guía de reglas del motor](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/RULES.es.md) — comprobaciones propias y ajustes compartidos del motor.
+- [Guía detallada](https://github.com/angelscript-tools/angelscript-lsp/blob/main/docs/GUIDE.es.md) — ejemplos de espacio de trabajo, archivos predefinidos, opciones del motor y comandos.
+- [Guía de configuración](https://github.com/angelscript-tools/angelscript-lsp/blob/main/docs/CONFIGURATION.es.md) — ajustes y ejemplos para editores.
+- [Guía de reglas del motor](https://github.com/angelscript-tools/angelscript-lsp/blob/main/docs/RULES.es.md) — comprobaciones propias y ajustes compartidos del motor.
 - [CHANGELOG.md](CHANGELOG.md) — historial de versiones y cambios.
 
 ## Otros clientes
@@ -192,19 +192,19 @@ Existen otros servidores de lenguaje para AngelScript. Si este no encaja con tu 
 
 ## Problemas y contribuciones
 
-Los reportes de errores y las sugerencias son bienvenidos en [GitHub Issues](https://github.com/Gaftherman/angelscript-lsp/issues). Cuando el servidor falla, ejecuta **AngelScript: Report Issue** (o pulsa **Report Issue** en el mensaje de error). Abre el formulario con tus versiones, el registro y una pequeña muestra anonimizada de tu código ya rellenos, para que revises todo antes de enviarlo.
+Los reportes de errores y las sugerencias son bienvenidos en [GitHub Issues](https://github.com/angelscript-tools/angelscript-lsp/issues). Cuando el servidor falla, ejecuta **AngelScript: Report Issue** (o pulsa **Report Issue** en el mensaje de error). Abre el formulario con tus versiones, el registro y una pequeña muestra anonimizada de tu código ya rellenos, para que revises todo antes de enviarlo.
 
-Si corriges un error pequeño o añades una mejora, puedes enviar un pull request. [CONTRIBUTING.es.md](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/CONTRIBUTING.es.md) explica cómo compilar y comprobar un cambio.
+Si corriges un error pequeño o añades una mejora, puedes enviar un pull request. [CONTRIBUTING.es.md](https://github.com/angelscript-tools/angelscript-lsp/blob/main/docs/CONTRIBUTING.es.md) explica cómo compilar y comprobar un cambio.
 
 Si creas un archivo `.as.predefined` para tu aplicación, contribuirlo como ejemplo se agradecería mucho y puede servir a otras personas.
 
 ## Créditos
 
-Angelscript para VS Code se apoya en el trabajo de estos proyectos. Sus licencias se reproducen en [THIRD_PARTY_NOTICES.md](https://github.com/Gaftherman/angelscript-lsp/blob/main/docs/THIRD_PARTY_NOTICES.md).
+Angelscript para VS Code se apoya en el trabajo de estos proyectos. Sus licencias se reproducen en [THIRD_PARTY_NOTICES.md](https://github.com/angelscript-tools/angelscript-lsp/blob/main/docs/THIRD_PARTY_NOTICES.md).
 
 | Proyecto | Licencia | Uso |
 | --- | --- | --- |
-| [Relrin/tree-sitter-angelscript](https://github.com/Relrin/tree-sitter-angelscript) | BSD-3-Clause | Base de la gramática de AngelScript. Este proyecto mantiene un [fork](https://github.com/Gaftherman/tree-sitter-angelscript). |
+| [Relrin/tree-sitter-angelscript](https://github.com/Relrin/tree-sitter-angelscript) | BSD-3-Clause | Base de la gramática de AngelScript. Este proyecto mantiene un [fork](https://github.com/angelscript-tools/tree-sitter-angelscript). |
 | [AngelScript](https://github.com/anjo76/angelscript) by Andreas Jönsson | zlib | El lenguaje en sí. Su compilador es el oráculo de pruebas de los diagnósticos. |
 | [tree-sitter](https://github.com/tree-sitter/tree-sitter) | MIT | Análisis incremental. |
 | [tree-sitter-doxygen](https://github.com/tree-sitter-grammars/tree-sitter-doxygen) | MIT | Comentarios de documentación. |

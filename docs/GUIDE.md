@@ -254,11 +254,11 @@ Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`). The Explorer also ha
 
 ## Debugger
 
-Debugging lives in its own projects, so any host can use it. [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) is the debugger, the [example project](https://github.com/Gaftherman/angelscript-debugger-example) shows a complete host and VS Code setup, and the [AngelScript CLI](https://github.com/Gaftherman/angelscript-cli) runs and debugs scripts from the terminal with `angelscript --dap-port 9002 script.as`.
+Debugging lives in its own projects, so any host can use it. [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap) is the debugger, the [example project](https://github.com/angelscript-tools/angelscript-debugger-example) shows a complete host and VS Code setup, and the [AngelScript CLI](https://github.com/angelscript-tools/angelscript-cli) runs and debugs scripts from the terminal with `angelscript --dap-port 9002 script.as`.
 
 Add an `attach` or `launch` configuration of type `angelscript` to `launch.json`, set breakpoints in your `.as` files and press F5.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code attached to a script running in Command Prompt" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code attached to a script running in Command Prompt" width="720"></p>
 
 ## Building from Source
 

@@ -254,11 +254,11 @@ Abre la paleta de comandos (`Ctrl+Shift+P` o `Cmd+Shift+P`). En el Explorador ta
 
 ## Depurador
 
-La depuración vive en sus propios proyectos, para que cualquier aplicación pueda usarla. [angelscript-dap](https://github.com/Gaftherman/angelscript-dap) es el depurador, el [proyecto de ejemplo](https://github.com/Gaftherman/angelscript-debugger-example) muestra una aplicación completa y la configuración de VS Code, y la [CLI de AngelScript](https://github.com/Gaftherman/angelscript-cli) ejecuta y depura scripts desde la terminal con `angelscript --dap-port 9002 script.as`.
+La depuración vive en sus propios proyectos, para que cualquier aplicación pueda usarla. [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap) es el depurador, el [proyecto de ejemplo](https://github.com/angelscript-tools/angelscript-debugger-example) muestra una aplicación completa y la configuración de VS Code, y la [CLI de AngelScript](https://github.com/angelscript-tools/angelscript-cli) ejecuta y depura scripts desde la terminal con `angelscript --dap-port 9002 script.as`.
 
 Añade una configuración `attach` o `launch` de tipo `angelscript` a `launch.json`, pon puntos de interrupción en tus archivos `.as` y pulsa F5.
 
-<p align="center"><img src="https://raw.githubusercontent.com/Gaftherman/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code conectado a un script que se ejecuta en el Símbolo del sistema" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/angelscript-tools/angelscript-dap/main/docs/images/debugger-cli.gif" alt="VS Code conectado a un script que se ejecuta en el Símbolo del sistema" width="720"></p>
 
 ## Compilar desde el código fuente
 

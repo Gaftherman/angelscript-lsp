@@ -14,7 +14,7 @@ Automated tool to record reproducible demo GIFs for the extension README.
 
 ## Debugger demos
 
-The debugger demos live in [angelscript-dap](https://github.com/Gaftherman/angelscript-dap), which has its own recorder.
+The debugger demos live in [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap), which has its own recorder.
 
 ## Visual Rules
 1. Keep the synthetic pointer visible. Show all keycaps in a shortcut, light them in order, and hold the completed shortcut before sending it to VS Code.

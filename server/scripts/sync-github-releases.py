@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Synchronizes CHANGELOG.md release notes into all GitHub Releases for Gaftherman/angelscript-lsp.
+Synchronizes CHANGELOG.md release notes into all GitHub Releases for angelscript-tools/angelscript-lsp.
 
 Usage:
     python server/scripts/sync-github-releases.py --dry-run
@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-REPO_NAME = "Gaftherman/angelscript-lsp"
+REPO_NAME = "angelscript-tools/angelscript-lsp"
 
 
 def get_github_token() -> str:

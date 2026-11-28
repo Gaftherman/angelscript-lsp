@@ -128,7 +128,7 @@ const OPEN_LOGS_FOLDER_COMMAND = 'angelscript.openLogsFolder';
 const REPORT_ISSUE_COMMAND = 'angelscript.reportIssue';
 
 /** @brief Address of the repository's new-issue page, used when the editor has no issue reporter. */
-const NEW_ISSUE_URL = 'https://github.com/Gaftherman/angelscript-lsp/issues/new';
+const NEW_ISSUE_URL = 'https://github.com/angelscript-tools/angelscript-lsp/issues/new';
 
 /** @brief The last failure shown to the user, so Report Issue can describe it. */
 let lastFailure: { summary: string; detail?: string } | undefined;
@@ -3076,7 +3076,7 @@ export async function configureHostEnvironment(): Promise<void> {
                 const targetFolder = folders[0].uri;
                 const rulesUri = Uri.joinPath(targetFolder, 'angelscript.rules.json');
                 const template = JSON.stringify({
-                    "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
+                    "$schema": "https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
                     "name": "Custom Host Engine Rules",
                     "engineProperties": {
                         "propertyAccessorMode": 2,

@@ -30,7 +30,7 @@ Open an empty folder in VS Code and save this file as `angelscript.rules.json` i
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
+  "$schema": "https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
   "storageRules": [
     {
       "id": "entity-member-handle",

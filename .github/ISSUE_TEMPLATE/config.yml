@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: GitHub Discussions
-    url: https://github.com/Gaftherman/angelscript-lsp/discussions
+    url: https://github.com/angelscript-tools/angelscript-lsp/discussions
     about: Ask questions, discuss game engine setups, and share AngelScript workflows.
   - name: Debugger problem (DAP)
-    url: https://github.com/Gaftherman/angelscript-dap/issues/new
+    url: https://github.com/angelscript-tools/angelscript-dap/issues/new
     about: Breakpoints, stepping and variables are handled by the angelscript-dap repository.

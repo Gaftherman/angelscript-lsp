@@ -49,7 +49,7 @@ if(ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE)
     set(tree_sitter_angelscript_SOURCE_DIR "${ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE}")
     message(STATUS "tree-sitter-angelscript: local checkout at ${tree_sitter_angelscript_SOURCE_DIR}")
 else()
-    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG 2ef44640365aaf836c648588470a23d48836295a)
+    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/angelscript-tools/tree-sitter-angelscript.git GIT_TAG 2ef44640365aaf836c648588470a23d48836295a)
     FetchContent_MakeAvailable(tree_sitter_angelscript)
 endif()
 

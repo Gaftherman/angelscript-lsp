@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-REPO_NAME = "Gaftherman/angelscript-lsp"
+REPO_NAME = "angelscript-tools/angelscript-lsp"
 
 
 def deduce_prev_tag(tag: str) -> str | None:

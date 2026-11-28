@@ -14,7 +14,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 - Restructured the root, client and Spanish READMEs and pinned `tree-sitter-angelscript` to the class template parameter fix (`2ef4464`).
 
-**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.4...v1.2.5
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.2.4...v1.2.5
 
 ## [1.2.4] - 2026-11-25
 
@@ -25,10 +25,10 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ### Changed
 
-- The debugger now lives in [angelscript-dap](https://github.com/Gaftherman/angelscript-dap), with the [example project](https://github.com/Gaftherman/angelscript-debugger-example) and the [AngelScript CLI](https://github.com/Gaftherman/angelscript-cli). The README and the guides point to them, the debugger demo recorders moved with it, and debugger reports go to the angelscript-dap issues.
+- The debugger now lives in [angelscript-dap](https://github.com/angelscript-tools/angelscript-dap), with the [example project](https://github.com/angelscript-tools/angelscript-debugger-example) and the [AngelScript CLI](https://github.com/angelscript-tools/angelscript-cli). The README and the guides point to them, the debugger demo recorders moved with it, and debugger reports go to the angelscript-dap issues.
 - Added `CONTRIBUTING.md` and `docs/CONTRIBUTING.es.md`. Markdown other than the README, the changelog, the contributing guide and `AGENTS.md` lives in `docs/`, and Python scripts live in `scripts/` folders.
 
-**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.3...v1.2.4
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.2.3...v1.2.4
 
 ## [1.2.3] - 2026-11-24
 
@@ -48,7 +48,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 - Added captions to the README feature galleries, grouped the LSP feature table, and made the workspace guide examples engine-neutral.
 
 ---
-**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.2...v1.2.3
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.2.2...v1.2.3
 
 ## [1.2.2] - 2026-11-24
 
@@ -58,7 +58,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 - Removed the engine hover demo.
 
 ---
-**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.1...v1.2.2
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.2.1...v1.2.2
 
 ## [1.2.1] - 2026-11-24
 
@@ -68,7 +68,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ### Changed
 
-- Rewrote the READMEs, workspace guides, and engine rules guide around animated demos. Added a demo of hover documentation for engine functions declared in an `.as.predefined` stub and linked to the [debugger example project](https://github.com/Gaftherman/angelscript-debugger-example).
+- Rewrote the READMEs, workspace guides, and engine rules guide around animated demos. Added a demo of hover documentation for engine functions declared in an `.as.predefined` stub and linked to the [debugger example project](https://github.com/angelscript-tools/angelscript-debugger-example).
 
 ### Fixed
 
@@ -77,7 +77,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 - Removed elapsed-time limits from tests that could fail on slow Windows x86 CI runners.
 
 ---
-**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.2.0...v1.2.1
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.2.0...v1.2.1
 
 ## [1.2.0] - 2026-11-21
 
@@ -139,7 +139,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 - Added process memory telemetry on macOS.
 
 ---
-**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.1.7...v1.2.0
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.1.7...v1.2.0
 
 ## [1.1.7] - 2026-10-31
 
@@ -176,7 +176,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
   - 74/74 VS Code client extension integration tests passing.
 
 ---
-**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.1.6...v1.1.7
+**Full Changelog**: https://github.com/angelscript-tools/angelscript-lsp/compare/v1.1.6...v1.1.7
 
 
 ## [1.1.6] - 2026-10-31
@@ -899,7 +899,7 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
   - `angelscript.diagnostics.reportUnusedFunctions` and `angelscript.diagnostics.reportUnusedMembers` are now disabled by default (`false`) in vanilla environments, and explicitly enabled (`true`) in Sven Co-op reference engine rules (`predefined/sven.angelscript.rules.json`).
   - Allows clean out-of-the-box editing in standalone scripts without false-positive unused warnings on uncalled entry points, while providing strict unused symbol detection in projects utilizing host engine rules.
 - Engine Rules JSON Schema:
-  - Switched `$schema` in `predefined/sven.angelscript.rules.json` and starter templates to raw GitHub JSON URL (`https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json`) for seamless schema validation across external workspaces.
+  - Switched `$schema` in `predefined/sven.angelscript.rules.json` and starter templates to raw GitHub JSON URL (`https://raw.githubusercontent.com/angelscript-tools/angelscript-lsp/main/schemas/angelscript.rules.schema.json`) for seamless schema validation across external workspaces.
 - Global Scope Resolution (`::`):
   - In `TargetResolution`, `HoverHandler`, `DefinitionHandler`, and `SemanticHelpers`: leading `::Ident` resolves strictly in the root global scope (`containerName.empty()`), completely skipping enclosing classes, mixins, or base class hierarchy methods.
   - Implemented $O(1)$ `GetGlobalScopeQualifier` in `ASTUtils.h` and registered `tokColonColon` in `GrammarSymbols.h/.cpp`.
@@ -3047,4 +3047,4 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/Gaftherman/angelscript-lsp/blob/HEAD/LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](https://github.com/angelscript-tools/angelscript-lsp/blob/HEAD/LICENSE) file for details.
