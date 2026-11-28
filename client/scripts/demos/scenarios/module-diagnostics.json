@@ -4,7 +4,7 @@
   "layout": "workbench",
   "zoomIn": 1,
   "editorSettings": {
-    "window.zoomLevel": 2,
+    "window.zoomLevel": 1,
     "window.titleBarStyle": "custom",
     "window.customTitleBarVisibility": "auto",
     "window.menuStyle": "custom",
@@ -12,10 +12,10 @@
     "workbench.activityBar.location": "hidden",
     "workbench.sideBar.location": "left",
     "workbench.tree.indent": 14,
-    "editor.fontSize": 16,
-    "editor.lineHeight": 24,
-    "editor.padding.top": 14,
-    "editor.padding.bottom": 14,
+    "editor.fontSize": 17,
+    "editor.lineHeight": 27,
+    "editor.padding.top": 30,
+    "editor.padding.bottom": 30,
     "editor.codeLens": true,
     "editor.codeLensFontSize": 13,
     "editor.inlayHints.enabled": "off",
@@ -44,7 +44,7 @@
     },
     {
       "action": "hold",
-      "ms": 1400
+      "ms": 1000
     },
     {
       "action": "command",
@@ -55,7 +55,7 @@
     },
     {
       "action": "wait",
-      "ms": 1000
+      "ms": 700
     },
     {
       "action": "problemsPanel",
@@ -68,7 +68,7 @@
     },
     {
       "action": "hold",
-      "ms": 900
+      "ms": 600
     },
     {
       "action": "command",
@@ -79,7 +79,7 @@
     },
     {
       "action": "wait",
-      "ms": 1000
+      "ms": 700
     },
     {
       "action": "problemsPanel",
@@ -92,7 +92,7 @@
     },
     {
       "action": "hold",
-      "ms": 900
+      "ms": 600
     },
     {
       "action": "command",
@@ -103,7 +103,7 @@
     },
     {
       "action": "wait",
-      "ms": 1000
+      "ms": 700
     },
     {
       "action": "problemsPanel",
@@ -113,7 +113,7 @@
     },
     {
       "action": "hold",
-      "ms": 1200
+      "ms": 900
     }
   ],
   "sidebar": false

@@ -1116,16 +1116,17 @@ async function runScenario(featureName) {
   // One ladder for every GIF: always 960 px wide, losing frame rate and colors before size.
   const candidates = [
     { width: 960, fps: 15, colors: 128 },
+    { width: 960, fps: 12, colors: 128 },
+    { width: 960, fps: 10, colors: 128 },
     { width: 960, fps: 12, colors: 96 },
-    { width: 960, fps: 12, colors: 64, dither: 'none' },
-    { width: 960, fps: 12, colors: 48, dither: 'none' },
-    { width: 960, fps: 10, colors: 64, dither: 'none' },
-    { width: 960, fps: 8, colors: 64, dither: 'none' },
+    { width: 960, fps: 10, colors: 96 },
+    { width: 960, fps: 12, colors: 64 },
+    { width: 960, fps: 10, colors: 64 },
   ];
 
   const sizeLimit = 3_000_000;
   let size;
-  for (const { width, fps, colors, dither = 'bayer:bayer_scale=3' } of candidates) {
+  for (const { width, fps, colors, dither = 'bayer:bayer_scale=5' } of candidates) {
     const input = ['-ss', trimStart.toFixed(3), '-t', Math.min(sceneDuration, maximumDuration - 0.03).toFixed(3), '-i', videoPath];
     const filter = 'crop=1280:' + cropHeight + ':0:0,scale=' + width + ':-2:flags=lanczos,fps=' + fps;
     ffmpeg([...input, '-vf', filter + ',palettegen=stats_mode=diff:max_colors=' + colors, '-frames:v', '1', '-update', '1', palette]);
